@@ -6,3 +6,4 @@ yfinance>=0.2.65
 pytest>=8.0,<9
 statsmodels>=0.14,<1
 lxml>=5,<7
+scikit-learn>=1.5,<2
