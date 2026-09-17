@@ -22,28 +22,64 @@ TRADING_DAYS = 252
 OUTPUT_DIR = Path("v2_outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-BOE_BANK_RATE_URL = (
-    "https://www.bankofengland.co.uk/"
-    "boeapps/database/Bank-Rate.asp"
-)
 
-# ------------------------------------------------------------
-# IMPORTANT
+# ============================================================
+# FROZEN BANK OF ENGLAND BANK RATE HISTORY
+# ============================================================
 #
-# These candidate models are deliberately few in number.
+# Embedded directly into this research file so Colab does not
+# need to scrape the Bank of England website.
 #
-# We are NOT running a giant parameter search.
+# Cash proxy used by the model:
 #
-# All candidates are trend-only because the v1 ablation
-# showed that residual momentum was detrimental in this
-# ETF implementation.
+#     Bank Rate - 0.50%
 #
-# Candidate differences:
-# - trend speed
-# - rebalance frequency
+# floored at zero.
 #
-# Everything else is held structurally constant.
-# ------------------------------------------------------------
+# This is a research assumption, not a claim that any broker
+# pays this rate.
+# ============================================================
+
+BOE_BANK_RATE_HISTORY = [
+    ("2008-02-07", 5.25),
+    ("2008-04-10", 5.00),
+    ("2008-10-08", 4.50),
+    ("2008-11-06", 3.00),
+    ("2008-12-04", 2.00),
+    ("2009-01-08", 1.50),
+    ("2009-02-05", 1.00),
+    ("2009-03-05", 0.50),
+    ("2016-08-04", 0.25),
+    ("2017-11-02", 0.50),
+    ("2018-08-02", 0.75),
+    ("2020-03-11", 0.25),
+    ("2020-03-19", 0.10),
+    ("2021-12-16", 0.25),
+    ("2022-02-03", 0.50),
+    ("2022-03-17", 0.75),
+    ("2022-05-05", 1.00),
+    ("2022-06-16", 1.25),
+    ("2022-08-04", 1.75),
+    ("2022-09-22", 2.25),
+    ("2022-11-03", 3.00),
+    ("2022-12-15", 3.50),
+    ("2023-02-02", 4.00),
+    ("2023-03-23", 4.25),
+    ("2023-05-11", 4.50),
+    ("2023-06-22", 5.00),
+    ("2023-08-03", 5.25),
+    ("2024-08-01", 5.00),
+    ("2024-11-07", 4.75),
+    ("2025-02-06", 4.50),
+    ("2025-05-08", 4.25),
+    ("2025-08-07", 4.00),
+    ("2025-12-18", 3.75),
+]
+
+
+# ============================================================
+# CANDIDATE TREND STRATEGIES
+# ============================================================
 
 CANDIDATES = {
     "T_63_126_252_W1": {
@@ -88,6 +124,10 @@ CANDIDATES = {
 }
 
 
+# ============================================================
+# ASSET GROUPS
+# ============================================================
+
 ASSET_GROUPS = {
     "US_Equity": [
         "SPY",
@@ -126,13 +166,6 @@ ASSET_GROUPS = {
 }
 
 
-# Structural caps.
-#
-# These are NOT optimised separately by candidate.
-#
-# They exist to stop SPY + IWM + sectors from pretending
-# to be independent diversification.
-
 GROUP_CAPS = {
     "US_Equity": 0.60,
     "International_Equity": 0.35,
@@ -150,7 +183,7 @@ for group_name, members in ASSET_GROUPS.items():
 
 
 # ============================================================
-# BANK OF ENGLAND CASH RATE
+# CASH RATE
 # ============================================================
 
 def load_boe_cash_returns(
@@ -158,89 +191,38 @@ def load_boe_cash_returns(
     haircut_bps: float = 50.0,
 ) -> pd.Series:
     """
-    Downloads official Bank Rate history directly from
-    the Bank of England.
+    Uses the frozen Bank of England Bank Rate history
+    embedded above.
 
-    Cash is credited at:
+    Cash earns:
 
-        Bank Rate - 50 basis points
+        Bank Rate - haircut
 
     with a zero floor.
 
-    This is only a research cash proxy. It is NOT a claim
-    that a particular broker pays this rate.
+    Calendar days between trading sessions are included,
+    so weekends and holidays accrue cash interest.
     """
 
     print(
-        "Downloading Bank of England "
+        "Loading frozen Bank of England "
         "Bank Rate history..."
     )
 
-    tables = pd.read_html(
-        BOE_BANK_RATE_URL
+    rate_table = pd.DataFrame(
+        BOE_BANK_RATE_HISTORY,
+        columns=[
+            "date",
+            "rate_percent",
+        ],
     )
 
-    rate_table = None
-
-    for table in tables:
-
-        table = table.copy()
-
-        table.columns = [
-            str(col).strip()
-            for col in table.columns
-        ]
-
-        if (
-            "Date Changed"
-            in table.columns
-            and "Rate"
-            in table.columns
-        ):
-            rate_table = table[
-                [
-                    "Date Changed",
-                    "Rate",
-                ]
-            ].copy()
-
-            break
-
-    if rate_table is None:
-        raise RuntimeError(
-            "Could not locate the official "
-            "Bank Rate history table."
-        )
-
-    rate_table[
-        "date"
-    ] = pd.to_datetime(
-        rate_table["Date Changed"],
-        format="%d %b %y",
-        errors="coerce",
-    )
-
-    rate_table[
-        "rate_percent"
-    ] = pd.to_numeric(
-        rate_table["Rate"]
-        .astype(str)
-        .str.replace(
-            "%",
-            "",
-            regex=False,
-        ),
-        errors="coerce",
+    rate_table["date"] = pd.to_datetime(
+        rate_table["date"]
     )
 
     rate_table = (
-        rate_table[
-            [
-                "date",
-                "rate_percent",
-            ]
-        ]
-        .dropna()
+        rate_table
         .sort_values("date")
         .drop_duplicates(
             "date",
@@ -248,80 +230,103 @@ def load_boe_cash_returns(
         )
     )
 
-    date_frame = pd.DataFrame({
-        "date":
-            pd.DatetimeIndex(
-                trading_index
-            )
-    })
-
-    merged = pd.merge_asof(
-        date_frame.sort_values(
-            "date"
-        ),
-        rate_table.sort_values(
-            "date"
-        ),
-        on="date",
-        direction="backward",
+    trading_index = pd.DatetimeIndex(
+        trading_index
     )
 
-    if (
-        merged[
-            "rate_percent"
-        ]
-        .isna()
-        .any()
-    ):
+    if trading_index.tz is not None:
+        trading_index = trading_index.tz_convert(
+            None
+        )
+
+    start_date = trading_index.min()
+    end_date = trading_index.max()
+
+    if rate_table["date"].min() > start_date:
         raise RuntimeError(
-            "Bank Rate history does not "
-            "cover the full strategy period."
+            "Frozen Bank Rate history does not "
+            "begin early enough."
         )
 
+    calendar_index = pd.date_range(
+        start=start_date,
+        end=end_date,
+        freq="D",
+    )
+
     annual_rate = (
-        merged[
-            "rate_percent"
-        ]
+        rate_table
+        .set_index("date")["rate_percent"]
+        .reindex(calendar_index)
+        .ffill()
         / 100.0
-        - haircut_bps
-        / 10_000.0
     )
 
-    annual_rate = (
-        annual_rate.clip(
-            lower=0.0
+    if annual_rate.isna().any():
+        raise RuntimeError(
+            "Missing Bank Rate observations."
         )
-    )
 
-    calendar_days = (
-        merged["date"]
-        .diff()
-        .dt.days
-        .fillna(1)
-        .clip(lower=1)
-    )
-
-    # Simple daily accrual approximation.
-    cash_returns = (
+    annual_cash_rate = (
         annual_rate
-        * calendar_days
-        / 365.25
+        - haircut_bps / 10_000.0
+    ).clip(
+        lower=0.0
     )
 
-    result = pd.Series(
-        cash_returns.values,
-        index=pd.DatetimeIndex(
-            trading_index
-        ),
+    daily_factor = (
+        1.0
+        + annual_cash_rate / 365.25
+    )
+
+    cumulative_growth = daily_factor.cumprod()
+
+    cash_returns = pd.Series(
+        0.0,
+        index=trading_index,
+        dtype=float,
         name="cash_return",
     )
 
-    # Portfolio begins at the first close,
-    # so no interest is credited beforehand.
-    if len(result):
-        result.iloc[0] = 0.0
+    for i in range(
+        1,
+        len(trading_index),
+    ):
 
-    return result
+        previous_date = trading_index[
+            i - 1
+        ]
+
+        current_date = trading_index[i]
+
+        cash_returns.iloc[i] = (
+            cumulative_growth.loc[
+                current_date
+            ]
+            / cumulative_growth.loc[
+                previous_date
+            ]
+            - 1.0
+        )
+
+    if len(cash_returns):
+        cash_returns.iloc[0] = 0.0
+
+    print(
+        "Bank Rate history loaded successfully."
+    )
+
+    print(
+        "Latest frozen Bank Rate: "
+        f"{rate_table.iloc[-1]['rate_percent']:.2f}%"
+    )
+
+    print(
+        "Latest effective date: "
+        f"{rate_table.iloc[-1]['date'].date()}"
+    )
+
+    return cash_returns
 
 
 # ============================================================
@@ -334,9 +339,7 @@ def build_candidate_scores(
 ) -> dict:
 
     annual_vol = (
-        base_signals[
-            "annual_vol"
-        ]
+        base_signals["annual_vol"]
         .replace(
             0.0,
             np.nan,
@@ -345,24 +348,16 @@ def build_candidate_scores(
 
     scores = {}
 
-    for candidate_name, params in (
-        CANDIDATES.items()
-    ):
+    for candidate_name, params in CANDIDATES.items():
 
         components = []
 
-        for horizon in (
-            params["horizons"]
-        ):
+        for horizon in params["horizons"]:
 
             risk_adjusted = (
                 prices
-                .pct_change(
-                    horizon
-                )
-                .div(
-                    annual_vol
-                )
+                .pct_change(horizon)
+                .div(annual_vol)
             )
 
             components.append(
@@ -371,9 +366,7 @@ def build_candidate_scores(
                 )
             )
 
-        scores[
-            candidate_name
-        ] = (
+        scores[candidate_name] = (
             sum(components)
             / len(components)
         )
@@ -390,7 +383,7 @@ def is_regular_signal_day(
     rebalance_weeks: int,
 ) -> bool:
 
-    # Wednesday.
+    # Wednesday
     if date.weekday() != 2:
         return False
 
@@ -414,7 +407,7 @@ def is_regular_signal_day(
 
 
 # ============================================================
-# PORTFOLIO CAP HELPERS
+# GROUP EXPOSURE HELPERS
 # ============================================================
 
 def group_total(
@@ -426,8 +419,7 @@ def group_total(
         asset
         for asset in weights.index
         if (
-            ASSET_TO_GROUP
-            .get(asset)
+            ASSET_TO_GROUP.get(asset)
             == group_name
         )
     ]
@@ -436,9 +428,7 @@ def group_total(
         return 0.0
 
     return float(
-        weights[
-            members
-        ].sum()
+        weights[members].sum()
     )
 
 
@@ -476,9 +466,7 @@ def allocate_with_caps(
 
         remaining_gross = (
             gross_target
-            - float(
-                result.sum()
-            )
+            - float(result.sum())
         )
 
         if remaining_gross <= 1e-10:
@@ -494,15 +482,14 @@ def allocate_with_caps(
             )
 
             group_name = (
-                ASSET_TO_GROUP
-                .get(asset)
+                ASSET_TO_GROUP.get(
+                    asset
+                )
             )
 
-            group_cap = (
-                GROUP_CAPS.get(
-                    group_name,
-                    1.0,
-                )
+            group_cap = GROUP_CAPS.get(
+                group_name,
+                1.0,
             )
 
             group_room = (
@@ -514,28 +501,20 @@ def allocate_with_caps(
             )
 
             if (
-                asset_room
-                > 1e-10
-                and group_room
-                > 1e-10
+                asset_room > 1e-10
+                and group_room > 1e-10
             ):
-                active.append(
-                    asset
-                )
+                active.append(asset)
 
         if not active:
             break
 
-        active_scores = (
-            scores.loc[
-                active
-            ]
-        )
+        active_scores = scores.loc[
+            active
+        ]
 
-        if (
-            active_scores.sum()
-            <= 0
-        ):
+        if active_scores.sum() <= 0:
+
             proposal = (
                 pd.Series(
                     1.0,
@@ -546,6 +525,7 @@ def allocate_with_caps(
             )
 
         else:
+
             proposal = (
                 active_scores
                 / active_scores.sum()
@@ -562,15 +542,14 @@ def allocate_with_caps(
             )
 
             group_name = (
-                ASSET_TO_GROUP
-                .get(asset)
+                ASSET_TO_GROUP.get(
+                    asset
+                )
             )
 
-            group_cap = (
-                GROUP_CAPS.get(
-                    group_name,
-                    1.0,
-                )
+            group_cap = GROUP_CAPS.get(
+                group_name,
+                1.0,
             )
 
             group_room = (
@@ -585,19 +564,14 @@ def allocate_with_caps(
                 0.0,
                 min(
                     float(
-                        proposal[
-                            asset
-                        ]
+                        proposal[asset]
                     ),
                     asset_room,
                     group_room,
                 ),
             )
 
-            result[asset] += (
-                addition
-            )
-
+            result[asset] += addition
             added += addition
 
         if added <= 1e-12:
@@ -621,17 +595,13 @@ def enforce_hard_caps(
         .copy()
     )
 
-    for (
-        group_name,
-        group_cap,
-    ) in GROUP_CAPS.items():
+    for group_name, group_cap in GROUP_CAPS.items():
 
         members = [
             asset
             for asset in result.index
             if (
-                ASSET_TO_GROUP
-                .get(asset)
+                ASSET_TO_GROUP.get(asset)
                 == group_name
             )
         ]
@@ -640,38 +610,31 @@ def enforce_hard_caps(
             continue
 
         total = float(
-            result[
-                members
-            ].sum()
+            result[members].sum()
         )
 
-        if (
-            total
-            > group_cap
-            and total > 0
-        ):
-            result.loc[
-                members
-            ] *= (
-                group_cap
-                / total
+        if total > group_cap and total > 0:
+
+            result.loc[members] *= (
+                group_cap / total
             )
 
     gross = float(
         result.sum()
     )
 
-    if (
-        gross > max_gross
-        and gross > 0
-    ):
+    if gross > max_gross and gross > 0:
+
         result *= (
-            max_gross
-            / gross
+            max_gross / gross
         )
 
     return result
 
+
+# ============================================================
+# TRADE THRESHOLD
+# ============================================================
 
 def apply_trade_threshold_v2(
     current: pd.Series,
@@ -693,30 +656,31 @@ def apply_trade_threshold_v2(
             desired[asset]
         )
 
-        delta = (
-            new - old
-        )
+        delta = new - old
 
-        # Full exit always allowed.
+        # Full exits are always permitted.
         if new <= 1e-12:
+
             result[asset] = 0.0
             continue
 
-        # Do not open microscopic positions.
+        # Suppress microscopic new positions.
         if (
             old <= 1e-12
             and abs(delta)
             < minimum_trade
         ):
+
             result[asset] = 0.0
             continue
 
-        # Suppress tiny maintenance trades.
+        # Ignore tiny maintenance changes.
         if (
             old > 1e-12
             and abs(delta)
             < minimum_trade
         ):
+
             result[asset] = old
 
     result = enforce_hard_caps(
@@ -731,7 +695,7 @@ def apply_trade_threshold_v2(
 
 
 # ============================================================
-# PORTFOLIO CONSTRUCTOR
+# V2 PORTFOLIO CONSTRUCTION
 # ============================================================
 
 def construct_v2_target(
@@ -744,13 +708,9 @@ def construct_v2_target(
     cfg: dict,
 ) -> pd.Series:
 
-    pcfg = cfg[
-        "portfolio"
-    ]
+    pcfg = cfg["portfolio"]
 
-    assets = (
-        prices.columns
-    )
+    assets = prices.columns
 
     target = pd.Series(
         0.0,
@@ -802,28 +762,25 @@ def construct_v2_target(
 
     selected = []
 
-    # Existing positions get hysteresis.
+    # Hysteresis for existing holdings.
     for asset in held:
 
         if (
             pd.notna(
                 ranks.get(asset)
             )
-            and ranks[asset]
-            <= pcfg[
-                "keep_rank"
-            ]
+            and (
+                ranks[asset]
+                <= pcfg["keep_rank"]
+            )
             and bool(
-                absolute_trend_ok
-                .get(
+                absolute_trend_ok.get(
                     asset,
                     False,
                 )
             )
         ):
-            selected.append(
-                asset
-            )
+            selected.append(asset)
 
     ordered = list(
         score
@@ -837,9 +794,7 @@ def construct_v2_target(
 
         if (
             len(selected)
-            >= pcfg[
-                "max_positions"
-            ]
+            >= pcfg["max_positions"]
         ):
             break
 
@@ -847,15 +802,12 @@ def construct_v2_target(
             continue
 
         if bool(
-            absolute_trend_ok
-            .get(
+            absolute_trend_ok.get(
                 asset,
                 False,
             )
         ):
-            selected.append(
-                asset
-            )
+            selected.append(asset)
 
     if not selected:
         return target
@@ -904,13 +856,9 @@ def construct_v2_target(
     )
 
     max_gross = (
-        pcfg[
-            "panic_max_gross"
-        ]
+        pcfg["panic_max_gross"]
         if panic
-        else pcfg[
-            "normal_max_gross"
-        ]
+        else pcfg["normal_max_gross"]
     )
 
     selected_weights = (
@@ -929,9 +877,8 @@ def construct_v2_target(
     )
 
     # --------------------------------------------------------
-    # Portfolio volatility control.
-    #
-    # This can reduce exposure but never lever it upward.
+    # Volatility targeting.
+    # Only decreases exposure.
     # --------------------------------------------------------
 
     selected = list(
@@ -975,6 +922,7 @@ def construct_v2_target(
             .all()
             .all()
         ):
+
             variance = float(
                 vector.T
                 @ covariance.values
@@ -997,9 +945,7 @@ def construct_v2_target(
                     / portfolio_vol,
                 )
 
-                selected_weights *= (
-                    scale
-                )
+                selected_weights *= scale
 
     target.loc[
         selected_weights.index
@@ -1022,7 +968,8 @@ def build_benchmark_returns(
 ]:
 
     benchmark_returns = (
-        benchmark.pct_change(
+        benchmark
+        .pct_change(
             fill_method=None
         )
         .fillna(0.0)
@@ -1073,7 +1020,7 @@ def build_benchmark_returns(
 
 
 # ============================================================
-# BACKTEST ENGINE
+# SINGLE-CANDIDATE BACKTEST
 # ============================================================
 
 def run_candidate_backtest(
@@ -1091,9 +1038,7 @@ def run_candidate_backtest(
     one_way_cost_bps: float,
 ) -> dict:
 
-    pcfg = cfg[
-        "portfolio"
-    ]
+    pcfg = cfg["portfolio"]
 
     candidate = (
         CANDIDATES[
@@ -1121,9 +1066,7 @@ def run_candidate_backtest(
             "for backtest."
         )
 
-    assets = (
-        prices.columns
-    )
+    assets = prices.columns
 
     weights = pd.Series(
         0.0,
@@ -1202,10 +1145,10 @@ def run_candidate_backtest(
 
         if denominator <= 0:
             raise RuntimeError(
-                "Invalid portfolio "
-                "return denominator."
+                "Invalid return denominator."
             )
 
+        # Drift weights after today's returns.
         weights = (
             weights
             * (
@@ -1222,8 +1165,8 @@ def run_candidate_backtest(
         # Execute yesterday's queued signal AFTER today's
         # market return.
         #
-        # Wednesday close signal therefore executes at the
-        # following trading session close.
+        # Wednesday close signal therefore affects the
+        # portfolio only after the following session.
         # ----------------------------------------------------
 
         if pending_target is not None:
@@ -1297,11 +1240,7 @@ def run_candidate_backtest(
 
             pending_target = None
 
-        # ----------------------------------------------------
-        # Generate the new signal after today's close.
-        # Do NOT execute until the following trading session.
-        # ----------------------------------------------------
-
+        # Generate a new signal at today's close.
         if is_regular_signal_day(
             date,
             candidate[
@@ -1336,7 +1275,8 @@ def run_candidate_backtest(
         daily_net_return = (
             nav
             / nav_before
-        ) - 1.0
+            - 1.0
+        )
 
         bret = float(
             benchmark_returns.loc[
@@ -1479,9 +1419,7 @@ def calculate_metrics(
 ) -> dict:
 
     history = (
-        result[
-            "history"
-        ]
+        result["history"]
     )
 
     strategy = (
@@ -1521,12 +1459,8 @@ def calculate_metrics(
         1.0 / 365.25,
     )
 
-    starting_nav = 100.0
-
     final_nav = float(
-        history[
-            "nav"
-        ]
+        history["nav"]
         .iloc[-1]
     )
 
@@ -1562,20 +1496,18 @@ def calculate_metrics(
         )
 
     cagr = cagr_from_values(
-        starting_nav,
+        100.0,
         final_nav,
     )
 
-    benchmark_cagr = (
-        cagr_from_values(
-            starting_nav,
-            benchmark_final,
-        )
+    benchmark_cagr = cagr_from_values(
+        100.0,
+        benchmark_final,
     )
 
     risk_matched_cagr = (
         cagr_from_values(
-            starting_nav,
+            100.0,
             risk_matched_final,
         )
     )
@@ -1599,7 +1531,7 @@ def calculate_metrics(
         - cash
     )
 
-    excess_std = (
+    strategy_excess_std = (
         strategy_excess.std(
             ddof=1
         )
@@ -1607,11 +1539,11 @@ def calculate_metrics(
 
     sharpe = (
         strategy_excess.mean()
-        / excess_std
+        / strategy_excess_std
         * math.sqrt(
             TRADING_DAYS
         )
-        if excess_std > 0
+        if strategy_excess_std > 0
         else np.nan
     )
 
@@ -1656,8 +1588,7 @@ def calculate_metrics(
     )
 
     # --------------------------------------------------------
-    # Excess-return CAPM regression with HAC/Newey-West
-    # standard errors.
+    # CAPM-style excess-return regression with HAC errors.
     # --------------------------------------------------------
 
     regression_data = (
@@ -1671,9 +1602,7 @@ def calculate_metrics(
         .dropna()
     )
 
-    if len(
-        regression_data
-    ) > 30:
+    if len(regression_data) > 30:
 
         X = sm.add_constant(
             regression_data[
@@ -1769,16 +1698,12 @@ def calculate_metrics(
             risk_matched_cagr,
 
         "excess_cagr_vs_acwi":
-            (
-                cagr
-                - benchmark_cagr
-            ),
+            cagr
+            - benchmark_cagr,
 
         "excess_cagr_vs_risk_matched":
-            (
-                cagr
-                - risk_matched_cagr
-            ),
+            cagr
+            - risk_matched_cagr,
 
         "annual_volatility":
             annual_vol,
@@ -1922,8 +1847,7 @@ def select_candidates(
         )
 
         print(
-            f"TRAINING FOLD "
-            f"{fold['fold']}"
+            f"TRAINING FOLD {fold['fold']}"
         )
 
         print(
@@ -1938,65 +1862,57 @@ def select_candidates(
 
         fold_rows = []
 
-        for candidate_name in (
-            CANDIDATES.keys()
-        ):
+        for candidate_name in CANDIDATES.keys():
 
-            result = (
-                run_candidate_backtest(
-                    prices=
-                        prices,
+            result = run_candidate_backtest(
+                prices=
+                    prices,
 
-                    benchmark=
-                        benchmark,
+                benchmark=
+                    benchmark,
 
-                    cash_returns=
-                        cash_returns,
+                cash_returns=
+                    cash_returns,
 
-                    benchmark_returns=
-                        benchmark_returns,
+                benchmark_returns=
+                    benchmark_returns,
 
-                    risk_matched_returns=
-                        risk_matched_returns,
+                risk_matched_returns=
+                    risk_matched_returns,
 
-                    base_signals=
-                        base_signals,
+                base_signals=
+                    base_signals,
 
-                    candidate_scores=
-                        candidate_scores,
+                candidate_scores=
+                    candidate_scores,
 
-                    candidate_name=
-                        candidate_name,
+                candidate_name=
+                    candidate_name,
 
-                    cfg=
-                        cfg,
+                cfg=
+                    cfg,
 
-                    start_date=
-                        fold[
-                            "train_start"
-                        ],
+                start_date=
+                    fold[
+                        "train_start"
+                    ],
 
-                    end_date=
-                        fold[
-                            "train_end"
-                        ],
+                end_date=
+                    fold[
+                        "train_end"
+                    ],
 
-                    one_way_cost_bps=
-                        15.0,
-                )
+                one_way_cost_bps=
+                    15.0,
             )
 
-            metrics = (
-                calculate_metrics(
-                    result
-                )
+            metrics = calculate_metrics(
+                result
             )
 
             row = {
                 "fold":
-                    fold[
-                        "fold"
-                    ],
+                    fold["fold"],
 
                 "candidate":
                     candidate_name,
@@ -2014,27 +1930,12 @@ def select_candidates(
                 **metrics,
             }
 
-            fold_rows.append(
-                row
-            )
-
-            all_rows.append(
-                row
-            )
+            fold_rows.append(row)
+            all_rows.append(row)
 
         fold_df = pd.DataFrame(
             fold_rows
         )
-
-        # ----------------------------------------------------
-        # Selection rule:
-        #
-        # 1. highest training information ratio vs ACWI
-        # 2. lower turnover as first tie-break
-        # 3. higher Sharpe as second tie-break
-        #
-        # No later test data are used here.
-        # ----------------------------------------------------
 
         ranked = (
             fold_df
@@ -2052,9 +1953,7 @@ def select_candidates(
             )
         )
 
-        selected = (
-            ranked.iloc[0]
-        )
+        selected = ranked.iloc[0]
 
         selected_name = (
             selected[
@@ -2071,7 +1970,7 @@ def select_candidates(
         )
 
         print(
-            "\nTraining IR:"
+            "Training information ratio:"
         )
 
         print(
@@ -2087,9 +1986,7 @@ def select_candidates(
 
         selection_rows.append({
             "fold":
-                fold[
-                    "fold"
-                ],
+                fold["fold"],
 
             "train_start":
                 fold[
@@ -2163,7 +2060,7 @@ def select_candidates(
 
 
 # ============================================================
-# DYNAMIC OOS SIMULATION
+# DYNAMIC WALK-FORWARD OUT-OF-SAMPLE BACKTEST
 # ============================================================
 
 def run_dynamic_oos(
@@ -2179,13 +2076,9 @@ def run_dynamic_oos(
     one_way_cost_bps,
 ):
 
-    pcfg = cfg[
-        "portfolio"
-    ]
+    pcfg = cfg["portfolio"]
 
-    assets = (
-        prices.columns
-    )
+    assets = prices.columns
 
     start = pd.Timestamp(
         selections[
@@ -2230,26 +2123,40 @@ def run_dynamic_oos(
         / 10_000.0
     )
 
+    selections = selections.copy()
+
+    selections[
+        "test_start_dt"
+    ] = pd.to_datetime(
+        selections[
+            "test_start"
+        ]
+    )
+
+    selections[
+        "test_end_dt"
+    ] = pd.to_datetime(
+        selections[
+            "test_end"
+        ]
+    )
+
     def candidate_for_date(
         date,
     ):
 
         matches = selections[
             (
-                pd.to_datetime(
-                    selections[
-                        "test_start"
-                    ]
-                )
+                selections[
+                    "test_start_dt"
+                ]
                 <= date
             )
             &
             (
-                pd.to_datetime(
-                    selections[
-                        "test_end"
-                    ]
-                )
+                selections[
+                    "test_end_dt"
+                ]
                 >= date
             )
         ]
@@ -2281,9 +2188,6 @@ def run_dynamic_oos(
             != current_candidate
         ):
 
-            # The new training decision is now
-            # available. Cancel any unexecuted
-            # signal from the previous fold.
             pending_target = None
 
             current_candidate = (
@@ -2342,6 +2246,11 @@ def run_dynamic_oos(
             + portfolio_return
         )
 
+        if denominator <= 0:
+            raise RuntimeError(
+                "Invalid return denominator."
+            )
+
         weights = (
             weights
             * (
@@ -2354,7 +2263,6 @@ def run_dynamic_oos(
         turnover_today = 0.0
         cost_today = 0.0
 
-        # Execute previously queued target.
         if pending_target is not None:
 
             panic = bool(
@@ -2441,9 +2349,6 @@ def run_dynamic_oos(
             )
         )
 
-        # Force the newly selected model
-        # to issue a target on the first
-        # Wednesday of its test fold.
         forced_signal = (
             force_rebalance
             and date.weekday() == 2
@@ -2456,7 +2361,8 @@ def run_dynamic_oos(
 
             pending_target = (
                 construct_v2_target(
-                    date=date,
+                    date=
+                        date,
 
                     current_weights=
                         weights,
@@ -2483,7 +2389,8 @@ def run_dynamic_oos(
         daily_net_return = (
             nav
             / nav_before
-        ) - 1.0
+            - 1.0
+        )
 
         bret = float(
             benchmark_returns.loc[
@@ -2552,6 +2459,7 @@ def run_dynamic_oos(
         }
 
         for asset in assets:
+
             weight_row[
                 asset
             ] = float(
@@ -2634,6 +2542,7 @@ def yearly_results(
     def compound(
         series,
     ):
+
         return (
             (
                 1.0
@@ -2703,9 +2612,7 @@ def yearly_results(
         ]
     )
 
-    result.index.name = (
-        "year"
-    )
+    result.index.name = "year"
 
     return result
 
@@ -2735,9 +2642,8 @@ def create_oos_chart(
         dynamic_history[
             "nav"
         ],
-        label=(
-            "V2 Walk-Forward"
-        ),
+        label=
+            "V2 Walk-Forward",
         linewidth=2.0,
     )
 
@@ -2746,9 +2652,8 @@ def create_oos_chart(
         fixed_history[
             "nav"
         ],
-        label=(
-            "Fixed Base Trend"
-        ),
+        label=
+            "Fixed Base Trend",
         linewidth=1.5,
         alpha=0.85,
     )
@@ -2758,9 +2663,8 @@ def create_oos_chart(
         dynamic_history[
             "benchmark_nav"
         ],
-        label=(
-            "ACWI GBP proxy"
-        ),
+        label=
+            "ACWI GBP proxy",
         linewidth=1.5,
     )
 
@@ -2769,9 +2673,8 @@ def create_oos_chart(
         dynamic_history[
             "risk_matched_nav"
         ],
-        label=(
-            "12% vol-matched ACWI"
-        ),
+        label=
+            "12% vol-matched ACWI",
         linewidth=1.4,
         linestyle="--",
     )
@@ -2848,17 +2751,13 @@ def main():
         "========================================"
     )
 
-    cfg, v1_hash = (
-        load_config()
-    )
+    cfg, v1_hash = load_config()
 
     print(
         "\nFrozen v1 config SHA256:"
     )
 
-    print(
-        v1_hash
-    )
+    print(v1_hash)
 
     print(
         "\nDownloading market data..."
@@ -2942,10 +2841,6 @@ def main():
         prices.index.max()
     )
 
-    # --------------------------------------------------------
-    # Candidate selection using only each fold's past data.
-    # --------------------------------------------------------
-
     (
         training_scores,
         selections,
@@ -2997,13 +2892,6 @@ def main():
             index=False
         )
     )
-
-    # --------------------------------------------------------
-    # Out-of-sample cost sensitivity.
-    #
-    # Model selections are FIXED from the 15bp training runs.
-    # We do not reselect models separately for each cost case.
-    # --------------------------------------------------------
 
     cost_rows = []
 
@@ -3085,11 +2973,6 @@ def main():
             **dynamic_metrics,
         })
 
-        # ----------------------------------------------------
-        # Fixed trend baseline using the corrected v2
-        # methodology.
-        # ----------------------------------------------------
-
         fixed = (
             run_candidate_backtest(
                 prices=
@@ -3150,13 +3033,8 @@ def main():
 
         if cost_bps == 15:
 
-            dynamic_base = (
-                dynamic
-            )
-
-            fixed_base = (
-                fixed
-            )
+            dynamic_base = dynamic
+            fixed_base = fixed
 
     cost_table = pd.DataFrame(
         cost_rows
@@ -3167,10 +3045,6 @@ def main():
         / "oos_cost_sensitivity.csv",
         index=False,
     )
-
-    # --------------------------------------------------------
-    # Save base 15bp results.
-    # --------------------------------------------------------
 
     dynamic_base[
         "history"
@@ -3208,10 +3082,6 @@ def main():
                 "history"
             ],
     )
-
-    # --------------------------------------------------------
-    # Latest simulated holdings.
-    # --------------------------------------------------------
 
     latest_weights = (
         dynamic_base[
@@ -3277,8 +3147,8 @@ def main():
 
         "cash_proxy":
             (
-                "Official Bank Rate "
-                "minus 50 bps, "
+                "Frozen official Bank Rate "
+                "history minus 50 bps, "
                 "floored at zero"
             ),
 
@@ -3290,9 +3160,7 @@ def main():
             ),
 
         "candidate_count":
-            len(
-                CANDIDATES
-            ),
+            len(CANDIDATES),
 
         "oos_metrics_15bps":
             dynamic_metrics_15,
@@ -3403,16 +3271,19 @@ def main():
     )
 
     print(
-        "These walk-forward periods are "
-        "methodologically out-of-sample "
-        "inside the program, but the broader "
-        "research process has already viewed "
-        "2010-2026 data."
+        "Walk-forward folds prevent each "
+        "training period from seeing its "
+        "later test period."
     )
 
     print(
-        "The genuinely unseen forward test "
-        "begins from the current research date."
+        "However, the broader research process "
+        "has already examined 2010-2026 data."
+    )
+
+    print(
+        "The genuinely unseen forward record "
+        "begins from September 2026 onward."
     )
 
     print(
