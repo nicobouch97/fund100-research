@@ -1,0 +1,95 @@
+strategy:
+  name: "Fund-100 Residual Trend Ensemble"
+  version: "1.0.0"
+
+data:
+  data_start: "2008-03-26"
+  evaluation_start: "2010-01-04"
+  end: null
+
+  base_currency: "GBP"
+
+  fx_ticker: "GBPUSD=X"
+  benchmark_ticker: "ACWI"
+
+  universe:
+    # Broad equity
+    - SPY
+    - IWM
+    - EFA
+    - EEM
+    - VNQ
+
+    # Equity sectors
+    - XLK
+    - XLF
+    - XLI
+    - XLV
+    - XLP
+    - XLY
+    - XLE
+    - XLU
+
+    # Fixed income
+    - TLT
+    - IEF
+    - SHY
+    - TIP
+    - LQD
+
+    # Real assets
+    - GLD
+    - DBC
+
+signals:
+  trend_horizons:
+    - 63
+    - 126
+    - 252
+
+  trend_weight: 0.45
+  residual_weight: 0.35
+  breakout_weight: 0.20
+
+  volatility_lookback: 63
+
+  residual_regression_lookback: 252
+  residual_momentum_window: 126
+
+  moving_average_window: 200
+  high_window: 252
+
+portfolio:
+  # Python weekday:
+  # Monday=0, Tuesday=1, Wednesday=2
+  rebalance_weekday: 2
+
+  max_positions: 5
+  keep_rank: 8
+
+  max_asset_weight: 0.25
+
+  normal_max_gross: 1.00
+  panic_max_gross: 0.50
+
+  annual_volatility_target: 0.12
+  covariance_window: 63
+
+  minimum_trade_fraction_nav: 0.05
+
+panic_regime:
+  market_sma_window: 200
+  realised_volatility_window: 20
+  volatility_percentile_window: 252
+  volatility_percentile: 0.80
+
+costs:
+  base_one_way_bps: 15
+
+  scenarios_bps:
+    - 5
+    - 15
+    - 35
+
+account:
+  starting_nav_gbp: 100.00
