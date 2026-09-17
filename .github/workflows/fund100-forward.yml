@@ -1,0 +1,202 @@
+name: Fund-100 Forward Lab
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    # 10:15 UTC Tuesday-Saturday.
+    #
+    # Tuesday morning processes Monday's completed session,
+    # Wednesday processes Tuesday, etc.
+    # Saturday morning processes Friday.
+    #
+    # US-market holidays simply produce no new ledger row.
+    - cron: "15 10 * * 2-6"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-forward-lab
+  cancel-in-progress: false
+
+jobs:
+  forward-lab:
+    name: Run Fund-100 Forward Lab
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 30
+
+    steps:
+      # ------------------------------------------------------
+      # 1. CHECK OUT THE FROZEN REPOSITORY
+      # ------------------------------------------------------
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # ------------------------------------------------------
+      # 2. SET UP A FIXED PYTHON VERSION
+      # ------------------------------------------------------
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      # ------------------------------------------------------
+      # 3. INSTALL DEPENDENCIES
+      # ------------------------------------------------------
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # ------------------------------------------------------
+      # 4. VERIFY THAT THE FROZEN BASELINE EXISTS
+      # ------------------------------------------------------
+
+      - name: Verify forward baseline files
+        run: |
+          set -euo pipefail
+
+          test -f forward_outputs/forward_ledger.csv
+          test -f forward_outputs/forward_manifest.json
+          test -f forward_outputs/forward_state.json
+          test -f forward_outputs/latest_forward_report.json
+
+          echo "Forward baseline files found."
+
+      # ------------------------------------------------------
+      # 5. RUN EXISTING TESTS
+      # ------------------------------------------------------
+
+      - name: Run Fund-100 tests
+        run: |
+          set -euo pipefail
+          pytest -q
+
+      # ------------------------------------------------------
+      # 6. RUN THE FROZEN FORWARD ENGINE
+      #
+      # fund100_forward.py itself:
+      #
+      # - refuses incomplete same-day data
+      # - validates the ledger hash chain
+      # - checks historical market snapshots
+      # - restores frozen portfolio states
+      # - appends only previously unseen completed sessions
+      # ------------------------------------------------------
+
+      - name: Run Forward Lab
+        run: |
+          set -euo pipefail
+          python fund100_forward.py
+
+      # ------------------------------------------------------
+      # 7. CHECK WHETHER THE ACTUAL LEDGER CHANGED
+      #
+      # forward_state.json and latest_forward_report.json
+      # contain timestamps and can change on every run.
+      #
+      # We only want a GitHub commit when a genuinely new
+      # market session was appended to forward_ledger.csv.
+      # ------------------------------------------------------
+
+      - name: Check for new forward observations
+        id: ledger_check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- forward_outputs/forward_ledger.csv; then
+
+            echo "No new completed trading session."
+            echo "ledger_changed=false" >> "$GITHUB_OUTPUT"
+
+          else
+
+            echo "New forward ledger observation detected."
+            echo "ledger_changed=true" >> "$GITHUB_OUTPUT"
+
+          fi
+
+      # ------------------------------------------------------
+      # 8. SHOW THE CHANGES BEFORE COMMITTING
+      # ------------------------------------------------------
+
+      - name: Show forward changes
+        if: steps.ledger_check.outputs.ledger_changed == 'true'
+        run: |
+          set -euo pipefail
+
+          echo "Files changed by this forward run:"
+          git status --short
+
+          echo
+          echo "Ledger diff summary:"
+          git diff --stat -- forward_outputs/
+
+      # ------------------------------------------------------
+      # 9. COMMIT ONLY THE FORWARD RECORD
+      #
+      # We deliberately do NOT use:
+      #
+      #     git add .
+      #
+      # Only these specific research-state files may be
+      # automatically written back to GitHub.
+      # ------------------------------------------------------
+
+      - name: Commit new forward observation
+        if: steps.ledger_check.outputs.ledger_changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "fund100-forward-bot"
+          git config user.email "fund100-forward-bot@users.noreply.github.com"
+
+          git add forward_outputs/forward_ledger.csv
+          git add forward_outputs/forward_manifest.json
+          git add forward_outputs/forward_state.json
+          git add forward_outputs/latest_forward_report.json
+
+          if git diff --cached --quiet; then
+
+            echo "Nothing staged. No commit required."
+            exit 0
+
+          fi
+
+          RUN_DATE="$(date -u +'%Y-%m-%d')"
+
+          git commit \
+            -m "Forward Lab update ${RUN_DATE}"
+
+          git push origin HEAD:main
+
+      # ------------------------------------------------------
+      # 10. FINAL STATUS
+      # ------------------------------------------------------
+
+      - name: Final status
+        run: |
+          echo "========================================"
+          echo "FUND-100 AUTOMATED RUN COMPLETE"
+          echo "========================================"
+
+          if [ "${{ steps.ledger_check.outputs.ledger_changed }}" = "true" ]; then
+            echo "A new completed market session was appended."
+            echo "The updated forward record was committed."
+          else
+            echo "No new completed market session was available."
+            echo "The permanent ledger was left unchanged."
+          fi
