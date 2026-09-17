@@ -191,8 +191,7 @@ def load_boe_cash_returns(
     haircut_bps: float = 50.0,
 ) -> pd.Series:
     """
-    Uses the frozen Bank of England Bank Rate history
-    embedded above.
+    Uses the frozen Bank of England Bank Rate history.
 
     Cash earns:
 
@@ -235,17 +234,21 @@ def load_boe_cash_returns(
     )
 
     if trading_index.tz is not None:
-        trading_index = trading_index.tz_convert(
-            None
-        )
+        trading_index = trading_index.tz_convert(None)
 
     start_date = trading_index.min()
     end_date = trading_index.max()
 
-    if rate_table["date"].min() > start_date:
+    # Make sure there is at least one known rate
+    # on or before the first market-data date.
+    prior_rates = rate_table[
+        rate_table["date"] <= start_date
+    ]
+
+    if prior_rates.empty:
         raise RuntimeError(
             "Frozen Bank Rate history does not "
-            "begin early enough."
+            "begin early enough for the market data."
         )
 
     calendar_index = pd.date_range(
@@ -254,17 +257,44 @@ def load_boe_cash_returns(
         freq="D",
     )
 
-    annual_rate = (
+    # --------------------------------------------------------
+    # Important fix:
+    #
+    # Combine Bank Rate change dates with every calendar day
+    # BEFORE forward-filling. This preserves the last official
+    # rate that was already in effect when our market history
+    # begins.
+    # --------------------------------------------------------
+
+    rate_changes = (
         rate_table
-        .set_index("date")["rate_percent"]
-        .reindex(calendar_index)
+        .set_index("date")[
+            "rate_percent"
+        ]
+    )
+
+    combined_index = (
+        rate_changes.index
+        .union(calendar_index)
+        .sort_values()
+    )
+
+    annual_rate = (
+        rate_changes
+        .reindex(combined_index)
         .ffill()
+        .reindex(calendar_index)
         / 100.0
     )
 
     if annual_rate.isna().any():
+        missing_dates = annual_rate[
+            annual_rate.isna()
+        ].index
+
         raise RuntimeError(
-            "Missing Bank Rate observations."
+            "Missing Bank Rate observations. "
+            f"First missing date: {missing_dates[0]}"
         )
 
     annual_cash_rate = (
@@ -279,7 +309,9 @@ def load_boe_cash_returns(
         + annual_cash_rate / 365.25
     )
 
-    cumulative_growth = daily_factor.cumprod()
+    cumulative_growth = (
+        daily_factor.cumprod()
+    )
 
     cash_returns = pd.Series(
         0.0,
@@ -288,16 +320,20 @@ def load_boe_cash_returns(
         name="cash_return",
     )
 
+    # Accrue interest between trading sessions,
+    # including weekends and holidays.
     for i in range(
         1,
         len(trading_index),
     ):
 
-        previous_date = trading_index[
-            i - 1
-        ]
+        previous_date = (
+            trading_index[i - 1]
+        )
 
-        current_date = trading_index[i]
+        current_date = (
+            trading_index[i]
+        )
 
         cash_returns.iloc[i] = (
             cumulative_growth.loc[
@@ -317,6 +353,11 @@ def load_boe_cash_returns(
     )
 
     print(
+        "Rate in force at market-data start: "
+        f"{annual_rate.iloc[0] * 100:.2f}%"
+    )
+
+    print(
         "Latest frozen Bank Rate: "
         f"{rate_table.iloc[-1]['rate_percent']:.2f}%"
     )
@@ -327,7 +368,6 @@ def load_boe_cash_returns(
     )
 
     return cash_returns
-
 
 # ============================================================
 # CANDIDATE TREND SIGNALS
