@@ -1,0 +1,124 @@
+{
+  "protocol_version": "1.0",
+  "historical_cutoff": "2026-09-16",
+  "paper_start_nav": 100.0,
+  "one_way_cost_bps": 15.0,
+  "v1_config_hash": "40ec767a1778c8e66f47a43193c2c3e37bd0833ef1597a17add8e822dbf3e5c0",
+  "v4_historical_research_hash": "64f9ab20d459ca51acabaef5016b78858d8e58f16ef9cdd0040d22d7856e425c",
+  "models": {
+    "V3": {
+      "equity_universe": [
+        "SPY",
+        "IWM",
+        "EFA",
+        "EEM",
+        "VNQ",
+        "XLK",
+        "XLF",
+        "XLI",
+        "XLV",
+        "XLP",
+        "XLY",
+        "XLE",
+        "XLU"
+      ],
+      "momentum_horizons": [
+        63,
+        126,
+        252
+      ],
+      "relative_trend_filter_window": 200,
+      "max_satellites": 3,
+      "keep_rank": 6,
+      "max_satellite_position": 0.125,
+      "minimum_trade_fraction": 0.025,
+      "rebalance_weeks": 4,
+      "signal_weekday": 2,
+      "execution": "Close signal; execute after next completed session return",
+      "model": "Relative momentum plus trend-quality overlay",
+      "momentum_weight": 0.7,
+      "quality_weight": 0.3,
+      "quality_window": 126,
+      "overlay_cap": 0.25
+    },
+    "V4": {
+      "equity_universe": [
+        "SPY",
+        "IWM",
+        "EFA",
+        "EEM",
+        "VNQ",
+        "XLK",
+        "XLF",
+        "XLI",
+        "XLV",
+        "XLP",
+        "XLY",
+        "XLE",
+        "XLU"
+      ],
+      "momentum_horizons": [
+        63,
+        126,
+        252
+      ],
+      "relative_trend_filter_window": 200,
+      "max_satellites": 3,
+      "keep_rank": 6,
+      "max_satellite_position": 0.125,
+      "minimum_trade_fraction": 0.025,
+      "rebalance_weeks": 4,
+      "signal_weekday": 2,
+      "execution": "Close signal; execute after next completed session return",
+      "model": "Dispersion-conditioned relative-momentum overlay",
+      "dispersion_lookback": 504,
+      "medium_quantile": 0.5,
+      "high_quantile": 0.75,
+      "low_overlay": 0.1,
+      "medium_overlay": 0.175,
+      "high_overlay": 0.25,
+      "historical_research_hash": "64f9ab20d459ca51acabaef5016b78858d8e58f16ef9cdd0040d22d7856e425c"
+    },
+    "RM25": {
+      "equity_universe": [
+        "SPY",
+        "IWM",
+        "EFA",
+        "EEM",
+        "VNQ",
+        "XLK",
+        "XLF",
+        "XLI",
+        "XLV",
+        "XLP",
+        "XLY",
+        "XLE",
+        "XLU"
+      ],
+      "momentum_horizons": [
+        63,
+        126,
+        252
+      ],
+      "relative_trend_filter_window": 200,
+      "max_satellites": 3,
+      "keep_rank": 6,
+      "max_satellite_position": 0.125,
+      "minimum_trade_fraction": 0.025,
+      "rebalance_weeks": 4,
+      "signal_weekday": 2,
+      "execution": "Close signal; execute after next completed session return",
+      "model": "Fixed 25 percent relative-momentum overlay",
+      "overlay_cap": 0.25
+    }
+  },
+  "strategy_hashes": {
+    "V3": "5328cecd88d1b39cc3c978a3c80834f8ba060199129cdff2f8b56e2b93fa1c05",
+    "V4": "a4c08098b3eefbfc9651d779a27997e0a80ae6a482063c2ff37a63f6a39609ab",
+    "RM25": "ddc403fa8f1e6e4a8f8056128f0f4d7b85b2369678a66284c4227ce484770e7e"
+  },
+  "forward_rule": "Existing ledger observations must never be rewritten.",
+  "data_rule": "Only daily market observations strictly before the current UTC calendar date are accepted.",
+  "protocol_hash": "d8e280bc86a53f61d219bfcc1ecd7b88ff4b968ab4efa90d36c0ae43fcc9354b",
+  "created_utc": "2026-09-17T15:21:08.105196+00:00"
+}
