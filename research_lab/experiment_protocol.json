@@ -1,0 +1,19 @@
+{
+  "protocol_version": "1.0",
+  "historical_cutoff": "2026-09-16",
+  "evaluation_start": "2014-01-01",
+  "benchmark": "ACWI ETF GBP-translated proxy from fund100.py",
+  "base_cost_bps": 15,
+  "cost_scenarios_bps": [5, 15, 35],
+  "max_experiments_per_run": 1,
+  "rules": {
+    "specifications_are_frozen_before_testing": true,
+    "completed_experiments_must_never_be_deleted": true,
+    "completed_experiments_must_never_be_rerun_under_the_same_id": true,
+    "historical_data_revision_causes_failure": true,
+    "research_survivor_is_not_alpha_proof": true,
+    "no_automatic_promotion_to_forward_fund": true,
+    "no_broker_connection": true,
+    "no_live_trading": true
+  }
+}
