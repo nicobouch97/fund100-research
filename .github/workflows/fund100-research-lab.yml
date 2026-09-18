@@ -1,0 +1,141 @@
+name: Fund-100 Research Lab
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    # Weekly research run.
+    #
+    # Sunday morning UTC.
+    # Only pre-registered experiments can run.
+    - cron: "23 9 * * 0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-research-lab
+  cancel-in-progress: false
+
+jobs:
+  research-lab:
+    name: Run Fund-100 Research Lab
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify Research Lab files
+        run: |
+          set -euo pipefail
+
+          test -f research_lab/experiment_protocol.json
+          test -f research_lab/experiment_registry.csv
+          test -d research_lab/challengers
+          test -f fund100_experiment_runner.py
+
+          echo "Research Lab files found."
+
+      - name: Run Fund-100 tests
+        run: |
+          set -euo pipefail
+          pytest -q
+
+      - name: Run Research Lab
+        run: |
+          set -euo pipefail
+          python fund100_experiment_runner.py
+
+      - name: Check for completed experiment
+        id: research_check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- research_lab/experiment_registry.csv; then
+
+            echo "No new experiment completed."
+            echo "research_changed=false" >> "$GITHUB_OUTPUT"
+
+          else
+
+            echo "A new experiment completed."
+            echo "research_changed=true" >> "$GITHUB_OUTPUT"
+
+          fi
+
+      - name: Show research changes
+        if: steps.research_check.outputs.research_changed == 'true'
+        run: |
+          set -euo pipefail
+
+          git status --short
+
+          echo
+          echo "Research diff summary:"
+          git diff --stat -- research_lab/
+
+      - name: Commit research record
+        if: steps.research_check.outputs.research_changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "fund100-research-bot"
+          git config user.email "fund100-research-bot@users.noreply.github.com"
+
+          git add research_lab/experiment_registry.csv
+          git add research_lab/historical_data_manifest.json
+          git add research_lab/latest_research_report.json
+          git add research_lab/results/
+
+          if git diff --cached --quiet; then
+
+            echo "Nothing staged."
+            exit 0
+
+          fi
+
+          RUN_DATE="$(date -u +'%Y-%m-%d')"
+
+          git commit \
+            -m "Research Lab experiment ${RUN_DATE}"
+
+          git push origin HEAD:main
+
+      - name: Final status
+        run: |
+          echo "========================================"
+          echo "FUND-100 RESEARCH LAB COMPLETE"
+          echo "========================================"
+
+          if [ "${{ steps.research_check.outputs.research_changed }}" = "true" ]; then
+
+            echo "A pre-registered experiment completed."
+            echo "Its result was permanently recorded."
+
+          else
+
+            echo "No pending registered experiment ran."
+            echo "The permanent registry was unchanged."
+
+          fi
