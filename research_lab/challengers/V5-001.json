@@ -1,0 +1,20 @@
+{
+  "experiment_id": "V5-001",
+  "created_date": "2026-09-18",
+  "hypothesis": "Keeping the RM25 benchmark-relative momentum signal unchanged while doubling the rebalance interval from 4 weeks to 8 weeks will reduce turnover enough to improve net benchmark-relative performance after costs while retaining most of the gross overlay effect.",
+  "control": {
+    "name": "RM25_CONTROL",
+    "rebalance_weeks": 4
+  },
+  "candidate": {
+    "name": "V5_COST_AWARE_8W",
+    "rebalance_weeks": 8
+  },
+  "acceptance_criteria": {
+    "minimum_turnover_reduction_fraction": 0.20,
+    "minimum_gross_overlay_retention_fraction": 0.75,
+    "minimum_base_cost_excess_cagr_improvement": 0.0,
+    "minimum_35bps_excess_cagr_improvement": 0.0,
+    "maximum_drawdown_worsening": 0.02
+  }
+}
