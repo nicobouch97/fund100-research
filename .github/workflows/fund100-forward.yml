@@ -4,14 +4,11 @@ on:
   workflow_dispatch:
 
   schedule:
-    # 10:15 UTC Tuesday-Saturday.
-    #
-    # Tuesday morning processes Monday's completed session,
-    # Wednesday processes Tuesday, etc.
-    # Saturday morning processes Friday.
-    #
-    # US-market holidays simply produce no new ledger row.
-    - cron: "15 10 * * 2-6"
+    # Two automatic attempts Tuesday-Saturday.
+    # Repeated runs are safe because completed dates
+    # already present in the ledger are not appended again.
+    - cron: "37 10 * * 2-6"
+    - cron: "37 13 * * 2-6"
 
 permissions:
   contents: write
@@ -29,18 +26,10 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      # ------------------------------------------------------
-      # 1. CHECK OUT THE FROZEN REPOSITORY
-      # ------------------------------------------------------
-
       - name: Check out repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      # ------------------------------------------------------
-      # 2. SET UP A FIXED PYTHON VERSION
-      # ------------------------------------------------------
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -49,114 +38,75 @@ jobs:
           cache: "pip"
           cache-dependency-path: requirements.txt
 
-      # ------------------------------------------------------
-      # 3. INSTALL DEPENDENCIES
-      # ------------------------------------------------------
-
       - name: Install dependencies
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ------------------------------------------------------
-      # 4. VERIFY THAT THE FROZEN BASELINE EXISTS
-      # ------------------------------------------------------
-
-      - name: Verify forward baseline files
+      - name: Verify Forward Lab files
         run: |
           set -euo pipefail
+
+          test -f fund100_forward.py
+          test -f fund100_forward_v1_1.py
 
           test -f forward_outputs/forward_ledger.csv
           test -f forward_outputs/forward_manifest.json
           test -f forward_outputs/forward_state.json
           test -f forward_outputs/latest_forward_report.json
 
-          echo "Forward baseline files found."
-
-      # ------------------------------------------------------
-      # 5. RUN EXISTING TESTS
-      # ------------------------------------------------------
+          echo "Forward Lab files found."
 
       - name: Run Fund-100 tests
         run: |
           set -euo pipefail
           pytest -q
 
-      # ------------------------------------------------------
-      # 6. RUN THE FROZEN FORWARD ENGINE
-      #
-      # fund100_forward.py itself:
-      #
-      # - refuses incomplete same-day data
-      # - validates the ledger hash chain
-      # - checks historical market snapshots
-      # - restores frozen portfolio states
-      # - appends only previously unseen completed sessions
-      # ------------------------------------------------------
-
-      - name: Run Forward Lab
+      - name: Run Forward Lab v1.1
         run: |
           set -euo pipefail
-          python fund100_forward.py
+          python fund100_forward_v1_1.py
 
-      # ------------------------------------------------------
-      # 7. CHECK WHETHER THE ACTUAL LEDGER CHANGED
-      #
-      # forward_state.json and latest_forward_report.json
-      # contain timestamps and can change on every run.
-      #
-      # We only want a GitHub commit when a genuinely new
-      # market session was appended to forward_ledger.csv.
-      # ------------------------------------------------------
-
-      - name: Check for new forward observations
-        id: ledger_check
+      - name: Check for permanent Forward Lab changes
+        id: forward_check
         shell: bash
         run: |
           set -euo pipefail
 
-          if git diff --quiet -- forward_outputs/forward_ledger.csv; then
+          CHANGES="$(git status --porcelain -- \
+            forward_outputs/forward_ledger.csv \
+            forward_outputs/forward_manifest.json \
+            forward_outputs/forward_state.json \
+            forward_outputs/latest_forward_report.json \
+            forward_outputs/market_revision_log.csv)"
 
-            echo "No new completed trading session."
-            echo "ledger_changed=false" >> "$GITHUB_OUTPUT"
+          if [ -z "$CHANGES" ]; then
+
+            echo "No permanent Forward Lab changes."
+            echo "forward_changed=false" >> "$GITHUB_OUTPUT"
 
           else
 
-            echo "New forward ledger observation detected."
-            echo "ledger_changed=true" >> "$GITHUB_OUTPUT"
+            echo "Forward Lab state changed:"
+            echo "$CHANGES"
+            echo "forward_changed=true" >> "$GITHUB_OUTPUT"
 
           fi
 
-      # ------------------------------------------------------
-      # 8. SHOW THE CHANGES BEFORE COMMITTING
-      # ------------------------------------------------------
-
-      - name: Show forward changes
-        if: steps.ledger_check.outputs.ledger_changed == 'true'
+      - name: Show Forward Lab changes
+        if: steps.forward_check.outputs.forward_changed == 'true'
         run: |
           set -euo pipefail
 
-          echo "Files changed by this forward run:"
           git status --short
 
           echo
-          echo "Ledger diff summary:"
-          git diff --stat -- forward_outputs/
+          echo "Forward Lab diff summary:"
+          git diff --stat -- forward_outputs/ || true
 
-      # ------------------------------------------------------
-      # 9. COMMIT ONLY THE FORWARD RECORD
-      #
-      # We deliberately do NOT use:
-      #
-      #     git add .
-      #
-      # Only these specific research-state files may be
-      # automatically written back to GitHub.
-      # ------------------------------------------------------
-
-      - name: Commit new forward observation
-        if: steps.ledger_check.outputs.ledger_changed == 'true'
+      - name: Commit Forward Lab state
+        if: steps.forward_check.outputs.forward_changed == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -169,34 +119,30 @@ jobs:
           git add forward_outputs/forward_state.json
           git add forward_outputs/latest_forward_report.json
 
+          if [ -f forward_outputs/market_revision_log.csv ]; then
+            git add forward_outputs/market_revision_log.csv
+          fi
+
           if git diff --cached --quiet; then
-
-            echo "Nothing staged. No commit required."
+            echo "Nothing staged."
             exit 0
-
           fi
 
           RUN_DATE="$(date -u +'%Y-%m-%d')"
 
           git commit \
-            -m "Forward Lab update ${RUN_DATE}"
+            -m "Forward Lab v1.1 update ${RUN_DATE}"
 
           git push origin HEAD:main
-
-      # ------------------------------------------------------
-      # 10. FINAL STATUS
-      # ------------------------------------------------------
 
       - name: Final status
         run: |
           echo "========================================"
-          echo "FUND-100 AUTOMATED RUN COMPLETE"
+          echo "FUND-100 FORWARD LAB v1.1 COMPLETE"
           echo "========================================"
 
-          if [ "${{ steps.ledger_check.outputs.ledger_changed }}" = "true" ]; then
-            echo "A new completed market session was appended."
-            echo "The updated forward record was committed."
+          if [ "${{ steps.forward_check.outputs.forward_changed }}" = "true" ]; then
+            echo "Forward Lab state was updated and committed."
           else
-            echo "No new completed market session was available."
-            echo "The permanent ledger was left unchanged."
+            echo "No permanent state change was required."
           fi
