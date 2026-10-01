@@ -50,6 +50,7 @@ jobs:
 
           test -f fund100_experiment_runner.py
           test -f fund100_experiment_runner_v1_1.py
+          test -f fund100_experiment_runner_v1_2.py
 
           echo "Research Lab files found."
 
@@ -58,10 +59,10 @@ jobs:
           set -euo pipefail
           pytest -q
 
-      - name: Run Research Lab v1.1
+      - name: Run Research Lab v1.2
         run: |
           set -euo pipefail
-          python fund100_experiment_runner_v1_1.py
+          python fund100_experiment_runner_v1_2.py
 
       - name: Check for completed experiment
         id: research_check
@@ -70,15 +71,11 @@ jobs:
           set -euo pipefail
 
           if git diff --quiet -- research_lab/experiment_registry.csv; then
-
             echo "No new experiment completed."
             echo "research_changed=false" >> "$GITHUB_OUTPUT"
-
           else
-
             echo "A new experiment completed."
             echo "research_changed=true" >> "$GITHUB_OUTPUT"
-
           fi
 
       - name: Show research changes
@@ -118,7 +115,7 @@ jobs:
       - name: Final status
         run: |
           echo "========================================"
-          echo "FUND-100 RESEARCH LAB v1.1 COMPLETE"
+          echo "FUND-100 RESEARCH LAB v1.2 COMPLETE"
           echo "========================================"
 
           if [ "${{ steps.research_check.outputs.research_changed }}" = "true" ]; then
