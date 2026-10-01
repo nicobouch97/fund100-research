@@ -4,10 +4,6 @@ on:
   workflow_dispatch:
 
   schedule:
-    # Weekly research run.
-    #
-    # Sunday morning UTC.
-    # Only pre-registered experiments can run.
     - cron: "23 9 * * 0"
 
 permissions:
@@ -51,7 +47,9 @@ jobs:
           test -f research_lab/experiment_protocol.json
           test -f research_lab/experiment_registry.csv
           test -d research_lab/challengers
+
           test -f fund100_experiment_runner.py
+          test -f fund100_experiment_runner_v1_1.py
 
           echo "Research Lab files found."
 
@@ -60,10 +58,10 @@ jobs:
           set -euo pipefail
           pytest -q
 
-      - name: Run Research Lab
+      - name: Run Research Lab v1.1
         run: |
           set -euo pipefail
-          python fund100_experiment_runner.py
+          python fund100_experiment_runner_v1_1.py
 
       - name: Check for completed experiment
         id: research_check
@@ -92,7 +90,7 @@ jobs:
 
           echo
           echo "Research diff summary:"
-          git diff --stat -- research_lab/
+          git diff --stat -- research_lab/ || true
 
       - name: Commit research record
         if: steps.research_check.outputs.research_changed == 'true'
@@ -103,16 +101,11 @@ jobs:
           git config user.name "fund100-research-bot"
           git config user.email "fund100-research-bot@users.noreply.github.com"
 
-          git add research_lab/experiment_registry.csv
-          git add research_lab/historical_data_manifest.json
-          git add research_lab/latest_research_report.json
-          git add research_lab/results/
+          git add research_lab/
 
           if git diff --cached --quiet; then
-
             echo "Nothing staged."
             exit 0
-
           fi
 
           RUN_DATE="$(date -u +'%Y-%m-%d')"
@@ -125,17 +118,13 @@ jobs:
       - name: Final status
         run: |
           echo "========================================"
-          echo "FUND-100 RESEARCH LAB COMPLETE"
+          echo "FUND-100 RESEARCH LAB v1.1 COMPLETE"
           echo "========================================"
 
           if [ "${{ steps.research_check.outputs.research_changed }}" = "true" ]; then
-
             echo "A pre-registered experiment completed."
             echo "Its result was permanently recorded."
-
           else
-
             echo "No pending registered experiment ran."
             echo "The permanent registry was unchanged."
-
           fi
