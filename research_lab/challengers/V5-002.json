@@ -1,0 +1,29 @@
+{
+  "experiment_id": "V5-002",
+  "created_date": "2026-10-01",
+  "hypothesis": "Keeping the RM25 benchmark-relative momentum signal on an 8-week strategic rebalance schedule while adding a mechanical emergency risk rebalance before the frozen hard drift limits are breached will materially reduce routine turnover while preserving the risk envelope and most of the benchmark-relative momentum overlay.",
+  "control": {
+    "name": "RM25_CONTROL",
+    "rebalance_weeks": 4,
+    "emergency_risk_rebalance": false
+  },
+  "candidate": {
+    "name": "V5_8W_WITH_RISK_BAND",
+    "rebalance_weeks": 8,
+    "emergency_risk_rebalance": true,
+    "emergency_total_trigger": 0.265,
+    "emergency_position_trigger": 0.14,
+    "hard_total_limit": 0.275,
+    "hard_position_limit": 0.15,
+    "emergency_target_total": 0.25,
+    "emergency_target_position": 0.125
+  },
+  "acceptance_criteria": {
+    "minimum_turnover_reduction_fraction": 0.20,
+    "minimum_gross_overlay_retention_fraction": 0.75,
+    "minimum_base_cost_excess_cagr_improvement": 0.0,
+    "minimum_35bps_excess_cagr_improvement": 0.0,
+    "maximum_drawdown_worsening": 0.02,
+    "zero_hard_risk_limit_breaches": true
+  }
+}
