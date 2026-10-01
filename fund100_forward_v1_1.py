@@ -14,29 +14,24 @@ from fund100 import load_config
 # FUND-100 FORWARD LAB v1.1
 # ============================================================
 #
-# Changes from v1.0:
+# v1.1 keeps the original append-only Fund-100 ledger intact
+# while allowing normal market-data-vendor revisions to be
+# audited instead of permanently stopping the system.
 #
-# 1. Existing ledger/hash-chain integrity remains mandatory.
+# Original ledger observations are NEVER rewritten.
 #
-# 2. Historical market-data revisions are audited rather
-#    than treated as fatal ledger corruption.
+# If several completed sessions must be reconstructed after
+# an outage, they are labelled:
 #
-# 3. If more than one previously unseen completed market
-#    session must be reconstructed in a single run, those
-#    observations are explicitly labelled:
+#     RECOVERED_AFTER_OUTAGE
 #
-#        RECOVERED_AFTER_OUTAGE
-#
-#    rather than pristine FORWARD observations.
-#
-# 4. Original ledger rows are NEVER rewritten.
+# rather than ordinary FORWARD observations.
 # ============================================================
 
 
 REVISION_LOG_PATH = Path(
     "forward_outputs/market_revision_log.csv"
 )
-
 
 REVISION_COLUMNS = [
     "detected_utc",
@@ -49,7 +44,7 @@ REVISION_COLUMNS = [
 
 
 # ============================================================
-# REVISION LOG
+# REVISION AUDIT LOG
 # ============================================================
 
 def record_market_revisions(
@@ -84,7 +79,7 @@ def record_market_revisions(
         ignore_index=True,
     )
 
-    # Do not record the same observed revision every day.
+    # Do not record the same vendor revision repeatedly.
     combined = combined.drop_duplicates(
         subset=[
             "date",
@@ -116,7 +111,7 @@ def validate_existing_ledger_v11(
     manifest: dict,
 ) -> list[dict]:
 
-    required = {
+    required_columns = {
         "date",
         "strategy",
         "row_type",
@@ -125,34 +120,30 @@ def validate_existing_ledger_v11(
         "payload_json",
     }
 
-    missing = (
-        required
+    missing_columns = (
+        required_columns
         - set(
             ledger.columns
         )
     )
 
-    if missing:
+    if missing_columns:
 
         raise RuntimeError(
             "Forward ledger is missing columns: "
-            f"{sorted(missing)}"
+            f"{sorted(missing_columns)}"
         )
 
-    duplicate_mask = (
-        ledger.duplicated(
-            subset=[
-                "date",
-                "strategy",
-            ]
-        )
-    )
-
-    if duplicate_mask.any():
+    if ledger.duplicated(
+        subset=[
+            "date",
+            "strategy",
+        ]
+    ).any():
 
         raise RuntimeError(
             "Duplicate strategy/date rows found "
-            "in forward ledger."
+            "in the Forward Lab ledger."
         )
 
     strategy_hashes = (
@@ -163,7 +154,11 @@ def validate_existing_ledger_v11(
 
     revisions = []
 
-    for model_name in base.MODES:
+    # ========================================================
+    # Validate each frozen model.
+    # ========================================================
+
+    for model_name in base.MODELS:
 
         subset = (
             ledger[
@@ -178,7 +173,8 @@ def validate_existing_ledger_v11(
         if subset.empty:
 
             raise RuntimeError(
-                f"Ledger missing model {model_name}."
+                f"Ledger missing model "
+                f"{model_name}."
             )
 
         subset[
@@ -194,14 +190,17 @@ def validate_existing_ledger_v11(
             .sort_values(
                 "date_dt"
             )
+            .reset_index(
+                drop=True
+            )
         )
 
-        first = (
+        first_row = (
             subset.iloc[0]
         )
 
         if (
-            first[
+            first_row[
                 "row_type"
             ]
             != "BASELINE"
@@ -214,7 +213,7 @@ def validate_existing_ledger_v11(
 
         if (
             pd.Timestamp(
-                first[
+                first_row[
                     "date"
                 ]
             )
@@ -223,12 +222,16 @@ def validate_existing_ledger_v11(
 
             raise RuntimeError(
                 f"{model_name} baseline date "
-                "does not match cutoff."
+                "does not match the historical cutoff."
             )
 
-        expected_previous = (
+        expected_previous_hash = (
             "GENESIS"
         )
+
+        # ====================================================
+        # Validate every immutable ledger row.
+        # ====================================================
 
         for _, row in subset.iterrows():
 
@@ -241,10 +244,6 @@ def validate_existing_ledger_v11(
             payload = json.loads(
                 payload_json
             )
-
-            # ------------------------------------------------
-            # IMMUTABLE STRATEGY CHECK
-            # ------------------------------------------------
 
             if (
                 payload[
@@ -267,13 +266,9 @@ def validate_existing_ledger_v11(
             ):
 
                 raise RuntimeError(
-                    f"{model_name} strategy hash changed. "
-                    "Refusing to rewrite history."
+                    f"{model_name} strategy definition "
+                    "has changed. Refusing to continue."
                 )
-
-            # ------------------------------------------------
-            # HASH-CHAIN CHECK
-            # ------------------------------------------------
 
             if (
                 str(
@@ -281,23 +276,23 @@ def validate_existing_ledger_v11(
                         "previous_chain_hash"
                     ]
                 )
-                != expected_previous
+                != expected_previous_hash
             ):
 
                 raise RuntimeError(
-                    f"{model_name} ledger chain broken."
+                    f"{model_name} ledger chain is broken."
                 )
 
-            expected_chain = (
+            expected_chain_hash = (
                 base.sha256_text(
-                    expected_previous
+                    expected_previous_hash
                     + "|"
                     + payload_json
                 )
             )
 
             if (
-                expected_chain
+                expected_chain_hash
                 != str(
                     row[
                         "chain_hash"
@@ -309,14 +304,13 @@ def validate_existing_ledger_v11(
                     f"{model_name} ledger hash mismatch."
                 )
 
-            # ------------------------------------------------
-            # MARKET DATA CHECK
+            # =================================================
+            # Market-data revision audit.
             #
-            # v1.0 treated any vendor revision as fatal.
-            #
-            # v1.1 preserves the original ledger and records
-            # the revision instead.
-            # ------------------------------------------------
+            # The permanent ledger remains unchanged even if
+            # today's Yahoo adjusted history differs from the
+            # historical snapshot originally recorded.
+            # =================================================
 
             date = pd.Timestamp(
                 payload[
@@ -327,18 +321,16 @@ def validate_existing_ledger_v11(
             if date not in prices.index:
 
                 raise RuntimeError(
-                    "A ledger date no longer exists "
-                    "in downloaded market data."
+                    "A date stored in the ledger "
+                    "no longer exists in downloaded data."
                 )
 
             current_market_hash = (
                 base.market_snapshot_hash(
                     date=
                         date,
-
                     prices=
                         prices,
-
                     benchmark=
                         benchmark,
                 )
@@ -383,17 +375,17 @@ def validate_existing_ledger_v11(
                         current_market_hash,
                 })
 
-            expected_previous = (
-                expected_chain
+            expected_previous_hash = (
+                expected_chain_hash
             )
 
-    # --------------------------------------------------------
-    # Every strategy must contain exactly the same dates.
-    # --------------------------------------------------------
+    # ========================================================
+    # Every frozen model must contain the same dates.
+    # ========================================================
 
     dates_by_model = {}
 
-    for model_name in base.MODES:
+    for model_name in base.MODELS:
 
         dates_by_model[
             model_name
@@ -409,11 +401,11 @@ def validate_existing_ledger_v11(
 
     reference_dates = (
         dates_by_model[
-            base.MODES[0]
+            base.MODELS[0]
         ]
     )
 
-    for model_name in base.MODES[1:]:
+    for model_name in base.MODELS[1:]:
 
         if (
             dates_by_model[
@@ -423,8 +415,8 @@ def validate_existing_ledger_v11(
         ):
 
             raise RuntimeError(
-                "Models do not contain identical "
-                "forward observation dates."
+                "Forward models do not contain "
+                "identical observation dates."
             )
 
     return revisions
@@ -450,15 +442,15 @@ def append_new_sessions_v11(
     )
 
     last_dates = {
-        model:
+        model_name:
             states[
-                model
+                model_name
             ][
                 "last_date"
             ]
 
-        for model
-        in base.MODES
+        for model_name
+        in base.MODELS
     }
 
     if len(
@@ -468,7 +460,7 @@ def append_new_sessions_v11(
     ) != 1:
 
         raise RuntimeError(
-            "Model states have different "
+            "Frozen models have different "
             "last processed dates."
         )
 
@@ -494,19 +486,8 @@ def append_new_sessions_v11(
             0,
         )
 
-    # --------------------------------------------------------
-    # RECOVERY SEMANTICS
-    #
-    # One newly completed session:
-    #     ordinary FORWARD observation.
-    #
-    # Multiple unseen sessions appearing in one run:
-    #     system was unavailable / behind.
-    #
-    # Those sessions are retained for accounting, but clearly
-    # distinguished from pristine daily forward observations.
-    # --------------------------------------------------------
-
+    # More than one missed session means the system is
+    # reconstructing observations after an outage.
     recovery_mode = (
         len(
             new_dates
@@ -514,17 +495,11 @@ def append_new_sessions_v11(
         > 1
     )
 
-    if recovery_mode:
-
-        row_type = (
-            "RECOVERED_AFTER_OUTAGE"
-        )
-
-    else:
-
-        row_type = (
-            "FORWARD"
-        )
+    row_type = (
+        "RECOVERED_AFTER_OUTAGE"
+        if recovery_mode
+        else "FORWARD"
+    )
 
     previous_hashes = (
         base.latest_chain_hashes(
@@ -534,22 +509,24 @@ def append_new_sessions_v11(
 
     new_rows = []
 
+    # ========================================================
+    # Process missing sessions chronologically.
+    # ========================================================
+
     for date in new_dates:
 
-        snapshot = (
+        market_hash = (
             base.market_snapshot_hash(
                 date=
                     date,
-
                 prices=
                     prices,
-
                 benchmark=
                     benchmark,
             )
         )
 
-        for model_name in base.MODES:
+        for model_name in base.MODELS:
 
             state = (
                 states[
@@ -561,19 +538,14 @@ def append_new_sessions_v11(
                 base.process_one_day(
                     state=
                         state,
-
                     date=
                         date,
-
                     signals=
                         signals,
-
                     model_name=
                         model_name,
-
                     cost_bps=
                         base.ONE_WAY_COST_BPS,
-
                     zero_market_return=
                         False,
                 )
@@ -583,37 +555,29 @@ def append_new_sessions_v11(
                 base.build_payload(
                     row_type=
                         row_type,
-
                     state=
                         state,
-
                     date=
                         date,
-
                     model_name=
                         model_name,
-
                     strategy_hash=
                         strategy_hashes[
                             model_name
                         ],
-
                     market_hash=
-                        snapshot,
-
+                        market_hash,
                     signals=
                         signals,
-
                     daily=
                         daily,
                 )
             )
 
-            row = (
+            ledger_row = (
                 base.payload_to_ledger_row(
                     payload=
                         payload,
-
                     previous_chain_hash=
                         previous_hashes[
                             model_name
@@ -624,58 +588,60 @@ def append_new_sessions_v11(
             previous_hashes[
                 model_name
             ] = (
-                row[
+                ledger_row[
                     "chain_hash"
                 ]
             )
 
             new_rows.append(
-                row
+                ledger_row
             )
 
-    if new_rows:
+    # ========================================================
+    # Append permanently.
+    # ========================================================
 
-        ledger = pd.concat(
-            [
-                ledger,
-                pd.DataFrame(
-                    new_rows
-                ),
-            ],
-            ignore_index=True,
-        )
+    ledger = pd.concat(
+        [
+            ledger,
+            pd.DataFrame(
+                new_rows
+            ),
+        ],
+        ignore_index=True,
+    )
 
+    ledger[
+        "date_dt"
+    ] = pd.to_datetime(
         ledger[
-            "date_dt"
-        ] = pd.to_datetime(
-            ledger[
-                "date"
+            "date"
+        ]
+    )
+
+    ledger = (
+        ledger
+        .sort_values(
+            [
+                "date_dt",
+                "strategy",
             ]
         )
-
-        ledger = (
-            ledger
-            .sort_values(
-                [
-                    "date_dt",
-                    "strategy",
-                ]
-            )
-            .drop(
-                columns=[
-                    "date_dt"
-                ]
-            )
-            .reset_index(
-                drop=True
-            )
+        .drop(
+            columns=[
+                "date_dt"
+            ]
         )
-
-        ledger.to_csv(
-            base.LEDGER_PATH,
-            index=False,
-            float_format="%.12g",
+        .reset_index(
+            drop=True
         )
+    )
+
+    ledger.to_csv(
+        base.LEDGER_PATH,
+        index=False,
+        float_format="%.12g",
+    )
 
     recovered_count = (
         len(
@@ -692,6 +658,82 @@ def append_new_sessions_v11(
             new_dates
         ),
         recovered_count,
+    )
+
+
+# ============================================================
+# REVISION SUMMARY
+# ============================================================
+
+def print_revision_summary(
+    revisions: list[dict],
+) -> None:
+
+    if not revisions:
+
+        print(
+            "No historical vendor revisions detected."
+        )
+
+        return
+
+    affected_dates = sorted(
+        {
+            item[
+                "date"
+            ]
+            for item
+            in revisions
+        }
+    )
+
+    print(
+        "\n============================================"
+    )
+
+    print(
+        "MARKET DATA REVISION WARNING"
+    )
+
+    print(
+        "============================================"
+    )
+
+    print(
+        "The market-data vendor changed historical "
+        "adjusted-price observations."
+    )
+
+    print(
+        "Original Fund-100 ledger rows were NOT modified."
+    )
+
+    print(
+        "\nAffected stored dates:"
+    )
+
+    for date in affected_dates:
+
+        print(
+            f"  - {date}"
+        )
+
+    print(
+        "\nRevision records detected:"
+    )
+
+    print(
+        len(
+            revisions
+        )
+    )
+
+    print(
+        "\nRevision audit file:"
+    )
+
+    print(
+        REVISION_LOG_PATH
     )
 
 
@@ -717,6 +759,10 @@ def main():
         f"\nHistorical research cutoff: "
         f"{base.HISTORICAL_CUTOFF.date()}"
     )
+
+    # ========================================================
+    # Frozen configuration
+    # ========================================================
 
     print(
         "\nLoading frozen configuration..."
@@ -744,6 +790,10 @@ def main():
             "Forward Lab refuses to continue."
         )
 
+    # ========================================================
+    # Original strategy manifest
+    # ========================================================
+
     manifest = (
         base.build_forward_manifest()
     )
@@ -762,10 +812,13 @@ def main():
         protocol_hash
     )
 
-    # Existing v1.0 manifest deliberately remains valid.
     base.ensure_forward_manifest(
         manifest
     )
+
+    # ========================================================
+    # Completed market data
+    # ========================================================
 
     print(
         "\nDownloading completed market data..."
@@ -792,42 +845,42 @@ def main():
         base.build_signals(
             prices=
                 prices,
-
             benchmark=
                 benchmark,
         )
     )
 
-    # --------------------------------------------------------
-    # LOAD OR INITIALISE
-    # --------------------------------------------------------
+    # ========================================================
+    # Existing append-only ledger
+    # ========================================================
 
     if not base.LEDGER_PATH.exists():
 
         print(
-            "\nNo existing forward ledger found."
+            "\nNo existing Forward Lab ledger found."
         )
 
         print(
-            "Creating baseline ledger..."
+            "Creating original baseline..."
         )
 
         (
             ledger,
             states,
-        ) = base.initialise_ledger(
-            signals=
-                signals,
-
-            prices=
-                prices,
-
-            benchmark=
-                benchmark,
-
-            manifest=
-                manifest,
+        ) = (
+            base.initialise_ledger(
+                signals=
+                    signals,
+                prices=
+                    prices,
+                benchmark=
+                    benchmark,
+                manifest=
+                    manifest,
+            )
         )
+
+        revisions = []
 
     else:
 
@@ -847,13 +900,10 @@ def main():
             validate_existing_ledger_v11(
                 ledger=
                     ledger,
-
                 prices=
                     prices,
-
                 benchmark=
                     benchmark,
-
                 manifest=
                     manifest,
             )
@@ -867,53 +917,9 @@ def main():
             "Ledger hash-chain integrity passed."
         )
 
-        if revisions:
-
-            unique_dates = sorted(
-                set(
-                    item[
-                        "date"
-                    ]
-                    for item
-                    in revisions
-                )
-            )
-
-            print(
-                "\nMARKET DATA REVISION WARNING"
-            )
-
-            print(
-                "The data vendor changed historical "
-                "adjusted-price observations."
-            )
-
-            print(
-                "Original Fund-100 ledger rows "
-                "were NOT modified."
-            )
-
-            print(
-                "Affected stored dates:"
-            )
-
-            for date in unique_dates:
-
-                print(
-                    f"  - {date}"
-                )
-
-            print(
-                f"Revision audit: "
-                f"{REVISION_LOG_PATH}"
-            )
-
-        else:
-
-            print(
-                "No historical vendor revisions "
-                "were detected."
-            )
+        print_revision_summary(
+            revisions
+        )
 
         states = (
             base.restore_states_from_ledger(
@@ -921,50 +927,44 @@ def main():
             )
         )
 
-    # --------------------------------------------------------
-    # APPEND NEW SESSIONS
-    # --------------------------------------------------------
+    # ========================================================
+    # Catch up any unseen completed sessions
+    # ========================================================
 
     (
         ledger,
         states,
         new_session_count,
         recovered_count,
-    ) = append_new_sessions_v11(
-        ledger=
-            ledger,
-
-        states=
-            states,
-
-        signals=
-            signals,
-
-        prices=
-            prices,
-
-        benchmark=
-            benchmark,
-
-        manifest=
-            manifest,
+    ) = (
+        append_new_sessions_v11(
+            ledger=
+                ledger,
+            states=
+                states,
+            signals=
+                signals,
+            prices=
+                prices,
+            benchmark=
+                benchmark,
+            manifest=
+                manifest,
+        )
     )
 
-    # --------------------------------------------------------
-    # VALIDATE AGAIN
-    # --------------------------------------------------------
+    # ========================================================
+    # Validate updated permanent ledger again
+    # ========================================================
 
     revisions_after = (
         validate_existing_ledger_v11(
             ledger=
                 ledger,
-
-        prices=
+            prices=
                 prices,
-
             benchmark=
                 benchmark,
-
             manifest=
                 manifest,
         )
@@ -974,14 +974,13 @@ def main():
         revisions_after
     )
 
-    # --------------------------------------------------------
-    # SAVE CURRENT STATE
-    # --------------------------------------------------------
+    # ========================================================
+    # Save latest state
+    # ========================================================
 
     base.save_state_snapshot(
         states=
             states,
-
         manifest=
             manifest,
     )
@@ -989,36 +988,36 @@ def main():
     base.build_latest_report(
         states=
             states,
-
         prices=
             prices,
-
         signals=
             signals,
-
         new_session_count=
             new_session_count,
-
         manifest=
             manifest,
     )
+
+    # ========================================================
+    # Existing Fund-100 report
+    # ========================================================
 
     base.print_report(
         states=
             states,
-
         prices=
             prices,
-
         signals=
             signals,
-
         manifest=
             manifest,
-
         new_session_count=
             new_session_count,
     )
+
+    # ========================================================
+    # v1.1 recovery report
+    # ========================================================
 
     print(
         "\n============================================"
@@ -1043,23 +1042,35 @@ def main():
         f"{recovered_count}"
     )
 
-    if recovered_count:
+    if recovered_count > 0:
 
         print(
-            "\nRecovered observations are retained "
-            "for accounting and diagnostics."
+            "\nRecovered sessions are retained for "
+            "portfolio accounting and diagnostics."
         )
 
         print(
-            "They should NOT be treated as pristine "
-            "strict-forward evidence because they "
-            "were reconstructed after the outage."
+            "They are not classified as pristine "
+            "strict-forward observations because "
+            "they were reconstructed after the outage."
         )
 
         print(
-            "\nStrict daily forward evidence resumes "
-            "with the next session processed normally "
-            "after this recovery run."
+            "\nThe next normally processed completed "
+            "session will again receive the FORWARD label."
+        )
+
+    elif new_session_count == 1:
+
+        print(
+            "\nOne normal FORWARD session was appended."
+        )
+
+    else:
+
+        print(
+            "\nNo new completed market sessions "
+            "were available."
         )
 
     print(
