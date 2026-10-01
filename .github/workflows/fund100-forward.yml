@@ -1,148 +1,1220 @@
-name: Fund-100 Forward Lab
+from __future__ import annotations
 
-on:
-  workflow_dispatch:
+import json
+from datetime import datetime, timezone
+from pathlib import Path
 
-  schedule:
-    # Two automatic attempts Tuesday-Saturday.
-    # Repeated runs are safe because completed dates
-    # already present in the ledger are not appended again.
-    - cron: "37 10 * * 2-6"
-    - cron: "37 13 * * 2-6"
+import pandas as pd
 
-permissions:
-  contents: write
+import fund100_forward as base
+from fund100 import load_config
 
-concurrency:
-  group: fund100-forward-lab
-  cancel-in-progress: false
 
-jobs:
-  forward-lab:
-    name: Run Fund-100 Forward Lab
+# ============================================================
+# FUND-100 FORWARD LAB v1.1
+# ============================================================
+#
+# PURPOSE
+#
+# Repair the Forward Lab after discovering that Yahoo can
+# revise historical adjusted-price data.
+#
+# IMPORTANT PRINCIPLES
+#
+# 1. Original ledger rows are NEVER rewritten.
+#
+# 2. The cryptographic ledger chain is still mandatory.
+#
+# 3. Historical vendor price revisions are recorded as
+#    warnings rather than treated as ledger corruption.
+#
+# 4. Missed sessions reconstructed after an outage are marked:
+#
+#       RECOVERED_AFTER_OUTAGE
+#
+#    rather than pristine FORWARD observations.
+#
+# 5. No broker connection.
+#    No real orders.
+#    Paper research only.
+# ============================================================
 
-    runs-on: ubuntu-latest
 
-    timeout-minutes: 30
+REVISION_LOG_PATH = Path(
+    "forward_outputs/market_revision_log.csv"
+)
 
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-          cache: "pip"
-          cache-dependency-path: requirements.txt
+REVISION_COLUMNS = [
+    "detected_utc",
+    "date",
+    "strategy",
+    "ledger_row_type",
+    "stored_market_hash",
+    "current_market_hash",
+]
 
-      - name: Install dependencies
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
 
-      - name: Verify Forward Lab files
-        run: |
-          set -euo pipefail
+# ============================================================
+# MARKET REVISION LOG
+# ============================================================
 
-          test -f fund100_forward.py
-          test -f fund100_forward_v1_1.py
+def record_market_revisions(
+    revisions: list[dict],
+) -> None:
 
-          test -f forward_outputs/forward_ledger.csv
-          test -f forward_outputs/forward_manifest.json
-          test -f forward_outputs/forward_state.json
-          test -f forward_outputs/latest_forward_report.json
+    if not revisions:
+        return
 
-          echo "Forward Lab files found."
+    incoming = pd.DataFrame(
+        revisions
+    )
 
-      - name: Run Fund-100 tests
-        run: |
-          set -euo pipefail
-          pytest -q
+    if REVISION_LOG_PATH.exists():
 
-      - name: Run Forward Lab v1.1
-        run: |
-          set -euo pipefail
-          python fund100_forward_v1_1.py
+        existing = pd.read_csv(
+            REVISION_LOG_PATH,
+            dtype=str,
+        )
 
-      - name: Check for permanent Forward Lab changes
-        id: forward_check
-        shell: bash
-        run: |
-          set -euo pipefail
+    else:
 
-          CHANGES="$(git status --porcelain -- \
-            forward_outputs/forward_ledger.csv \
-            forward_outputs/forward_manifest.json \
-            forward_outputs/forward_state.json \
-            forward_outputs/latest_forward_report.json \
-            forward_outputs/market_revision_log.csv)"
+        existing = pd.DataFrame(
+            columns=REVISION_COLUMNS
+        )
 
-          if [ -z "$CHANGES" ]; then
+    combined = pd.concat(
+        [
+            existing,
+            incoming,
+        ],
+        ignore_index=True,
+    )
 
-            echo "No permanent Forward Lab changes."
-            echo "forward_changed=false" >> "$GITHUB_OUTPUT"
+    # Avoid writing the same revision warning repeatedly
+    # on every future Forward Lab run.
+    combined = combined.drop_duplicates(
+        subset=[
+            "date",
+            "strategy",
+            "stored_market_hash",
+            "current_market_hash",
+        ],
+        keep="first",
+    )
 
-          else
+    combined = combined[
+        REVISION_COLUMNS
+    ]
 
-            echo "Forward Lab state changed:"
-            echo "$CHANGES"
-            echo "forward_changed=true" >> "$GITHUB_OUTPUT"
+    REVISION_LOG_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-          fi
+    combined.to_csv(
+        REVISION_LOG_PATH,
+        index=False,
+    )
 
-      - name: Show Forward Lab changes
-        if: steps.forward_check.outputs.forward_changed == 'true'
-        run: |
-          set -euo pipefail
 
-          git status --short
+# ============================================================
+# LEDGER VALIDATION v1.1
+# ============================================================
 
-          echo
-          echo "Forward Lab diff summary:"
-          git diff --stat -- forward_outputs/ || true
+def validate_existing_ledger_v11(
+    ledger: pd.DataFrame,
+    prices: pd.DataFrame,
+    benchmark: pd.Series,
+    manifest: dict,
+) -> list[dict]:
 
-      - name: Commit Forward Lab state
-        if: steps.forward_check.outputs.forward_changed == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
+    required = {
+        "date",
+        "strategy",
+        "row_type",
+        "chain_hash",
+        "previous_chain_hash",
+        "payload_json",
+    }
 
-          git config user.name "fund100-forward-bot"
-          git config user.email "fund100-forward-bot@users.noreply.github.com"
+    missing = (
+        required
+        - set(
+            ledger.columns
+        )
+    )
 
-          git add forward_outputs/forward_ledger.csv
-          git add forward_outputs/forward_manifest.json
-          git add forward_outputs/forward_state.json
-          git add forward_outputs/latest_forward_report.json
+    if missing:
 
-          if [ -f forward_outputs/market_revision_log.csv ]; then
-            git add forward_outputs/market_revision_log.csv
-          fi
+        raise RuntimeError(
+            "Forward ledger is missing columns: "
+            f"{sorted(missing)}"
+        )
 
-          if git diff --cached --quiet; then
-            echo "Nothing staged."
-            exit 0
-          fi
+    # --------------------------------------------------------
+    # No strategy/date combination may occur twice.
+    # --------------------------------------------------------
 
-          RUN_DATE="$(date -u +'%Y-%m-%d')"
+    duplicate_mask = (
+        ledger.duplicated(
+            subset=[
+                "date",
+                "strategy",
+            ]
+        )
+    )
 
-          git commit \
-            -m "Forward Lab v1.1 update ${RUN_DATE}"
+    if duplicate_mask.any():
 
-          git push origin HEAD:main
+        raise RuntimeError(
+            "Duplicate strategy/date rows found "
+            "in forward ledger."
+        )
 
-      - name: Final status
-        run: |
-          echo "========================================"
-          echo "FUND-100 FORWARD LAB v1.1 COMPLETE"
-          echo "========================================"
+    strategy_hashes = (
+        manifest[
+            "strategy_hashes"
+        ]
+    )
 
-          if [ "${{ steps.forward_check.outputs.forward_changed }}" = "true" ]; then
-            echo "Forward Lab state was updated and committed."
-          else
-            echo "No permanent state change was required."
-          fi
+    revisions = []
+
+    # --------------------------------------------------------
+    # Validate each frozen strategy separately.
+    # --------------------------------------------------------
+
+    for model_name in base.MODELS:
+
+        subset = (
+            ledger[
+                ledger[
+                    "strategy"
+                ]
+                == model_name
+            ]
+            .copy()
+        )
+
+        if subset.empty:
+
+            raise RuntimeError(
+                f"Ledger missing model "
+                f"{model_name}."
+            )
+
+        subset[
+            "date_dt"
+        ] = pd.to_datetime(
+            subset[
+                "date"
+            ]
+        )
+
+        subset = (
+            subset
+            .sort_values(
+                "date_dt"
+            )
+            .reset_index(
+                drop=True
+            )
+        )
+
+        first = (
+            subset.iloc[0]
+        )
+
+        # ----------------------------------------------------
+        # Every strategy must begin with the original
+        # 2026-09-16 baseline.
+        # ----------------------------------------------------
+
+        if (
+            first[
+                "row_type"
+            ]
+            != "BASELINE"
+        ):
+
+            raise RuntimeError(
+                f"{model_name} does not begin "
+                "with a BASELINE row."
+            )
+
+        if (
+            pd.Timestamp(
+                first[
+                    "date"
+                ]
+            )
+            != base.HISTORICAL_CUTOFF
+        ):
+
+            raise RuntimeError(
+                f"{model_name} baseline date "
+                "does not match the historical cutoff."
+            )
+
+        expected_previous = (
+            "GENESIS"
+        )
+
+        # ----------------------------------------------------
+        # Validate every historical ledger row.
+        # ----------------------------------------------------
+
+        for _, row in subset.iterrows():
+
+            payload_json = str(
+                row[
+                    "payload_json"
+                ]
+            )
+
+            payload = json.loads(
+                payload_json
+            )
+
+            # ------------------------------------------------
+            # Strategy identity must remain frozen.
+            # ------------------------------------------------
+
+            if (
+                payload[
+                    "strategy"
+                ]
+                != model_name
+            ):
+
+                raise RuntimeError(
+                    "Ledger payload strategy mismatch."
+                )
+
+            if (
+                payload[
+                    "strategy_hash"
+                ]
+                != strategy_hashes[
+                    model_name
+                ]
+            ):
+
+                raise RuntimeError(
+                    f"{model_name} strategy hash changed. "
+                    "Refusing to continue."
+                )
+
+            # ------------------------------------------------
+            # Cryptographic ledger chain must still match.
+            # ------------------------------------------------
+
+            if (
+                str(
+                    row[
+                        "previous_chain_hash"
+                    ]
+                )
+                != expected_previous
+            ):
+
+                raise RuntimeError(
+                    f"{model_name} ledger chain broken."
+                )
+
+            expected_chain = (
+                base.sha256_text(
+                    expected_previous
+                    + "|"
+                    + payload_json
+                )
+            )
+
+            if (
+                expected_chain
+                != str(
+                    row[
+                        "chain_hash"
+                    ]
+                )
+            ):
+
+                raise RuntimeError(
+                    f"{model_name} ledger hash mismatch."
+                )
+
+            # ------------------------------------------------
+            # MARKET DATA REVISION CHECK
+            #
+            # In v1.0 any difference between today's Yahoo
+            # adjusted history and the originally stored
+            # snapshot stopped the Forward Lab.
+            #
+            # In v1.1 the original stored observation remains
+            # immutable. We record the vendor revision but do
+            # NOT reinterpret it as ledger corruption.
+            # ------------------------------------------------
+
+            date = pd.Timestamp(
+                payload[
+                    "date"
+                ]
+            )
+
+            if date not in prices.index:
+
+                raise RuntimeError(
+                    "A date stored in the permanent ledger "
+                    "no longer exists in downloaded "
+                    "market data."
+                )
+
+            current_market_hash = (
+                base.market_snapshot_hash(
+                    date=
+                        date,
+
+                    prices=
+                        prices,
+
+                    benchmark=
+                        benchmark,
+                )
+            )
+
+            stored_market_hash = str(
+                payload[
+                    "market_snapshot_hash"
+                ]
+            )
+
+            if (
+                current_market_hash
+                != stored_market_hash
+            ):
+
+                revisions.append({
+                    "detected_utc":
+                        datetime.now(
+                            timezone.utc
+                        ).isoformat(),
+
+                    "date":
+                        str(
+                            date.date()
+                        ),
+
+                    "strategy":
+                        model_name,
+
+                    "ledger_row_type":
+                        str(
+                            payload[
+                                "row_type"
+                            ]
+                        ),
+
+                    "stored_market_hash":
+                        stored_market_hash,
+
+                    "current_market_hash":
+                        current_market_hash,
+                })
+
+            expected_previous = (
+                expected_chain
+            )
+
+    # --------------------------------------------------------
+    # Every model must contain exactly the same observation
+    # dates.
+    # --------------------------------------------------------
+
+    dates_by_model = {}
+
+    for model_name in base.MODELS:
+
+        dates_by_model[
+            model_name
+        ] = set(
+            ledger.loc[
+                ledger[
+                    "strategy"
+                ]
+                == model_name,
+                "date",
+            ]
+        )
+
+    reference_dates = (
+        dates_by_model[
+            base.MODELS[0]
+        ]
+    )
+
+    for model_name in base.MODELS[1:]:
+
+        if (
+            dates_by_model[
+                model_name
+            ]
+            != reference_dates
+        ):
+
+            raise RuntimeError(
+                "Forward models do not contain "
+                "identical observation dates."
+            )
+
+    return revisions
+
+
+# ============================================================
+# APPEND NEW COMPLETED SESSIONS
+# ============================================================
+
+def append_new_sessions_v11(
+    ledger: pd.DataFrame,
+    states: dict,
+    signals: dict,
+    prices: pd.DataFrame,
+    benchmark: pd.Series,
+    manifest: dict,
+):
+    """
+    Append every completed session after the final permanent
+    ledger date.
+
+    If more than one unseen trading session is being processed
+    in one run, we consider this an outage recovery.
+
+    Those reconstructed observations are permanently labelled:
+
+        RECOVERED_AFTER_OUTAGE
+
+    This lets them remain useful for accounting and diagnostics
+    without pretending they were observed in real time.
+    """
+
+    strategy_hashes = (
+        manifest[
+            "strategy_hashes"
+        ]
+    )
+
+    last_dates = {
+        model:
+            states[
+                model
+            ][
+                "last_date"
+            ]
+
+        for model
+        in base.MODELS
+    }
+
+    if len(
+        set(
+            last_dates.values()
+        )
+    ) != 1:
+
+        raise RuntimeError(
+            "Model states have different "
+            "last processed dates."
+        )
+
+    last_date = list(
+        last_dates.values()
+    )[0]
+
+    new_dates = (
+        prices.index[
+            prices.index
+            > last_date
+        ]
+    )
+
+    if len(
+        new_dates
+    ) == 0:
+
+        return (
+            ledger,
+            states,
+            0,
+            0,
+        )
+
+    # --------------------------------------------------------
+    # Recovery classification
+    # --------------------------------------------------------
+
+    recovery_mode = (
+        len(
+            new_dates
+        )
+        > 1
+    )
+
+    if recovery_mode:
+
+        row_type = (
+            "RECOVERED_AFTER_OUTAGE"
+        )
+
+    else:
+
+        row_type = (
+            "FORWARD"
+        )
+
+    previous_hashes = (
+        base.latest_chain_hashes(
+            ledger
+        )
+    )
+
+    new_rows = []
+
+    # --------------------------------------------------------
+    # Reconstruct every missing completed session in strict
+    # chronological order.
+    # --------------------------------------------------------
+
+    for date in new_dates:
+
+        snapshot = (
+            base.market_snapshot_hash(
+                date=
+                    date,
+
+                prices=
+                    prices,
+
+                benchmark=
+                    benchmark,
+            )
+        )
+
+        for model_name in base.MODELS:
+
+            state = (
+                states[
+                    model_name
+                ]
+            )
+
+            daily = (
+                base.process_one_day(
+                    state=
+                        state,
+
+                    date=
+                        date,
+
+                    signals=
+                        signals,
+
+                    model_name=
+                        model_name,
+
+                    cost_bps=
+                        base.ONE_WAY_COST_BPS,
+
+                    zero_market_return=
+                        False,
+                )
+            )
+
+            payload = (
+                base.build_payload(
+                    row_type=
+                        row_type,
+
+                    state=
+                        state,
+
+                    date=
+                        date,
+
+                    model_name=
+                        model_name,
+
+                    strategy_hash=
+                        strategy_hashes[
+                            model_name
+                        ],
+
+                    market_hash=
+                        snapshot,
+
+                    signals=
+                        signals,
+
+                    daily=
+                        daily,
+                )
+            )
+
+            row = (
+                base.payload_to_ledger_row(
+                    payload=
+                        payload,
+
+                    previous_chain_hash=
+                        previous_hashes[
+                            model_name
+                        ],
+                )
+            )
+
+            previous_hashes[
+                model_name
+            ] = (
+                row[
+                    "chain_hash"
+                ]
+            )
+
+            new_rows.append(
+                row
+            )
+
+    # --------------------------------------------------------
+    # Permanently append the new rows.
+    # --------------------------------------------------------
+
+    if new_rows:
+
+        ledger = pd.concat(
+            [
+                ledger,
+                pd.DataFrame(
+                    new_rows
+                ),
+            ],
+            ignore_index=True,
+        )
+
+        ledger[
+            "date_dt"
+        ] = pd.to_datetime(
+            ledger[
+                "date"
+            ]
+        )
+
+        ledger = (
+            ledger
+            .sort_values(
+                [
+                    "date_dt",
+                    "strategy",
+                ]
+            )
+            .drop(
+                columns=[
+                    "date_dt"
+                ]
+            )
+            .reset_index(
+                drop=True
+            )
+        )
+
+        ledger.to_csv(
+            base.LEDGER_PATH,
+            index=False,
+            float_format="%.12g",
+        )
+
+    recovered_count = (
+        len(
+            new_dates
+        )
+        if recovery_mode
+        else 0
+    )
+
+    return (
+        ledger,
+        states,
+        len(
+            new_dates
+        ),
+        recovered_count,
+    )
+
+
+# ============================================================
+# PRINT REVISION SUMMARY
+# ============================================================
+
+def print_revision_summary(
+    revisions: list[dict],
+) -> None:
+
+    if not revisions:
+
+        print(
+            "No historical vendor revisions "
+            "were detected."
+        )
+
+        return
+
+    unique_dates = sorted(
+        set(
+            item[
+                "date"
+            ]
+            for item
+            in revisions
+        )
+    )
+
+    print(
+        "\n============================================"
+    )
+
+    print(
+        "MARKET DATA REVISION WARNING"
+    )
+
+    print(
+        "============================================"
+    )
+
+    print(
+        "The market-data vendor changed one or more "
+        "historical adjusted-price observations."
+    )
+
+    print(
+        "\nThe original Fund-100 ledger rows were "
+        "NOT modified."
+    )
+
+    print(
+        "\nAffected stored dates:"
+    )
+
+    for date in unique_dates:
+
+        print(
+            f"  - {date}"
+        )
+
+    print(
+        "\nNumber of strategy/date revision records:"
+    )
+
+    print(
+        len(
+            revisions
+        )
+    )
+
+    print(
+        "\nRevision audit file:"
+    )
+
+    print(
+        REVISION_LOG_PATH
+    )
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+
+    print(
+        "============================================"
+    )
+
+    print(
+        "FUND-100 FORWARD LAB v1.1"
+    )
+
+    print(
+        "============================================"
+    )
+
+    print(
+        f"\nHistorical research cutoff: "
+        f"{base.HISTORICAL_CUTOFF.date()}"
+    )
+
+    # ========================================================
+    # LOAD FROZEN CONFIG
+    # ========================================================
+
+    print(
+        "\nLoading frozen configuration..."
+    )
+
+    cfg, config_hash = (
+        load_config()
+    )
+
+    print(
+        "Loaded v1 config hash:"
+    )
+
+    print(
+        config_hash
+    )
+
+    if (
+        config_hash
+        != base.V1_CONFIG_HASH
+    ):
+
+        raise RuntimeError(
+            "Frozen v1 configuration hash changed. "
+            "Forward Lab refuses to continue."
+        )
+
+    # ========================================================
+    # LOAD FORWARD MANIFEST
+    # ========================================================
+
+    manifest = (
+        base.build_forward_manifest()
+    )
+
+    protocol_hash = (
+        base.sha256_json(
+            manifest
+        )
+    )
+
+    print(
+        "\nForward protocol SHA256:"
+    )
+
+    print(
+        protocol_hash
+    )
+
+    # The original v1.0 strategy definitions remain frozen.
+    base.ensure_forward_manifest(
+        manifest
+    )
+
+    # ========================================================
+    # DOWNLOAD COMPLETED MARKET DATA
+    # ========================================================
+
+    print(
+        "\nDownloading completed market data..."
+    )
+
+    prices, benchmark = (
+        base.load_completed_market_data(
+            cfg
+        )
+    )
+
+    print(
+        f"Completed market data: "
+        f"{prices.index.min().date()} "
+        f"to "
+        f"{prices.index.max().date()}"
+    )
+
+    # ========================================================
+    # BUILD ORIGINAL FROZEN SIGNALS
+    # ========================================================
+
+    print(
+        "\nBuilding frozen signals..."
+    )
+
+    signals = (
+        base.build_signals(
+            prices=
+                prices,
+
+            benchmark=
+                benchmark,
+        )
+    )
+
+    # ========================================================
+    # LOAD OR INITIALISE LEDGER
+    # ========================================================
+
+    if not base.LEDGER_PATH.exists():
+
+        print(
+            "\nNo existing forward ledger found."
+        )
+
+        print(
+            "Creating baseline ledger..."
+        )
+
+        (
+            ledger,
+            states,
+        ) = (
+            base.initialise_ledger(
+                signals=
+                    signals,
+
+                prices=
+                    prices,
+
+                benchmark=
+                    benchmark,
+
+                manifest=
+                    manifest,
+            )
+        )
+
+        revisions = []
+
+    else:
+
+        print(
+            "\nExisting forward ledger found."
+        )
+
+        ledger = pd.read_csv(
+            base.LEDGER_PATH
+        )
+
+        print(
+            "Validating immutable hash chain..."
+        )
+
+        revisions = (
+            validate_existing_ledger_v11(
+                ledger=
+                    ledger,
+
+                prices=
+                    prices,
+
+                benchmark=
+                    benchmark,
+
+                manifest=
+                    manifest,
+            )
+        )
+
+        record_market_revisions(
+            revisions
+        )
+
+        print(
+            "Ledger hash-chain integrity passed."
+        )
+
+        print_revision_summary(
+            revisions
+        )
+
+        states = (
+            base.restore_states_from_ledger(
+                ledger
+            )
+        )
+
+    # ========================================================
+    # APPEND ALL UNSEEN COMPLETED SESSIONS
+    # ========================================================
+
+    (
+        ledger,
+        states,
+        new_session_count,
+        recovered_count,
+    ) = (
+        append_new_sessions_v11(
+            ledger=
+                ledger,
+
+            states=
+                states,
+
+            signals=
+                signals,
+
+            prices=
+                prices,
+
+            benchmark=
+                benchmark,
+
+            manifest=
+                manifest,
+        )
+    )
+
+    # ========================================================
+    # VALIDATE THE UPDATED LEDGER AGAIN
+    # ========================================================
+
+    revisions_after = (
+        validate_existing_ledger_v11(
+            ledger=
+                ledger,
+
+            prices=
+                prices,
+
+            benchmark=
+                benchmark,
+
+            manifest=
+                manifest,
+        )
+    )
+
+    record_market_revisions(
+        revisions_after
+    )
+
+    # ========================================================
+    # SAVE STATE AND REPORT
+    # ========================================================
+
+    base.save_state_snapshot(
+        states=
+            states,
+
+        manifest=
+            manifest,
+    )
+
+    base.build_latest_report(
+        states=
+            states,
+
+        prices=
+            prices,
+
+        signals=
+            signals,
+
+        new_session_count=
+            new_session_count,
+
+        manifest=
+            manifest,
+    )
+
+    # ========================================================
+    # PRINT ORIGINAL FORWARD-LAB STATUS
+    # ========================================================
+
+    base.print_report(
+        states=
+            states,
+
+        prices=
+            prices,
+
+        signals=
+            signals,
+
+        manifest=
+            manifest,
+
+        new_session_count=
+            new_session_count,
+    )
+
+    # ========================================================
+    # PRINT RECOVERY STATUS
+    # ========================================================
+
+    print(
+        "\n============================================"
+    )
+
+    print(
+        "v1.1 RECOVERY STATUS"
+    )
+
+    print(
+        "============================================"
+    )
+
+    print(
+        f"New completed sessions processed: "
+        f"{new_session_count}"
+    )
+
+    print(
+        f"Sessions labelled "
+        f"RECOVERED_AFTER_OUTAGE: "
+        f"{recovered_count}"
+    )
+
+    if recovered_count > 0:
+
+        print(
+            "\nThe recovered sessions remain useful "
+            "for portfolio accounting and diagnostics."
+        )
+
+        print(
+            "They are NOT classified as pristine "
+            "strict-forward observations because they "
+            "were reconstructed after the automation "
+            "outage."
+        )
+
+        print(
+            "\nThe next new session processed normally "
+            "after this recovery run will again receive "
+            "the FORWARD label."
+        )
+
+    elif new_session_count == 1:
+
+        print(
+            "\nOne ordinary completed session was "
+            "processed as a normal FORWARD observation."
+        )
+
+    else:
+
+        print(
+            "\nNo new completed sessions were available."
+        )
+
+    print(
+        "\nOriginal ledger observations were "
+        "never rewritten."
+    )
+
+    print(
+        "Historical vendor revisions were "
+        "recorded separately."
+    )
+
+    print(
+        "\n============================================"
+    )
+
+    print(
+        "FORWARD LAB v1.1 RUN COMPLETE"
+    )
+
+    print(
+        "============================================"
+    )
+
+
+if __name__ == "__main__":
+    main()
