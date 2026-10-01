@@ -1,0 +1,29 @@
+{
+  "dataset_version": "Fund-100 Research Dataset v2",
+  "historical_cutoff": "2026-09-16",
+  "first_date": "2008-03-28",
+  "last_date": "2026-09-16",
+  "row_count": 4647,
+  "columns": [
+    "SPY",
+    "IWM",
+    "EFA",
+    "EEM",
+    "VNQ",
+    "XLK",
+    "XLF",
+    "XLI",
+    "XLV",
+    "XLP",
+    "XLY",
+    "XLE",
+    "XLU",
+    "ACWI_BENCHMARK"
+  ],
+  "source": "Yahoo Finance via frozen Fund-100 download pipeline",
+  "file": "research_lab/frozen_history_v2.csv",
+  "file_sha256": "acc2c8c08953b895ca5062b3cfba287efb97143b10e108e8ce4bd8b82ffb0d28",
+  "research_data_sha256": "ec48258afa8698716f4d7c42b758822f732a425b10d2d3ebcfcf3ddedcbc21f9",
+  "created_utc": "2026-10-01T20:42:12.007349+00:00",
+  "policy": "This file is immutable. Future research experiments use this stored snapshot instead of redownloading historical market data."
+}
