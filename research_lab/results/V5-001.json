@@ -1,0 +1,37 @@
+{
+  "experiment_id": "V5-001",
+  "run_utc": "2026-10-01T19:50:29.995676+00:00",
+  "status": "REJECTED",
+  "rejection_type": "FROZEN_RISK_LIMIT_BREACH",
+  "rejection_reason": "Satellite sleeve drift limit breached.",
+  "hypothesis": "Keeping the RM25 benchmark-relative momentum signal unchanged while doubling the rebalance interval from 4 weeks to 8 weeks will reduce turnover enough to improve net benchmark-relative performance after costs while retaining most of the gross overlay effect.",
+  "spec_hash": "3da53f549d2dcbe98e7aa58aa5dcfc5d1fa41b2155892a66fbdc17bc2106872b",
+  "protocol_hash": "3a10f8708467db6d574d9cb00ca698d7a7b809d56ac78985fe76486d2b5fb02c",
+  "data_hash": "483834a3321e2f4f7ef648883077c1134ed555751c45e38f104253d4c8feef44",
+  "historical_cutoff": "2026-09-16",
+  "evaluation_start": "2014-01-01",
+  "control": {
+    "name": "RM25_CONTROL",
+    "rebalance_weeks": 4
+  },
+  "candidate": {
+    "name": "V5_COST_AWARE_8W",
+    "rebalance_weeks": 8
+  },
+  "acceptance_criteria": {
+    "minimum_turnover_reduction_fraction": 0.2,
+    "minimum_gross_overlay_retention_fraction": 0.75,
+    "minimum_base_cost_excess_cagr_improvement": 0.0,
+    "minimum_35bps_excess_cagr_improvement": 0.0,
+    "maximum_drawdown_worsening": 0.02
+  },
+  "cost_sensitivity": [],
+  "criterion_results": {
+    "frozen_risk_envelope": {
+      "passed": false,
+      "reason": "Satellite sleeve drift limit breached."
+    }
+  },
+  "research_interpretation": "The pre-registered challenger could not complete the historical experiment without breaching the frozen Fund-100 portfolio risk envelope. The risk limits were not changed after observing the result.",
+  "research_warning": "Historical rejection or survivor status is research bookkeeping, not evidence of future investment performance."
+}

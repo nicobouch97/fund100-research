@@ -1,0 +1,22 @@
+{
+  "historical_cutoff": "2026-09-16",
+  "first_market_date": "2008-03-28",
+  "last_market_date": "2026-09-16",
+  "assets": [
+    "SPY",
+    "IWM",
+    "EFA",
+    "EEM",
+    "VNQ",
+    "XLK",
+    "XLF",
+    "XLI",
+    "XLV",
+    "XLP",
+    "XLY",
+    "XLE",
+    "XLU"
+  ],
+  "data_hash": "483834a3321e2f4f7ef648883077c1134ed555751c45e38f104253d4c8feef44",
+  "created_utc": "2026-10-01T19:50:26.661279+00:00"
+}
