@@ -48,9 +48,13 @@ jobs:
           test -f research_lab/experiment_registry.csv
           test -d research_lab/challengers
 
+          test -f research_lab/frozen_history_v2.csv
+          test -f research_lab/frozen_history_v2_manifest.json
+
           test -f fund100_experiment_runner.py
           test -f fund100_experiment_runner_v1_1.py
           test -f fund100_experiment_runner_v1_2.py
+          test -f fund100_experiment_runner_v1_3.py
 
           echo "Research Lab files found."
 
@@ -59,10 +63,10 @@ jobs:
           set -euo pipefail
           pytest -q
 
-      - name: Run Research Lab v1.2
+      - name: Run Research Lab v1.3
         run: |
           set -euo pipefail
-          python fund100_experiment_runner_v1_2.py
+          python fund100_experiment_runner_v1_3.py
 
       - name: Check for completed experiment
         id: research_check
@@ -78,17 +82,6 @@ jobs:
             echo "research_changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Show research changes
-        if: steps.research_check.outputs.research_changed == 'true'
-        run: |
-          set -euo pipefail
-
-          git status --short
-
-          echo
-          echo "Research diff summary:"
-          git diff --stat -- research_lab/ || true
-
       - name: Commit research record
         if: steps.research_check.outputs.research_changed == 'true'
         shell: bash
@@ -101,7 +94,6 @@ jobs:
           git add research_lab/
 
           if git diff --cached --quiet; then
-            echo "Nothing staged."
             exit 0
           fi
 
@@ -115,13 +107,5 @@ jobs:
       - name: Final status
         run: |
           echo "========================================"
-          echo "FUND-100 RESEARCH LAB v1.2 COMPLETE"
+          echo "FUND-100 RESEARCH LAB v1.3 COMPLETE"
           echo "========================================"
-
-          if [ "${{ steps.research_check.outputs.research_changed }}" = "true" ]; then
-            echo "A pre-registered experiment completed."
-            echo "Its result was permanently recorded."
-          else
-            echo "No pending registered experiment ran."
-            echo "The permanent registry was unchanged."
-          fi
