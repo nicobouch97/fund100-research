@@ -1,0 +1,77 @@
+name: Fund-100 Broker Kill Switch Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kill-switch-test:
+    name: Prove Broker Writes Are Blocked
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Verify kill-switch files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_broker_safety.py
+          test -f fund100_alpaca_paper_execute_guarded.py
+          test -f fund100_alpaca_paper_execute_bootstrap.py
+
+          echo "Kill-switch dependencies found."
+
+      - name: Deliberately attempt broker execution with kill switch engaged
+        env:
+          FUND100_ENABLE_PAPER_ORDERS: YES_PAPER_ONLY
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+        shell: bash
+
+        run: |
+          set +e
+
+          OUTPUT="$(
+            python fund100_alpaca_paper_execute_guarded.py 2>&1
+          )"
+
+          STATUS=$?
+
+          set -e
+
+          echo "$OUTPUT"
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo
+            echo "KILL SWITCH TEST FAILED"
+            echo "Execution was not blocked."
+            exit 1
+          fi
+
+          if ! echo "$OUTPUT" | grep -q "KILL SWITCH ENGAGED"; then
+            echo
+            echo "KILL SWITCH TEST FAILED"
+            echo "Execution failed for an unexpected reason."
+            exit 1
+          fi
+
+          echo
+          echo "========================================"
+          echo "FUND-100 KILL SWITCH TEST: PASS"
+          echo "========================================"
+          echo "Broker execution was deliberately armed."
+          echo "Independent kill switch blocked it."
+          echo "Broker credentials were not required."
+          echo "Orders submitted: 0."
