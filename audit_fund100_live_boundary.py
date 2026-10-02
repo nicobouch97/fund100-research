@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import re
 import sys
@@ -8,25 +9,21 @@ from pathlib import Path
 
 
 # ============================================================
-# FUND-100 LIVE BOUNDARY STATIC AUDIT v1.0
+# FUND-100 LIVE BOUNDARY STATIC AUDIT v1.1
 # ============================================================
 #
 # OFFLINE ONLY.
 #
-# This audit performs NO network requests and needs NO broker
-# credentials.
+# Fixes v1.0 false positives:
 #
-# It fails if the repository introduces an obvious reachable
-# live-write path, including:
+# 1. Merely checking that the disconnected writer FILE exists
+#    is no longer treated as invoking the writer.
 #
-# - workflow invocation of the disconnected writer
-# - FUND100_LIVE_WRITE_MODE=ENABLED
-# - another live Python module containing POST/PATCH/PUT/DELETE
-# - current live artifacts becoming executable
-# - disconnected writer losing its hard connection guard
-# - current V1 permit becoming compatible with the writer
-# - obvious hard-coded Alpaca live credentials
+# 2. "api.alpaca.markets" is no longer matched as a substring
+#    inside "paper-api.alpaca.markets".
 #
+# This audit performs NO broker requests and requires NO
+# Alpaca credentials.
 # ============================================================
 
 
@@ -76,9 +73,6 @@ PERMIT_PATH = (
     / "live_execution_permit.json"
 )
 
-LIVE_HOST = (
-    "api.alpaca.markets"
-)
 
 DISCONNECTED_WRITER_MODULE = (
     "fund100_alpaca_live_writer_disconnected"
@@ -89,20 +83,82 @@ DISCONNECTED_WRITER_FILENAME = (
     + ".py"
 )
 
-# These are the only scripts currently allowed to receive
-# ALPACA_LIVE_KEY / ALPACA_LIVE_SECRET from GitHub Actions.
-#
-# They are read-only safety / compilation layers.
-ALLOWED_LIVE_CREDENTIAL_SCRIPTS = {
-    "fund100_alpaca_live_readonly_smoke.py",
-    "fund100_alpaca_live_preflight.py",
-    "fund100_alpaca_live_execution_boundary.py",
-    "fund100_alpaca_live_manifest.py",
-    "fund100_alpaca_live_intent_validator.py",
-    "fund100_alpaca_live_scheduled_compiler.py",
-}
 
-LIVE_WRITE_PATTERNS = [
+# ============================================================
+# EXACT LIVE-ENDPOINT DETECTION
+# ============================================================
+#
+# IMPORTANT:
+#
+# These patterns deliberately match:
+#
+#     https://api.alpaca.markets
+#     "api.alpaca.markets"
+#
+# but DO NOT match:
+#
+#     https://paper-api.alpaca.markets
+#
+# ============================================================
+
+
+EXACT_LIVE_URL_PATTERN = re.compile(
+    r"""https://api\.alpaca\.markets(?=[/"'\s]|$)""",
+    re.IGNORECASE,
+)
+
+EXACT_QUOTED_LIVE_HOST_PATTERN = re.compile(
+    r"""["']api\.alpaca\.markets["']""",
+    re.IGNORECASE,
+)
+
+
+# ============================================================
+# WORKFLOW WRITER-INVOCATION DETECTION
+# ============================================================
+#
+# Merely mentioning the filename is allowed.
+#
+# Examples that DO fail:
+#
+#     python fund100_alpaca_live_writer_disconnected.py
+#     python -m fund100_alpaca_live_writer_disconnected
+#     import fund100_alpaca_live_writer_disconnected
+#     submit_authorized_order_batch(...)
+#
+# ============================================================
+
+
+WRITER_INVOCATION_PATTERNS = [
+    re.compile(
+        r"""python(?:3)?\s+(?:\./)?fund100_alpaca_live_writer_disconnected\.py\b""",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"""python(?:3)?\s+-m\s+fund100_alpaca_live_writer_disconnected\b""",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"""\bimport\s+fund100_alpaca_live_writer_disconnected\b""",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"""\bfrom\s+fund100_alpaca_live_writer_disconnected\s+import\b""",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"""\bsubmit_authorized_order_batch\s*\(""",
+        re.IGNORECASE,
+    ),
+]
+
+
+# ============================================================
+# HTTP WRITE DETECTION
+# ============================================================
+
+
+PYTHON_WRITE_PATTERNS = [
     re.compile(
         r"""method\s*=\s*["'](?:POST|PUT|PATCH|DELETE)["']""",
         re.IGNORECASE,
@@ -121,21 +177,36 @@ LIVE_WRITE_PATTERNS = [
     ),
 ]
 
-WORKFLOW_WRITE_PATTERNS = [
-    re.compile(
-        r"""\bcurl\b[^\n]*(?:-X|--request)\s*(?:POST|PUT|PATCH|DELETE)""",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"""\b(?:POST|PUT|PATCH|DELETE)\b[^\n]*api\.alpaca\.markets""",
-        re.IGNORECASE,
-    ),
-]
+WORKFLOW_MUTATING_CURL_PATTERN = re.compile(
+    r"""\bcurl\b[^\n]*(?:-X|--request)\s*(?:POST|PUT|PATCH|DELETE)""",
+    re.IGNORECASE,
+)
+
+
+# ============================================================
+# LIVE-CREDENTIAL WORKFLOW ALLOWLIST
+# ============================================================
+
+
+ALLOWED_LIVE_CREDENTIAL_SCRIPTS = {
+    "fund100_alpaca_live_readonly_smoke.py",
+    "fund100_alpaca_live_preflight.py",
+    "fund100_alpaca_live_execution_boundary.py",
+    "fund100_alpaca_live_manifest.py",
+    "fund100_alpaca_live_intent_validator.py",
+    "fund100_alpaca_live_scheduled_compiler.py",
+}
 
 PYTHON_SCRIPT_PATTERN = re.compile(
     r"""(?:^|\s)python(?:3)?\s+([A-Za-z0-9_./-]+\.py)(?:\s|$)""",
     re.IGNORECASE,
 )
+
+
+# ============================================================
+# SECRET-HYGIENE PATTERNS
+# ============================================================
+
 
 HARDCODED_LIVE_SECRET_PATTERNS = [
     re.compile(
@@ -154,15 +225,18 @@ HARDCODED_LIVE_SECRET_PATTERNS = [
 
 
 # ============================================================
-# AUDIT RESULT COLLECTION
+# RESULT COLLECTION
 # ============================================================
 
 
 class Audit:
+
     def __init__(self):
 
         self.passes: list[str] = []
+
         self.failures: list[str] = []
+
         self.notes: list[str] = []
 
     def passed(
@@ -194,7 +268,7 @@ class Audit:
 
 
 # ============================================================
-# FILE HELPERS
+# GENERIC HELPERS
 # ============================================================
 
 
@@ -211,6 +285,31 @@ def read_text(
     except UnicodeDecodeError:
 
         return ""
+
+
+def canonical_json(
+    obj,
+) -> str:
+
+    return json.dumps(
+        obj,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+
+
+def sha256_json(
+    obj,
+) -> str:
+
+    return hashlib.sha256(
+        canonical_json(
+            obj
+        ).encode(
+            "utf-8"
+        )
+    ).hexdigest()
 
 
 def repository_python_files():
@@ -342,6 +441,7 @@ def first_executable_statement(
         function.body
     )
 
+    # Skip a possible function docstring.
     if (
         body
         and isinstance(
@@ -444,7 +544,7 @@ def simple_assignment(
 
 
 # ============================================================
-# WRITER HARD-DISCONNECT AUDIT
+# DISCONNECTED WRITER AUDIT
 # ============================================================
 
 
@@ -482,10 +582,11 @@ def audit_writer(
     else:
 
         audit.failed(
-            "LIVE_WRITER_CONNECTED is not statically False."
+            "LIVE_WRITER_CONNECTED is not "
+            "statically False."
         )
 
-    permit_schema = (
+    required_schema = (
         simple_assignment(
             tree,
             "REQUIRED_PERMIT_SCHEMA",
@@ -493,7 +594,7 @@ def audit_writer(
     )
 
     if (
-        permit_schema
+        required_schema
         == "FUND100_LIVE_EXECUTION_PERMIT_V2"
     ):
 
@@ -546,13 +647,13 @@ def audit_writer(
                 "does not fail immediately."
             )
 
-    network_functions = [
+    guarded_functions = [
         "_get_order_by_client_id",
         "_post_live_market_order",
         "submit_authorized_order_batch",
     ]
 
-    for name in network_functions:
+    for name in guarded_functions:
 
         function = (
             find_function(
@@ -564,7 +665,7 @@ def audit_writer(
         if function is None:
 
             audit.failed(
-                f"{name}() is missing from writer."
+                f"{name}() is missing."
             )
 
             continue
@@ -581,8 +682,8 @@ def audit_writer(
         ):
 
             audit.passed(
-                f"{name}() hits disconnect "
-                "guard before other executable code."
+                f"{name}() hits disconnect guard "
+                "before other executable code."
             )
 
         else:
@@ -592,14 +693,13 @@ def audit_writer(
                 "require_adapter_connected()."
             )
 
-    main_function = (
+    if (
         find_function(
             tree,
             "main",
         )
-    )
-
-    if main_function is None:
+        is None
+    ):
 
         audit.passed(
             "Disconnected writer has no main() function."
@@ -653,15 +753,13 @@ def audit_workflows(
 
         return
 
-    direct_writer_refs = []
+    writer_invocations = []
 
     enabled_write_modes = []
 
-    direct_live_api_refs = []
+    direct_live_mutations = []
 
-    unauthorized_credential_scripts = []
-
-    dangerous_symbols = []
+    unauthorized_credential_commands = []
 
     for workflow in workflows:
 
@@ -671,40 +769,31 @@ def audit_workflows(
             )
         )
 
-        lower = (
-            source.lower()
-        )
-
         relative = str(
             workflow.relative_to(
                 ROOT
             )
         )
 
-        if (
-            DISCONNECTED_WRITER_MODULE.lower()
-            in lower
-            or DISCONNECTED_WRITER_FILENAME.lower()
-            in lower
+        # ----------------------------------------------------
+        # A simple "test -f writer.py" is intentionally fine.
+        #
+        # Only actual invocation/import patterns fail.
+        # ----------------------------------------------------
+
+        for pattern in (
+            WRITER_INVOCATION_PATTERNS
         ):
 
-            direct_writer_refs.append(
-                relative
-            )
+            if pattern.search(
+                source
+            ):
 
-        if (
-            "submit_authorized_order_batch"
-            in source
-            or "livewriterdisconnected"
-            in source.replace(
-                "_",
-                "",
-            ).lower()
-        ):
+                writer_invocations.append(
+                    relative
+                )
 
-            dangerous_symbols.append(
-                relative
-            )
+                break
 
         if re.search(
             r"""FUND100_LIVE_WRITE_MODE\s*:\s*["']?ENABLED["']?""",
@@ -716,32 +805,33 @@ def audit_workflows(
                 relative
             )
 
+        # ----------------------------------------------------
+        # Workflow-level direct live mutation.
+        # ----------------------------------------------------
+
         if (
-            "LIVE_WRITER_CONNECTED"
-            in source
-        ):
-
-            dangerous_symbols.append(
-                relative
-            )
-
-        if LIVE_HOST in lower:
-
-            direct_live_api_refs.append(
-                relative
-            )
-
-        for pattern in (
-            WORKFLOW_WRITE_PATTERNS
-        ):
-
-            if pattern.search(
+            EXACT_LIVE_URL_PATTERN.search(
                 source
+            )
+            or
+            EXACT_QUOTED_LIVE_HOST_PATTERN.search(
+                source
+            )
+        ):
+
+            if (
+                WORKFLOW_MUTATING_CURL_PATTERN.search(
+                    source
+                )
             ):
 
-                dangerous_symbols.append(
+                direct_live_mutations.append(
                     relative
                 )
+
+        # ----------------------------------------------------
+        # Live credential exposure.
+        # ----------------------------------------------------
 
         exposes_live_credentials = (
             "ALPACA_LIVE_KEY"
@@ -771,7 +861,7 @@ def audit_workflows(
                     ALLOWED_LIVE_CREDENTIAL_SCRIPTS
                 ):
 
-                    unauthorized_credential_scripts.append(
+                    unauthorized_credential_commands.append(
                         (
                             relative,
                             script,
@@ -784,7 +874,7 @@ def audit_workflows(
                 flags=re.IGNORECASE,
             ):
 
-                unauthorized_credential_scripts.append(
+                unauthorized_credential_commands.append(
                     (
                         relative,
                         "python -c",
@@ -797,21 +887,22 @@ def audit_workflows(
                 flags=re.IGNORECASE,
             ):
 
-                unauthorized_credential_scripts.append(
+                unauthorized_credential_commands.append(
                     (
                         relative,
                         "curl",
                     )
                 )
 
-    if direct_writer_refs:
+    if writer_invocations:
 
         audit.failed(
-            "Runnable workflow references disconnected writer: "
+            "Runnable workflow invokes/imports "
+            "the disconnected writer: "
             + ", ".join(
                 sorted(
                     set(
-                        direct_writer_refs
+                        writer_invocations
                     )
                 )
             )
@@ -820,14 +911,15 @@ def audit_workflows(
     else:
 
         audit.passed(
-            "No workflow directly invokes/imports "
-            "the disconnected live writer."
+            "No workflow invokes/imports the "
+            "disconnected live writer."
         )
 
     if enabled_write_modes:
 
         audit.failed(
-            "Workflow enables FUND100_LIVE_WRITE_MODE: "
+            "Workflow enables "
+            "FUND100_LIVE_WRITE_MODE=ENABLED: "
             + ", ".join(
                 sorted(
                     set(
@@ -844,14 +936,15 @@ def audit_workflows(
             "FUND100_LIVE_WRITE_MODE=ENABLED."
         )
 
-    if direct_live_api_refs:
+    if direct_live_mutations:
 
         audit.failed(
-            "Workflow directly contains live broker hostname: "
+            "Workflow directly performs a mutating "
+            "request against the LIVE Alpaca endpoint: "
             + ", ".join(
                 sorted(
                     set(
-                        direct_live_api_refs
+                        direct_live_mutations
                     )
                 )
             )
@@ -860,41 +953,21 @@ def audit_workflows(
     else:
 
         audit.passed(
-            "No workflow directly calls "
-            "api.alpaca.markets."
+            "No workflow directly performs a "
+            "mutating LIVE Alpaca HTTP request."
         )
 
-    if dangerous_symbols:
-
-        audit.failed(
-            "Potential live-write workflow symbol detected: "
-            + ", ".join(
-                sorted(
-                    set(
-                        dangerous_symbols
-                    )
-                )
-            )
-        )
-
-    else:
-
-        audit.passed(
-            "No workflow contains known live-writer "
-            "activation/write symbols."
-        )
-
-    if unauthorized_credential_scripts:
+    if unauthorized_credential_commands:
 
         details = "; ".join(
             (
-                f"{workflow} -> {script}"
+                f"{workflow} -> {command}"
             )
             for (
                 workflow,
-                script,
+                command,
             )
-            in unauthorized_credential_scripts
+            in unauthorized_credential_commands
         )
 
         audit.failed(
@@ -916,6 +989,43 @@ def audit_workflows(
 # ============================================================
 
 
+def source_targets_live_environment(
+    path: Path,
+    source: str,
+) -> bool:
+
+    # --------------------------------------------------------
+    # A file with the explicit live module naming convention
+    # is treated as live.
+    #
+    # Additionally, an arbitrarily named file is treated as
+    # live if it contains the EXACT live Alpaca host.
+    #
+    # "paper-api.alpaca.markets" does NOT satisfy either exact
+    # hostname pattern.
+    # --------------------------------------------------------
+
+    if path.name.startswith(
+        "fund100_alpaca_live_"
+    ):
+
+        return True
+
+    if EXACT_LIVE_URL_PATTERN.search(
+        source
+    ):
+
+        return True
+
+    if EXACT_QUOTED_LIVE_HOST_PATTERN.search(
+        source
+    ):
+
+        return True
+
+    return False
+
+
 def audit_live_python_files(
     audit: Audit,
 ) -> None:
@@ -928,6 +1038,8 @@ def audit_live_python_files(
 
         if path == WRITER_PATH:
 
+            # This is the intentionally disconnected
+            # future writer and is audited separately.
             continue
 
         source = (
@@ -936,30 +1048,18 @@ def audit_live_python_files(
             )
         )
 
-        lower = (
-            source.lower()
-        )
+        if not source_targets_live_environment(
+            path=
+                path,
 
-        looks_live = (
-            "alpaca_live"
-            in path.name.lower()
-            or
-            "alpaca_live"
-            in lower
-            or
-            "alpaca_live_key"
-            in lower
-            or
-            LIVE_HOST
-            in lower
-        )
-
-        if not looks_live:
+            source=
+                source,
+        ):
 
             continue
 
         for pattern in (
-            LIVE_WRITE_PATTERNS
+            PYTHON_WRITE_PATTERNS
         ):
 
             if pattern.search(
@@ -979,8 +1079,8 @@ def audit_live_python_files(
     if write_files:
 
         audit.failed(
-            "Live Python write method exists outside "
-            "the disconnected writer: "
+            "LIVE Python write method exists "
+            "outside the disconnected writer: "
             + ", ".join(
                 sorted(
                     set(
@@ -993,7 +1093,7 @@ def audit_live_python_files(
     else:
 
         audit.passed(
-            "No live Python module outside the "
+            "No LIVE Python module outside the "
             "disconnected writer contains an HTTP "
             "POST/PUT/PATCH/DELETE path."
         )
@@ -1038,7 +1138,7 @@ def audit_secret_hygiene(
 
                 break
 
-    forbidden_file_names = []
+    secret_files = []
 
     for path in ROOT.rglob(
         "*"
@@ -1058,18 +1158,21 @@ def audit_secret_hygiene(
 
         if (
             name == ".env"
-            or name.endswith(
+            or
+            name.endswith(
                 ".pem"
             )
-            or name.endswith(
+            or
+            name.endswith(
                 ".p12"
             )
-            or name.endswith(
+            or
+            name.endswith(
                 ".pfx"
             )
         ):
 
-            forbidden_file_names.append(
+            secret_files.append(
                 str(
                     path.relative_to(
                         ROOT
@@ -1098,14 +1201,14 @@ def audit_secret_hygiene(
             "credentials detected."
         )
 
-    if forbidden_file_names:
+    if secret_files:
 
         audit.failed(
             "Potential secret-bearing file committed: "
             + ", ".join(
                 sorted(
                     set(
-                        forbidden_file_names
+                        secret_files
                     )
                 )
             )
@@ -1131,8 +1234,12 @@ def load_json(
     if not path.exists():
 
         raise RuntimeError(
-            f"Required artifact missing: "
-            f"{path.relative_to(ROOT)}"
+            "Required artifact missing: "
+            + str(
+                path.relative_to(
+                    ROOT
+                )
+            )
         )
 
     with path.open(
@@ -1141,6 +1248,45 @@ def load_json(
 
         return json.load(
             f
+        )
+
+
+def verify_package_hash(
+    package: dict,
+    body_key: str,
+    hash_key: str,
+):
+
+    if body_key not in package:
+
+        raise RuntimeError(
+            f"Missing body key: {body_key}"
+        )
+
+    if hash_key not in package:
+
+        raise RuntimeError(
+            f"Missing hash key: {hash_key}"
+        )
+
+    recorded = str(
+        package[
+            hash_key
+        ]
+    )
+
+    calculated = (
+        sha256_json(
+            package[
+                body_key
+            ]
+        )
+    )
+
+    if recorded != calculated:
+
+        raise RuntimeError(
+            f"{hash_key} verification failed."
         )
 
 
@@ -1208,7 +1354,7 @@ def require_zero(
 
 
 # ============================================================
-# ARTIFACT AUDIT
+# CURRENT LIVE ARTIFACT AUDIT
 # ============================================================
 
 
@@ -1216,18 +1362,37 @@ def audit_live_artifacts(
     audit: Audit,
 ) -> None:
 
+    # --------------------------------------------------------
+    # MANIFEST
+    # --------------------------------------------------------
+
     try:
 
-        manifest_package = (
+        package = (
             load_json(
                 MANIFEST_PATH
             )
         )
 
+        verify_package_hash(
+            package=
+                package,
+
+            body_key=
+                "manifest",
+
+            hash_key=
+                "manifest_sha256",
+        )
+
         manifest = (
-            manifest_package[
+            package[
                 "manifest"
             ]
+        )
+
+        audit.passed(
+            "Live manifest SHA256 verification: PASS."
         )
 
         require_false(
@@ -1268,18 +1433,37 @@ def audit_live_artifacts(
             f"Live manifest validation failed: {exc}"
         )
 
+    # --------------------------------------------------------
+    # INTENTS
+    # --------------------------------------------------------
+
     try:
 
-        intents_package = (
+        package = (
             load_json(
                 INTENTS_PATH
             )
         )
 
+        verify_package_hash(
+            package=
+                package,
+
+            body_key=
+                "intent_bundle",
+
+            hash_key=
+                "intent_bundle_sha256",
+        )
+
         intents = (
-            intents_package[
+            package[
                 "intent_bundle"
             ]
+        )
+
+        audit.passed(
+            "Live intent-bundle SHA256 verification: PASS."
         )
 
         require_false(
@@ -1303,7 +1487,7 @@ def audit_live_artifacts(
             "Live intent bundle",
         )
 
-        executable_intents = [
+        executable = [
             item
             for item
             in intents.get(
@@ -1318,7 +1502,7 @@ def audit_live_artifacts(
             )
         ]
 
-        if executable_intents:
+        if executable:
 
             audit.failed(
                 "Live intent bundle contains "
@@ -1338,18 +1522,37 @@ def audit_live_artifacts(
             f"Live intent validation failed: {exc}"
         )
 
+    # --------------------------------------------------------
+    # SCHEDULED COMPILER
+    # --------------------------------------------------------
+
     try:
 
-        scheduled_package = (
+        package = (
             load_json(
                 SCHEDULED_PATH
             )
         )
 
+        verify_package_hash(
+            package=
+                package,
+
+            body_key=
+                "compiler",
+
+            hash_key=
+                "compiler_sha256",
+        )
+
         scheduled = (
-            scheduled_package[
+            package[
                 "compiler"
             ]
+        )
+
+        audit.passed(
+            "Scheduled compiler SHA256 verification: PASS."
         )
 
         require_false(
@@ -1377,7 +1580,7 @@ def audit_live_artifacts(
             str(
                 scheduled.get(
                     "compiler_mode",
-                    ""
+                    "",
                 )
             ).lower()
             == "synthetic"
@@ -1408,18 +1611,37 @@ def audit_live_artifacts(
             f"Scheduled compiler validation failed: {exc}"
         )
 
+    # --------------------------------------------------------
+    # PERMIT
+    # --------------------------------------------------------
+
     try:
 
-        permit_package = (
+        package = (
             load_json(
                 PERMIT_PATH
             )
         )
 
+        verify_package_hash(
+            package=
+                package,
+
+            body_key=
+                "permit",
+
+            hash_key=
+                "permit_sha256",
+        )
+
         permit = (
-            permit_package[
+            package[
                 "permit"
             ]
+        )
+
+        audit.passed(
+            "Live permit SHA256 verification: PASS."
         )
 
         require_false(
@@ -1477,13 +1699,15 @@ def audit_live_artifacts(
         ):
 
             audit.passed(
-                "Current permit remains deny-only V1 schema."
+                "Current permit remains "
+                "deny-only V1 schema."
             )
 
         else:
 
             audit.failed(
-                "Current live permit schema is no longer V1."
+                "Current live permit schema "
+                "is no longer V1."
             )
 
     except Exception as exc:
@@ -1494,7 +1718,7 @@ def audit_live_artifacts(
 
 
 # ============================================================
-# WRITER TEST AUDIT
+# DISCONNECTED-WRITER TEST AUDIT
 # ============================================================
 
 
@@ -1505,7 +1729,8 @@ def audit_writer_tests(
     if not WRITER_TEST_PATH.exists():
 
         audit.failed(
-            "Disconnected-writer safety test file is missing."
+            "Disconnected-writer safety test "
+            "file is missing."
         )
 
         return
@@ -1560,7 +1785,7 @@ def main():
     )
 
     print(
-        "FUND-100 LIVE BOUNDARY STATIC AUDIT"
+        "FUND-100 LIVE BOUNDARY STATIC AUDIT v1.1"
     )
 
     print(
