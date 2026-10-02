@@ -1,0 +1,64 @@
+name: Fund-100 Alpaca Two-Sided Paper Rehearsal
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-alpaca-paper-rehearsal
+  cancel-in-progress: false
+
+jobs:
+  rehearsal:
+    name: Execute Two-Sided Paper Rehearsal
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify rehearsal files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_paper_twosided_rehearsal.py
+          test -f fund100_alpaca_event_gate.py
+          test -f fund100_alpaca_paper_reconcile.py
+          test -f fund100_alpaca_paper_execute_bootstrap.py
+          test -f fund100_broker_safety.py
+
+      - name: Run Fund-100 tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Execute controlled PAPER rehearsal
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+          FUND100_ENABLE_SYNTHETIC_PAPER_REHEARSAL: YES_PAPER_ONLY_REHEARSAL
+
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_paper_twosided_rehearsal.py
