@@ -1,0 +1,120 @@
+name: Fund-100 Alpaca Paper Restart Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: "Restart rehearsal phase"
+        required: true
+        default: "interrupt"
+        type: choice
+        options:
+          - interrupt
+          - resume
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-alpaca-paper-restart-test
+  cancel-in-progress: false
+
+jobs:
+  restart-test:
+    name: Test Paper Crash Recovery
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify restart-test files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_paper_restart_rehearsal.py
+          test -f fund100_alpaca_paper_twosided_rehearsal.py
+          test -f fund100_alpaca_event_gate.py
+          test -f fund100_alpaca_paper_reconcile.py
+          test -f fund100_alpaca_paper_execute_bootstrap.py
+          test -f fund100_broker_safety.py
+
+          echo "Restart-test dependencies found."
+
+      - name: Run Fund-100 tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Run intentional crash / recovery phase
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+          FUND100_ENABLE_RESTART_REHEARSAL: YES_PAPER_RESTART_TEST
+
+          FUND100_RESTART_TEST_PHASE: ${{ inputs.phase }}
+
+        shell: bash
+
+        run: |
+          set +e
+
+          python fund100_alpaca_paper_restart_rehearsal.py
+
+          STATUS=$?
+
+          set -e
+
+          PHASE="${{ inputs.phase }}"
+
+          if [ "$PHASE" = "interrupt" ]; then
+
+            if [ "$STATUS" -eq 42 ]; then
+
+              echo
+              echo "========================================"
+              echo "EXPECTED INTERRUPTION: PASS"
+              echo "========================================"
+              echo "The first paper SELL was completed."
+              echo "The workflow then stopped deliberately."
+              echo "Now run this workflow again with phase=resume."
+
+              exit 0
+
+            fi
+
+            echo "Interrupt phase returned unexpected status: $STATUS"
+            exit 1
+
+          fi
+
+          if [ "$STATUS" -ne 0 ]; then
+
+            echo "Resume phase failed with status: $STATUS"
+            exit "$STATUS"
+
+          fi
+
+          echo
+          echo "========================================"
+          echo "RESTART RECOVERY WORKFLOW: PASS"
+          echo "========================================"
