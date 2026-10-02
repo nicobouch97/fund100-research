@@ -1,0 +1,143 @@
+name: Fund-100 Alpaca LIVE Scheduled Compiler
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Compiler mode"
+        required: true
+        default: "current"
+        type: choice
+        options:
+          - current
+          - synthetic
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-alpaca-live-scheduled-compiler
+  cancel-in-progress: false
+
+jobs:
+  scheduled-compiler:
+    name: Compile Scheduled Execution-Time Intents
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify compiler files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_live_scheduled_compiler.py
+          test -f fund100_alpaca_live_intent_validator.py
+          test -f fund100_alpaca_live_manifest.py
+          test -f fund100_alpaca_live_readonly_smoke.py
+          test -f fund100_alpaca_live_preflight.py
+          test -f fund100_alpaca_live_execution_boundary.py
+          test -f fund100_broker_safety.py
+
+          test -f shadow_outputs/v5_002/shadow_state.json
+          test -f live_dryrun_outputs/v5_002/live_execution_manifest.json
+
+          echo "Scheduled compiler dependencies found."
+
+      - name: Run Fund-100 tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Compile scheduled execution-time intents
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+          FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+
+          FUND100_ENABLE_SCHEDULED_COMPILER: YES_READ_ONLY_SCHEDULED_COMPILER
+
+          FUND100_SCHEDULED_COMPILER_MODE: ${{ inputs.mode }}
+
+          FUND100_LIVE_WRITE_MODE: DISABLED
+
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_live_scheduled_compiler.py
+
+      - name: Check compiler output changes
+        id: compiler_check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHANGES="$(git status --porcelain -- live_dryrun_outputs/v5_002/scheduled_execution_time.json)"
+
+          if [ -z "$CHANGES" ]; then
+
+            echo "Scheduled compiler output unchanged."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+
+          else
+
+            echo "Scheduled compiler output changed:"
+            echo "$CHANGES"
+
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+
+          fi
+
+      - name: Commit compiler output
+        if: steps.compiler_check.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "fund100-live-dryrun-bot"
+          git config user.email "fund100-live-dryrun-bot@users.noreply.github.com"
+
+          git add live_dryrun_outputs/v5_002/scheduled_execution_time.json
+
+          if git diff --cached --quiet; then
+            echo "Nothing staged."
+            exit 0
+          fi
+
+          git commit \
+            -m "Update V5-002 scheduled execution-time compile"
+
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 SCHEDULED COMPILER COMPLETE"
+          echo "========================================"
+          echo "Compiler mode: ${{ inputs.mode }}"
+          echo "Live execution authorized: FALSE"
+          echo "Maximum live execution notional: \$0.00"
+          echo "Network write capability: ABSENT"
+          echo "Orders submitted: 0"
