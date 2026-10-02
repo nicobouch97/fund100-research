@@ -1,0 +1,46 @@
+name: Fund-100 Alpaca Paper Smoke Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  paper-smoke:
+    name: Verify Alpaca Paper Broker Connection
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Verify smoke-test file
+        run: |
+          set -euo pipefail
+          test -f fund100_alpaca_paper_smoke.py
+          echo "Paper broker smoke-test file found."
+
+      - name: Run read-only Alpaca paper smoke test
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_paper_smoke.py
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 PAPER BROKER TEST COMPLETE"
+          echo "========================================"
+          echo "This workflow has no order-submission code."
+          echo "This workflow uses the Alpaca PAPER endpoint only."
