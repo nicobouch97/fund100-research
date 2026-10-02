@@ -1,0 +1,141 @@
+name: Fund-100 V5-002 Shadow Forward
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: "7 11 * * 2-6"
+    - cron: "7 14 * * 2-6"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-v5-002-shadow
+  cancel-in-progress: false
+
+jobs:
+  v5-shadow:
+    name: Run V5-002 Shadow Forward
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify required files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_v5_002_shadow.py
+          test -f audit_v5_002_engine.py
+
+          test -f fund100_experiment_runner.py
+          test -f fund100_experiment_runner_v1_2.py
+          test -f fund100_experiment_runner_v1_3.py
+
+          test -f research_lab/challengers/V5-002.json
+          test -f research_lab/results/V5-002.json
+
+          test -f research_lab/frozen_history_v2.csv
+          test -f research_lab/frozen_history_v2_manifest.json
+
+          echo "V5-002 shadow dependencies found."
+
+      - name: Run Fund-100 tests
+        run: |
+          set -euo pipefail
+          pytest -q
+
+      - name: Re-run V5-002 engine parity audit
+        run: |
+          set -euo pipefail
+          python audit_v5_002_engine.py
+
+      - name: Run V5-002 Shadow Forward
+        run: |
+          set -euo pipefail
+          python fund100_v5_002_shadow.py
+
+      - name: Check for shadow changes
+        id: shadow_check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHANGES="$(git status --porcelain -- shadow_outputs/v5_002/)"
+
+          if [ -z "$CHANGES" ]; then
+
+            echo "No V5-002 shadow changes."
+            echo "shadow_changed=false" >> "$GITHUB_OUTPUT"
+
+          else
+
+            echo "V5-002 shadow state changed:"
+            echo "$CHANGES"
+
+            echo "shadow_changed=true" >> "$GITHUB_OUTPUT"
+
+          fi
+
+      - name: Show shadow changes
+        if: steps.shadow_check.outputs.shadow_changed == 'true'
+        run: |
+          set -euo pipefail
+
+          git status --short
+          git diff --stat -- shadow_outputs/v5_002/ || true
+
+      - name: Commit V5-002 shadow state
+        if: steps.shadow_check.outputs.shadow_changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "fund100-shadow-bot"
+          git config user.email "fund100-shadow-bot@users.noreply.github.com"
+
+          git add shadow_outputs/v5_002/
+
+          if git diff --cached --quiet; then
+            echo "Nothing staged."
+            exit 0
+          fi
+
+          RUN_DATE="$(date -u +'%Y-%m-%d')"
+
+          git commit \
+            -m "V5-002 shadow update ${RUN_DATE}"
+
+          git push origin HEAD:main
+
+      - name: Final status
+        run: |
+          echo "========================================"
+          echo "FUND-100 V5-002 SHADOW COMPLETE"
+          echo "========================================"
+
+          if [ "${{ steps.shadow_check.outputs.shadow_changed }}" = "true" ]; then
+            echo "V5-002 shadow state was updated."
+          else
+            echo "No new completed session was available."
+          fi
