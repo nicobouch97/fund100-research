@@ -1,0 +1,79 @@
+name: Fund-100 Alpaca LIVE Execution Boundary Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-alpaca-live-boundary-test
+  cancel-in-progress: false
+
+jobs:
+  boundary-test:
+    name: Prove LIVE Writes Are Structurally Disabled
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify boundary files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_live_execution_boundary.py
+          test -f fund100_alpaca_live_readonly_smoke.py
+          test -f fund100_alpaca_live_preflight.py
+          test -f fund100_broker_safety.py
+          test -f shadow_outputs/v5_002/shadow_state.json
+
+          echo "LIVE boundary dependencies found."
+
+      - name: Run Fund-100 tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Test LIVE execution boundary
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+          FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+          FUND100_ENABLE_LIVE_BOUNDARY_TEST: YES_READ_ONLY_LIVE_BOUNDARY
+
+          # v1.0 has no other permitted state.
+          FUND100_LIVE_WRITE_MODE: DISABLED
+
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_live_execution_boundary.py
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 LIVE BOUNDARY TEST COMPLETE"
+          echo "========================================"
+          echo "Live order implementation: ABSENT"
+          echo "Orders submitted: 0"
+          echo "Broker state modified: NO"
