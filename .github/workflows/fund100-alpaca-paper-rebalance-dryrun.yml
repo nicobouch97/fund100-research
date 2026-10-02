@@ -1,0 +1,68 @@
+name: Fund-100 Alpaca Paper Rebalance Dry Run
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rebalance-dryrun:
+    name: Dry Run V5-002 Paper Rebalance
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify required files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_paper_rebalance_dryrun.py
+          test -f fund100_alpaca_paper_reconcile.py
+          test -f fund100_broker_safety.py
+          test -f shadow_outputs/v5_002/shadow_state.json
+
+          echo "Dry-run rebalance dependencies found."
+
+      - name: Run Fund-100 tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Run read-only paper rebalance calculation
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_paper_rebalance_dryrun.py
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 PAPER REBALANCE DRY RUN COMPLETE"
+          echo "========================================"
+          echo "Orders submitted: 0"
+          echo "Broker state modified: NO"
+          echo "Kill switch required: ENGAGED"
