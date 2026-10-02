@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   paper-execute:
-    name: Execute V5-002 Paper Bootstrap
+    name: Execute V5-002 Paper Portfolio
 
     runs-on: ubuntu-latest
 
@@ -39,34 +39,28 @@ jobs:
         run: |
           set -euo pipefail
 
+          test -f fund100_broker_safety.py
+          test -f fund100_alpaca_paper_execute_guarded.py
           test -f fund100_alpaca_paper_execute_bootstrap.py
           test -f fund100_alpaca_paper_reconcile.py
           test -f shadow_outputs/v5_002/shadow_state.json
-          test -f requirements.txt
 
-          echo "Paper execution dependencies found."
+          echo "Guarded paper execution dependencies found."
 
       - name: Run Fund-100 tests
         run: |
           set -euo pipefail
           python -m pytest -q
 
-      - name: Execute controlled Alpaca PAPER bootstrap
+      - name: Execute guarded Alpaca PAPER workflow
         env:
           ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
           ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
 
-          # Deliberate paper-only execution arm.
           FUND100_ENABLE_PAPER_ORDERS: YES_PAPER_ONLY
+
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
 
         run: |
           set -euo pipefail
-          python fund100_alpaca_paper_execute_bootstrap.py
-
-      - name: Final safety status
-        run: |
-          echo "========================================"
-          echo "FUND-100 PAPER EXECUTION COMPLETE"
-          echo "========================================"
-          echo "Environment: ALPACA PAPER"
-          echo "Live trading: DISABLED"
+          python fund100_alpaca_paper_execute_guarded.py
