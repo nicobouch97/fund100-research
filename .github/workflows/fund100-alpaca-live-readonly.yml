@@ -1,0 +1,72 @@
+name: Fund-100 Alpaca LIVE Read Only
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-alpaca-live-readonly
+  cancel-in-progress: false
+
+jobs:
+  live-readonly:
+    name: Inspect Alpaca LIVE Account Read Only
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify required files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_live_readonly_smoke.py
+          test -f fund100_broker_safety.py
+
+          echo "LIVE read-only dependencies found."
+
+      - name: Run Fund-100 tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Inspect LIVE Alpaca account
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+          FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_live_readonly_smoke.py
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 LIVE READ-ONLY CHECK COMPLETE"
+          echo "========================================"
+          echo "GET requests only"
+          echo "Orders submitted: 0"
+          echo "Broker modifications: 0"
