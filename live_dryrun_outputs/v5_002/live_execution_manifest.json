@@ -1,0 +1,25 @@
+{
+  "manifest": {
+    "broker_environment": "ALPACA_LIVE",
+    "broker_write_mode": "DISABLED",
+    "event_source": "NONE",
+    "kill_switch_required": "ENGAGED",
+    "live_execution_authorized": false,
+    "manifest_type": "NO_EVENT_SNAPSHOT",
+    "max_live_execution_notional_usd": 0.0,
+    "proposed_orders": [],
+    "schema": "FUND100_LIVE_DRYRUN_MANIFEST_V1",
+    "strategy": "V5-002_SHADOW",
+    "strategy_event_present": false,
+    "strategy_state_date": "2026-10-01",
+    "strategy_state_sha256": "a3d69d7da981f9511beb62eeec5fdd7aea7d1f5f48ced4ca681b14e891151b6a",
+    "target_weights": {
+      "ACWI": 0.750111418796,
+      "EEM": 0.083467679015,
+      "XLE": 0.083007537396,
+      "XLV": 0.083413364792
+    }
+  },
+  "manifest_id": "f100-live-20261001-0908be0aba11ed19",
+  "manifest_sha256": "0908be0aba11ed19ac3eeaf082f2c2a9e45d83a8f46a54c95642e5252fd9c436"
+}
