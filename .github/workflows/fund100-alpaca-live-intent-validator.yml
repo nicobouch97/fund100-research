@@ -1,0 +1,129 @@
+name: Fund-100 Alpaca LIVE Order Intent Validator
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-alpaca-live-intent-validator
+  cancel-in-progress: false
+
+jobs:
+  intent-validator:
+    name: Validate LIVE Order Intents Read Only
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify intent-validator files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_live_intent_validator.py
+          test -f fund100_alpaca_live_manifest.py
+          test -f fund100_alpaca_live_readonly_smoke.py
+          test -f fund100_alpaca_live_preflight.py
+          test -f fund100_alpaca_live_execution_boundary.py
+          test -f fund100_broker_safety.py
+
+          test -f shadow_outputs/v5_002/shadow_state.json
+          test -f live_dryrun_outputs/v5_002/live_execution_manifest.json
+
+          echo "LIVE order-intent dependencies found."
+
+      - name: Run Fund-100 tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Validate LIVE order intents
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+          FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+          FUND100_ENABLE_LIVE_INTENT_VALIDATION: YES_READ_ONLY_LIVE_INTENTS
+
+          FUND100_LIVE_WRITE_MODE: DISABLED
+
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_live_intent_validator.py
+
+      - name: Check intent-bundle changes
+        id: intent_check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHANGES="$(git status --porcelain -- live_dryrun_outputs/v5_002/live_order_intents.json)"
+
+          if [ -z "$CHANGES" ]; then
+
+            echo "Intent bundle unchanged."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+
+          else
+
+            echo "Intent bundle changed:"
+            echo "$CHANGES"
+
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+
+          fi
+
+      - name: Commit deterministic intent bundle
+        if: steps.intent_check.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "fund100-live-dryrun-bot"
+          git config user.email "fund100-live-dryrun-bot@users.noreply.github.com"
+
+          git add live_dryrun_outputs/v5_002/live_order_intents.json
+
+          if git diff --cached --quiet; then
+            echo "Nothing staged."
+            exit 0
+          fi
+
+          git commit \
+            -m "Update V5-002 live order intents"
+
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 LIVE INTENT VALIDATION COMPLETE"
+          echo "========================================"
+          echo "Live execution authorized: FALSE"
+          echo "Maximum live execution notional: \$0.00"
+          echo "Network write capability: ABSENT"
+          echo "Orders submitted: 0"
