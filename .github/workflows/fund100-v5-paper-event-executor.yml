@@ -1,0 +1,129 @@
+name: Fund-100 V5-002 Paper Event Executor
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    # US close is normally 20:00 UTC during EDT.
+    - cron: "35 19 * * 1-5"
+
+    # US close is normally 21:00 UTC during EST.
+    - cron: "35 20 * * 1-5"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-v5-paper-event-executor
+  cancel-in-progress: false
+
+jobs:
+  paper-event:
+    name: Process V5-002 Paper Execution Event
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify required files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_paper_event_executor.py
+          test -f fund100_alpaca_paper_reconcile.py
+          test -f fund100_alpaca_paper_execute_bootstrap.py
+          test -f fund100_broker_safety.py
+
+          test -f shadow_outputs/v5_002/shadow_state.json
+
+          echo "Production paper executor dependencies found."
+
+      - name: Run Fund-100 tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Process V5-002 paper event
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+          FUND100_ENABLE_PAPER_EVENT_EXECUTION: YES_PAPER_ONLY
+
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_paper_event_executor.py
+
+      - name: Check for permanent broker records
+        id: broker_check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHANGES="$(git status --porcelain -- broker_outputs/v5_002_paper/)"
+
+          if [ -z "$CHANGES" ]; then
+
+            echo "No permanent broker event changes."
+            echo "broker_changed=false" >> "$GITHUB_OUTPUT"
+
+          else
+
+            echo "Permanent broker event state changed:"
+            echo "$CHANGES"
+
+            echo "broker_changed=true" >> "$GITHUB_OUTPUT"
+
+          fi
+
+      - name: Commit broker event record
+        if: steps.broker_check.outputs.broker_changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "fund100-broker-bot"
+          git config user.email "fund100-broker-bot@users.noreply.github.com"
+
+          git add broker_outputs/v5_002_paper/
+
+          if git diff --cached --quiet; then
+            echo "Nothing staged."
+            exit 0
+          fi
+
+          RUN_DATE="$(date -u +'%Y-%m-%d')"
+
+          git commit \
+            -m "V5-002 paper execution event ${RUN_DATE}"
+
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Final status
+        run: |
+          echo "========================================"
+          echo "FUND-100 V5-002 PAPER EVENT CHECK DONE"
+          echo "========================================"
+          echo "Broker environment: ALPACA PAPER"
