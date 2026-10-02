@@ -48,14 +48,14 @@ jobs:
         run: |
           set -euo pipefail
 
+          test -f fund100_alpaca_paper_event_executor_v1_1.py
           test -f fund100_alpaca_paper_event_executor.py
           test -f fund100_alpaca_paper_reconcile.py
           test -f fund100_alpaca_paper_execute_bootstrap.py
           test -f fund100_broker_safety.py
-
           test -f shadow_outputs/v5_002/shadow_state.json
 
-          echo "Production paper executor dependencies found."
+          echo "Production paper executor v1.1 dependencies found."
 
       - name: Run Fund-100 tests
         run: |
@@ -73,7 +73,7 @@ jobs:
 
         run: |
           set -euo pipefail
-          python fund100_alpaca_paper_event_executor.py
+          python fund100_alpaca_paper_event_executor_v1_1.py
 
       - name: Check for permanent broker records
         id: broker_check
@@ -126,4 +126,5 @@ jobs:
           echo "========================================"
           echo "FUND-100 V5-002 PAPER EVENT CHECK DONE"
           echo "========================================"
+          echo "Executor safety layer: v1.1"
           echo "Broker environment: ALPACA PAPER"
