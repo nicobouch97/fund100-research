@@ -1,0 +1,92 @@
+name: Fund-100 LIVE Static Safety Audit
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+    paths:
+      - "fund100_alpaca_live_*.py"
+      - "fund100_broker_safety.py"
+      - "test_fund100_alpaca_live_writer_disconnected.py"
+      - "audit_fund100_live_boundary.py"
+      - ".github/workflows/**"
+      - "live_dryrun_outputs/v5_002/**"
+
+  pull_request:
+    paths:
+      - "fund100_alpaca_live_*.py"
+      - "fund100_broker_safety.py"
+      - "test_fund100_alpaca_live_writer_disconnected.py"
+      - "audit_fund100_live_boundary.py"
+      - ".github/workflows/**"
+      - "live_dryrun_outputs/v5_002/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-live-static-audit-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  static-audit:
+    name: Prove LIVE Writer Remains Disconnected
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify audit files
+        run: |
+          set -euo pipefail
+
+          test -f audit_fund100_live_boundary.py
+          test -f fund100_alpaca_live_writer_disconnected.py
+          test -f test_fund100_alpaca_live_writer_disconnected.py
+
+          test -f live_dryrun_outputs/v5_002/live_execution_manifest.json
+          test -f live_dryrun_outputs/v5_002/live_order_intents.json
+          test -f live_dryrun_outputs/v5_002/scheduled_execution_time.json
+          test -f live_dryrun_outputs/v5_002/live_execution_permit.json
+
+          echo "LIVE static-audit dependencies found."
+
+      - name: Run full Fund-100 test suite
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Run offline LIVE boundary audit
+        run: |
+          set -euo pipefail
+          python audit_fund100_live_boundary.py
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 LIVE STATIC AUDIT COMPLETE"
+          echo "========================================"
+          echo "Live credentials supplied: NO"
+          echo "Broker network access: NONE"
+          echo "Live writer workflow: NONE"
+          echo "Live permit issued: FALSE"
+          echo "Orders submitted: 0"
