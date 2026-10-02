@@ -1,0 +1,63 @@
+name: Fund-100 Alpaca Paper Execute
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-alpaca-paper-execution
+  cancel-in-progress: false
+
+jobs:
+  paper-execute:
+    name: Execute V5-002 Paper Bootstrap
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Verify required files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_paper_execute_bootstrap.py
+          test -f fund100_alpaca_paper_reconcile.py
+          test -f shadow_outputs/v5_002/shadow_state.json
+
+          echo "Paper execution dependencies found."
+
+      - name: Run Fund-100 tests
+        run: |
+          set -euo pipefail
+          pytest -q
+
+      - name: Execute controlled Alpaca PAPER bootstrap
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+
+          # Deliberate paper-only execution arm.
+          FUND100_ENABLE_PAPER_ORDERS: YES_PAPER_ONLY
+
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_paper_execute_bootstrap.py
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 PAPER EXECUTION COMPLETE"
+          echo "========================================"
+          echo "Environment: ALPACA PAPER"
+          echo "Live trading: DISABLED"
