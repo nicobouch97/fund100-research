@@ -1,0 +1,65 @@
+name: Fund-100 Alpaca Paper Fill Reconciliation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fill-reconcile:
+    name: Verify V5-002 Paper Fills
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify required files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_paper_fill_reconcile.py
+          test -f fund100_alpaca_paper_reconcile.py
+          test -f fund100_alpaca_paper_execute_bootstrap.py
+          test -f shadow_outputs/v5_002/shadow_state.json
+
+          echo "Fill reconciliation dependencies found."
+
+      - name: Run Fund-100 tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Reconcile Alpaca paper fills
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_paper_fill_reconcile.py
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 PAPER FILL CHECK COMPLETE"
+          echo "========================================"
+          echo "Environment: ALPACA PAPER"
+          echo "Orders submitted: 0"
+          echo "Live trading: DISABLED"
