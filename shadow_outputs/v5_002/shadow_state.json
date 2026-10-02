@@ -1,0 +1,30 @@
+{
+  "updated_utc": "2026-10-02T11:11:13.934158+00:00",
+  "strategy": "V5-002_SHADOW",
+  "manifest_hash": "852a1563f236b964974b44c4cea0895c50e880bb304ae62ae5c650c61f483c10",
+  "last_date": "2026-10-01",
+  "nav": 100.0,
+  "benchmark_nav": 100.0,
+  "relative_wealth_vs_acwi": 0.0,
+  "satellite_weights": {
+    "SPY": 0.0,
+    "IWM": 0.0,
+    "EFA": 0.0,
+    "EEM": 0.08346767901540157,
+    "VNQ": 0.0,
+    "XLK": 0.0,
+    "XLF": 0.0,
+    "XLI": 0.0,
+    "XLV": 0.08341336479208938,
+    "XLP": 0.0,
+    "XLY": 0.0,
+    "XLE": 0.0830075373964371,
+    "XLU": 0.0
+  },
+  "pending_target": null,
+  "pending_source": null,
+  "cumulative_turnover": 0.0,
+  "cumulative_cost_gbp": 0.0,
+  "emergency_signals": 0,
+  "emergency_executions": 0
+}
