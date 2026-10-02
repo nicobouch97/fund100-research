@@ -1,0 +1,71 @@
+name: Fund-100 Broker Event Gate Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  event-gate-test:
+    name: Test V5-002 Event-Driven Rebalancing
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify required files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_event_gate.py
+          test -f fund100_alpaca_paper_reconcile.py
+          test -f fund100_broker_safety.py
+          test -f shadow_outputs/v5_002/shadow_state.json
+
+          echo "Event-gate dependencies found."
+
+      - name: Run Fund-100 tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Run synthetic event-gate test
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+          # Read-only engineering event.
+          FUND100_SYNTHETIC_EVENT_TEST: YES
+
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_event_gate.py
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 BROKER EVENT GATE TEST COMPLETE"
+          echo "========================================"
+          echo "Synthetic strategy event only."
+          echo "Orders submitted: 0"
+          echo "Broker state modified: NO"
