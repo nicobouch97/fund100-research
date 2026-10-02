@@ -1,0 +1,50 @@
+name: Fund-100 Alpaca Paper Reconciliation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile:
+    name: Reconcile V5-002 With Alpaca Paper
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Verify required files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_paper_reconcile.py
+          test -f shadow_outputs/v5_002/shadow_state.json
+
+          echo "Reconciliation dependencies found."
+
+      - name: Run read-only paper reconciliation
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_paper_reconcile.py
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 RECONCILIATION COMPLETE"
+          echo "========================================"
+          echo "Paper endpoint only."
+          echo "No orders submitted."
+          echo "No broker state modified."
