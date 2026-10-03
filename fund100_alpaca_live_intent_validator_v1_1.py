@@ -28,13 +28,14 @@ from fund100_broker_safety import (
 #
 # and obtains a FRESH, EPHEMERAL broker reconciliation.
 #
-# Important changes from v1.0:
+# Important properties:
 #
 # - complete frozen V5 execution universe
 # - portfolio-value based broker weights
 # - existing positions supported
 # - account binding checked against manifest
 # - position structure checked against manifest
+# - complete structural reconciliation proof carried forward
 # - live dollar balances are NOT persisted
 # - live holdings are NOT persisted
 # - volatile broker snapshot hashes are NOT persisted
@@ -694,8 +695,6 @@ def compile_candidate_intents(
 
     # --------------------------------------------------------
     # Scheduled events require the execution-time compiler.
-    #
-    # Do not convert the raw pending target here.
     # --------------------------------------------------------
 
     if source == "SCHEDULED":
@@ -799,8 +798,15 @@ def compile_candidate_intents(
         )
 
         # ----------------------------------------------------
-        # Deliberately persist no current live weight,
-        # market value, cash value, quantity, or dollar delta.
+        # Persist only strategy target information.
+        #
+        # Do NOT persist:
+        #
+        # - current live weights
+        # - live quantities
+        # - live prices
+        # - market values
+        # - dollar deltas
         # ----------------------------------------------------
 
         intents.append({
@@ -856,6 +862,117 @@ def build_intent_package_v1_1(
         ]
     )
 
+    # ========================================================
+    # COMPLETE STRUCTURAL RECONCILIATION PROOF
+    # ========================================================
+    #
+    # These are stable safety attestations.
+    #
+    # They contain no:
+    #
+    # - live quantities
+    # - live market values
+    # - live prices
+    # - broker weight deltas
+    # - cash balances
+    #
+    # ========================================================
+
+    position_reconciliation = {
+        "policy":
+            structure[
+                "policy"
+            ],
+
+        "live_account_binding_sha256":
+            structure[
+                "live_account_binding_sha256"
+            ],
+
+        "reconciliation_status":
+            structure[
+                "reconciliation_status"
+            ],
+
+        "position_count":
+            structure[
+                "position_count"
+            ],
+
+        "open_order_count":
+            0,
+
+        "frozen_execution_universe_verified":
+            structure[
+                "frozen_execution_universe_verified"
+            ],
+
+        "long_only_verified":
+            structure[
+                "long_only_verified"
+            ],
+
+        "no_unmanaged_positions_verified":
+            structure[
+                "no_unmanaged_positions_verified"
+            ],
+
+        "no_open_orders_verified":
+            structure[
+                "no_open_orders_verified"
+            ],
+
+        "live_holdings_persisted":
+            False,
+
+        "live_dollar_values_persisted":
+            False,
+
+        "volatile_broker_snapshot_persisted":
+            False,
+    }
+
+    # ========================================================
+    # FAIL CLOSED IF STRUCTURAL PROOF IS INCOMPLETE
+    # ========================================================
+
+    required_true = [
+        "frozen_execution_universe_verified",
+        "long_only_verified",
+        "no_unmanaged_positions_verified",
+        "no_open_orders_verified",
+    ]
+
+    for field in required_true:
+
+        if (
+            position_reconciliation.get(
+                field
+            )
+            is not True
+        ):
+
+            raise RuntimeError(
+                "LIVE INTENT STOP: "
+                f"structural reconciliation proof "
+                f"{field!r} is not TRUE."
+            )
+
+    if (
+        int(
+            position_reconciliation[
+                "open_order_count"
+            ]
+        )
+        != 0
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "structural reconciliation proof "
+            "contains open orders."
+        )
+
     body = {
         "schema":
             INTENT_SCHEMA,
@@ -898,39 +1015,8 @@ def build_intent_package_v1_1(
                 "strategy_event_present"
             ],
 
-        "position_reconciliation": {
-            "policy":
-                structure[
-                    "policy"
-                ],
-
-            "live_account_binding_sha256":
-                structure[
-                    "live_account_binding_sha256"
-                ],
-
-            "reconciliation_status":
-                structure[
-                    "reconciliation_status"
-                ],
-
-            "position_count":
-                structure[
-                    "position_count"
-                ],
-
-            "open_order_count":
-                0,
-
-            "live_holdings_persisted":
-                False,
-
-            "live_dollar_values_persisted":
-                False,
-
-            "volatile_broker_snapshot_persisted":
-                False,
-        },
+        "position_reconciliation":
+            position_reconciliation,
 
         "candidate_intents":
             intents,
@@ -1000,6 +1086,10 @@ def main():
 
     print(
         "Position-aware reconciliation: ENABLED"
+    )
+
+    print(
+        "Structural reconciliation proof: COMPLETE"
     )
 
     print(
@@ -1136,6 +1226,10 @@ def main():
 
     print(
         "Live position structure: PASS"
+    )
+
+    print(
+        "Complete structural proof: PASS"
     )
 
     print(
