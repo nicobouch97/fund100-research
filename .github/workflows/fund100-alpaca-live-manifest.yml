@@ -121,5 +121,5 @@ jobs:
           echo "FUND-100 LIVE MANIFEST COMPLETE"
           echo "========================================"
           echo "Live execution authorized: FALSE"
-          echo "Maximum live execution notional: $0.00"
+          echo 'Maximum live execution notional: $0.00'
           echo "Orders submitted: 0"
