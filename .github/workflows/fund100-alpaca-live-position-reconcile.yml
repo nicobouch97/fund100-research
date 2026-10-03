@@ -1,0 +1,96 @@
+name: Fund-100 Alpaca LIVE Position Reconciliation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-alpaca-live-position-reconciliation
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: Reconcile Existing LIVE Positions
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify reconciliation files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_live_position_reconcile.py
+          test -f test_fund100_alpaca_live_position_reconcile.py
+
+          test -f fund100_alpaca_live_writer_disconnected_v1_1.py
+          test -f fund100_alpaca_live_manifest.py
+          test -f shadow_outputs/v5_002/shadow_state.json
+
+          echo "LIVE reconciliation dependencies found."
+
+      - name: Run full Fund-100 test suite
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Run position-aware LIVE reconciliation
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+          FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+
+          FUND100_ENABLE_LIVE_POSITION_RECONCILE: YES_READ_ONLY_POSITION_RECONCILE
+
+          FUND100_LIVE_WRITE_MODE: DISABLED
+
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_live_position_reconcile.py
+
+      - name: Prove live broker data was not persisted
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "ERROR: reconciliation modified repository files."
+            git status --short
+            exit 1
+          fi
+
+          echo "Repository unchanged: PASS"
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 LIVE POSITION RECONCILIATION COMPLETE"
+          echo "========================================"
+          echo "Broker HTTP methods: GET ONLY"
+          echo "Live holdings persisted: NO"
+          echo "Live execution authorized: FALSE"
+          echo "Network write capability: ABSENT"
+          echo "Writer connected: FALSE"
+          echo "Orders submitted: 0"
