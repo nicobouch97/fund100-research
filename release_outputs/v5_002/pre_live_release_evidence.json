@@ -249,10 +249,10 @@
       },
       {
         "detail": {
-          "intent_manifest_id": "f100-live-20261002-6a9ab3600b6b6304",
-          "intent_manifest_sha256": "6a9ab3600b6b63049cc3630e12cf0a8cbdcdf3a356b8a16a59deb26a3b7c9915",
-          "manifest_id": "f100-live-20261002-6a9ab3600b6b6304",
-          "manifest_sha256": "6a9ab3600b6b63049cc3630e12cf0a8cbdcdf3a356b8a16a59deb26a3b7c9915"
+          "intent_manifest_id": "f100-live-20261002-03821673ea85b3ec",
+          "intent_manifest_sha256": "03821673ea85b3ec6d193731e901448e17a9daec89c32ef3d1a0517dd8d02135",
+          "manifest_id": "f100-live-20261002-03821673ea85b3ec",
+          "manifest_sha256": "03821673ea85b3ec6d193731e901448e17a9daec89c32ef3d1a0517dd8d02135"
         },
         "name": "live_intents_bound_to_manifest",
         "passed": true
@@ -284,10 +284,12 @@
       },
       {
         "detail": {
-          "compiler_mode": "synthetic",
-          "genuine_scheduled_event": false
+          "candidate_intents": [],
+          "compiler_mode": "current",
+          "genuine_scheduled_event": false,
+          "status": "NO_SCHEDULED_EVENT"
         },
-        "name": "current_compiler_artifact_is_non_genuine_test",
+        "name": "current_compiler_artifact_is_safe_no_event_baseline",
         "passed": true
       },
       {
@@ -307,7 +309,7 @@
       },
       {
         "detail": {
-          "denial_reason": "SYNTHETIC_ARTIFACT_NEVER_EXECUTABLE",
+          "denial_reason": "NO_GENUINE_STRATEGY_EVENT",
           "network_write_capability": false,
           "permit_issued": false
         },
@@ -316,8 +318,8 @@
       },
       {
         "detail": {
-          "compiler": "f5b82b2aeefc61f9307b254a311ac88033b8bb874abcd5899f2e313c3aa81b14",
-          "permit": "f5b82b2aeefc61f9307b254a311ac88033b8bb874abcd5899f2e313c3aa81b14"
+          "compiler": "6e8a2b58b92fb3254b134258e733c3810c427387f51ffae5bb6e379b17d892a1",
+          "permit": "6e8a2b58b92fb3254b134258e733c3810c427387f51ffae5bb6e379b17d892a1"
         },
         "name": "v1_permit_bound_to_compiler",
         "passed": true
@@ -419,6 +421,131 @@
         "passed": true
       },
       {
+        "detail": "FUND100_LIVE_DRYRUN_MANIFEST_V1_1",
+        "name": "position_aware_manifest_schema_v1_1",
+        "passed": true
+      },
+      {
+        "detail": {
+          "account_binding": "fb41e88fa1bac7662fb2a746023093ea6158685ec41737ffb4f9ca7add1f1acd",
+          "position_count": 0,
+          "status": "EMPTY_ZERO_EQUITY"
+        },
+        "name": "position_aware_manifest_reconciliation_proof",
+        "passed": true
+      },
+      {
+        "detail": "FUND100_LIVE_ORDER_INTENTS_V1_1",
+        "name": "position_aware_intent_schema_v1_1",
+        "passed": true
+      },
+      {
+        "detail": {
+          "account_binding": "fb41e88fa1bac7662fb2a746023093ea6158685ec41737ffb4f9ca7add1f1acd",
+          "position_count": 0,
+          "status": "EMPTY_ZERO_EQUITY"
+        },
+        "name": "position_aware_intent_reconciliation_proof",
+        "passed": true
+      },
+      {
+        "detail": {
+          "intents": {
+            "account_binding": "fb41e88fa1bac7662fb2a746023093ea6158685ec41737ffb4f9ca7add1f1acd",
+            "position_count": 0,
+            "status": "EMPTY_ZERO_EQUITY"
+          },
+          "manifest": {
+            "account_binding": "fb41e88fa1bac7662fb2a746023093ea6158685ec41737ffb4f9ca7add1f1acd",
+            "position_count": 0,
+            "status": "EMPTY_ZERO_EQUITY"
+          }
+        },
+        "name": "intent_position_structure_bound_to_manifest",
+        "passed": true
+      },
+      {
+        "detail": {
+          "candidate_intents": [],
+          "event_source": "NONE",
+          "strategy_event_present": false
+        },
+        "name": "position_aware_intents_are_empty_baseline",
+        "passed": true
+      },
+      {
+        "detail": "FUND100_SCHEDULED_EXECUTION_COMPILER_V1_1",
+        "name": "position_aware_compiler_schema_v1_1",
+        "passed": true
+      },
+      {
+        "detail": {
+          "candidate_intents": [],
+          "compiler_mode": "current",
+          "genuine_scheduled_event": false,
+          "status": "NO_SCHEDULED_EVENT"
+        },
+        "name": "current_compiler_is_safe_no_event_baseline",
+        "passed": true
+      },
+      {
+        "detail": {
+          "compiler_manifest_id": "f100-live-20261002-03821673ea85b3ec",
+          "compiler_manifest_sha256": "03821673ea85b3ec6d193731e901448e17a9daec89c32ef3d1a0517dd8d02135",
+          "manifest_id": "f100-live-20261002-03821673ea85b3ec",
+          "manifest_sha256": "03821673ea85b3ec6d193731e901448e17a9daec89c32ef3d1a0517dd8d02135"
+        },
+        "name": "position_aware_compiler_bound_to_manifest",
+        "passed": true
+      },
+      {
+        "detail": {
+          "account_binding": "fb41e88fa1bac7662fb2a746023093ea6158685ec41737ffb4f9ca7add1f1acd",
+          "position_count": 0,
+          "status": "EMPTY_ZERO_EQUITY"
+        },
+        "name": "position_aware_compiler_reconciliation_proof",
+        "passed": true
+      },
+      {
+        "detail": {
+          "compiler": {
+            "account_binding": "fb41e88fa1bac7662fb2a746023093ea6158685ec41737ffb4f9ca7add1f1acd",
+            "position_count": 0,
+            "status": "EMPTY_ZERO_EQUITY"
+          },
+          "manifest": {
+            "account_binding": "fb41e88fa1bac7662fb2a746023093ea6158685ec41737ffb4f9ca7add1f1acd",
+            "position_count": 0,
+            "status": "EMPTY_ZERO_EQUITY"
+          }
+        },
+        "name": "compiler_position_structure_bound_to_manifest",
+        "passed": true
+      },
+      {
+        "detail": {
+          "broker_delta_source": "NONE_NO_EVENT",
+          "candidate_intents": []
+        },
+        "name": "no_event_compiler_has_no_broker_delta",
+        "passed": true
+      },
+      {
+        "detail": "FUND100_LIVE_EXECUTION_PERMIT_V1",
+        "name": "deny_only_v1_permit_schema_preserved",
+        "passed": true
+      },
+      {
+        "detail": {
+          "compiler_sha256": "6e8a2b58b92fb3254b134258e733c3810c427387f51ffae5bb6e379b17d892a1",
+          "denial_reason": "NO_GENUINE_STRATEGY_EVENT",
+          "source_compiler_sha256": "6e8a2b58b92fb3254b134258e733c3810c427387f51ffae5bb6e379b17d892a1"
+        },
+        "name": "deny_only_v1_permit_matches_no_event_compiler",
+        "passed": true
+      },
+      {
         "detail": false,
         "name": "writer_declared_disconnected",
         "passed": true
@@ -439,18 +566,18 @@
       "broker_kill_switch": "ENGAGED",
       "live_artifacts": {
         "committed_live_account_binding_sha256": "fb41e88fa1bac7662fb2a746023093ea6158685ec41737ffb4f9ca7add1f1acd",
-        "intent_bundle_sha256": "a659d84a6639d429097c2d680df3e3776c2758eeaebbe859d34edad26bcbffaf",
+        "intent_bundle_sha256": "ca703f607671444820205cf0c9704c23198d2f314834799dcea1096495a83ae3",
         "live_execution_authorized": false,
         "live_snapshot_candidate_expiry": "2026-10-05T16:00:00-04:00",
         "live_snapshot_market_session_open": false,
-        "manifest_id": "f100-live-20261002-6a9ab3600b6b6304",
-        "manifest_sha256": "6a9ab3600b6b63049cc3630e12cf0a8cbdcdf3a356b8a16a59deb26a3b7c9915",
+        "manifest_id": "f100-live-20261002-03821673ea85b3ec",
+        "manifest_sha256": "03821673ea85b3ec6d193731e901448e17a9daec89c32ef3d1a0517dd8d02135",
         "max_live_execution_notional_usd": 0.0,
         "network_write_capability": false,
         "permit_issued": false,
         "positive_rehearsal_sha256": "9e8342afbe1b58e411aeaf69486faa3f15d643753fa0aa4c6c4208f342d225ae",
-        "scheduled_compiler_sha256": "f5b82b2aeefc61f9307b254a311ac88033b8bb874abcd5899f2e313c3aa81b14",
-        "v1_permit_sha256": "ecbf314203684c9144b74406406b07a16e5bad845a182e19f34f4885dbefb4db",
+        "scheduled_compiler_sha256": "6e8a2b58b92fb3254b134258e733c3810c427387f51ffae5bb6e379b17d892a1",
+        "v1_permit_sha256": "ffdd06c68a20b12447e2db179be52adecb41085c589b1fc560481e5d00568fb9",
         "v2_simulation_sha256": "76b67cc7f8735ed1f51f4959af88181d0d8832d6f3cfb9692c256206e22bc29d"
       },
       "paper_architecture": {
@@ -464,6 +591,23 @@
         "note": "This release gate verifies committed paper architecture. Historical GitHub Actions fill/restart logs remain separate CI evidence.",
         "paper_endpoint_only": true,
         "production_event_executor": "fund100_alpaca_paper_event_executor_v1_1.py"
+      },
+      "position_aware_live_chain": {
+        "compiler_mode": "current",
+        "compiler_schema": "FUND100_SCHEDULED_EXECUTION_COMPILER_V1_1",
+        "compiler_sha256": "6e8a2b58b92fb3254b134258e733c3810c427387f51ffae5bb6e379b17d892a1",
+        "compiler_status": "NO_SCHEDULED_EVENT",
+        "intent_bundle_sha256": "ca703f607671444820205cf0c9704c23198d2f314834799dcea1096495a83ae3",
+        "intent_schema": "FUND100_LIVE_ORDER_INTENTS_V1_1",
+        "live_execution_authorized": false,
+        "live_holdings_persisted": false,
+        "manifest_schema": "FUND100_LIVE_DRYRUN_MANIFEST_V1_1",
+        "manifest_sha256": "03821673ea85b3ec6d193731e901448e17a9daec89c32ef3d1a0517dd8d02135",
+        "network_write_capability": false,
+        "position_aware": true,
+        "position_reconciliation_policy": "EPHEMERAL_POSITION_AWARE_V1",
+        "v1_permit_denial_reason": "NO_GENUINE_STRATEGY_EVENT",
+        "v1_permit_sha256": "ffdd06c68a20b12447e2db179be52adecb41085c589b1fc560481e5d00568fb9"
       },
       "research": {
         "automatic_live_approval": false,
@@ -502,22 +646,24 @@
         "source_present": true
       }
     },
+    "evidence_layer": "v1.1-position-aware",
     "experiment": "V5-002",
-    "generated_utc": "2026-10-03T11:03:00.010780+00:00",
+    "generated_utc": "2026-10-03T19:38:41.307813+00:00",
     "git_branch": "main",
-    "git_sha": "030be6dae479a9384ada9b2b99c08a82ac2397f7",
+    "git_sha": "7a1c790c974a0e416aa1708423dd6aa0a22a6a9e",
     "github_run_attempt": "1",
-    "github_run_id": "37118346404",
+    "github_run_id": "37148580341",
     "live_activation_decision": "NOT_MADE",
     "live_execution_authorized": false,
     "max_live_execution_notional_usd": 0.0,
     "network_write_capability": false,
     "permit_issued": false,
+    "position_aware_live_chain_verified": true,
     "repository": "nicobouch97/fund100-research",
     "research_survivor_is_live_approval": false,
-    "schema": "FUND100_PRE_LIVE_RELEASE_EVIDENCE_V1",
+    "schema": "FUND100_PRE_LIVE_RELEASE_EVIDENCE_V1_1",
     "strategy": "V5-002_SHADOW",
     "writer_connected": false
   },
-  "evidence_sha256": "6ed124102d204a7e30b851bb62d350717dddd38f682dbcca9dd3d83e89390c27"
+  "evidence_sha256": "ccdb6b5253c7f7f15a1ba9f714771084a0a6e4200033ef33bfa950a7bf8b2e1a"
 }
