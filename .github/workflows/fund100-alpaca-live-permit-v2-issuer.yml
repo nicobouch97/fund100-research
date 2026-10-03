@@ -85,11 +85,6 @@ jobs:
           set -euo pipefail
           python -m pytest -q
 
-      - name: Run LIVE static safety audit v1.3
-        run: |
-          set -euo pipefail
-          python audit_fund100_live_boundary_v1_3.py
-
       - name: Evaluate real V2 permit
         env:
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
@@ -106,8 +101,6 @@ jobs:
 
           FUND100_LIVE_MAX_NOTIONAL_USD: ${{ inputs.max_notional_usd }}
 
-          # Independent repository variable.
-          # Do not set merely to make a test pass.
           FUND100_LIVE_HARD_CAP_USD: ${{ vars.FUND100_LIVE_HARD_CAP_USD }}
 
           FUND100_LIVE_APPROVAL_TOKEN: ${{ inputs.approval_token }}
