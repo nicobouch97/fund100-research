@@ -7,8 +7,25 @@
     "live_execution_authorized": false,
     "manifest_type": "NO_EVENT_SNAPSHOT",
     "max_live_execution_notional_usd": 0.0,
+    "network_write_capability": false,
+    "orders_submitted": 0,
+    "position_reconciliation": {
+      "frozen_execution_universe_verified": true,
+      "live_account_binding_sha256": "fb41e88fa1bac7662fb2a746023093ea6158685ec41737ffb4f9ca7add1f1acd",
+      "live_dollar_values_persisted": false,
+      "live_holdings_persisted": false,
+      "long_only_verified": true,
+      "no_open_orders_verified": true,
+      "no_unmanaged_positions_verified": true,
+      "open_order_count": 0,
+      "policy": "EPHEMERAL_POSITION_AWARE_V1",
+      "position_count": 0,
+      "reconciliation_status": "EMPTY_ZERO_EQUITY",
+      "schema": "FUND100_LIVE_POSITION_RECONCILIATION_V1",
+      "volatile_broker_snapshot_persisted": false
+    },
     "proposed_orders": [],
-    "schema": "FUND100_LIVE_DRYRUN_MANIFEST_V1",
+    "schema": "FUND100_LIVE_DRYRUN_MANIFEST_V1_1",
     "strategy": "V5-002_SHADOW",
     "strategy_event_present": false,
     "strategy_state_date": "2026-10-02",
@@ -20,6 +37,6 @@
       "XLV": 0.082774034735
     }
   },
-  "manifest_id": "f100-live-20261002-6a9ab3600b6b6304",
-  "manifest_sha256": "6a9ab3600b6b63049cc3630e12cf0a8cbdcdf3a356b8a16a59deb26a3b7c9915"
+  "manifest_id": "f100-live-20261002-03821673ea85b3ec",
+  "manifest_sha256": "03821673ea85b3ec6d193731e901448e17a9daec89c32ef3d1a0517dd8d02135"
 }
