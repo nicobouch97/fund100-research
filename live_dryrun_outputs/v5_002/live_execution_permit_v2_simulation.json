@@ -1,0 +1,50 @@
+{
+  "permit_v2_simulation": {
+    "all_contract_conditions_satisfied": false,
+    "broker_write_mode": "DISABLED",
+    "candidate_expiry": "2026-10-05T16:00:00-04:00",
+    "conditions": {
+      "account_not_blocked": true,
+      "account_status_active": true,
+      "event_not_previously_consumed": true,
+      "manual_approval_present": true,
+      "market_session_open": false,
+      "no_open_orders": true,
+      "permit_built_while_kill_switch_engaged": true,
+      "permit_expiry_is_future": true,
+      "positive_execution_ceiling_configured": false,
+      "source_genuine_event_flag": false,
+      "source_mode_is_current": false,
+      "source_status_is_genuine_event": false,
+      "trading_not_blocked": true
+    },
+    "denial_reason": "V2_SIMULATION_NEVER_ISSUES_LIVE_PERMITS",
+    "event_binding_sha256": "5e3d703a838ed28025ff28fbdc1ec7796e4a8ce97433e138053c8f6846bdb9c4",
+    "event_id": "f100-live-event-5e3d703a838ed28025ff",
+    "event_previously_consumed": false,
+    "failed_conditions": [
+      "source_mode_is_current",
+      "source_status_is_genuine_event",
+      "source_genuine_event_flag",
+      "market_session_open",
+      "positive_execution_ceiling_configured"
+    ],
+    "future_writer_required_schema": "FUND100_LIVE_EXECUTION_PERMIT_V2",
+    "genuine_scheduled_event": false,
+    "live_account_binding_sha256": "fb41e88fa1bac7662fb2a746023093ea6158685ec41737ffb4f9ca7add1f1acd",
+    "live_execution_authorized": false,
+    "max_live_execution_notional_usd": 0.0,
+    "network_write_capability": false,
+    "permit_issued": false,
+    "schema": "FUND100_LIVE_EXECUTION_PERMIT_V2_SIMULATION",
+    "session_binding_sha256": "e237c98f65af85df1b11daace85ef449f7a4616bbbf871cbbc81d8ec1b4cf481",
+    "simulation_only": true,
+    "source_compiler_mode": "synthetic",
+    "source_compiler_sha256": "f5b82b2aeefc61f9307b254a311ac88033b8bb874abcd5899f2e313c3aa81b14",
+    "source_compiler_status": "SYNTHETIC_SCHEDULED_EVENT",
+    "strategy": "V5-002_SHADOW",
+    "strategy_state_date": "2026-10-01",
+    "writer_connected": false
+  },
+  "permit_v2_simulation_sha256": "76b67cc7f8735ed1f51f4959af88181d0d8832d6f3cfb9692c256206e22bc29d"
+}
