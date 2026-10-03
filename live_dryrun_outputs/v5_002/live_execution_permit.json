@@ -1,18 +1,18 @@
 {
   "permit": {
     "broker_write_mode": "DISABLED",
-    "denial_reason": "SYNTHETIC_ARTIFACT_NEVER_EXECUTABLE",
+    "denial_reason": "NO_GENUINE_STRATEGY_EVENT",
     "genuine_scheduled_event": false,
     "live_execution_authorized": false,
     "max_live_execution_notional_usd": 0.0,
     "network_write_capability": false,
     "permit_issued": false,
     "schema": "FUND100_LIVE_EXECUTION_PERMIT_V1",
-    "source_compiler_mode": "synthetic",
-    "source_compiler_sha256": "f5b82b2aeefc61f9307b254a311ac88033b8bb874abcd5899f2e313c3aa81b14",
-    "source_compiler_status": "SYNTHETIC_SCHEDULED_EVENT",
+    "source_compiler_mode": "current",
+    "source_compiler_sha256": "6e8a2b58b92fb3254b134258e733c3810c427387f51ffae5bb6e379b17d892a1",
+    "source_compiler_status": "NO_SCHEDULED_EVENT",
     "strategy": "V5-002_SHADOW",
-    "strategy_state_date": "2026-10-01"
+    "strategy_state_date": "2026-10-02"
   },
-  "permit_sha256": "ecbf314203684c9144b74406406b07a16e5bad845a182e19f34f4885dbefb4db"
+  "permit_sha256": "ffdd06c68a20b12447e2db179be52adecb41085c589b1fc560481e5d00568fb9"
 }
