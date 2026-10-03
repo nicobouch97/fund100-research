@@ -10,6 +10,7 @@ on:
       - "fund100_alpaca_live_*.py"
       - "fund100_broker_safety.py"
       - "test_fund100_alpaca_live_*.py"
+      - "test_fund100_live_*.py"
       - "audit_fund100_live_boundary*.py"
       - ".github/workflows/**"
       - "live_dryrun_outputs/v5_002/**"
@@ -20,6 +21,7 @@ on:
       - "fund100_alpaca_live_*.py"
       - "fund100_broker_safety.py"
       - "test_fund100_alpaca_live_*.py"
+      - "test_fund100_live_*.py"
       - "audit_fund100_live_boundary*.py"
       - ".github/workflows/**"
       - "live_dryrun_outputs/v5_002/**"
@@ -67,18 +69,19 @@ jobs:
           test -f audit_fund100_live_boundary_v1_6.py
           test -f audit_fund100_live_boundary_v1_7.py
           test -f audit_fund100_live_boundary_v1_8.py
+          test -f audit_fund100_live_boundary_v1_9.py
 
           test -f fund100_alpaca_live_writer_disconnected_v1_1.py
           test -f fund100_alpaca_live_position_reconcile.py
           test -f fund100_alpaca_live_manifest_v1_1.py
           test -f fund100_alpaca_live_intent_validator_v1_1.py
           test -f fund100_alpaca_live_scheduled_compiler_v1_1.py
-          test -f fund100_alpaca_live_permit_v2_issuer.py
 
-          test -f test_fund100_alpaca_live_position_reconcile.py
-          test -f test_fund100_alpaca_live_manifest_v1_1.py
-          test -f test_fund100_alpaca_live_intent_validator_v1_1.py
-          test -f test_fund100_alpaca_live_scheduled_compiler_v1_1.py
+          test -f fund100_alpaca_live_permit_v2_issuer.py
+          test -f fund100_alpaca_live_permit_v2_issuer_v1_1.py
+
+          test -f test_fund100_alpaca_live_permit_v2_issuer.py
+          test -f test_fund100_alpaca_live_permit_v2_issuer_v1_1.py
 
           echo "LIVE static-audit dependencies found."
 
@@ -87,22 +90,25 @@ jobs:
           set -euo pipefail
           python -m pytest -q
 
-      - name: Run offline LIVE boundary audit v1.8
+      - name: Run offline LIVE boundary audit v1.9
         run: |
           set -euo pipefail
-          python audit_fund100_live_boundary_v1_8.py
+          python audit_fund100_live_boundary_v1_9.py
 
       - name: Final safety status
         run: |
           echo "========================================"
           echo "FUND-100 LIVE STATIC AUDIT COMPLETE"
           echo "========================================"
-          echo "Static audit safety layer: v1.8"
+          echo "Static audit safety layer: v1.9"
           echo "Frozen V5 execution universe: VERIFIED"
           echo "Position-aware reconciliation: VERIFIED"
           echo "Position-aware manifest: VERIFIED"
           echo "Position-aware intents: VERIFIED"
           echo "Position-aware scheduled compiler: VERIFIED"
+          echo "V2 issuer v1.1 compatibility: VERIFIED"
+          echo "V2 issuer preview before final lock: BLOCKED"
+          echo "V2 issuer issue before final lock: BLOCKED"
           echo "Live credentials supplied: NO"
           echo "Broker network access: NONE"
           echo "Live writer connected: FALSE"
