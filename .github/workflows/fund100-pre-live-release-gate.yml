@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   release-evidence:
-    name: Build Pre-Live Release Evidence Package
+    name: Build Position-Aware Pre-Live Release Evidence
 
     runs-on: ubuntu-latest
 
@@ -37,11 +37,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify release-gate inputs
+      - name: Verify release-gate v1.1 inputs
         run: |
           set -euo pipefail
 
           test -f fund100_pre_live_release_gate.py
+          test -f fund100_pre_live_release_gate_v1_1.py
+          test -f test_fund100_pre_live_release_gate_v1_1.py
 
           test -f research_lab/frozen_history_v2.csv
           test -f research_lab/frozen_history_v2_manifest.json
@@ -52,6 +54,13 @@ jobs:
           test -f shadow_outputs/v5_002/shadow_state.json
           test -f shadow_outputs/v5_002/shadow_ledger.csv
 
+          test -f fund100_alpaca_live_writer_disconnected_v1_1.py
+          test -f fund100_alpaca_live_position_reconcile.py
+          test -f fund100_alpaca_live_manifest_v1_1.py
+          test -f fund100_alpaca_live_intent_validator_v1_1.py
+          test -f fund100_alpaca_live_scheduled_compiler_v1_1.py
+          test -f fund100_alpaca_live_execution_permit_v1_1.py
+
           test -f live_dryrun_outputs/v5_002/live_execution_manifest.json
           test -f live_dryrun_outputs/v5_002/live_order_intents.json
           test -f live_dryrun_outputs/v5_002/scheduled_execution_time.json
@@ -59,7 +68,7 @@ jobs:
           test -f live_dryrun_outputs/v5_002/live_execution_permit_v2_simulation.json
           test -f live_dryrun_outputs/v5_002/live_activation_rehearsal.json
 
-          echo "Pre-live release evidence inputs found."
+          echo "Position-aware pre-live release inputs found."
 
       - name: Run full Fund-100 test suite
         run: |
@@ -71,12 +80,12 @@ jobs:
           set -euo pipefail
           python audit_v5_002_engine.py
 
-      - name: Re-run LIVE static safety audit
+      - name: Re-run LIVE static safety audit v1.8
         run: |
           set -euo pipefail
-          python audit_fund100_live_boundary_v1_2.py
+          python audit_fund100_live_boundary_v1_8.py
 
-      - name: Build hash-bound release evidence package
+      - name: Build position-aware hash-bound release evidence
         env:
           FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
 
@@ -86,14 +95,94 @@ jobs:
 
         run: |
           set -euo pipefail
-          python fund100_pre_live_release_gate.py
+          python fund100_pre_live_release_gate_v1_1.py
+
+      - name: Verify v1.1 evidence schema
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import json
+
+          path = (
+              "release_outputs/v5_002/"
+              "pre_live_release_evidence.json"
+          )
+
+          with open(path, "r") as f:
+              package = json.load(f)
+
+          body = package["evidence"]
+
+          assert (
+              body["schema"]
+              == "FUND100_PRE_LIVE_RELEASE_EVIDENCE_V1_1"
+          )
+
+          assert (
+              body["engineering_evidence_status"]
+              == "PASS"
+          )
+
+          assert (
+              body["position_aware_live_chain_verified"]
+              is True
+          )
+
+          assert (
+              body["live_activation_decision"]
+              == "NOT_MADE"
+          )
+
+          assert body["live_execution_authorized"] is False
+          assert body["permit_issued"] is False
+          assert body["network_write_capability"] is False
+          assert body["writer_connected"] is False
+
+          assert (
+              float(
+                  body["max_live_execution_notional_usd"]
+              )
+              == 0.0
+          )
+
+          chain = body["position_aware_live_chain"]
+
+          assert (
+              chain["manifest_schema"]
+              == "FUND100_LIVE_DRYRUN_MANIFEST_V1_1"
+          )
+
+          assert (
+              chain["intent_schema"]
+              == "FUND100_LIVE_ORDER_INTENTS_V1_1"
+          )
+
+          assert (
+              chain["compiler_schema"]
+              == "FUND100_SCHEDULED_EXECUTION_COMPILER_V1_1"
+          )
+
+          assert chain["compiler_mode"] == "current"
+          assert chain["compiler_status"] == "NO_SCHEDULED_EVENT"
+
+          assert (
+              chain["v1_permit_denial_reason"]
+              == "NO_GENUINE_STRATEGY_EVENT"
+          )
+
+          print("Evidence schema v1.1: PASS")
+          print("Position-aware live chain: PASS")
+          print("Current no-event baseline: PASS")
+          print("Live authorization: FALSE")
+          PY
 
       - name: Show evidence package summary
         run: |
           set -euo pipefail
 
           echo "========================================"
-          echo "PRE-LIVE EVIDENCE FILES"
+          echo "PRE-LIVE EVIDENCE FILES v1.1"
           echo "========================================"
 
           ls -lh release_outputs/v5_002/
@@ -107,7 +196,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          CHANGES="$(git status --porcelain -- release_outputs/v5_002/)"
+          CHANGES="$(
+            git status --porcelain -- \
+              release_outputs/v5_002/pre_live_release_evidence.json \
+              release_outputs/v5_002/pre_live_release_evidence.md
+          )"
 
           if [ -z "$CHANGES" ]; then
 
@@ -141,7 +234,13 @@ jobs:
           fi
 
           git commit \
-            -m "Update V5-002 pre-live release evidence"
+            -m "Update position-aware V5-002 pre-live release evidence"
+
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Unexpected dirty working tree."
+            git status --short
+            exit 1
+          fi
 
           git pull --rebase origin main
           git push origin HEAD:main
@@ -149,14 +248,16 @@ jobs:
       - name: Final safety status
         run: |
           echo "========================================"
-          echo "FUND-100 PRE-LIVE RELEASE GATE COMPLETE"
+          echo "FUND-100 PRE-LIVE RELEASE GATE v1.1 COMPLETE"
           echo "========================================"
           echo "Alpaca credentials supplied: NO"
           echo "Broker network access: NONE"
+          echo "Position-aware chain: VERIFIED"
+          echo "Current no-event baseline: VERIFIED"
           echo "Engineering evidence status: PASS"
           echo "Live activation decision: NOT MADE"
           echo "Live execution authorized: FALSE"
           echo "Permit issued: FALSE"
-          echo "Maximum live execution notional: \$0.00"
+          echo 'Maximum live execution notional: $0.00'
           echo "Writer connected: FALSE"
           echo "Orders submitted: 0"
