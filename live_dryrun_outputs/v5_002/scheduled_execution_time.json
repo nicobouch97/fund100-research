@@ -1,188 +1,35 @@
 {
   "compiler": {
+    "broker_delta_source": "NONE_NO_EVENT",
     "broker_write_mode": "DISABLED",
-    "candidate_intents": [
-      {
-        "client_order_id": "f100live-5e21dee1f6f0-b-acwi",
-        "current_weight": 0.750876752713,
-        "delta_weight": 0.000385917043,
-        "executable": false,
-        "notional_usd": null,
-        "side": "buy",
-        "symbol": "ACWI",
-        "target_weight": 0.751262669757
-      },
-      {
-        "client_order_id": "f100live-5e21dee1f6f0-s-eem",
-        "current_weight": 0.083719250377,
-        "delta_weight": -0.083719250377,
-        "executable": false,
-        "notional_usd": null,
-        "side": "sell",
-        "symbol": "EEM",
-        "target_weight": 0.0
-      },
-      {
-        "client_order_id": "f100live-5e21dee1f6f0-b-spy",
-        "current_weight": 0.0,
-        "delta_weight": 0.083333333333,
-        "executable": false,
-        "notional_usd": null,
-        "side": "buy",
-        "symbol": "SPY",
-        "target_weight": 0.083333333333
-      }
-    ],
-    "compiler_mode": "synthetic",
-    "desired_satellite_weights": {
-      "EEM": 0.0,
-      "EFA": 0.0,
-      "IWM": 0.0,
-      "SPY": 0.083333333333,
-      "VNQ": 0.0,
-      "XLE": 0.083333333333,
-      "XLF": 0.0,
-      "XLI": 0.0,
-      "XLK": 0.0,
-      "XLP": 0.0,
-      "XLU": 0.0,
-      "XLV": 0.083333333333,
-      "XLY": 0.0
-    },
-    "executed_satellite_weights": {
-      "EEM": 0.0,
-      "EFA": 0.0,
-      "IWM": 0.0,
-      "SPY": 0.083333333333,
-      "VNQ": 0.0,
-      "XLE": 0.082667476809,
-      "XLF": 0.0,
-      "XLI": 0.0,
-      "XLK": 0.0,
-      "XLP": 0.0,
-      "XLU": 0.0,
-      "XLV": 0.082736520101,
-      "XLY": 0.0
-    },
-    "execution_time_reference_weights": {
-      "EEM": 0.083719250377,
-      "EFA": 0.0,
-      "IWM": 0.0,
-      "SPY": 0.0,
-      "VNQ": 0.0,
-      "XLE": 0.082667476809,
-      "XLF": 0.0,
-      "XLI": 0.0,
-      "XLK": 0.0,
-      "XLP": 0.0,
-      "XLU": 0.0,
-      "XLV": 0.082736520101,
-      "XLY": 0.0
-    },
-    "execution_window_eligible": false,
+    "candidate_intents": [],
+    "compiler_mode": "current",
     "genuine_scheduled_event": false,
     "live_execution_authorized": false,
-    "market_data_feed": "iex",
-    "market_snapshot": {
-      "ACWI": {
-        "latest_bar_timestamp": "2026-10-02T17:44:00+00:00",
-        "latest_price": 159.75,
-        "signal_close": 158.655
-      },
-      "EEM": {
-        "latest_bar_timestamp": "2026-10-02T17:44:00+00:00",
-        "latest_price": 67.395,
-        "signal_close": 66.8
-      },
-      "EFA": {
-        "latest_bar_timestamp": "2026-10-02T17:44:00+00:00",
-        "latest_price": 103.655,
-        "signal_close": 102.84
-      },
-      "IWM": {
-        "latest_bar_timestamp": "2026-10-02T17:44:00+00:00",
-        "latest_price": 281.655,
-        "signal_close": 279.05
-      },
-      "SPY": {
-        "latest_bar_timestamp": "2026-10-02T17:44:00+00:00",
-        "latest_price": 769.04,
-        "signal_close": 764.1
-      },
-      "VNQ": {
-        "latest_bar_timestamp": "2026-10-02T17:43:00+00:00",
-        "latest_price": 89.62,
-        "signal_close": 89.15
-      },
-      "XLE": {
-        "latest_bar_timestamp": "2026-10-02T17:44:00+00:00",
-        "latest_price": 62.8,
-        "signal_close": 62.69
-      },
-      "XLF": {
-        "latest_bar_timestamp": "2026-10-02T17:44:00+00:00",
-        "latest_price": 53.47,
-        "signal_close": 53.475
-      },
-      "XLI": {
-        "latest_bar_timestamp": "2026-10-02T17:42:00+00:00",
-        "latest_price": 169.79,
-        "signal_close": 168.66
-      },
-      "XLK": {
-        "latest_bar_timestamp": "2026-10-02T17:44:00+00:00",
-        "latest_price": 199.55,
-        "signal_close": 197.88
-      },
-      "XLP": {
-        "latest_bar_timestamp": "2026-10-02T17:41:00+00:00",
-        "latest_price": 80.375,
-        "signal_close": 80.35
-      },
-      "XLU": {
-        "latest_bar_timestamp": "2026-10-02T17:44:00+00:00",
-        "latest_price": 39.745,
-        "signal_close": 39.675
-      },
-      "XLV": {
-        "latest_bar_timestamp": "2026-10-02T17:43:00+00:00",
-        "latest_price": 165.81,
-        "signal_close": 166.19
-      },
-      "XLY": {
-        "latest_bar_timestamp": "2026-10-02T17:41:00+00:00",
-        "latest_price": 110.09,
-        "signal_close": 108.83
-      }
-    },
-    "market_snapshot_sha256": "aff39bd14a2694cb4ddeec5aa34a70ede255b0dd9a5167e72d4b776f3ece2806",
     "max_live_execution_notional_usd": 0.0,
-    "minutes_to_close": 134.3095,
     "network_write_capability": false,
-    "schema": "FUND100_SCHEDULED_EXECUTION_COMPILER_V1",
-    "source_manifest_id": "f100-live-20261001-0908be0aba11ed19",
-    "source_manifest_sha256": "0908be0aba11ed19ac3eeaf082f2c2a9e45d83a8f46a54c95642e5252fd9c436",
-    "status": "SYNTHETIC_SCHEDULED_EVENT",
+    "orders_submitted": 0,
+    "position_reconciliation": {
+      "frozen_execution_universe_verified": true,
+      "live_account_binding_sha256": "fb41e88fa1bac7662fb2a746023093ea6158685ec41737ffb4f9ca7add1f1acd",
+      "live_dollar_values_persisted": false,
+      "live_holdings_persisted": false,
+      "long_only_verified": true,
+      "no_open_orders_verified": true,
+      "no_unmanaged_positions_verified": true,
+      "open_order_count": 0,
+      "policy": "EPHEMERAL_POSITION_AWARE_V1",
+      "position_count": 0,
+      "reconciliation_status": "EMPTY_ZERO_EQUITY",
+      "volatile_broker_snapshot_persisted": false
+    },
+    "schema": "FUND100_SCHEDULED_EXECUTION_COMPILER_V1_1",
+    "source_manifest_id": "f100-live-20261002-03821673ea85b3ec",
+    "source_manifest_sha256": "03821673ea85b3ec6d193731e901448e17a9daec89c32ef3d1a0517dd8d02135",
+    "status": "NO_SCHEDULED_EVENT",
     "strategy": "V5-002_SHADOW",
-    "strategy_state_date": "2026-10-01",
-    "strategy_state_sha256": "a3d69d7da981f9511beb62eeec5fdd7aea7d1f5f48ced4ca681b14e891151b6a",
-    "synthetic_donor": "EEM",
-    "synthetic_receiver": "SPY",
-    "trade_decisions": {
-      "EEM": "SELL",
-      "EFA": "HOLD",
-      "IWM": "HOLD",
-      "SPY": "BUY",
-      "VNQ": "HOLD",
-      "XLE": "HOLD",
-      "XLF": "HOLD",
-      "XLI": "HOLD",
-      "XLK": "HOLD",
-      "XLP": "HOLD",
-      "XLU": "HOLD",
-      "XLV": "HOLD",
-      "XLY": "HOLD"
-    }
+    "strategy_state_date": "2026-10-02",
+    "strategy_state_sha256": "d2e7ed390b43e8a60ea0cf2025a32cad5c57a9eebe0d5706e28cc1dff1f5afe0"
   },
-  "compiler_sha256": "f5b82b2aeefc61f9307b254a311ac88033b8bb874abcd5899f2e313c3aa81b14"
+  "compiler_sha256": "6e8a2b58b92fb3254b134258e733c3810c427387f51ffae5bb6e379b17d892a1"
 }
