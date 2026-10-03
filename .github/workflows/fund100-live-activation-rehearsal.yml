@@ -12,11 +12,11 @@ concurrency:
 
 jobs:
   activation-rehearsal:
-    name: Rehearse Future LIVE Activation Offline
+    name: Rehearse Final LIVE Boundary While Disconnected
 
     runs-on: ubuntu-latest
 
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -37,27 +37,315 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify rehearsal files
+      - name: Verify disconnected-rehearsal inputs
         run: |
           set -euo pipefail
 
-          test -f fund100_alpaca_live_activation_rehearsal.py
-          test -f test_fund100_alpaca_live_activation_rehearsal.py
+          test -f \
+            fund100_alpaca_live_activation_rehearsal_v1_1.py
 
-          test -f fund100_alpaca_live_permit_v2_simulator.py
-          test -f fund100_alpaca_live_writer_disconnected.py
+          test -f \
+            test_fund100_alpaca_live_activation_rehearsal_v1_1.py
 
-          echo "Offline activation-rehearsal dependencies found."
+          test -f \
+            fund100_alpaca_live_writer_disconnected_v1_1.py
+
+          test -f \
+            fund100_alpaca_live_permit_v2_issuer_v1_1.py
+
+          test -f \
+            fund100_pre_live_release_lock_v1_2.py
+
+          test -f \
+            audit_fund100_live_boundary_v1_9.py
+
+          test -f \
+            release_outputs/v5_002/pre_live_release_lock.json
+
+          echo \
+            "Final disconnected activation-rehearsal dependencies found."
 
       - name: Run full Fund-100 test suite
         run: |
           set -euo pipefail
           python -m pytest -q
 
-      - name: Run offline positive-path activation rehearsal
+      - name: Re-run LIVE static safety audit v1.9
         run: |
           set -euo pipefail
-          python fund100_alpaca_live_activation_rehearsal.py
+          python audit_fund100_live_boundary_v1_9.py
+
+      - name: Run final disconnected activation rehearsal v1.1
+        run: |
+          set -euo pipefail
+
+          python \
+            fund100_alpaca_live_activation_rehearsal_v1_1.py
+
+      - name: Verify safe rehearsal artifact
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import hashlib
+          import json
+
+          path = (
+              "live_dryrun_outputs/v5_002/"
+              "live_activation_rehearsal_v1_1.json"
+          )
+
+          with open(
+              path,
+              "r",
+              encoding="utf-8",
+          ) as handle:
+              package = json.load(handle)
+
+          body = package["rehearsal"]
+
+          canonical = json.dumps(
+              body,
+              sort_keys=True,
+              separators=(",", ":"),
+              ensure_ascii=True,
+          )
+
+          calculated = hashlib.sha256(
+              canonical.encode("utf-8")
+          ).hexdigest()
+
+          assert (
+              calculated
+              == package["rehearsal_sha256"]
+          )
+
+          assert (
+              body["schema"]
+              == "FUND100_LIVE_DISCONNECTED_ACTIVATION_REHEARSAL_V1_1"
+          )
+
+          assert (
+              body["issuer_aware_release_lock_verified"]
+              is True
+          )
+
+          assert (
+              body["issuer_final_lock_recognition"]
+              is True
+          )
+
+          assert (
+              body["full_frozen_v5_execution_universe_verified"]
+              is True
+          )
+
+          assert (
+              body[
+                  "synthetic_writer_compatible_permit_constructed"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "synthetic_writer_compatible_permit_persisted"
+              ]
+              is False
+          )
+
+          assert (
+              body[
+                  "synthetic_executable_intents_constructed"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "synthetic_executable_intents_persisted"
+              ]
+              is False
+          )
+
+          assert (
+              body["writer_permit_contract_validation"]
+              is True
+          )
+
+          assert (
+              body["writer_order_batch_validation"]
+              is True
+          )
+
+          assert (
+              body["writer_full_v5_symbol_validation"]
+              is True
+          )
+
+          assert (
+              body["permit_cap_enforcement"]
+              is True
+          )
+
+          assert (
+              body["oversized_batch_rejected"]
+              is True
+          )
+
+          assert (
+              body["public_batch_entrypoint_disconnected"]
+              is True
+          )
+
+          assert (
+              body["direct_writer_get_disconnected"]
+              is True
+          )
+
+          assert (
+              body["direct_writer_post_disconnected"]
+              is True
+          )
+
+          assert (
+              body["broker_credentials_supplied"]
+              is False
+          )
+
+          assert (
+              body["broker_network_access"]
+              is False
+          )
+
+          assert (
+              int(
+                  body["broker_get_requests_sent"]
+              )
+              == 0
+          )
+
+          assert (
+              int(
+                  body["broker_post_requests_sent"]
+              )
+              == 0
+          )
+
+          assert (
+              body["permit_issued"]
+              is False
+          )
+
+          assert (
+              body["live_execution_authorized"]
+              is False
+          )
+
+          assert (
+              float(
+                  body[
+                      "max_live_execution_notional_usd"
+                  ]
+              )
+              == 0.0
+          )
+
+          assert (
+              body["network_write_capability"]
+              is False
+          )
+
+          assert (
+              body["writer_connected"]
+              is False
+          )
+
+          assert (
+              int(
+                  body["orders_submitted"]
+              )
+              == 0
+          )
+
+          assert (
+              body["activation_performed"]
+              is False
+          )
+
+          assert (
+              body[
+                  "connected_writer_release_still_required"
+              ]
+              is True
+          )
+
+          # ----------------------------------------------
+          # Ensure no usable permit/intents were persisted.
+          # ----------------------------------------------
+
+          forbidden = {
+              "permit",
+              "candidate_intents",
+              "intents",
+              "orders",
+              "approval_token",
+              "api_key",
+              "api_secret",
+          }
+
+          assert (
+              forbidden
+              .intersection(
+                  body.keys()
+              )
+              == set()
+          )
+
+          print(
+              "Rehearsal SHA256: PASS"
+          )
+
+          print(
+              "Issuer-aware release lock: PASS"
+          )
+
+          print(
+              "Writer-compatible permit validation: PASS"
+          )
+
+          print(
+              "Full V5 intent validation: PASS"
+          )
+
+          print(
+              "Permit-cap enforcement: PASS"
+          )
+
+          print(
+              "Public writer hard disconnect: PASS"
+          )
+
+          print(
+              "Direct GET hard disconnect: PASS"
+          )
+
+          print(
+              "Direct POST hard disconnect: PASS"
+          )
+
+          print(
+              "Persisted executable permit: NO"
+          )
+
+          print(
+              "Persisted executable intents: NO"
+          )
+
+          print(
+              "Orders submitted: 0"
+          )
+          PY
 
       - name: Check rehearsal artifact
         id: rehearsal_check
@@ -65,39 +353,63 @@ jobs:
         run: |
           set -euo pipefail
 
-          CHANGES="$(git status --porcelain -- live_dryrun_outputs/v5_002/live_activation_rehearsal.json)"
+          CHANGES="$(
+            git status --porcelain -- \
+              live_dryrun_outputs/v5_002/live_activation_rehearsal_v1_1.json
+          )"
 
           if [ -z "$CHANGES" ]; then
 
-            echo "Activation rehearsal artifact unchanged."
+            echo \
+              "Disconnected activation rehearsal artifact unchanged."
+
             echo "changed=false" >> "$GITHUB_OUTPUT"
 
           else
 
-            echo "Activation rehearsal artifact changed:"
+            echo \
+              "Disconnected activation rehearsal artifact changed:"
+
             echo "$CHANGES"
 
             echo "changed=true" >> "$GITHUB_OUTPUT"
 
           fi
 
-      - name: Commit rehearsal artifact
+      - name: Commit safe rehearsal artifact
         if: steps.rehearsal_check.outputs.changed == 'true'
         shell: bash
         run: |
           set -euo pipefail
 
-          git config user.name "fund100-live-dryrun-bot"
-          git config user.email "fund100-live-dryrun-bot@users.noreply.github.com"
+          git config \
+            user.name \
+            "fund100-live-dryrun-bot"
 
-          git add live_dryrun_outputs/v5_002/live_activation_rehearsal.json
+          git config \
+            user.email \
+            "fund100-live-dryrun-bot@users.noreply.github.com"
+
+          git add \
+            live_dryrun_outputs/v5_002/live_activation_rehearsal_v1_1.json
 
           if git diff --cached --quiet; then
+
+            echo "Nothing staged."
             exit 0
+
           fi
 
           git commit \
-            -m "Update V5-002 live activation rehearsal"
+            -m "Record final disconnected V5-002 activation rehearsal"
+
+          if [ -n "$(git status --porcelain)" ]; then
+
+            echo "Unexpected dirty working tree."
+            git status --short
+            exit 1
+
+          fi
 
           git pull --rebase origin main
           git push origin HEAD:main
@@ -105,14 +417,18 @@ jobs:
       - name: Final safety status
         run: |
           echo "========================================"
-          echo "FUND-100 LIVE ACTIVATION REHEARSAL DONE"
+          echo "FUND-100 DISCONNECTED ACTIVATION REHEARSAL v1.1 COMPLETE"
           echo "========================================"
+          echo "Issuer-aware release lock: VERIFIED"
+          echo "Writer-compatible permit contract: PASS"
+          echo "Full V5 order-intent contract: PASS"
+          echo "Permit-cap enforcement: PASS"
+          echo "Writer hard disconnect: VERIFIED"
           echo "Broker credentials supplied: NO"
           echo "Broker network access: NONE"
-          echo "All simulated contract conditions: PASS"
-          echo "Permit issued: FALSE"
+          echo "Writer-compatible permit persisted: NO"
+          echo "Executable intents persisted: NO"
           echo "Live execution authorized: FALSE"
-          echo "Live executable monetary ceiling: \$0.00"
+          echo 'Maximum live execution notional: $0.00'
           echo "Writer connected: FALSE"
-          echo "Replay protection: PASS"
           echo "Orders submitted: 0"
