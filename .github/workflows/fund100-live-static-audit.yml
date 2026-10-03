@@ -66,16 +66,19 @@ jobs:
           test -f audit_fund100_live_boundary_v1_5.py
           test -f audit_fund100_live_boundary_v1_6.py
           test -f audit_fund100_live_boundary_v1_7.py
+          test -f audit_fund100_live_boundary_v1_8.py
 
           test -f fund100_alpaca_live_writer_disconnected_v1_1.py
           test -f fund100_alpaca_live_position_reconcile.py
           test -f fund100_alpaca_live_manifest_v1_1.py
           test -f fund100_alpaca_live_intent_validator_v1_1.py
+          test -f fund100_alpaca_live_scheduled_compiler_v1_1.py
           test -f fund100_alpaca_live_permit_v2_issuer.py
 
           test -f test_fund100_alpaca_live_position_reconcile.py
           test -f test_fund100_alpaca_live_manifest_v1_1.py
           test -f test_fund100_alpaca_live_intent_validator_v1_1.py
+          test -f test_fund100_alpaca_live_scheduled_compiler_v1_1.py
 
           echo "LIVE static-audit dependencies found."
 
@@ -84,21 +87,22 @@ jobs:
           set -euo pipefail
           python -m pytest -q
 
-      - name: Run offline LIVE boundary audit v1.7
+      - name: Run offline LIVE boundary audit v1.8
         run: |
           set -euo pipefail
-          python audit_fund100_live_boundary_v1_7.py
+          python audit_fund100_live_boundary_v1_8.py
 
       - name: Final safety status
         run: |
           echo "========================================"
           echo "FUND-100 LIVE STATIC AUDIT COMPLETE"
           echo "========================================"
-          echo "Static audit safety layer: v1.7"
+          echo "Static audit safety layer: v1.8"
           echo "Frozen V5 execution universe: VERIFIED"
           echo "Position-aware reconciliation: VERIFIED"
           echo "Position-aware manifest: VERIFIED"
           echo "Position-aware intents: VERIFIED"
+          echo "Position-aware scheduled compiler: VERIFIED"
           echo "Live credentials supplied: NO"
           echo "Broker network access: NONE"
           echo "Live writer connected: FALSE"
