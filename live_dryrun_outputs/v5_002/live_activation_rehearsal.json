@@ -1,0 +1,60 @@
+{
+  "rehearsal": {
+    "account_binding_sha256": "634cbcd166c970c524a9b976159f90f8adc3d34ca0ca37a0a62972e82364ae33",
+    "all_contract_conditions_satisfied": true,
+    "broker_write_mode": "DISABLED",
+    "candidate_expiry": "2099-01-06T16:00:00-05:00",
+    "conditions": {
+      "account_not_blocked": true,
+      "account_status_active": true,
+      "compiler_sha256_verified": true,
+      "event_not_previously_consumed": true,
+      "manual_approval_present": true,
+      "market_session_open": true,
+      "no_open_orders": true,
+      "permit_built_while_kill_switch_engaged": true,
+      "permit_expiry_is_future": true,
+      "positive_execution_ceiling_configured": true,
+      "source_genuine_event_flag": true,
+      "source_mode_is_current": true,
+      "source_status_is_genuine_event": true,
+      "trading_not_blocked": true
+    },
+    "denial_reason": "OFFLINE_POSITIVE_PATH_REHEARSAL_ONLY",
+    "event_binding_sha256": "9eed29afc056031d96906c69e917640c6136df1a75409cbf6a70f52964a20948",
+    "event_id": "f100-live-event-9eed29afc056031d9690",
+    "failed_conditions": [],
+    "future_writer_required_schema": "FUND100_LIVE_EXECUTION_PERMIT_V2",
+    "live_execution_authorized": false,
+    "max_live_execution_notional_usd": 0.0,
+    "network_write_capability": false,
+    "offline_rehearsal": true,
+    "permit_issued": false,
+    "replay_rehearsal": {
+      "event_marked_consumed": true,
+      "first_attempt_all_conditions_pass": true,
+      "second_attempt_all_conditions_pass": false,
+      "second_attempt_failed_conditions": [
+        "event_not_previously_consumed"
+      ],
+      "second_attempt_replay_condition": false
+    },
+    "schema": "FUND100_LIVE_EXECUTION_PERMIT_V2_REHEARSAL",
+    "session_binding_sha256": "738cacdc3271f21134eebc535b6ec233ff4e3229cc23691bf322ed1e29238f2c",
+    "simulation_only": true,
+    "source_compiler_sha256": "1e2d74d958ca56dc58b72849a4ef4b7d52a34b16057be3a7924928ee2dcbf2b0",
+    "strategy": "V5-002_SHADOW",
+    "strategy_state_date": "2099-01-05",
+    "synthetic_execution_ceiling_usd": 123.45,
+    "writer_connected": false,
+    "writer_disconnect_proof": {
+      "reason": "LIVE WRITER DISCONNECTED: Fund-100 live writer v1.0 has no activation mechanism.",
+      "writer_disconnected": true
+    },
+    "writer_rejection_proof": {
+      "reason": "LIVE PERMIT REJECTED: required schema is FUND100_LIVE_EXECUTION_PERMIT_V2, received 'FUND100_LIVE_EXECUTION_PERMIT_V2_REHEARSAL'.",
+      "writer_rejected": true
+    }
+  },
+  "rehearsal_sha256": "9e8342afbe1b58e411aeaf69486faa3f15d643753fa0aa4c6c4208f342d225ae"
+}
