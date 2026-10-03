@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   release-lock:
-    name: Freeze Position-Aware Pre-Live Baseline
+    name: Freeze Issuer-Aware Position-Aware Baseline
 
     runs-on: ubuntu-latest
 
@@ -37,18 +37,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify release-lock v1.1 inputs
+      - name: Verify issuer-aware lock inputs
         run: |
           set -euo pipefail
 
           test -f fund100_pre_live_release_lock.py
           test -f fund100_pre_live_release_lock_v1_1.py
+          test -f fund100_pre_live_release_lock_v1_2.py
+
           test -f test_fund100_pre_live_release_lock_v1_1.py
+          test -f test_fund100_pre_live_release_lock_v1_2.py
 
           test -f fund100_pre_live_release_gate_v1_1.py
 
-          test -f release_outputs/v5_002/pre_live_release_evidence.json
-          test -f release_outputs/v5_002/pre_live_release_evidence.md
+          test -f \
+            release_outputs/v5_002/pre_live_release_evidence.json
+
+          test -f \
+            release_outputs/v5_002/pre_live_release_evidence.md
 
           test -f fund100_alpaca_live_writer_disconnected_v1_1.py
           test -f fund100_alpaca_live_position_reconcile.py
@@ -58,25 +64,29 @@ jobs:
           test -f fund100_alpaca_live_execution_permit_v1_1.py
 
           test -f fund100_alpaca_live_permit_v2_issuer.py
+          test -f fund100_alpaca_live_permit_v2_issuer_v1_1.py
 
-          test -f audit_fund100_live_boundary_v1_8.py
+          test -f \
+            test_fund100_alpaca_live_permit_v2_issuer_v1_1.py
 
-          echo "Position-aware release-lock dependencies found."
+          test -f audit_fund100_live_boundary_v1_9.py
+
+          echo "Issuer-aware release-lock dependencies found."
 
       - name: Run full Fund-100 test suite
         run: |
           set -euo pipefail
           python -m pytest -q
 
-      - name: Re-run engine parity
+      - name: Re-run V5-002 engine parity
         run: |
           set -euo pipefail
           python audit_v5_002_engine.py
 
-      - name: Re-run LIVE static safety audit v1.8
+      - name: Re-run LIVE static safety audit v1.9
         run: |
           set -euo pipefail
-          python audit_fund100_live_boundary_v1_8.py
+          python audit_fund100_live_boundary_v1_9.py
 
       - name: Re-run position-aware pre-live evidence gate
         env:
@@ -98,7 +108,7 @@ jobs:
           echo "Position-aware evidence gate passed."
 
           echo \
-            "Restoring committed evidence snapshot before creating release lock."
+            "Restoring committed evidence snapshot before final lock."
 
           git restore \
             --source=HEAD \
@@ -110,26 +120,32 @@ jobs:
           echo "Working tree after evidence restoration:"
           git status --short
 
-      - name: Build position-aware safe-baseline release lock v1.1
+      - name: Build issuer-aware release lock v1.2
         run: |
           set -euo pipefail
-          python fund100_pre_live_release_lock_v1_1.py
+          python fund100_pre_live_release_lock_v1_2.py
 
-      - name: Verify release-lock schema and safety state
+      - name: Verify issuer-aware release lock
         run: |
           set -euo pipefail
 
           python - <<'PY'
           import hashlib
           import json
+          from pathlib import Path
+
+          import fund100_alpaca_live_permit_v2_issuer_v1_1 as issuer
+
+          root = Path.cwd()
 
           path = (
-              "release_outputs/v5_002/"
-              "pre_live_release_lock.json"
+              root
+              / "release_outputs"
+              / "v5_002"
+              / "pre_live_release_lock.json"
           )
 
-          with open(
-              path,
+          with path.open(
               "r",
               encoding="utf-8",
           ) as handle:
@@ -153,19 +169,24 @@ jobs:
               == package["release_lock_sha256"]
           )
 
+          # ----------------------------------------------
+          # Schema intentionally remains V1.1 because
+          # issuer v1.1 is bound to that serialized schema.
+          # ----------------------------------------------
+
           assert (
               body["schema"]
               == "FUND100_PRE_LIVE_RELEASE_LOCK_V1_1"
           )
 
           assert (
-              body["release_layer"]
-              == "v1.1-position-aware-baseline"
+              body["release_lock_builder_version"]
+              == "1.2"
           )
 
           assert (
-              body["pre_live_evidence_schema"]
-              == "FUND100_PRE_LIVE_RELEASE_EVIDENCE_V1_1"
+              body["release_layer"]
+              == "v1.1-position-aware-issuer-aware"
           )
 
           assert (
@@ -174,28 +195,46 @@ jobs:
           )
 
           assert (
-              body["position_reconciliation_policy"]
-              == "EPHEMERAL_POSITION_AWARE_V1"
-          )
-
-          assert (
-              body["current_v2_issuer_source_snapshot_locked"]
+              body["issuer_aware_release_lock"]
               is True
           )
 
           assert (
-              body["v2_issuer_v1_1_compatibility_upgrade_required"]
+              body["v2_issuer_v1_1_source_locked"]
               is True
           )
 
           assert (
-              body["final_activation_lock_required_after_issuer_upgrade"]
+              body["static_audit_v1_9_source_locked"]
               is True
           )
+
+          assert (
+              body[
+                  "v2_issuer_v1_1_compatibility_upgrade_required"
+              ]
+              is False
+          )
+
+          assert (
+              body[
+                  "final_activation_lock_required_after_issuer_upgrade"
+              ]
+              is False
+          )
+
+          # ----------------------------------------------
+          # Still absolutely non-authorizing.
+          # ----------------------------------------------
 
           assert (
               body["automatic_activation_allowed"]
               is False
+          )
+
+          assert (
+              body["live_activation_decision"]
+              == "NOT_MADE"
           )
 
           assert (
@@ -227,6 +266,20 @@ jobs:
               is False
           )
 
+          assert (
+              int(
+                  body["orders_submitted"]
+              )
+              == 0
+          )
+
+          assert (
+              body[
+                  "connected_writer_release_still_required"
+              ]
+              is True
+          )
+
           hashes = (
               body[
                   "critical_file_sha256"
@@ -234,28 +287,79 @@ jobs:
           )
 
           required = [
-              "fund100_alpaca_live_writer_disconnected_v1_1.py",
-              "fund100_alpaca_live_position_reconcile.py",
-              "fund100_alpaca_live_manifest_v1_1.py",
-              "fund100_alpaca_live_intent_validator_v1_1.py",
-              "fund100_alpaca_live_scheduled_compiler_v1_1.py",
-              "fund100_alpaca_live_execution_permit_v1_1.py",
-              "fund100_alpaca_live_permit_v2_issuer.py",
-              "fund100_pre_live_release_gate_v1_1.py",
-              "fund100_pre_live_release_lock_v1_1.py",
-              "audit_fund100_live_boundary_v1_8.py",
+              "fund100_alpaca_live_permit_v2_issuer_v1_1.py",
+              "audit_fund100_live_boundary_v1_9.py",
+              "fund100_pre_live_release_lock_v1_2.py",
+              "test_fund100_pre_live_release_lock_v1_2.py",
           ]
 
           for filename in required:
+
               assert filename in hashes
 
-          print("Release-lock SHA256: PASS")
-          print("Release-lock schema v1.1: PASS")
-          print("Position-aware chain locked: PASS")
-          print("Current V2 issuer source snapshotted: PASS")
-          print("Automatic activation allowed: FALSE")
-          print("Live execution authorized: FALSE")
-          print("Permit issued: FALSE")
+              actual = hashlib.sha256(
+                  (
+                      root
+                      / filename
+                  ).read_bytes()
+              ).hexdigest()
+
+              assert (
+                  hashes[
+                      filename
+                  ]
+                  == actual
+              )
+
+          # ----------------------------------------------
+          # Most important integration check:
+          #
+          # the reviewed V2 issuer must recognize this as
+          # its issuer-aware final compatibility lock.
+          # ----------------------------------------------
+
+          assert (
+              issuer.final_lock_is_ready(
+                  body
+              )
+              is True
+          )
+
+          print(
+              "Release-lock SHA256: PASS"
+          )
+
+          print(
+              "Position-aware baseline: PASS"
+          )
+
+          print(
+              "V2 issuer v1.1 source hash: PASS"
+          )
+
+          print(
+              "Static Audit v1.9 source hash: PASS"
+          )
+
+          print(
+              "Issuer final-lock recognition: PASS"
+          )
+
+          print(
+              "Automatic activation allowed: FALSE"
+          )
+
+          print(
+              "Live execution authorized: FALSE"
+          )
+
+          print(
+              "Permit issued: FALSE"
+          )
+
+          print(
+              "Writer connected: FALSE"
+          )
           PY
 
       - name: Verify only release lock changed
@@ -291,7 +395,7 @@ jobs:
 
           git status --short
 
-      - name: Show position-aware release lock
+      - name: Show issuer-aware release lock
         run: |
           set -euo pipefail
 
@@ -317,7 +421,7 @@ jobs:
           )
 
           print(
-              "FUND-100 SAFE BASELINE LOCK v1.1"
+              "FUND-100 ISSUER-AWARE BASELINE LOCK"
           )
 
           print(
@@ -349,11 +453,23 @@ jobs:
           )
 
           print(
-              "Current V2 issuer source: SNAPSHOTTED"
+              "V2 issuer v1.1 source: LOCKED"
           )
 
           print(
-              "Final issuer compatibility lock still required: YES"
+              "Static Audit v1.9 source: LOCKED"
+          )
+
+          print(
+              "Issuer compatibility requirement: CLEARED"
+          )
+
+          print(
+              "Connected-writer release still required: YES"
+          )
+
+          print(
+              "Automatic activation allowed: FALSE"
           )
 
           print(
@@ -398,7 +514,7 @@ jobs:
 
           fi
 
-      - name: Commit release lock
+      - name: Commit issuer-aware release lock
         if: steps.lock_check.outputs.changed == 'true'
         shell: bash
         run: |
@@ -423,7 +539,7 @@ jobs:
           fi
 
           git commit \
-            -m "Freeze position-aware V5-002 safe baseline"
+            -m "Freeze issuer-aware V5-002 pre-live baseline"
 
           if [ -n "$(git status --porcelain)" ]; then
 
@@ -441,13 +557,15 @@ jobs:
       - name: Final safety status
         run: |
           echo "========================================"
-          echo "FUND-100 PRE-LIVE BASELINE LOCK v1.1 COMPLETE"
+          echo "FUND-100 ISSUER-AWARE BASELINE LOCK COMPLETE"
           echo "========================================"
           echo "Broker credentials supplied: NO"
           echo "Broker network access: NONE"
           echo "Position-aware engineering baseline: LOCKED"
-          echo "Current V2 issuer source: SNAPSHOTTED"
-          echo "Final issuer compatibility lock required: YES"
+          echo "V2 issuer v1.1 source: LOCKED"
+          echo "Static Audit v1.9 source: LOCKED"
+          echo "Issuer compatibility requirement: CLEARED"
+          echo "Connected-writer release still required: YES"
           echo "Automatic activation allowed: FALSE"
           echo "Live execution authorized: FALSE"
           echo "Permit issued: FALSE"
