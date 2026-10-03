@@ -11,9 +11,13 @@
     "network_write_capability": false,
     "orders_submitted": 0,
     "position_reconciliation": {
+      "frozen_execution_universe_verified": true,
       "live_account_binding_sha256": "fb41e88fa1bac7662fb2a746023093ea6158685ec41737ffb4f9ca7add1f1acd",
       "live_dollar_values_persisted": false,
       "live_holdings_persisted": false,
+      "long_only_verified": true,
+      "no_open_orders_verified": true,
+      "no_unmanaged_positions_verified": true,
       "open_order_count": 0,
       "policy": "EPHEMERAL_POSITION_AWARE_V1",
       "position_count": 0,
@@ -27,5 +31,5 @@
     "strategy_state_date": "2026-10-02",
     "strategy_state_sha256": "d2e7ed390b43e8a60ea0cf2025a32cad5c57a9eebe0d5706e28cc1dff1f5afe0"
   },
-  "intent_bundle_sha256": "f28571f2ec546455d487d040bab5ef9cf35a51d9bce826351022e1dac3f6cebf"
+  "intent_bundle_sha256": "ca703f607671444820205cf0c9704c23198d2f314834799dcea1096495a83ae3"
 }
