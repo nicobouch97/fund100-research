@@ -64,12 +64,16 @@ jobs:
           test -f audit_fund100_live_boundary.py
           test -f audit_fund100_live_boundary_v1_2.py
           test -f audit_fund100_live_boundary_v1_3.py
+          test -f audit_fund100_live_boundary_v1_4.py
 
           test -f fund100_alpaca_live_writer_disconnected.py
+          test -f fund100_alpaca_live_writer_disconnected_v1_1.py
+
           test -f fund100_alpaca_live_permit_v2_simulator.py
           test -f fund100_alpaca_live_permit_v2_issuer.py
 
           test -f test_fund100_alpaca_live_writer_disconnected.py
+          test -f test_fund100_alpaca_live_writer_disconnected_v1_1.py
           test -f test_fund100_alpaca_live_permit_v2_simulator.py
           test -f test_fund100_alpaca_live_permit_v2_issuer.py
 
@@ -80,18 +84,19 @@ jobs:
           set -euo pipefail
           python -m pytest -q
 
-      - name: Run offline LIVE boundary audit v1.3
+      - name: Run offline LIVE boundary audit v1.4
         run: |
           set -euo pipefail
-          python audit_fund100_live_boundary_v1_3.py
+          python audit_fund100_live_boundary_v1_4.py
 
       - name: Final safety status
         run: |
           echo "========================================"
           echo "FUND-100 LIVE STATIC AUDIT COMPLETE"
           echo "========================================"
-          echo "Static audit safety layer: v1.3"
+          echo "Static audit safety layer: v1.4"
+          echo "Frozen V5 execution universe: VERIFIED"
           echo "Live credentials supplied: NO"
           echo "Broker network access: NONE"
-          echo "Live writer workflow: NONE"
+          echo "Live writer connected: FALSE"
           echo "Orders submitted: 0"
