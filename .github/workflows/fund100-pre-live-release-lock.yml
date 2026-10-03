@@ -12,11 +12,11 @@ concurrency:
 
 jobs:
   release-lock:
-    name: Freeze Passing Pre-Live Baseline
+    name: Freeze Position-Aware Pre-Live Baseline
 
     runs-on: ubuntu-latest
 
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
@@ -37,18 +37,31 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify release-lock inputs
+      - name: Verify release-lock v1.1 inputs
         run: |
           set -euo pipefail
 
           test -f fund100_pre_live_release_lock.py
+          test -f fund100_pre_live_release_lock_v1_1.py
+          test -f test_fund100_pre_live_release_lock_v1_1.py
+
+          test -f fund100_pre_live_release_gate_v1_1.py
 
           test -f release_outputs/v5_002/pre_live_release_evidence.json
           test -f release_outputs/v5_002/pre_live_release_evidence.md
 
-          test -f fund100_alpaca_live_writer_disconnected.py
+          test -f fund100_alpaca_live_writer_disconnected_v1_1.py
+          test -f fund100_alpaca_live_position_reconcile.py
+          test -f fund100_alpaca_live_manifest_v1_1.py
+          test -f fund100_alpaca_live_intent_validator_v1_1.py
+          test -f fund100_alpaca_live_scheduled_compiler_v1_1.py
+          test -f fund100_alpaca_live_execution_permit_v1_1.py
 
-          echo "Pre-live release-lock dependencies found."
+          test -f fund100_alpaca_live_permit_v2_issuer.py
+
+          test -f audit_fund100_live_boundary_v1_8.py
+
+          echo "Position-aware release-lock dependencies found."
 
       - name: Run full Fund-100 test suite
         run: |
@@ -60,12 +73,12 @@ jobs:
           set -euo pipefail
           python audit_v5_002_engine.py
 
-      - name: Re-run LIVE static safety audit
+      - name: Re-run LIVE static safety audit v1.8
         run: |
           set -euo pipefail
-          python audit_fund100_live_boundary_v1_2.py
+          python audit_fund100_live_boundary_v1_8.py
 
-      - name: Re-run pre-live evidence gate
+      - name: Re-run position-aware pre-live evidence gate
         env:
           FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
 
@@ -75,15 +88,17 @@ jobs:
 
         run: |
           set -euo pipefail
-          python fund100_pre_live_release_gate.py
+          python fund100_pre_live_release_gate_v1_1.py
 
       - name: Restore committed evidence snapshot after verification
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Evidence gate passed."
-          echo "Restoring committed evidence snapshot before creating release lock."
+          echo "Position-aware evidence gate passed."
+
+          echo \
+            "Restoring committed evidence snapshot before creating release lock."
 
           git restore \
             --source=HEAD \
@@ -95,62 +110,267 @@ jobs:
           echo "Working tree after evidence restoration:"
           git status --short
 
-      - name: Build safe-baseline release lock
+      - name: Build position-aware safe-baseline release lock v1.1
         run: |
           set -euo pipefail
-          python fund100_pre_live_release_lock.py
+          python fund100_pre_live_release_lock_v1_1.py
+
+      - name: Verify release-lock schema and safety state
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import hashlib
+          import json
+
+          path = (
+              "release_outputs/v5_002/"
+              "pre_live_release_lock.json"
+          )
+
+          with open(
+              path,
+              "r",
+              encoding="utf-8",
+          ) as handle:
+              package = json.load(handle)
+
+          body = package["release_lock"]
+
+          canonical = json.dumps(
+              body,
+              sort_keys=True,
+              separators=(",", ":"),
+              ensure_ascii=True,
+          )
+
+          calculated = hashlib.sha256(
+              canonical.encode("utf-8")
+          ).hexdigest()
+
+          assert (
+              calculated
+              == package["release_lock_sha256"]
+          )
+
+          assert (
+              body["schema"]
+              == "FUND100_PRE_LIVE_RELEASE_LOCK_V1_1"
+          )
+
+          assert (
+              body["release_layer"]
+              == "v1.1-position-aware-baseline"
+          )
+
+          assert (
+              body["pre_live_evidence_schema"]
+              == "FUND100_PRE_LIVE_RELEASE_EVIDENCE_V1_1"
+          )
+
+          assert (
+              body["position_aware_live_chain_verified"]
+              is True
+          )
+
+          assert (
+              body["position_reconciliation_policy"]
+              == "EPHEMERAL_POSITION_AWARE_V1"
+          )
+
+          assert (
+              body["current_v2_issuer_source_snapshot_locked"]
+              is True
+          )
+
+          assert (
+              body["v2_issuer_v1_1_compatibility_upgrade_required"]
+              is True
+          )
+
+          assert (
+              body["final_activation_lock_required_after_issuer_upgrade"]
+              is True
+          )
+
+          assert (
+              body["automatic_activation_allowed"]
+              is False
+          )
+
+          assert (
+              body["live_execution_authorized"]
+              is False
+          )
+
+          assert (
+              body["permit_issued"]
+              is False
+          )
+
+          assert (
+              float(
+                  body[
+                      "max_live_execution_notional_usd"
+                  ]
+              )
+              == 0.0
+          )
+
+          assert (
+              body["network_write_capability"]
+              is False
+          )
+
+          assert (
+              body["writer_connected"]
+              is False
+          )
+
+          hashes = (
+              body[
+                  "critical_file_sha256"
+              ]
+          )
+
+          required = [
+              "fund100_alpaca_live_writer_disconnected_v1_1.py",
+              "fund100_alpaca_live_position_reconcile.py",
+              "fund100_alpaca_live_manifest_v1_1.py",
+              "fund100_alpaca_live_intent_validator_v1_1.py",
+              "fund100_alpaca_live_scheduled_compiler_v1_1.py",
+              "fund100_alpaca_live_execution_permit_v1_1.py",
+              "fund100_alpaca_live_permit_v2_issuer.py",
+              "fund100_pre_live_release_gate_v1_1.py",
+              "fund100_pre_live_release_lock_v1_1.py",
+              "audit_fund100_live_boundary_v1_8.py",
+          ]
+
+          for filename in required:
+              assert filename in hashes
+
+          print("Release-lock SHA256: PASS")
+          print("Release-lock schema v1.1: PASS")
+          print("Position-aware chain locked: PASS")
+          print("Current V2 issuer source snapshotted: PASS")
+          print("Automatic activation allowed: FALSE")
+          print("Live execution authorized: FALSE")
+          print("Permit issued: FALSE")
+          PY
 
       - name: Verify only release lock changed
         shell: bash
         run: |
           set -euo pipefail
 
-          STATUS="$(git status --porcelain)"
+          STATUS="$(
+            git status --porcelain
+          )"
 
           EXTRA="$(
             printf '%s\n' "$STATUS" \
-              | grep -vE '^.. release_outputs/v5_002/pre_live_release_lock\.json$' \
+              | grep -vE \
+                '^.. release_outputs/v5_002/pre_live_release_lock\.json$' \
               || true
           )"
 
           if [ -n "$EXTRA" ]; then
+
             echo "Unexpected working-tree changes detected:"
             echo "$EXTRA"
+
             echo
             git status --short
+
             exit 1
+
           fi
 
-          echo "Working tree contains only the expected release-lock change."
+          echo \
+            "Working tree contains only the expected release-lock change."
+
           git status --short
 
-      - name: Show release lock
+      - name: Show position-aware release lock
         run: |
           set -euo pipefail
 
           python - <<'PY'
           import json
 
-          path = "release_outputs/v5_002/pre_live_release_lock.json"
+          path = (
+              "release_outputs/v5_002/"
+              "pre_live_release_lock.json"
+          )
 
-          with open(path, "r") as f:
-              package = json.load(f)
+          with open(
+              path,
+              "r",
+              encoding="utf-8",
+          ) as handle:
+              package = json.load(handle)
 
           body = package["release_lock"]
 
-          print("========================================")
-          print("FUND-100 SAFE BASELINE LOCK")
-          print("========================================")
-          print("Release lock ID:", body["release_lock_id"])
-          print("Release lock SHA256:", package["release_lock_sha256"])
+          print(
+              "========================================"
+          )
+
+          print(
+              "FUND-100 SAFE BASELINE LOCK v1.1"
+          )
+
+          print(
+              "========================================"
+          )
+
+          print(
+              "Release lock ID:",
+              body["release_lock_id"],
+          )
+
+          print(
+              "Release lock SHA256:",
+              package["release_lock_sha256"],
+          )
+
           print(
               "Critical-file-set SHA256:",
               body["critical_file_set_sha256"],
           )
-          print("Live execution authorized: FALSE")
-          print("Permit issued: FALSE")
-          print("Maximum live execution notional: $0.00")
-          print("Writer connected: FALSE")
+
+          print(
+              "Critical files:",
+              body["critical_file_count"],
+          )
+
+          print(
+              "Position-aware chain: LOCKED"
+          )
+
+          print(
+              "Current V2 issuer source: SNAPSHOTTED"
+          )
+
+          print(
+              "Final issuer compatibility lock still required: YES"
+          )
+
+          print(
+              "Live execution authorized: FALSE"
+          )
+
+          print(
+              "Permit issued: FALSE"
+          )
+
+          print(
+              "Maximum live execution notional: $0.00"
+          )
+
+          print(
+              "Writer connected: FALSE"
+          )
           PY
 
       - name: Check release-lock changes
@@ -159,7 +379,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          CHANGES="$(git status --porcelain -- release_outputs/v5_002/pre_live_release_lock.json)"
+          CHANGES="$(
+            git status --porcelain -- \
+              release_outputs/v5_002/pre_live_release_lock.json
+          )"
 
           if [ -z "$CHANGES" ]; then
 
@@ -181,23 +404,35 @@ jobs:
         run: |
           set -euo pipefail
 
-          git config user.name "fund100-release-evidence-bot"
-          git config user.email "fund100-release-evidence-bot@users.noreply.github.com"
+          git config \
+            user.name \
+            "fund100-release-evidence-bot"
 
-          git add release_outputs/v5_002/pre_live_release_lock.json
+          git config \
+            user.email \
+            "fund100-release-evidence-bot@users.noreply.github.com"
+
+          git add \
+            release_outputs/v5_002/pre_live_release_lock.json
 
           if git diff --cached --quiet; then
+
             echo "Nothing staged."
             exit 0
+
           fi
 
           git commit \
-            -m "Freeze V5-002 pre-live safe baseline"
+            -m "Freeze position-aware V5-002 safe baseline"
 
           if [ -n "$(git status --porcelain)" ]; then
-            echo "ERROR: working tree became dirty after release-lock commit."
+
+            echo \
+              "ERROR: working tree became dirty after release-lock commit."
+
             git status --short
             exit 1
+
           fi
 
           git pull --rebase origin main
@@ -206,11 +441,13 @@ jobs:
       - name: Final safety status
         run: |
           echo "========================================"
-          echo "FUND-100 PRE-LIVE BASELINE LOCK COMPLETE"
+          echo "FUND-100 PRE-LIVE BASELINE LOCK v1.1 COMPLETE"
           echo "========================================"
           echo "Broker credentials supplied: NO"
           echo "Broker network access: NONE"
-          echo "Engineering baseline: LOCKED"
+          echo "Position-aware engineering baseline: LOCKED"
+          echo "Current V2 issuer source: SNAPSHOTTED"
+          echo "Final issuer compatibility lock required: YES"
           echo "Automatic activation allowed: FALSE"
           echo "Live execution authorized: FALSE"
           echo "Permit issued: FALSE"
