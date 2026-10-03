@@ -1,0 +1,118 @@
+name: Fund-100 LIVE Activation Positive Rehearsal
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-live-activation-positive-rehearsal
+  cancel-in-progress: false
+
+jobs:
+  activation-rehearsal:
+    name: Rehearse Future LIVE Activation Offline
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify rehearsal files
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_live_activation_rehearsal.py
+          test -f test_fund100_alpaca_live_activation_rehearsal.py
+
+          test -f fund100_alpaca_live_permit_v2_simulator.py
+          test -f fund100_alpaca_live_writer_disconnected.py
+
+          echo "Offline activation-rehearsal dependencies found."
+
+      - name: Run full Fund-100 test suite
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Run offline positive-path activation rehearsal
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_live_activation_rehearsal.py
+
+      - name: Check rehearsal artifact
+        id: rehearsal_check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHANGES="$(git status --porcelain -- live_dryrun_outputs/v5_002/live_activation_rehearsal.json)"
+
+          if [ -z "$CHANGES" ]; then
+
+            echo "Activation rehearsal artifact unchanged."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+
+          else
+
+            echo "Activation rehearsal artifact changed:"
+            echo "$CHANGES"
+
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+
+          fi
+
+      - name: Commit rehearsal artifact
+        if: steps.rehearsal_check.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "fund100-live-dryrun-bot"
+          git config user.email "fund100-live-dryrun-bot@users.noreply.github.com"
+
+          git add live_dryrun_outputs/v5_002/live_activation_rehearsal.json
+
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+
+          git commit \
+            -m "Update V5-002 live activation rehearsal"
+
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 LIVE ACTIVATION REHEARSAL DONE"
+          echo "========================================"
+          echo "Broker credentials supplied: NO"
+          echo "Broker network access: NONE"
+          echo "All simulated contract conditions: PASS"
+          echo "Permit issued: FALSE"
+          echo "Live execution authorized: FALSE"
+          echo "Live executable monetary ceiling: \$0.00"
+          echo "Writer connected: FALSE"
+          echo "Replay protection: PASS"
+          echo "Orders submitted: 0"
