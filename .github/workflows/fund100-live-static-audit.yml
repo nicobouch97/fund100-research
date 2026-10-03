@@ -13,6 +13,7 @@ on:
       - "audit_fund100_live_boundary*.py"
       - ".github/workflows/**"
       - "live_dryrun_outputs/v5_002/**"
+      - "live_activation_outputs/v5_002/**"
 
   pull_request:
     paths:
@@ -22,6 +23,7 @@ on:
       - "audit_fund100_live_boundary*.py"
       - ".github/workflows/**"
       - "live_dryrun_outputs/v5_002/**"
+      - "live_activation_outputs/v5_002/**"
 
 permissions:
   contents: read
@@ -61,16 +63,15 @@ jobs:
 
           test -f audit_fund100_live_boundary.py
           test -f audit_fund100_live_boundary_v1_2.py
+          test -f audit_fund100_live_boundary_v1_3.py
 
           test -f fund100_alpaca_live_writer_disconnected.py
-          test -f test_fund100_alpaca_live_writer_disconnected.py
           test -f fund100_alpaca_live_permit_v2_simulator.py
-          test -f test_fund100_alpaca_live_permit_v2_simulator.py
+          test -f fund100_alpaca_live_permit_v2_issuer.py
 
-          test -f live_dryrun_outputs/v5_002/live_execution_manifest.json
-          test -f live_dryrun_outputs/v5_002/live_order_intents.json
-          test -f live_dryrun_outputs/v5_002/scheduled_execution_time.json
-          test -f live_dryrun_outputs/v5_002/live_execution_permit.json
+          test -f test_fund100_alpaca_live_writer_disconnected.py
+          test -f test_fund100_alpaca_live_permit_v2_simulator.py
+          test -f test_fund100_alpaca_live_permit_v2_issuer.py
 
           echo "LIVE static-audit dependencies found."
 
@@ -79,19 +80,18 @@ jobs:
           set -euo pipefail
           python -m pytest -q
 
-      - name: Run offline LIVE boundary audit v1.2
+      - name: Run offline LIVE boundary audit v1.3
         run: |
           set -euo pipefail
-          python audit_fund100_live_boundary_v1_2.py
+          python audit_fund100_live_boundary_v1_3.py
 
       - name: Final safety status
         run: |
           echo "========================================"
           echo "FUND-100 LIVE STATIC AUDIT COMPLETE"
           echo "========================================"
-          echo "Static audit safety layer: v1.2"
+          echo "Static audit safety layer: v1.3"
           echo "Live credentials supplied: NO"
           echo "Broker network access: NONE"
           echo "Live writer workflow: NONE"
-          echo "Live permit issued: FALSE"
           echo "Orders submitted: 0"
