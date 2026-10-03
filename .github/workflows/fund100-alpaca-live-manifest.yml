@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   manifest:
-    name: Compile LIVE Dry-Run Manifest
+    name: Compile Position-Aware LIVE Dry-Run Manifest
 
     runs-on: ubuntu-latest
 
@@ -42,20 +42,27 @@ jobs:
           set -euo pipefail
 
           test -f fund100_alpaca_live_manifest.py
+          test -f fund100_alpaca_live_manifest_v1_1.py
+          test -f test_fund100_alpaca_live_manifest_v1_1.py
+
+          test -f fund100_alpaca_live_position_reconcile.py
+          test -f fund100_alpaca_live_writer_disconnected_v1_1.py
+
           test -f fund100_alpaca_live_readonly_smoke.py
           test -f fund100_alpaca_live_preflight.py
           test -f fund100_alpaca_live_execution_boundary.py
           test -f fund100_broker_safety.py
+
           test -f shadow_outputs/v5_002/shadow_state.json
 
-          echo "LIVE manifest dependencies found."
+          echo "LIVE manifest v1.1 dependencies found."
 
       - name: Run Fund-100 tests
         run: |
           set -euo pipefail
           python -m pytest -q
 
-      - name: Compile LIVE dry-run manifest
+      - name: Compile position-aware LIVE dry-run manifest v1.1
         env:
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
           ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
@@ -69,7 +76,7 @@ jobs:
 
         run: |
           set -euo pipefail
-          python fund100_alpaca_live_manifest.py
+          python fund100_alpaca_live_manifest_v1_1.py
 
       - name: Check manifest changes
         id: manifest_check
@@ -110,7 +117,13 @@ jobs:
           fi
 
           git commit \
-            -m "Update V5-002 live dry-run manifest"
+            -m "Update position-aware V5-002 live dry-run manifest"
+
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Unexpected dirty working tree after manifest commit."
+            git status --short
+            exit 1
+          fi
 
           git pull --rebase origin main
           git push origin HEAD:main
@@ -118,8 +131,12 @@ jobs:
       - name: Final status
         run: |
           echo "========================================"
-          echo "FUND-100 LIVE MANIFEST COMPLETE"
+          echo "FUND-100 LIVE MANIFEST v1.1 COMPLETE"
           echo "========================================"
+          echo "Position-aware reconciliation: ENABLED"
+          echo "Live holdings persisted: NO"
+          echo "Volatile broker snapshot persisted: NO"
           echo "Live execution authorized: FALSE"
           echo 'Maximum live execution notional: $0.00'
+          echo "Network write capability: ABSENT"
           echo "Orders submitted: 0"
