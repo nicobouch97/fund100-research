@@ -4,15 +4,28 @@
     "candidate_intents": [],
     "event_source": "NONE",
     "live_execution_authorized": false,
-    "manifest_id": "f100-live-20261002-6a9ab3600b6b6304",
-    "manifest_sha256": "6a9ab3600b6b63049cc3630e12cf0a8cbdcdf3a356b8a16a59deb26a3b7c9915",
+    "manifest_id": "f100-live-20261002-03821673ea85b3ec",
+    "manifest_sha256": "03821673ea85b3ec6d193731e901448e17a9daec89c32ef3d1a0517dd8d02135",
     "manifest_type": "NO_EVENT_SNAPSHOT",
     "max_live_execution_notional_usd": 0.0,
     "network_write_capability": false,
-    "schema": "FUND100_LIVE_ORDER_INTENTS_V1",
+    "orders_submitted": 0,
+    "position_reconciliation": {
+      "live_account_binding_sha256": "fb41e88fa1bac7662fb2a746023093ea6158685ec41737ffb4f9ca7add1f1acd",
+      "live_dollar_values_persisted": false,
+      "live_holdings_persisted": false,
+      "open_order_count": 0,
+      "policy": "EPHEMERAL_POSITION_AWARE_V1",
+      "position_count": 0,
+      "reconciliation_status": "EMPTY_ZERO_EQUITY",
+      "volatile_broker_snapshot_persisted": false
+    },
+    "scheduled_event_requires_execution_compiler": false,
+    "schema": "FUND100_LIVE_ORDER_INTENTS_V1_1",
     "strategy": "V5-002_SHADOW",
     "strategy_event_present": false,
-    "strategy_state_date": "2026-10-02"
+    "strategy_state_date": "2026-10-02",
+    "strategy_state_sha256": "d2e7ed390b43e8a60ea0cf2025a32cad5c57a9eebe0d5706e28cc1dff1f5afe0"
   },
-  "intent_bundle_sha256": "a659d84a6639d429097c2d680df3e3776c2758eeaebbe859d34edad26bcbffaf"
+  "intent_bundle_sha256": "f28571f2ec546455d487d040bab5ef9cf35a51d9bce826351022e1dac3f6cebf"
 }
