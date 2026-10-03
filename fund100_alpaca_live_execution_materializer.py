@@ -45,12 +45,22 @@ import fund100_alpaca_live_writer_disconnected_v1_1 as writer
 # - verifies permit/compiler/release-lock bindings
 # - reconstructs final target weights
 # - restricts execution to compiler-authorized candidate symbols
-# - refuses direction changes
-# - refuses stale sub-$1 deltas
+# - accepts already-satisfied candidates as completed/no-op
+# - refuses direction reversals
+# - refuses non-zero stale sub-$1 deltas
 # - refuses shorts
 # - enforces aggregate permit cap
 # - supports SELL and BUY phases separately
 # - requires BUY phase to be cash-funded at that moment
+#
+# SELL -> RECONCILE -> BUY
+#
+# After a completed SELL phase, the next fresh broker snapshot
+# may show the SELL candidate exactly at target. That is a safe
+# completed state and must be skipped.
+#
+# A candidate that reverses direction is NOT safe and must
+# still fail closed.
 #
 # Executable materialized intents are EPHEMERAL and must never
 # be committed to the repository.
@@ -91,9 +101,13 @@ ALLOWED_PHASES = {
 
 CENT = Decimal("0.01")
 
-WEIGHT_TOLERANCE = Decimal("0.00000001")
+WEIGHT_TOLERANCE = Decimal(
+    "0.00000001"
+)
 
-DIRECTION_TOLERANCE_USD = Decimal("0.005")
+DIRECTION_TOLERANCE_USD = Decimal(
+    "0.005"
+)
 
 MIN_NOTIONAL_USD = Decimal(
     str(
@@ -374,7 +388,11 @@ def build_full_target_weights(
 
         satellite_total += weight
 
-    if satellite_total > 1 + WEIGHT_TOLERANCE:
+    if (
+        satellite_total
+        > Decimal("1")
+        + WEIGHT_TOLERANCE
+    ):
 
         raise RuntimeError(
             "MATERIALIZER STOP: "
@@ -486,18 +504,23 @@ def build_authorized_candidates(
             )
         ).upper()
 
-        if symbol not in writer.ALLOWED_SYMBOLS:
+        if (
+            symbol
+            not in writer.ALLOWED_SYMBOLS
+        ):
 
             raise RuntimeError(
                 "MATERIALIZER STOP: "
-                f"unsupported compiler symbol {symbol!r}."
+                f"unsupported compiler symbol "
+                f"{symbol!r}."
             )
 
         if symbol in result:
 
             raise RuntimeError(
                 "MATERIALIZER STOP: "
-                f"duplicate compiler candidate {symbol!r}."
+                f"duplicate compiler candidate "
+                f"{symbol!r}."
             )
 
         side = str(
@@ -507,7 +530,10 @@ def build_authorized_candidates(
             )
         ).lower()
 
-        if side not in writer.ALLOWED_SIDES:
+        if (
+            side
+            not in writer.ALLOWED_SIDES
+        ):
 
             raise RuntimeError(
                 "MATERIALIZER STOP: "
@@ -552,19 +578,25 @@ def build_authorized_candidates(
 
             raise RuntimeError(
                 "MATERIALIZER STOP: "
-                f"{symbol}: invalid Fund-100 client order ID."
+                f"{symbol}: invalid Fund-100 "
+                "client order ID."
             )
 
         item_target = as_decimal(
             item.get(
                 "target_weight"
             ),
-            f"{symbol}.candidate_target_weight",
+            (
+                f"{symbol}."
+                "candidate_target_weight"
+            ),
         )
 
-        expected_target = target[
-            symbol
-        ]
+        expected_target = (
+            target[
+                symbol
+            ]
+        )
 
         if (
             abs(
@@ -708,8 +740,15 @@ def validate_execution_bindings(
             "unexpected permit schema."
         )
 
-    # Existing writer permit validation is deliberately reused.
-    validated_permit, permit_cap = (
+    # --------------------------------------------------------
+    # Reuse the disconnected writer's reviewed permit
+    # validation contract.
+    # --------------------------------------------------------
+
+    (
+        validated_permit,
+        permit_cap,
+    ) = (
         writer.validate_permit_package(
             permit_package
         )
@@ -720,8 +759,9 @@ def validate_execution_bindings(
         is not permit
     ):
 
-        # Defensive only; current writer returns the same body.
-        permit = validated_permit
+        permit = (
+            validated_permit
+        )
 
     if (
         permit.get(
@@ -769,7 +809,8 @@ def validate_execution_bindings(
 
         raise RuntimeError(
             "MATERIALIZER STOP: "
-            "permit was issued while writer was connected."
+            "permit was issued while writer "
+            "was connected."
         )
 
     if (
@@ -781,12 +822,16 @@ def validate_execution_bindings(
 
         raise RuntimeError(
             "MATERIALIZER STOP: "
-            "permit issuer had broker-write capability."
+            "permit issuer had broker-write "
+            "capability."
         )
 
     if (
-        permit.get(
-            "orders_submitted_by_issuer"
+        int(
+            permit.get(
+                "orders_submitted_by_issuer",
+                -1,
+            )
         )
         != 0
     ):
@@ -805,7 +850,8 @@ def validate_execution_bindings(
 
         raise RuntimeError(
             "MATERIALIZER STOP: "
-            "permit is not bound to current release lock."
+            "permit is not bound to current "
+            "release lock."
         )
 
     if (
@@ -829,7 +875,8 @@ def validate_execution_bindings(
 
         raise RuntimeError(
             "MATERIALIZER STOP: "
-            "permit release-lock schema binding mismatch."
+            "permit release-lock schema "
+            "binding mismatch."
         )
 
     if (
@@ -850,21 +897,27 @@ def validate_execution_bindings(
         )
     )
 
-    current = (
-        now
-        if isinstance(
-            now,
-            datetime,
+    if isinstance(
+        now,
+        datetime,
+    ):
+
+        current = now
+
+    else:
+
+        current = (
+            parse_timestamp(
+                now
+            )
         )
-        else parse_timestamp(
-            now
-        )
-    )
 
     if current.tzinfo is None:
 
-        current = current.replace(
-            tzinfo=timezone.utc
+        current = (
+            current.replace(
+                tzinfo=timezone.utc
+            )
         )
 
     if current >= expiry:
@@ -970,7 +1023,8 @@ def validate_broker_snapshot(
 
         raise RuntimeError(
             "MATERIALIZER STOP: "
-            "live account binding does not match permit."
+            "live account binding does not "
+            "match permit."
         )
 
     portfolio_value = (
@@ -1032,6 +1086,8 @@ def materialize_all_authorized_orders(
 
     orders = []
 
+    satisfied_symbols = []
+
     for symbol in sorted(
         candidates
     ):
@@ -1064,27 +1120,62 @@ def materialize_all_authorized_orders(
             - current_value
         )
 
+        # ----------------------------------------------------
+        # COMPLETED / ALREADY-SATISFIED CANDIDATE
+        # ----------------------------------------------------
+        #
+        # This is the important v1.0 correction.
+        #
+        # Example:
+        #
+        #   Original compiler:
+        #       ACWI SELL to 80%
+        #
+        #   SELL phase fills.
+        #
+        #   Fresh reconciliation:
+        #       ACWI current = 80%
+        #       ACWI target  = 80%
+        #
+        # The authorized SELL candidate is now complete.
+        #
+        # It must NOT block the subsequent BUY phase.
+        #
+        # Safe action:
+        #
+        #       skip / no-op
+        #
+        # This is different from a DIRECTION REVERSAL.
+        # ----------------------------------------------------
+
         if (
-            delta
-            > DIRECTION_TOLERANCE_USD
+            abs(
+                delta
+            )
+            <= DIRECTION_TOLERANCE_USD
         ):
+
+            satisfied_symbols.append(
+                symbol
+            )
+
+            continue
+
+        # ----------------------------------------------------
+        # DETERMINE FRESH REQUIRED DIRECTION
+        # ----------------------------------------------------
+
+        if delta > 0:
 
             actual_side = "buy"
 
-        elif (
-            delta
-            < -DIRECTION_TOLERANCE_USD
-        ):
+        else:
 
             actual_side = "sell"
 
-        else:
-
-            raise RuntimeError(
-                "MATERIALIZER STALE STOP: "
-                f"{symbol}: authorized candidate no longer "
-                "requires a material trade."
-            )
+        # ----------------------------------------------------
+        # DIRECTION REVERSAL REMAINS FAIL-CLOSED
+        # ----------------------------------------------------
 
         if (
             actual_side
@@ -1101,6 +1192,10 @@ def materialize_all_authorized_orders(
                 f"{actual_side.upper()}."
             )
 
+        # ----------------------------------------------------
+        # EXACT EXECUTION NOTIONAL
+        # ----------------------------------------------------
+
         notional = (
             floor_money(
                 abs(
@@ -1108,6 +1203,15 @@ def materialize_all_authorized_orders(
                 )
             )
         )
+
+        # ----------------------------------------------------
+        # Non-zero but too-small candidate:
+        #
+        # This is different from an already-satisfied delta.
+        #
+        # We fail closed instead of silently rounding away
+        # a material-but-non-executable authorized candidate.
+        # ----------------------------------------------------
 
         if (
             notional
@@ -1120,7 +1224,22 @@ def materialize_all_authorized_orders(
                 "is below the writer minimum."
             )
 
+        # ----------------------------------------------------
+        # SELL SAFETY
+        # ----------------------------------------------------
+
         if actual_side == "sell":
+
+            if (
+                symbol
+                not in positions
+            ):
+
+                raise RuntimeError(
+                    "MATERIALIZER STOP: "
+                    f"{symbol}: cannot sell a position "
+                    "that does not exist."
+                )
 
             available_value = (
                 floor_money(
@@ -1137,14 +1256,6 @@ def materialize_all_authorized_orders(
                     "MATERIALIZER STOP: "
                     f"{symbol}: proposed sell exceeds "
                     "current long market value."
-                )
-
-            if symbol not in positions:
-
-                raise RuntimeError(
-                    "MATERIALIZER STOP: "
-                    f"{symbol}: cannot sell a position "
-                    "that does not exist."
                 )
 
         orders.append({
@@ -1225,7 +1336,10 @@ def select_phase(
         phase
     ).strip().upper()
 
-    if phase not in ALLOWED_PHASES:
+    if (
+        phase
+        not in ALLOWED_PHASES
+    ):
 
         raise RuntimeError(
             "MATERIALIZER STOP: "
@@ -1244,10 +1358,12 @@ def select_phase(
         )
         for order
         in orders
-        if order[
-            "side"
-        ]
-        == side
+        if (
+            order[
+                "side"
+            ]
+            == side
+        )
     ]
 
     gross = sum(
@@ -1269,11 +1385,16 @@ def select_phase(
     #
     # A future orchestrator must therefore:
     #
-    #   1. execute/reconcile SELL phase
-    #   2. fetch a fresh broker snapshot
-    #   3. materialize BUY phase again
+    #   1. materialize SELL phase
+    #   2. execute SELL phase
+    #   3. reconcile fills
+    #   4. fetch a fresh broker snapshot
+    #   5. materialize BUY phase again
     #
-    # It may not assume pending sell proceeds.
+    # A completed SELL candidate will now appear as zero delta
+    # and is safely skipped.
+    #
+    # The materializer may NOT assume pending sell proceeds.
     # --------------------------------------------------------
 
     if (
@@ -1347,6 +1468,15 @@ def materialize_execution_phase(
         )
     )
 
+    # --------------------------------------------------------
+    # Materialize only currently required execution.
+    #
+    # Candidates already satisfied by a previous phase/fill
+    # are omitted.
+    #
+    # Candidates whose direction reversed still fail closed.
+    # --------------------------------------------------------
+
     all_orders = (
         materialize_all_authorized_orders(
             broker_snapshot=
@@ -1363,6 +1493,11 @@ def materialize_execution_phase(
                 ],
         )
     )
+
+    # --------------------------------------------------------
+    # Check the complete CURRENT remaining execution against
+    # the V2 permit ceiling before selecting a side phase.
+    # --------------------------------------------------------
 
     full_gross = (
         validate_total_permit_cap(
@@ -1434,6 +1569,16 @@ def materialize_execution_phase(
                 bindings[
                     "candidates"
                 ]
+            ),
+
+        "remaining_executable_symbol_count":
+            len(
+                all_orders
+            ),
+
+        "phase_executable_symbol_count":
+            len(
+                selected
             ),
 
         "full_execution_gross_notional_usd":
