@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   intent-validator:
-    name: Validate LIVE Order Intents Read Only
+    name: Validate Position-Aware LIVE Order Intents
 
     runs-on: ubuntu-latest
 
@@ -42,7 +42,13 @@ jobs:
           set -euo pipefail
 
           test -f fund100_alpaca_live_intent_validator.py
-          test -f fund100_alpaca_live_manifest.py
+          test -f fund100_alpaca_live_intent_validator_v1_1.py
+          test -f test_fund100_alpaca_live_intent_validator_v1_1.py
+
+          test -f fund100_alpaca_live_manifest_v1_1.py
+          test -f fund100_alpaca_live_position_reconcile.py
+          test -f fund100_alpaca_live_writer_disconnected_v1_1.py
+
           test -f fund100_alpaca_live_readonly_smoke.py
           test -f fund100_alpaca_live_preflight.py
           test -f fund100_alpaca_live_execution_boundary.py
@@ -51,14 +57,14 @@ jobs:
           test -f shadow_outputs/v5_002/shadow_state.json
           test -f live_dryrun_outputs/v5_002/live_execution_manifest.json
 
-          echo "LIVE order-intent dependencies found."
+          echo "LIVE intent validator v1.1 dependencies found."
 
       - name: Run Fund-100 tests
         run: |
           set -euo pipefail
           python -m pytest -q
 
-      - name: Validate LIVE order intents
+      - name: Validate position-aware LIVE order intents
         env:
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
           ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
@@ -66,13 +72,14 @@ jobs:
           FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
 
           FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+
           FUND100_ENABLE_LIVE_INTENT_VALIDATION: YES_READ_ONLY_LIVE_INTENTS
 
           FUND100_LIVE_WRITE_MODE: DISABLED
 
         run: |
           set -euo pipefail
-          python fund100_alpaca_live_intent_validator.py
+          python fund100_alpaca_live_intent_validator_v1_1.py
 
       - name: Check intent-bundle changes
         id: intent_check
@@ -80,7 +87,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          CHANGES="$(git status --porcelain -- live_dryrun_outputs/v5_002/live_order_intents.json)"
+          CHANGES="$(
+            git status --porcelain -- \
+              live_dryrun_outputs/v5_002/live_order_intents.json
+          )"
 
           if [ -z "$CHANGES" ]; then
 
@@ -105,7 +115,8 @@ jobs:
           git config user.name "fund100-live-dryrun-bot"
           git config user.email "fund100-live-dryrun-bot@users.noreply.github.com"
 
-          git add live_dryrun_outputs/v5_002/live_order_intents.json
+          git add \
+            live_dryrun_outputs/v5_002/live_order_intents.json
 
           if git diff --cached --quiet; then
             echo "Nothing staged."
@@ -113,7 +124,13 @@ jobs:
           fi
 
           git commit \
-            -m "Update V5-002 live order intents"
+            -m "Update position-aware V5-002 live order intents"
+
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Unexpected dirty working tree."
+            git status --short
+            exit 1
+          fi
 
           git pull --rebase origin main
           git push origin HEAD:main
@@ -121,9 +138,11 @@ jobs:
       - name: Final safety status
         run: |
           echo "========================================"
-          echo "FUND-100 LIVE INTENT VALIDATION COMPLETE"
+          echo "FUND-100 LIVE INTENT VALIDATION v1.1 COMPLETE"
           echo "========================================"
+          echo "Position-aware reconciliation: ENABLED"
+          echo "Live holdings persisted: NO"
           echo "Live execution authorized: FALSE"
-          echo "Maximum live execution notional: \$0.00"
+          echo 'Maximum live execution notional: $0.00'
           echo "Network write capability: ABSENT"
           echo "Orders submitted: 0"
