@@ -77,10 +77,52 @@ jobs:
           set -euo pipefail
           python fund100_pre_live_release_gate.py
 
+      - name: Restore committed evidence snapshot after verification
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Evidence gate passed."
+          echo "Restoring committed evidence snapshot before creating release lock."
+
+          git restore \
+            --source=HEAD \
+            -- \
+            release_outputs/v5_002/pre_live_release_evidence.json \
+            release_outputs/v5_002/pre_live_release_evidence.md
+
+          echo
+          echo "Working tree after evidence restoration:"
+          git status --short
+
       - name: Build safe-baseline release lock
         run: |
           set -euo pipefail
           python fund100_pre_live_release_lock.py
+
+      - name: Verify only release lock changed
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          STATUS="$(git status --porcelain)"
+
+          EXTRA="$(
+            printf '%s\n' "$STATUS" \
+              | grep -vE '^.. release_outputs/v5_002/pre_live_release_lock\.json$' \
+              || true
+          )"
+
+          if [ -n "$EXTRA" ]; then
+            echo "Unexpected working-tree changes detected:"
+            echo "$EXTRA"
+            echo
+            git status --short
+            exit 1
+          fi
+
+          echo "Working tree contains only the expected release-lock change."
+          git status --short
 
       - name: Show release lock
         run: |
@@ -151,6 +193,12 @@ jobs:
 
           git commit \
             -m "Freeze V5-002 pre-live safe baseline"
+
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "ERROR: working tree became dirty after release-lock commit."
+            git status --short
+            exit 1
+          fi
 
           git pull --rebase origin main
           git push origin HEAD:main
