@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   permit-test:
-    name: Prove LIVE Permit Fails Closed
+    name: Prove LIVE Permit v1.1 Fails Closed
 
     runs-on: ubuntu-latest
 
@@ -42,18 +42,22 @@ jobs:
           set -euo pipefail
 
           test -f fund100_alpaca_live_execution_permit.py
+          test -f fund100_alpaca_live_execution_permit_v1_1.py
+          test -f test_fund100_alpaca_live_execution_permit_v1_1.py
+
           test -f fund100_broker_safety.py
 
-          test -f live_dryrun_outputs/v5_002/scheduled_execution_time.json
+          test -f \
+            live_dryrun_outputs/v5_002/scheduled_execution_time.json
 
-          echo "LIVE permit-test dependencies found."
+          echo "LIVE permit v1.1 dependencies found."
 
       - name: Run Fund-100 tests
         run: |
           set -euo pipefail
           python -m pytest -q
 
-      - name: Validate fail-closed LIVE permit boundary
+      - name: Validate fail-closed LIVE permit boundary v1.1
         env:
           FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
 
@@ -61,7 +65,65 @@ jobs:
 
         run: |
           set -euo pipefail
-          python fund100_alpaca_live_execution_permit.py
+          python fund100_alpaca_live_execution_permit_v1_1.py
+
+      - name: Verify permit remains deny-only
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import json
+
+          compiler_path = (
+              "live_dryrun_outputs/v5_002/"
+              "scheduled_execution_time.json"
+          )
+
+          permit_path = (
+              "live_dryrun_outputs/v5_002/"
+              "live_execution_permit.json"
+          )
+
+          with open(compiler_path, "r") as f:
+              compiler_package = json.load(f)
+
+          with open(permit_path, "r") as f:
+              permit_package = json.load(f)
+
+          compiler = compiler_package["compiler"]
+          permit = permit_package["permit"]
+
+          assert (
+              compiler["schema"]
+              == "FUND100_SCHEDULED_EXECUTION_COMPILER_V1_1"
+          )
+
+          assert (
+              permit["source_compiler_sha256"]
+              == compiler_package["compiler_sha256"]
+          )
+
+          assert permit["permit_issued"] is False
+          assert permit["live_execution_authorized"] is False
+          assert permit["network_write_capability"] is False
+          assert permit["broker_write_mode"] == "DISABLED"
+
+          assert (
+              float(
+                  permit["max_live_execution_notional_usd"]
+              )
+              == 0.0
+          )
+
+          print("Compiler schema V1.1 binding: PASS")
+          print("Compiler SHA256 binding: PASS")
+          print(
+              "Denial reason:",
+              permit["denial_reason"],
+          )
+          print("Permit issued: FALSE")
+          PY
 
       - name: Check permit artifact
         id: permit_check
@@ -69,15 +131,23 @@ jobs:
         run: |
           set -euo pipefail
 
-          CHANGES="$(git status --porcelain -- live_dryrun_outputs/v5_002/live_execution_permit.json)"
+          CHANGES="$(
+            git status --porcelain -- \
+              live_dryrun_outputs/v5_002/live_execution_permit.json
+          )"
 
           if [ -z "$CHANGES" ]; then
+
             echo "Permit artifact unchanged."
             echo "changed=false" >> "$GITHUB_OUTPUT"
+
           else
+
             echo "Permit artifact changed:"
             echo "$CHANGES"
+
             echo "changed=true" >> "$GITHUB_OUTPUT"
+
           fi
 
       - name: Commit permit artifact
@@ -89,14 +159,22 @@ jobs:
           git config user.name "fund100-live-dryrun-bot"
           git config user.email "fund100-live-dryrun-bot@users.noreply.github.com"
 
-          git add live_dryrun_outputs/v5_002/live_execution_permit.json
+          git add \
+            live_dryrun_outputs/v5_002/live_execution_permit.json
 
           if git diff --cached --quiet; then
+            echo "Nothing staged."
             exit 0
           fi
 
           git commit \
-            -m "Update V5-002 live execution permit denial"
+            -m "Update V5-002 V1.1 live permit denial"
+
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Unexpected dirty working tree."
+            git status --short
+            exit 1
+          fi
 
           git pull --rebase origin main
           git push origin HEAD:main
@@ -104,10 +182,12 @@ jobs:
       - name: Final safety status
         run: |
           echo "========================================"
-          echo "FUND-100 LIVE PERMIT TEST COMPLETE"
+          echo "FUND-100 LIVE PERMIT v1.1 TEST COMPLETE"
           echo "========================================"
+          echo "Scheduled compiler schema: V1.1"
+          echo "Permit implementation: DENY ONLY"
           echo "Permit issued: FALSE"
           echo "Live execution authorized: FALSE"
-          echo "Maximum live execution notional: \$0.00"
+          echo 'Maximum live execution notional: $0.00'
           echo "Network write capability: ABSENT"
           echo "Orders submitted: 0"
