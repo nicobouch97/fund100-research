@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "Permit action"
+        description: "Permit action — use CHECK until final issuer-aware lock exists"
         required: true
         default: "check"
         type: choice
@@ -14,13 +14,13 @@ on:
           - issue
 
       max_notional_usd:
-        description: "Requested execution ceiling in USD; leave 0.00 for check"
+        description: "Requested execution ceiling in USD; use 0.00 for check"
         required: true
         default: "0.00"
         type: string
 
       approval_token:
-        description: "Exact token printed by preview; blank for check/preview"
+        description: "Exact preview token; leave blank for check"
         required: false
         default: ""
         type: string
@@ -34,7 +34,7 @@ concurrency:
 
 jobs:
   permit-v2:
-    name: Evaluate LIVE V2 Execution Permit
+    name: Evaluate Position-Aware LIVE V2 Permit
 
     runs-on: ubuntu-latest
 
@@ -59,14 +59,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify V2 permit issuer inputs
+      - name: Verify V2 issuer v1.1 inputs
         run: |
           set -euo pipefail
 
           test -f fund100_alpaca_live_permit_v2_issuer.py
-          test -f test_fund100_alpaca_live_permit_v2_issuer.py
+          test -f fund100_alpaca_live_permit_v2_issuer_v1_1.py
 
-          test -f fund100_alpaca_live_writer_disconnected.py
+          test -f test_fund100_alpaca_live_permit_v2_issuer.py
+          test -f test_fund100_alpaca_live_permit_v2_issuer_v1_1.py
+
+          test -f fund100_alpaca_live_writer_disconnected_v1_1.py
+          test -f fund100_alpaca_live_position_reconcile.py
+          test -f fund100_alpaca_live_manifest_v1_1.py
+          test -f fund100_alpaca_live_scheduled_compiler_v1_1.py
+
           test -f fund100_alpaca_live_readonly_smoke.py
           test -f fund100_alpaca_live_preflight.py
           test -f fund100_alpaca_live_execution_boundary.py
@@ -74,18 +81,24 @@ jobs:
           test -f release_outputs/v5_002/pre_live_release_lock.json
 
           test -f shadow_outputs/v5_002/shadow_state.json
-          test -f live_dryrun_outputs/v5_002/live_execution_manifest.json
-          test -f live_dryrun_outputs/v5_002/scheduled_execution_time.json
-          test -f live_dryrun_outputs/v5_002/live_execution_permit_v2_simulation.json
 
-          echo "V2 permit issuer dependencies found."
+          test -f \
+            live_dryrun_outputs/v5_002/live_execution_manifest.json
+
+          test -f \
+            live_dryrun_outputs/v5_002/scheduled_execution_time.json
+
+          test -f \
+            live_dryrun_outputs/v5_002/live_execution_permit_v2_simulation.json
+
+          echo "V2 permit issuer v1.1 dependencies found."
 
       - name: Run full Fund-100 test suite
         run: |
           set -euo pipefail
           python -m pytest -q
 
-      - name: Evaluate real V2 permit
+      - name: Evaluate real V2 permit v1.1
         env:
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
           ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
@@ -93,6 +106,7 @@ jobs:
           FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
 
           FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+
           FUND100_LIVE_WRITE_MODE: DISABLED
 
           FUND100_ENABLE_REAL_V2_PERMIT_ISSUER: YES_EVALUATE_REAL_V2_PERMIT
@@ -107,7 +121,7 @@ jobs:
 
         run: |
           set -euo pipefail
-          python fund100_alpaca_live_permit_v2_issuer.py
+          python fund100_alpaca_live_permit_v2_issuer_v1_1.py
 
       - name: Verify non-issue actions created no activation files
         if: inputs.action != 'issue'
@@ -116,13 +130,17 @@ jobs:
           set -euo pipefail
 
           CHANGES="$(
-            git status --porcelain -- live_activation_outputs/v5_002/ || true
+            git status --porcelain -- \
+              live_activation_outputs/v5_002/ \
+              || true
           )"
 
           if [ -n "$CHANGES" ]; then
+
             echo "ERROR: check/preview created activation files:"
             echo "$CHANGES"
             exit 1
+
           fi
 
           echo "No activation files created."
@@ -133,31 +151,92 @@ jobs:
         run: |
           set -euo pipefail
 
-          test -f live_activation_outputs/v5_002/live_execution_permit_v2.json
-          test -f live_activation_outputs/v5_002/live_permit_issue_ledger.json
+          test -f \
+            live_activation_outputs/v5_002/live_execution_permit_v2.json
+
+          test -f \
+            live_activation_outputs/v5_002/live_permit_issue_ledger.json
 
           python - <<'PY'
           import json
 
           with open(
-              "live_activation_outputs/v5_002/live_execution_permit_v2.json",
+              "live_activation_outputs/v5_002/"
+              "live_execution_permit_v2.json",
               "r",
-          ) as f:
-              package = json.load(f)
+              encoding="utf-8",
+          ) as handle:
+              package = json.load(handle)
 
           permit = package["permit"]
 
-          assert permit["schema"] == "FUND100_LIVE_EXECUTION_PERMIT_V2"
-          assert permit["permit_issued"] is True
-          assert permit["live_execution_authorized"] is True
-          assert permit["network_write_capability"] is True
-          assert permit["broker_write_mode"] == "ENABLED"
-          assert permit["writer_connected_at_issuance"] is False
-          assert permit["orders_submitted_by_issuer"] == 0
+          assert (
+              permit["schema"]
+              == "FUND100_LIVE_EXECUTION_PERMIT_V2"
+          )
 
-          print("Writer-compatible V2 permit artifact: PASS")
-          print("Writer connected at issuance: FALSE")
-          print("Orders submitted by issuer: 0")
+          assert permit["permit_issued"] is True
+
+          assert (
+              permit["live_execution_authorized"]
+              is True
+          )
+
+          assert (
+              permit["network_write_capability"]
+              is True
+          )
+
+          assert (
+              permit["broker_write_mode"]
+              == "ENABLED"
+          )
+
+          assert (
+              permit["writer_connected_at_issuance"]
+              is False
+          )
+
+          assert (
+              permit["orders_submitted_by_issuer"]
+              == 0
+          )
+
+          assert (
+              permit["issuer_compatibility_layer"]
+              == "v1.1-position-aware"
+          )
+
+          assert (
+              permit["source_release_lock_schema"]
+              == "FUND100_PRE_LIVE_RELEASE_LOCK_V1_1"
+          )
+
+          assert (
+              permit["source_manifest_schema"]
+              == "FUND100_LIVE_DRYRUN_MANIFEST_V1_1"
+          )
+
+          assert (
+              permit["source_compiler_schema"]
+              == "FUND100_SCHEDULED_EXECUTION_COMPILER_V1_1"
+          )
+
+          print(
+              "Writer-compatible V2 permit artifact: PASS"
+          )
+
+          print(
+              "Position-aware issuer binding: PASS"
+          )
+
+          print(
+              "Writer connected at issuance: FALSE"
+          )
+
+          print(
+              "Orders submitted by issuer: 0"
+          )
           PY
 
       - name: Commit issued permit and issue ledger
@@ -166,44 +245,52 @@ jobs:
         run: |
           set -euo pipefail
 
-          git config user.name "fund100-live-permit-bot"
-          git config user.email "fund100-live-permit-bot@users.noreply.github.com"
+          git config \
+            user.name \
+            "fund100-live-permit-bot"
 
-          git add live_activation_outputs/v5_002/live_execution_permit_v2.json
-          git add live_activation_outputs/v5_002/live_permit_issue_ledger.json
+          git config \
+            user.email \
+            "fund100-live-permit-bot@users.noreply.github.com"
+
+          git add \
+            live_activation_outputs/v5_002/live_execution_permit_v2.json
+
+          git add \
+            live_activation_outputs/v5_002/live_permit_issue_ledger.json
 
           if git diff --cached --quiet; then
+
             echo "Nothing staged."
             exit 0
+
           fi
 
           git commit \
-            -m "Issue V5-002 live execution permit V2"
+            -m "Issue position-aware V5-002 live execution permit V2"
 
           if [ -n "$(git status --porcelain)" ]; then
-            echo "Unexpected dirty working tree after permit commit."
+
+            echo "Unexpected dirty working tree."
             git status --short
             exit 1
+
           fi
 
           git pull --rebase origin main
           git push origin HEAD:main
 
-      - name: Final status
-        shell: bash
+      - name: Final safety status
         run: |
-          set -euo pipefail
-
           echo "========================================"
-          echo "FUND-100 LIVE V2 PERMIT ISSUER COMPLETE"
+          echo "FUND-100 LIVE V2 PERMIT ISSUER v1.1 COMPLETE"
           echo "========================================"
           echo "Action: ${{ inputs.action }}"
+          echo "Position-aware schemas: V1.1"
           echo "Broker HTTP methods used by issuer: GET ONLY"
           echo "Writer connected: FALSE"
           echo "Orders submitted: 0"
 
-          if [ "${{ inputs.action }}" = "issue" ]; then
-            echo "Writer-compatible permit issued: TRUE"
-          else
+          if [ "${{ inputs.action }}" = "check" ]; then
             echo "Writer-compatible permit issued: FALSE"
           fi
