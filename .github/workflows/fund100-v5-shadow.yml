@@ -46,6 +46,9 @@ jobs:
           set -euo pipefail
 
           test -f fund100_v5_002_shadow.py
+          test -f fund100_v5_002_shadow_v1_1.py
+          test -f test_fund100_v5_002_shadow_v1_1.py
+
           test -f audit_v5_002_engine.py
 
           test -f fund100_experiment_runner.py
@@ -58,22 +61,22 @@ jobs:
           test -f research_lab/frozen_history_v2.csv
           test -f research_lab/frozen_history_v2_manifest.json
 
-          echo "V5-002 shadow dependencies found."
+          echo "V5-002 shadow v1.1 dependencies found."
 
       - name: Run Fund-100 tests
         run: |
           set -euo pipefail
-          pytest -q
+          python -m pytest -q
 
       - name: Re-run V5-002 engine parity audit
         run: |
           set -euo pipefail
           python audit_v5_002_engine.py
 
-      - name: Run V5-002 Shadow Forward
+      - name: Run V5-002 Shadow Forward v1.1
         run: |
           set -euo pipefail
-          python fund100_v5_002_shadow.py
+          python fund100_v5_002_shadow_v1_1.py
 
       - name: Check for shadow changes
         id: shadow_check
@@ -90,7 +93,7 @@ jobs:
 
           else
 
-            echo "V5-002 shadow state changed:"
+            echo "V5-002 shadow outputs changed:"
             echo "$CHANGES"
 
             echo "shadow_changed=true" >> "$GITHUB_OUTPUT"
@@ -126,6 +129,7 @@ jobs:
           git commit \
             -m "V5-002 shadow update ${RUN_DATE}"
 
+          git pull --rebase origin main
           git push origin HEAD:main
 
       - name: Final status
@@ -133,9 +137,10 @@ jobs:
           echo "========================================"
           echo "FUND-100 V5-002 SHADOW COMPLETE"
           echo "========================================"
+          echo "Shadow persistence layer: v1.1"
 
           if [ "${{ steps.shadow_check.outputs.shadow_changed }}" = "true" ]; then
-            echo "V5-002 shadow state was updated."
+            echo "Meaningful shadow output changes were committed."
           else
-            echo "No new completed session was available."
+            echo "No meaningful shadow output changes were detected."
           fi
