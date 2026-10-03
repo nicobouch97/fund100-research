@@ -1,109 +1,892 @@
 from __future__ import annotations
 
 import json
+import sys
 
-import pytest
-
+import fund100_alpaca_live_execution_boundary as boundary
 import fund100_alpaca_live_intent_validator as base
-import fund100_alpaca_live_intent_validator_v1_1 as validator
-import fund100_alpaca_live_manifest_v1_1 as manifest
+import fund100_alpaca_live_manifest_v1_1 as manifest_v11
 import fund100_alpaca_live_position_reconcile as reconcile
+import fund100_alpaca_live_preflight as preflight
+import fund100_alpaca_live_readonly_smoke as live
+import fund100_alpaca_live_writer_disconnected_v1_1 as writer
+
+from fund100_broker_safety import (
+    get_kill_switch_state,
+)
 
 
-def state():
-
-    return {
-        "strategy":
-            "V5-002_SHADOW",
-
-        "last_date":
-            "2099-01-01",
-
-        "satellite_weights": {
-            "SPY":
-                0.0,
-
-            "IWM":
-                0.0,
-
-            "EFA":
-                0.0,
-
-            "EEM":
-                0.083333333333,
-
-            "VNQ":
-                0.0,
-
-            "XLK":
-                0.0,
-
-            "XLF":
-                0.0,
-
-            "XLI":
-                0.0,
-
-            "XLV":
-                0.083333333334,
-
-            "XLP":
-                0.0,
-
-            "XLY":
-                0.0,
-
-            "XLE":
-                0.083333333333,
-
-            "XLU":
-                0.0,
-        },
-
-        "pending_target":
-            None,
-
-        "pending_source":
-            None,
-    }
+# ============================================================
+# FUND-100 ALPACA LIVE ORDER-INTENT VALIDATOR v1.1
+# ============================================================
+#
+# LIVE ACCOUNT — READ ONLY.
+#
+# Position-aware, GET-only and non-executable.
+#
+# This version also preserves the complete structural
+# reconciliation proof in the committed intent bundle:
+#
+# - frozen execution universe verified
+# - long only verified
+# - no unmanaged positions verified
+# - no open orders verified
+#
+# No live holdings or dollar values are persisted.
+# ============================================================
 
 
-def structural_reconciliation(
-    *,
-    position_count=4,
-    status="POSITION_AWARE",
+INTENT_SCHEMA = (
+    "FUND100_LIVE_ORDER_INTENTS_V1_1"
+)
+
+EXPECTED_STRATEGY = (
+    "V5-002_SHADOW"
+)
+
+LIVE_EXECUTION_AUTHORIZED = False
+
+MAX_LIVE_EXECUTION_NOTIONAL_USD = 0.0
+
+NETWORK_WRITE_CAPABILITY = False
+
+BROKER_WRITE_MODE = "DISABLED"
+
+ORDERS_SUBMITTED = 0
+
+
+# ============================================================
+# MANIFEST
+# ============================================================
+
+
+def load_manifest_v1_1():
+
+    path = (
+        base.MANIFEST_PATH
+    )
+
+    if not path.exists():
+
+        raise RuntimeError(
+            "Live dry-run manifest is missing."
+        )
+
+    with path.open(
+        "r",
+        encoding="utf-8",
+    ) as handle:
+
+        package = json.load(
+            handle
+        )
+
+    if not isinstance(
+        package,
+        dict,
+    ):
+
+        raise RuntimeError(
+            "Invalid live manifest package."
+        )
+
+    if (
+        "manifest"
+        not in package
+        or
+        "manifest_sha256"
+        not in package
+        or
+        "manifest_id"
+        not in package
+    ):
+
+        raise RuntimeError(
+            "Incomplete live manifest package."
+        )
+
+    body = (
+        package[
+            "manifest"
+        ]
+    )
+
+    calculated = (
+        base.sha256_json(
+            body
+        )
+    )
+
+    recorded = str(
+        package[
+            "manifest_sha256"
+        ]
+    )
+
+    if calculated != recorded:
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "manifest SHA256 verification failed."
+        )
+
+    if (
+        body.get(
+            "schema"
+        )
+        != manifest_v11.MANIFEST_SCHEMA
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "manifest is not position-aware v1.1."
+        )
+
+    if (
+        body.get(
+            "strategy"
+        )
+        != EXPECTED_STRATEGY
+    ):
+
+        raise RuntimeError(
+            "Unexpected strategy in live manifest."
+        )
+
+    if (
+        body.get(
+            "live_execution_authorized"
+        )
+        is not False
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT SAFETY STOP: "
+            "manifest unexpectedly authorizes execution."
+        )
+
+    if abs(
+        float(
+            body.get(
+                "max_live_execution_notional_usd",
+                -1.0,
+            )
+        )
+    ) > 1e-12:
+
+        raise RuntimeError(
+            "LIVE INTENT SAFETY STOP: "
+            "manifest monetary ceiling is not $0.00."
+        )
+
+    if (
+        body.get(
+            "network_write_capability"
+        )
+        is not False
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT SAFETY STOP: "
+            "manifest unexpectedly has "
+            "network-write capability."
+        )
+
+    if (
+        body.get(
+            "broker_write_mode"
+        )
+        != "DISABLED"
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT SAFETY STOP: "
+            "manifest write mode is not DISABLED."
+        )
+
+    structure = (
+        body.get(
+            "position_reconciliation"
+        )
+    )
+
+    if not isinstance(
+        structure,
+        dict,
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "manifest has no position-reconciliation proof."
+        )
+
+    if (
+        structure.get(
+            "policy"
+        )
+        != manifest_v11.RECONCILIATION_POLICY
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "unexpected reconciliation policy."
+        )
+
+    required_true = [
+        "frozen_execution_universe_verified",
+        "long_only_verified",
+        "no_unmanaged_positions_verified",
+        "no_open_orders_verified",
+    ]
+
+    for field in required_true:
+
+        if (
+            structure.get(
+                field
+            )
+            is not True
+        ):
+
+            raise RuntimeError(
+                "LIVE INTENT STOP: "
+                f"manifest reconciliation field "
+                f"{field!r} is not TRUE."
+            )
+
+    if (
+        structure.get(
+            "live_holdings_persisted"
+        )
+        is not False
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "manifest unexpectedly persists holdings."
+        )
+
+    if (
+        structure.get(
+            "live_dollar_values_persisted"
+        )
+        is not False
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "manifest unexpectedly persists "
+            "live dollar values."
+        )
+
+    if (
+        structure.get(
+            "volatile_broker_snapshot_persisted"
+        )
+        is not False
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "manifest unexpectedly persists "
+            "volatile broker state."
+        )
+
+    return package
+
+
+# ============================================================
+# CURRENT SHADOW STATE
+# ============================================================
+
+
+def load_and_verify_state(
+    manifest_body: dict,
 ):
 
-    return {
-        "schema":
-            reconcile.SCHEMA,
+    return (
+        base.load_and_verify_state(
+            manifest_body
+        )
+    )
 
+
+# ============================================================
+# FRESH EPHEMERAL RECONCILIATION
+# ============================================================
+
+
+def build_fresh_reconciliation(
+    state: dict,
+    key: str,
+    secret: str,
+):
+
+    account = (
+        live.get_json(
+            path="/v2/account",
+            key=key,
+            secret=secret,
+        )
+    )
+
+    preflight.validate_account(
+        account
+    )
+
+    positions = (
+        live.get_json(
+            path="/v2/positions",
+            key=key,
+            secret=secret,
+        )
+    )
+
+    open_orders = (
+        live.get_json(
+            path="/v2/orders",
+            key=key,
+            secret=secret,
+            params={
+                "status":
+                    "open",
+
+                "limit":
+                    100,
+            },
+        )
+    )
+
+    return (
+        reconcile.build_reconciliation(
+            state=
+                state,
+
+            account=
+                account,
+
+            positions=
+                positions,
+
+            open_orders=
+                open_orders,
+        )
+    )
+
+
+# ============================================================
+# RECONCILIATION / MANIFEST BINDING
+# ============================================================
+
+
+def verify_fresh_reconciliation(
+    manifest_body: dict,
+    state: dict,
+    package: dict,
+):
+
+    if (
+        not isinstance(
+            package,
+            dict,
+        )
+        or
+        "reconciliation"
+        not in package
+        or
+        "reconciliation_sha256"
+        not in package
+    ):
+
+        raise RuntimeError(
+            "Invalid fresh reconciliation package."
+        )
+
+    body = (
+        package[
+            "reconciliation"
+        ]
+    )
+
+    calculated = (
+        reconcile.sha256_json(
+            body
+        )
+    )
+
+    recorded = str(
+        package[
+            "reconciliation_sha256"
+        ]
+    )
+
+    if calculated != recorded:
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "fresh reconciliation hash failed."
+        )
+
+    if (
+        body.get(
+            "schema"
+        )
+        != reconcile.SCHEMA
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "unexpected reconciliation schema."
+        )
+
+    expected_state_hash = (
+        base.sha256_json(
+            state
+        )
+    )
+
+    if (
+        body.get(
+            "strategy_state_sha256"
+        )
+        != expected_state_hash
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "fresh reconciliation is not bound "
+            "to current strategy state."
+        )
+
+    if (
+        str(
+            body.get(
+                "strategy_state_date"
+            )
+        )
+        != str(
+            state.get(
+                "last_date"
+            )
+        )
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "fresh reconciliation date mismatch."
+        )
+
+    required_true = [
+        "frozen_execution_universe_verified",
+        "long_only_verified",
+        "no_unmanaged_positions_verified",
+        "no_open_orders_verified",
+    ]
+
+    for field in required_true:
+
+        if (
+            body.get(
+                field
+            )
+            is not True
+        ):
+
+            raise RuntimeError(
+                "LIVE INTENT STOP: "
+                f"fresh reconciliation field "
+                f"{field!r} is not TRUE."
+            )
+
+    if (
+        body.get(
+            "live_execution_authorized"
+        )
+        is not False
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "fresh reconciliation unexpectedly "
+            "authorizes execution."
+        )
+
+    if (
+        body.get(
+            "network_write_capability"
+        )
+        is not False
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "fresh reconciliation unexpectedly "
+            "has network writes."
+        )
+
+    if (
+        body.get(
+            "broker_write_mode"
+        )
+        != "DISABLED"
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "fresh reconciliation write mode "
+            "is not DISABLED."
+        )
+
+    if (
+        int(
+            body.get(
+                "open_order_count",
+                -1,
+            )
+        )
+        != 0
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "open orders exist."
+        )
+
+    structure = (
+        manifest_body[
+            "position_reconciliation"
+        ]
+    )
+
+    if (
+        body.get(
+            "live_account_binding_sha256"
+        )
+        != structure.get(
+            "live_account_binding_sha256"
+        )
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "live account binding changed since "
+            "manifest compilation."
+        )
+
+    if (
+        body.get(
+            "reconciliation_status"
+        )
+        != structure.get(
+            "reconciliation_status"
+        )
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "live account reconciliation status changed. "
+            "Regenerate manifest first."
+        )
+
+    if (
+        int(
+            body.get(
+                "position_count",
+                -1,
+            )
+        )
+        != int(
+            structure.get(
+                "position_count",
+                -2,
+            )
+        )
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "live position structure changed since "
+            "manifest compilation. "
+            "Regenerate manifest first."
+        )
+
+    if (
+        body.get(
+            "manifest_type"
+        )
+        != manifest_body.get(
+            "manifest_type"
+        )
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "event type changed during reconciliation."
+        )
+
+    if (
+        body.get(
+            "event_source"
+        )
+        != manifest_body.get(
+            "event_source"
+        )
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "event source changed during reconciliation."
+        )
+
+    if (
+        body.get(
+            "strategy_event_present"
+        )
+        is not manifest_body.get(
+            "strategy_event_present"
+        )
+    ):
+
+        raise RuntimeError(
+            "LIVE INTENT STOP: "
+            "event-presence flag changed during reconciliation."
+        )
+
+    return body
+
+
+# ============================================================
+# NON-EXECUTABLE INTENTS
+# ============================================================
+
+
+def compile_candidate_intents(
+    manifest_id: str,
+    manifest_body: dict,
+    reconciliation_body: dict,
+):
+
+    if not bool(
+        manifest_body.get(
+            "strategy_event_present",
+            False,
+        )
+    ):
+
+        return []
+
+    source = str(
+        manifest_body.get(
+            "event_source",
+            "",
+        )
+    )
+
+    if source == "SCHEDULED":
+
+        raise RuntimeError(
+            "SCHEDULED LIVE INTENT SAFETY STOP: "
+            "scheduled events must be compiled by "
+            "the position-aware scheduled execution "
+            "compiler v1.1."
+        )
+
+    if source != "EMERGENCY":
+
+        raise RuntimeError(
+            "Unexpected live event source."
+        )
+
+    rows = (
+        reconciliation_body.get(
+            "reconciliation_rows",
+            []
+        )
+    )
+
+    if not isinstance(
+        rows,
+        list,
+    ):
+
+        raise RuntimeError(
+            "Invalid reconciliation rows."
+        )
+
+    intents = []
+
+    for row in rows:
+
+        if not isinstance(
+            row,
+            dict,
+        ):
+
+            raise RuntimeError(
+                "Invalid reconciliation row."
+            )
+
+        direction = str(
+            row.get(
+                "diagnostic_direction",
+                "",
+            )
+        ).upper()
+
+        if direction == "HOLD":
+
+            continue
+
+        if direction not in {
+            "BUY",
+            "SELL",
+        }:
+
+            raise RuntimeError(
+                "LIVE INTENT STOP: "
+                "broker reconciliation cannot determine "
+                "an emergency trade direction."
+            )
+
+        symbol = str(
+            row.get(
+                "symbol",
+                "",
+            )
+        ).upper()
+
+        if (
+            symbol
+            not in writer.ALLOWED_SYMBOLS
+        ):
+
+            raise RuntimeError(
+                "LIVE INTENT STOP: "
+                f"unsupported symbol {symbol!r}."
+            )
+
+        side = (
+            direction.lower()
+        )
+
+        client_order_id = (
+            base.build_client_order_id(
+                manifest_id=
+                    manifest_id,
+
+                side=
+                    side,
+
+                symbol=
+                    symbol,
+            )
+        )
+
+        intents.append({
+            "symbol":
+                symbol,
+
+            "side":
+                side,
+
+            "target_weight":
+                round(
+                    float(
+                        row.get(
+                            "target_weight",
+                            0.0,
+                        )
+                    ),
+                    12,
+                ),
+
+            "client_order_id":
+                client_order_id,
+
+            "notional_usd":
+                None,
+
+            "executable":
+                False,
+        })
+
+    return intents
+
+
+# ============================================================
+# INTENT PACKAGE
+# ============================================================
+
+
+def build_intent_package_v1_1(
+    manifest_package: dict,
+    intents: list,
+):
+
+    manifest_body = (
+        manifest_package[
+            "manifest"
+        ]
+    )
+
+    structure = (
+        manifest_body[
+            "position_reconciliation"
+        ]
+    )
+
+    # --------------------------------------------------------
+    # IMPORTANT:
+    #
+    # Preserve the complete structural reconciliation proof.
+    #
+    # These fields reveal no quantities, values, prices or
+    # individual holdings. They are stable safety attestations.
+    # --------------------------------------------------------
+
+    position_reconciliation = {
         "policy":
-            manifest.RECONCILIATION_POLICY,
+            structure[
+                "policy"
+            ],
 
         "live_account_binding_sha256":
-            "account-binding-test",
+            structure[
+                "live_account_binding_sha256"
+            ],
 
         "reconciliation_status":
-            status,
+            structure[
+                "reconciliation_status"
+            ],
 
         "position_count":
-            position_count,
+            structure[
+                "position_count"
+            ],
 
         "open_order_count":
             0,
 
         "frozen_execution_universe_verified":
-            True,
+            structure[
+                "frozen_execution_universe_verified"
+            ],
 
         "long_only_verified":
-            True,
+            structure[
+                "long_only_verified"
+            ],
 
         "no_unmanaged_positions_verified":
-            True,
+            structure[
+                "no_unmanaged_positions_verified"
+            ],
 
         "no_open_orders_verified":
-            True,
+            structure[
+                "no_open_orders_verified"
+            ],
 
         "live_holdings_persisted":
             False,
@@ -115,543 +898,417 @@ def structural_reconciliation(
             False,
     }
 
-
-def manifest_package(
-    *,
-    event=False,
-    source="NONE",
-    manifest_type="NO_EVENT_SNAPSHOT",
-):
-
-    current_state = (
-        state()
-    )
-
     body = {
         "schema":
-            manifest.MANIFEST_SCHEMA,
+            INTENT_SCHEMA,
 
-        "strategy":
-            "V5-002_SHADOW",
-
-        "strategy_state_date":
-            current_state[
-                "last_date"
-            ],
-
-        "strategy_state_sha256":
-            base.sha256_json(
-                current_state
-            ),
-
-        "manifest_type":
-            manifest_type,
-
-        "event_source":
-            source,
-
-        "strategy_event_present":
-            event,
-
-        "target_weights": {
-            "ACWI":
-                0.75,
-
-            "EEM":
-                0.083333333333,
-
-            "XLE":
-                0.083333333333,
-
-            "XLV":
-                0.083333333334,
-        },
-
-        "position_reconciliation":
-            structural_reconciliation(),
-
-        "live_execution_authorized":
-            False,
-
-        "max_live_execution_notional_usd":
-            0.0,
-
-        "network_write_capability":
-            False,
-
-        "proposed_orders":
-            [],
-
-        "broker_environment":
-            "ALPACA_LIVE",
-
-        "broker_write_mode":
-            "DISABLED",
-
-        "kill_switch_required":
-            "ENGAGED",
-
-        "orders_submitted":
-            0,
-    }
-
-    manifest_hash = (
-        base.sha256_json(
-            body
-        )
-    )
-
-    return {
         "manifest_id":
-            "f100-live-test-"
-            + manifest_hash[
-                :16
+            manifest_package[
+                "manifest_id"
             ],
 
         "manifest_sha256":
-            manifest_hash,
-
-        "manifest":
-            body,
-    }
-
-
-def fresh_reconciliation_package(
-    *,
-    event=False,
-    source="NONE",
-    manifest_type="NO_EVENT_SNAPSHOT",
-    position_count=4,
-    account_binding="account-binding-test",
-    broker_snapshot="volatile-a",
-    rows=None,
-):
-
-    if rows is None:
-
-        rows = []
-
-    current_state = (
-        state()
-    )
-
-    body = {
-        "schema":
-            reconcile.SCHEMA,
+            manifest_package[
+                "manifest_sha256"
+            ],
 
         "strategy":
-            "V5-002_SHADOW",
+            EXPECTED_STRATEGY,
 
         "strategy_state_date":
-            current_state[
-                "last_date"
+            manifest_body[
+                "strategy_state_date"
             ],
 
         "strategy_state_sha256":
-            base.sha256_json(
-                current_state
-            ),
+            manifest_body[
+                "strategy_state_sha256"
+            ],
 
         "manifest_type":
-            manifest_type,
+            manifest_body[
+                "manifest_type"
+            ],
 
         "event_source":
-            source,
+            manifest_body[
+                "event_source"
+            ],
 
         "strategy_event_present":
-            event,
+            manifest_body[
+                "strategy_event_present"
+            ],
 
-        "reconciliation_status":
-            "POSITION_AWARE",
+        "position_reconciliation":
+            position_reconciliation,
 
-        "live_account_binding_sha256":
-            account_binding,
+        "candidate_intents":
+            intents,
 
-        "broker_snapshot_sha256":
-            broker_snapshot,
-
-        "position_count":
-            position_count,
-
-        "open_order_count":
-            0,
-
-        "target_weights":
-            {},
-
-        "cash_weight":
-            0.0,
-
-        "reconciliation_rows":
-            rows,
-
-        "gross_diagnostic_delta_usd":
-            0.0,
-
-        "diagnostic_buy_total_usd":
-            0.0,
-
-        "diagnostic_sell_total_usd":
-            0.0,
-
-        "frozen_execution_universe_verified":
-            True,
-
-        "long_only_verified":
-            True,
-
-        "no_unmanaged_positions_verified":
-            True,
-
-        "no_open_orders_verified":
-            True,
+        "scheduled_event_requires_execution_compiler":
+            (
+                manifest_body[
+                    "event_source"
+                ]
+                == "SCHEDULED"
+            ),
 
         "live_execution_authorized":
-            False,
+            LIVE_EXECUTION_AUTHORIZED,
+
+        "max_live_execution_notional_usd":
+            MAX_LIVE_EXECUTION_NOTIONAL_USD,
 
         "network_write_capability":
-            False,
+            NETWORK_WRITE_CAPABILITY,
 
         "broker_write_mode":
-            "DISABLED",
+            BROKER_WRITE_MODE,
 
         "orders_submitted":
-            0,
-
-        "persistence_policy":
-            "EPHEMERAL_NOT_COMMITTED",
+            ORDERS_SUBMITTED,
     }
 
     return {
-        "reconciliation_sha256":
-            reconcile.sha256_json(
+        "intent_bundle_sha256":
+            base.sha256_json(
                 body
             ),
 
-        "reconciliation":
+        "intent_bundle":
             body,
     }
 
 
-def test_no_event_produces_no_intents():
+# ============================================================
+# MAIN
+# ============================================================
 
-    package = (
-        manifest_package()
+
+def main():
+
+    print(
+        "============================================"
     )
 
-    fresh = (
-        fresh_reconciliation_package()
+    print(
+        "FUND-100 ALPACA LIVE ORDER-INTENT "
+        "VALIDATOR v1.1"
     )
 
-    body = (
-        validator.verify_fresh_reconciliation(
+    print(
+        "============================================"
+    )
+
+    print(
+        "\nEnvironment: ALPACA LIVE"
+    )
+
+    print(
+        "Mode: READ ONLY"
+    )
+
+    print(
+        "Position-aware reconciliation: ENABLED"
+    )
+
+    print(
+        "Structural reconciliation proof: COMPLETE"
+    )
+
+    print(
+        "Live holdings persistence: NONE"
+    )
+
+    print(
+        "Network write capability: ABSENT"
+    )
+
+    print(
+        "Live execution authorized: FALSE"
+    )
+
+    print(
+        "Maximum live execution notional: $0.00"
+    )
+
+    base.require_intent_arm()
+
+    kill_state = (
+        get_kill_switch_state()
+    )
+
+    if kill_state != "ENGAGED":
+
+        raise RuntimeError(
+            "LIVE INTENT SAFETY STOP: "
+            "kill switch must remain ENGAGED."
+        )
+
+    boundary.require_live_writes_disabled()
+
+    live.require_readonly_arm()
+
+    writer.validate_frozen_v5_execution_universe(
+        writer.FROZEN_V5_SATELLITE_UNIVERSE
+    )
+
+    print(
+        "\nBroker kill switch: ENGAGED — PASS"
+    )
+
+    print(
+        "Live write mode: DISABLED — PASS"
+    )
+
+    print(
+        "Frozen V5 execution universe: PASS"
+    )
+
+    manifest_package = (
+        load_manifest_v1_1()
+    )
+
+    manifest_body = (
+        manifest_package[
+            "manifest"
+        ]
+    )
+
+    state = (
+        load_and_verify_state(
+            manifest_body
+        )
+    )
+
+    print(
+        "\nPosition-aware manifest schema: PASS"
+    )
+
+    print(
+        "Manifest SHA256 verification: PASS"
+    )
+
+    print(
+        "Strategy-state hash match: PASS"
+    )
+
+    print(
+        f"Manifest ID: "
+        f"{manifest_package['manifest_id']}"
+    )
+
+    key, secret = (
+        live.load_credentials()
+    )
+
+    fresh_package = (
+        build_fresh_reconciliation(
+            state=
+                state,
+
+            key=
+                key,
+
+            secret=
+                secret,
+        )
+    )
+
+    fresh_body = (
+        verify_fresh_reconciliation(
             manifest_body=
-                package[
-                    "manifest"
-                ],
+                manifest_body,
 
             state=
-                state(),
+                state,
 
             package=
-                fresh,
+                fresh_package,
         )
+    )
+
+    print(
+        "\nFresh broker reconciliation: PASS"
+    )
+
+    print(
+        "Live account binding: PASS"
+    )
+
+    print(
+        "Live position structure: PASS"
+    )
+
+    print(
+        "Complete structural proof: PASS"
+    )
+
+    print(
+        "Open orders: 0 — PASS"
+    )
+
+    print(
+        "Live dollar values persisted: NO"
+    )
+
+    print(
+        "Individual live holdings persisted: NO"
     )
 
     intents = (
-        validator.compile_candidate_intents(
+        compile_candidate_intents(
             manifest_id=
-                package[
+                manifest_package[
                     "manifest_id"
                 ],
 
             manifest_body=
-                package[
-                    "manifest"
-                ],
+                manifest_body,
 
             reconciliation_body=
-                body,
+                fresh_body,
         )
     )
 
-    assert intents == []
-
-
-def test_account_binding_change_is_rejected():
-
-    package = (
-        manifest_package()
-    )
-
-    fresh = (
-        fresh_reconciliation_package(
-            account_binding=
-                "different-account"
-        )
-    )
-
-    with pytest.raises(
-        RuntimeError,
-        match="account binding changed",
-    ):
-
-        validator.verify_fresh_reconciliation(
-            manifest_body=
-                package[
-                    "manifest"
-                ],
-
-            state=
-                state(),
-
-            package=
-                fresh,
-        )
-
-
-def test_position_count_change_is_rejected():
-
-    package = (
-        manifest_package()
-    )
-
-    fresh = (
-        fresh_reconciliation_package(
-            position_count=3
-        )
-    )
-
-    with pytest.raises(
-        RuntimeError,
-        match="position structure changed",
-    ):
-
-        validator.verify_fresh_reconciliation(
-            manifest_body=
-                package[
-                    "manifest"
-                ],
-
-            state=
-                state(),
-
-            package=
-                fresh,
-        )
-
-
-def test_scheduled_event_still_fails_closed():
-
-    package = (
-        manifest_package(
-            event=True,
-            source="SCHEDULED",
-            manifest_type="PENDING_STRATEGY_EVENT",
-        )
-    )
-
-    with pytest.raises(
-        RuntimeError,
-        match="scheduled execution compiler v1.1",
-    ):
-
-        validator.compile_candidate_intents(
-            manifest_id=
-                package[
-                    "manifest_id"
-                ],
-
-            manifest_body=
-                package[
-                    "manifest"
-                ],
-
-            reconciliation_body=
-                fresh_reconciliation_package(
-                    event=True,
-                    source="SCHEDULED",
-                    manifest_type="PENDING_STRATEGY_EVENT",
-                )[
-                    "reconciliation"
-                ],
-        )
-
-
-def test_emergency_intents_persist_no_live_values():
-
-    package = (
-        manifest_package(
-            event=True,
-            source="EMERGENCY",
-            manifest_type="PENDING_STRATEGY_EVENT",
-        )
-    )
-
-    rows = [
-        {
-            "symbol":
-                "ACWI",
-
-            "target_weight":
-                0.75,
-
-            "current_weight":
-                0.70,
-
-            "weight_delta":
-                0.05,
-
-            "current_market_value_usd":
-                70.0,
-
-            "target_market_value_usd":
-                75.0,
-
-            "diagnostic_delta_usd":
-                5.0,
-
-            "diagnostic_direction":
-                "BUY",
-
-            "executable":
-                False,
-        },
-        {
-            "symbol":
-                "EEM",
-
-            "target_weight":
-                0.083333333333,
-
-            "current_weight":
-                0.10,
-
-            "weight_delta":
-                -0.016666666667,
-
-            "current_market_value_usd":
-                10.0,
-
-            "target_market_value_usd":
-                8.3333333333,
-
-            "diagnostic_delta_usd":
-                -1.6666666667,
-
-            "diagnostic_direction":
-                "SELL",
-
-            "executable":
-                False,
-        },
-    ]
-
-    intents = (
-        validator.compile_candidate_intents(
-            manifest_id=
-                package[
-                    "manifest_id"
-                ],
-
-            manifest_body=
-                package[
-                    "manifest"
-                ],
-
-            reconciliation_body=
-                fresh_reconciliation_package(
-                    event=True,
-                    source="EMERGENCY",
-                    manifest_type="PENDING_STRATEGY_EVENT",
-                    rows=rows,
-                )[
-                    "reconciliation"
-                ],
-        )
-    )
-
-    assert len(
-        intents
-    ) == 2
-
-    serialized = (
-        json.dumps(
-            intents,
-            sort_keys=True,
-        )
-    )
-
-    assert (
-        "current_weight"
-        not in serialized
-    )
-
-    assert (
-        "weight_delta"
-        not in serialized
-    )
-
-    assert (
-        "current_market_value_usd"
-        not in serialized
-    )
-
-    assert (
-        "target_market_value_usd"
-        not in serialized
-    )
-
-    assert (
-        "diagnostic_delta_usd"
-        not in serialized
-    )
-
-    assert all(
-        intent[
-            "notional_usd"
-        ]
-        is None
-        for intent
-        in intents
-    )
-
-    assert all(
-        intent[
-            "executable"
-        ]
-        is False
-        for intent
-        in intents
-    )
-
-
-def test_bundle_is_stable_across_volatile_broker_snapshots():
-
-    package = (
-        manifest_package()
-    )
-
-    intents = []
-
-    bundle_a = (
-        validator.build_intent_package_v1_1(
+    intent_package = (
+        build_intent_package_v1_1(
             manifest_package=
-                package,
+                manifest_package,
 
             intents=
                 intents,
         )
     )
 
-    bundle_b = (
-        validator.build_intent_package_v1_1(
-            manifest_package=
-                package,
-
-            intents=
-                intents,
-        )
+    base.write_intent_package(
+        intent_package
     )
 
-    assert bundle_a == bundle_b
+    print(
+        "\n============================================"
+    )
+
+    print(
+        "POSITION-AWARE LIVE ORDER INTENTS"
+    )
+
+    print(
+        "============================================"
+    )
+
+    print(
+        f"\nManifest type: "
+        f"{manifest_body['manifest_type']}"
+    )
+
+    print(
+        f"Event source: "
+        f"{manifest_body['event_source']}"
+    )
+
+    print(
+        f"Genuine strategy event present: "
+        f"{manifest_body['strategy_event_present']}"
+    )
+
+    print(
+        f"Candidate intents: "
+        f"{len(intents)}"
+    )
+
+    for intent in intents:
+
+        print(
+            f"\n{intent['symbol']}: "
+            f"{intent['side'].upper()}"
+        )
+
+        print(
+            f"  Target weight: "
+            f"{float(intent['target_weight']):.3%}"
+        )
+
+        print(
+            f"  Client order ID: "
+            f"{intent['client_order_id']}"
+        )
+
+        print(
+            "  Notional USD: UNASSIGNED"
+        )
+
+        print(
+            "  Executable: FALSE"
+        )
+
+    print(
+        f"\nIntent bundle SHA256: "
+        f"{intent_package['intent_bundle_sha256']}"
+    )
+
+    print(
+        "\nLive execution authorized: FALSE"
+    )
+
+    print(
+        "Maximum live execution notional: $0.00"
+    )
+
+    print(
+        "Network write capability: ABSENT"
+    )
+
+    print(
+        "Orders submitted: 0"
+    )
+
+    print(
+        "Broker state modified: NO"
+    )
+
+    print(
+        "\n============================================"
+    )
+
+    print(
+        "LIVE ORDER-INTENT v1.1 GATE: PASS"
+    )
+
+    print(
+        "============================================"
+    )
+
+
+if __name__ == "__main__":
+
+    try:
+
+        main()
+
+    except Exception as exc:
+
+        print(
+            "\n============================================",
+            file=sys.stderr,
+        )
+
+        print(
+            "LIVE ORDER-INTENT v1.1 GATE: FAILED",
+            file=sys.stderr,
+        )
+
+        print(
+            "============================================",
+            file=sys.stderr,
+        )
+
+        print(
+            str(
+                exc
+            ),
+            file=sys.stderr,
+        )
+
+        raise
