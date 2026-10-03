@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   scheduled-compiler:
-    name: Compile Scheduled Execution-Time Intents
+    name: Compile Position-Aware Scheduled Intents
 
     runs-on: ubuntu-latest
 
@@ -51,8 +51,14 @@ jobs:
           set -euo pipefail
 
           test -f fund100_alpaca_live_scheduled_compiler.py
-          test -f fund100_alpaca_live_intent_validator.py
-          test -f fund100_alpaca_live_manifest.py
+          test -f fund100_alpaca_live_scheduled_compiler_v1_1.py
+          test -f test_fund100_alpaca_live_scheduled_compiler_v1_1.py
+
+          test -f fund100_alpaca_live_intent_validator_v1_1.py
+          test -f fund100_alpaca_live_manifest_v1_1.py
+          test -f fund100_alpaca_live_position_reconcile.py
+          test -f fund100_alpaca_live_writer_disconnected_v1_1.py
+
           test -f fund100_alpaca_live_readonly_smoke.py
           test -f fund100_alpaca_live_preflight.py
           test -f fund100_alpaca_live_execution_boundary.py
@@ -61,14 +67,14 @@ jobs:
           test -f shadow_outputs/v5_002/shadow_state.json
           test -f live_dryrun_outputs/v5_002/live_execution_manifest.json
 
-          echo "Scheduled compiler dependencies found."
+          echo "Scheduled compiler v1.1 dependencies found."
 
       - name: Run Fund-100 tests
         run: |
           set -euo pipefail
           python -m pytest -q
 
-      - name: Compile scheduled execution-time intents
+      - name: Compile position-aware scheduled intents
         env:
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
           ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
@@ -85,7 +91,7 @@ jobs:
 
         run: |
           set -euo pipefail
-          python fund100_alpaca_live_scheduled_compiler.py
+          python fund100_alpaca_live_scheduled_compiler_v1_1.py
 
       - name: Check compiler output changes
         id: compiler_check
@@ -93,7 +99,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          CHANGES="$(git status --porcelain -- live_dryrun_outputs/v5_002/scheduled_execution_time.json)"
+          CHANGES="$(
+            git status --porcelain -- \
+              live_dryrun_outputs/v5_002/scheduled_execution_time.json
+          )"
 
           if [ -z "$CHANGES" ]; then
 
@@ -118,7 +127,8 @@ jobs:
           git config user.name "fund100-live-dryrun-bot"
           git config user.email "fund100-live-dryrun-bot@users.noreply.github.com"
 
-          git add live_dryrun_outputs/v5_002/scheduled_execution_time.json
+          git add \
+            live_dryrun_outputs/v5_002/scheduled_execution_time.json
 
           if git diff --cached --quiet; then
             echo "Nothing staged."
@@ -126,7 +136,13 @@ jobs:
           fi
 
           git commit \
-            -m "Update V5-002 scheduled execution-time compile"
+            -m "Update position-aware V5-002 scheduled compile"
+
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Unexpected dirty working tree."
+            git status --short
+            exit 1
+          fi
 
           git pull --rebase origin main
           git push origin HEAD:main
@@ -134,10 +150,14 @@ jobs:
       - name: Final safety status
         run: |
           echo "========================================"
-          echo "FUND-100 SCHEDULED COMPILER COMPLETE"
+          echo "FUND-100 SCHEDULED COMPILER v1.1 COMPLETE"
           echo "========================================"
           echo "Compiler mode: ${{ inputs.mode }}"
+          echo "Frozen strategy threshold: PRESERVED"
+          echo "Broker reconciliation: POSITION-AWARE"
+          echo "Live holdings persisted: NO"
+          echo "Broker current weights persisted: NO"
           echo "Live execution authorized: FALSE"
-          echo "Maximum live execution notional: \$0.00"
+          echo 'Maximum live execution notional: $0.00'
           echo "Network write capability: ABSENT"
           echo "Orders submitted: 0"
