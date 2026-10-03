@@ -4,15 +4,15 @@
     "candidate_intents": [],
     "event_source": "NONE",
     "live_execution_authorized": false,
-    "manifest_id": "f100-live-20261001-0908be0aba11ed19",
-    "manifest_sha256": "0908be0aba11ed19ac3eeaf082f2c2a9e45d83a8f46a54c95642e5252fd9c436",
+    "manifest_id": "f100-live-20261002-6a9ab3600b6b6304",
+    "manifest_sha256": "6a9ab3600b6b63049cc3630e12cf0a8cbdcdf3a356b8a16a59deb26a3b7c9915",
     "manifest_type": "NO_EVENT_SNAPSHOT",
     "max_live_execution_notional_usd": 0.0,
     "network_write_capability": false,
     "schema": "FUND100_LIVE_ORDER_INTENTS_V1",
     "strategy": "V5-002_SHADOW",
     "strategy_event_present": false,
-    "strategy_state_date": "2026-10-01"
+    "strategy_state_date": "2026-10-02"
   },
-  "intent_bundle_sha256": "d5e0f0bd0d020fcf461ce6b2ab26f2632ae2b9b31734de73ce98bf56371abd51"
+  "intent_bundle_sha256": "a659d84a6639d429097c2d680df3e3776c2758eeaebbe859d34edad26bcbffaf"
 }
