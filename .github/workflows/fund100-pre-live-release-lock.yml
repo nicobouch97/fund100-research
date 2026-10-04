@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   release-lock:
-    name: Freeze Offline-Rehearsed Writer Baseline
+    name: Freeze GET-Only Live Pre-Connect Evidence
 
     runs-on: ubuntu-latest
 
@@ -37,34 +37,38 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify v1.4 lock inputs
+      - name: Verify v1.5 lock inputs
         run: |
           set -euo pipefail
 
           test -f fund100_pre_live_release_lock.py
-          test -f fund100_pre_live_release_lock_v1_1.py
-          test -f fund100_pre_live_release_lock_v1_2.py
-          test -f fund100_pre_live_release_lock_v1_3.py
           test -f fund100_pre_live_release_lock_v1_4.py
+          test -f fund100_pre_live_release_lock_v1_5.py
 
-          test -f test_fund100_pre_live_release_lock_v1_4.py
+          test -f test_fund100_pre_live_release_lock_v1_5.py
 
-          test -f fund100_alpaca_live_execution_materializer.py
-          test -f fund100_alpaca_live_writer_candidate_v1_0.py
+          test -f fund100_alpaca_live_preconnect_runtime_check.py
+          test -f test_fund100_alpaca_live_preconnect_runtime_check.py
 
-          test -f \
-            fund100_alpaca_live_writer_transport_rehearsal_v1_0.py
-
-          test -f \
-            test_fund100_alpaca_live_writer_transport_rehearsal_v1_0.py
-
-          test -f audit_fund100_live_boundary_v1_12.py
+          test -f audit_fund100_live_boundary_v1_13.py
 
           test -f \
-            .github/workflows/fund100-live-writer-transport-rehearsal.yml
+            .github/workflows/fund100-live-static-audit.yml
 
           test -f \
-            live_dryrun_outputs/v5_002/live_writer_transport_rehearsal_v1_0.json
+            .github/workflows/fund100-alpaca-live-preconnect-runtime-check.yml
+
+          test -f \
+            live_dryrun_outputs/v5_002/live_preconnect_runtime_check.json
+
+          test -f \
+            live_dryrun_outputs/v5_002/live_execution_manifest.json
+
+          test -f \
+            live_dryrun_outputs/v5_002/scheduled_execution_time.json
+
+          test -f \
+            release_outputs/v5_002/pre_live_release_lock.json
 
           test -f \
             release_outputs/v5_002/pre_live_release_evidence.json
@@ -72,10 +76,7 @@ jobs:
           test -f \
             release_outputs/v5_002/pre_live_release_evidence.md
 
-          test -f \
-            release_outputs/v5_002/pre_live_release_lock.json
-
-          echo "Release-lock v1.4 dependencies found."
+          echo "Release-lock v1.5 dependencies found."
 
       - name: Run full Fund-100 test suite
         run: |
@@ -87,12 +88,36 @@ jobs:
           set -euo pipefail
           python audit_v5_002_engine.py
 
-      - name: Re-run LIVE static safety audit v1.12
+      - name: Re-run LIVE static safety audit v1.13
         run: |
           set -euo pipefail
-          python audit_fund100_live_boundary_v1_12.py
+          python audit_fund100_live_boundary_v1_13.py
 
-      - name: Verify committed offline rehearsal evidence
+      - name: Re-run position-aware release evidence gate
+        env:
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+          FUND100_PRECHECK_TESTS: PASS
+          FUND100_PRECHECK_ENGINE_PARITY: PASS
+          FUND100_PRECHECK_STATIC_AUDIT: PASS
+
+        run: |
+          set -euo pipefail
+          python fund100_pre_live_release_gate_v1_1.py
+
+      - name: Restore committed release evidence snapshot
+        run: |
+          set -euo pipefail
+
+          git restore \
+            --source=HEAD \
+            -- \
+            release_outputs/v5_002/pre_live_release_evidence.json \
+            release_outputs/v5_002/pre_live_release_evidence.md
+
+          echo "Release evidence verification complete."
+
+      - name: Verify committed GET-only pre-connect evidence
         run: |
           set -euo pipefail
 
@@ -105,9 +130,9 @@ jobs:
               "pre_live_release_lock.json"
           )
 
-          rehearsal_path = (
+          runtime_path = (
               "live_dryrun_outputs/v5_002/"
-              "live_writer_transport_rehearsal_v1_0.json"
+              "live_preconnect_runtime_check.json"
           )
 
           with open(
@@ -143,24 +168,52 @@ jobs:
               lock_body[
                   "release_lock_builder_version"
               ]
-              == "1.3"
+              == "1.4"
+          )
+
+          assert (
+              lock_body[
+                  "live_preconnect_runtime_check_required"
+              ]
+              is True
+          )
+
+          assert (
+              lock_body[
+                  "live_preconnect_runtime_check_completed"
+              ]
+              is False
+          )
+
+          assert (
+              lock_body[
+                  "connected_writer_candidate_transport_released"
+              ]
+              is False
+          )
+
+          assert (
+              lock_body[
+                  "connected_writer_candidate_public_execution_enabled"
+              ]
+              is False
           )
 
           with open(
-              rehearsal_path,
+              runtime_path,
               "r",
               encoding="utf-8",
           ) as handle:
-              rehearsal_package = json.load(handle)
+              runtime_package = json.load(handle)
 
-          body = (
-              rehearsal_package[
-                  "rehearsal"
+          runtime = (
+              runtime_package[
+                  "runtime_check"
               ]
           )
 
-          canonical = json.dumps(
-              body,
+          canonical_runtime = json.dumps(
+              runtime,
               sort_keys=True,
               separators=(",", ":"),
               ensure_ascii=True,
@@ -168,15 +221,15 @@ jobs:
 
           assert (
               hashlib.sha256(
-                  canonical.encode("utf-8")
+                  canonical_runtime.encode("utf-8")
               ).hexdigest()
-              == rehearsal_package[
-                  "rehearsal_sha256"
+              == runtime_package[
+                  "runtime_check_sha256"
               ]
           )
 
           assert (
-              body[
+              runtime[
                   "source_release_lock_sha256"
               ]
               == lock_package[
@@ -185,183 +238,192 @@ jobs:
           )
 
           assert (
-              body[
+              runtime[
                   "source_release_lock_builder_version"
               ]
-              == "1.3"
+              == "1.4"
           )
 
           assert (
-              body[
-                  "candidate_transport_constant_false_before_after"
+              runtime[
+                  "preconnect_runtime_check_passed"
               ]
               is True
           )
 
           assert (
-              body[
-                  "candidate_public_execution_constant_false_before_after"
+              runtime[
+                  "runtime_binding_matches_locked_chain"
               ]
               is True
           )
 
           assert (
-              body[
-                  "clean_restart_duplicate_suppression"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "partial_restart_missing_only"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "response_loss_restart_duplicate_suppression"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "existing_order_mismatch_rejected"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "at_most_once_client_order_id_behavior_verified"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "real_alpaca_credentials_supplied"
+              runtime[
+                  "candidate_module_imported"
               ]
               is False
           )
 
           assert (
-              body[
-                  "real_broker_network_access"
+              runtime[
+                  "candidate_transport_released"
               ]
               is False
           )
 
           assert (
-              body[
-                  "real_broker_get_requests"
+              runtime[
+                  "candidate_public_execution_enabled"
+              ]
+              is False
+          )
+
+          assert (
+              runtime[
+                  "broker_http_methods"
+              ]
+              == "GET_ONLY"
+          )
+
+          assert (
+              runtime[
+                  "broker_get_request_count"
+              ]
+              == 4
+          )
+
+          assert (
+              runtime[
+                  "broker_post_request_count"
               ]
               == 0
           )
 
           assert (
-              body[
-                  "real_broker_post_requests"
+              runtime[
+                  "broker_put_request_count"
               ]
               == 0
           )
 
           assert (
-              body[
-                  "orders_submitted_to_alpaca"
+              runtime[
+                  "broker_patch_request_count"
               ]
               == 0
           )
 
-          print(
-              "Prior writer-candidate lock v1.3: PASS"
+          assert (
+              runtime[
+                  "broker_delete_request_count"
+              ]
+              == 0
           )
 
-          print(
-              "Offline rehearsal SHA256: PASS"
+          assert (
+              runtime[
+                  "open_order_count"
+              ]
+              == 0
           )
 
-          print(
-              "Rehearsal-to-lock binding: PASS"
+          assert (
+              runtime[
+                  "live_holdings_persisted"
+              ]
+              is False
           )
 
-          print(
-              "Restart/idempotency evidence: PASS"
+          assert (
+              runtime[
+                  "live_dollar_values_persisted"
+              ]
+              is False
           )
 
-          print(
-              "Real broker requests: 0"
+          assert (
+              runtime[
+                  "live_execution_authorized"
+              ]
+              is False
           )
 
-          print(
-              "Orders submitted to Alpaca: 0"
+          assert (
+              runtime[
+                  "permit_issued"
+              ]
+              is False
           )
+
+          assert (
+              float(
+                  runtime[
+                      "max_live_execution_notional_usd"
+                  ]
+              )
+              == 0.0
+          )
+
+          assert (
+              runtime[
+                  "writer_connected"
+              ]
+              is False
+          )
+
+          assert (
+              runtime[
+                  "orders_submitted"
+              ]
+              == 0
+          )
+
+          print("Prior release lock v1.4: PASS")
+          print("Runtime-check SHA256: PASS")
+          print("Runtime-to-lock binding: PASS")
+          print("Fresh LIVE structural binding: PASS")
+          print("Open orders: 0")
+          print("Broker HTTP methods: GET ONLY")
+          print("Broker write requests: 0")
+          print("Live execution authorized: FALSE")
+          print("Orders submitted: 0")
           PY
 
-      - name: Re-run position-aware release evidence gate
-        env:
-          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
-
-          FUND100_PRECHECK_TESTS: PASS
-          FUND100_PRECHECK_ENGINE_PARITY: PASS
-          FUND100_PRECHECK_STATIC_AUDIT: PASS
-
+      - name: Build pre-connect evidence release lock v1.5
         run: |
           set -euo pipefail
-          python fund100_pre_live_release_gate_v1_1.py
+          python fund100_pre_live_release_lock_v1_5.py
 
-      - name: Restore committed release evidence snapshot
-        run: |
-          set -euo pipefail
-
-          git restore \
-            --source=HEAD \
-            -- \
-            release_outputs/v5_002/pre_live_release_evidence.json \
-            release_outputs/v5_002/pre_live_release_evidence.md
-
-          echo "Release evidence verification complete."
-
-      - name: Build rehearsal-evidence release lock v1.4
-        run: |
-          set -euo pipefail
-          python fund100_pre_live_release_lock_v1_4.py
-
-      - name: Verify v1.4 release lock
+      - name: Verify v1.5 release lock
         run: |
           set -euo pipefail
 
           python - <<'PY'
-          import ast
           import hashlib
           import json
           from pathlib import Path
 
           root = Path.cwd()
 
-          lock_path = (
+          path = (
               root
               / "release_outputs"
               / "v5_002"
               / "pre_live_release_lock.json"
           )
 
-          candidate_path = (
-              root
-              / "fund100_alpaca_live_writer_candidate_v1_0.py"
-          )
-
-          with lock_path.open(
+          with path.open(
               "r",
               encoding="utf-8",
           ) as handle:
               package = json.load(handle)
 
-          body = package[
-              "release_lock"
-          ]
+          body = (
+              package[
+                  "release_lock"
+              ]
+          )
 
           canonical = json.dumps(
               body,
@@ -381,63 +443,108 @@ jobs:
 
           assert (
               body[
+                  "schema"
+              ]
+              == "FUND100_PRE_LIVE_RELEASE_LOCK_V1_1"
+          )
+
+          assert (
+              body[
                   "release_lock_builder_version"
               ]
-              == "1.4"
+              == "1.5"
           )
 
           assert (
               body[
                   "release_layer"
               ]
-              == "v1.1-position-aware-issuer-aware-writer-rehearsed-locked"
-          )
-
-          assert (
-              body[
-                  "offline_connected_writer_rehearsal_completed"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "offline_connected_writer_rehearsal_verified"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "offline_connected_writer_rehearsal_required"
-              ]
-              is False
-          )
-
-          assert (
-              body[
-                  "offline_connected_writer_rehearsal_artifact_locked"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "static_audit_v1_12_source_locked"
-              ]
-              is True
+              == (
+                  "v1.1-position-aware-issuer-aware-"
+                  "writer-rehearsed-preconnect-locked"
+              )
           )
 
           assert (
               body[
                   "live_preconnect_runtime_check_required"
               ]
-              is True
+              is False
           )
 
           assert (
               body[
                   "live_preconnect_runtime_check_completed"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "live_preconnect_runtime_check_verified"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "live_preconnect_runtime_check_artifact_locked"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "static_audit_v1_13_source_locked"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "live_preconnect_workflow_source_locked"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "live_preconnect_runtime_broker_http_methods"
+              ]
+              == "GET_ONLY"
+          )
+
+          assert (
+              body[
+                  "live_preconnect_runtime_broker_write_request_count"
+              ]
+              == 0
+          )
+
+          assert (
+              body[
+                  "live_preconnect_runtime_evidence_persists_holdings"
+              ]
+              is False
+          )
+
+          assert (
+              body[
+                  "live_preconnect_runtime_evidence_persists_dollar_values"
+              ]
+              is False
+          )
+
+          assert (
+              body[
+                  "paper_connected_writer_parity_required"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "paper_connected_writer_parity_completed"
               ]
               is False
           )
@@ -459,6 +566,13 @@ jobs:
           assert (
               body[
                   "connected_writer_candidate_public_execution_enabled"
+              ]
+              is False
+          )
+
+          assert (
+              body[
+                  "connected_writer_candidate_workflow_exposed"
               ]
               is False
           )
@@ -530,97 +644,49 @@ jobs:
               == 0
           )
 
-          # ----------------------------------------------
-          # Inspect release constants without importing
-          # the POST-capable candidate.
-          # ----------------------------------------------
-
-          source = candidate_path.read_text(
-              encoding="utf-8"
-          )
-
-          tree = ast.parse(
-              source
-          )
-
-          constants = {}
-
-          for node in tree.body:
-
-              if not isinstance(
-                  node,
-                  ast.Assign,
-              ):
-
-                  continue
-
-              if (
-                  len(
-                      node.targets
-                  )
-                  != 1
-              ):
-
-                  continue
-
-              target = node.targets[0]
-
-              if not isinstance(
-                  target,
-                  ast.Name,
-              ):
-
-                  continue
-
-              if (
-                  target.id
-                  not in {
-                      "TRANSPORT_RELEASED",
-                      "PUBLIC_EXECUTION_ENABLED",
-                  }
-              ):
-
-                  continue
-
-              assert isinstance(
-                  node.value,
-                  ast.Constant,
-              )
-
-              constants[
-                  target.id
-              ] = (
-                  node.value.value
-              )
-
-          assert (
-              constants[
-                  "TRANSPORT_RELEASED"
-              ]
-              is False
-          )
-
-          assert (
-              constants[
-                  "PUBLIC_EXECUTION_ENABLED"
-              ]
-              is False
-          )
-
           hashes = (
               body[
                   "critical_file_sha256"
               ]
           )
 
+          assert (
+              body[
+                  "critical_file_set_sha256"
+              ]
+              == hashlib.sha256(
+                  json.dumps(
+                      hashes,
+                      sort_keys=True,
+                      separators=(",", ":"),
+                      ensure_ascii=True,
+                  ).encode(
+                      "utf-8"
+                  )
+              ).hexdigest()
+          )
+
+          assert (
+              body[
+                  "critical_file_count"
+              ]
+              == len(
+                  hashes
+              )
+          )
+
           required = [
-              "fund100_alpaca_live_writer_transport_rehearsal_v1_0.py",
-              "test_fund100_alpaca_live_writer_transport_rehearsal_v1_0.py",
-              "audit_fund100_live_boundary_v1_12.py",
-              ".github/workflows/fund100-live-writer-transport-rehearsal.yml",
-              "live_dryrun_outputs/v5_002/live_writer_transport_rehearsal_v1_0.json",
-              "fund100_pre_live_release_lock_v1_4.py",
-              "test_fund100_pre_live_release_lock_v1_4.py",
+              "fund100_alpaca_live_preconnect_runtime_check.py",
+              "test_fund100_alpaca_live_preconnect_runtime_check.py",
+              "audit_fund100_live_boundary_v1_13.py",
+              ".github/workflows/fund100-live-static-audit.yml",
+              ".github/workflows/"
+              "fund100-alpaca-live-preconnect-runtime-check.yml",
+              "live_dryrun_outputs/v5_002/"
+              "live_preconnect_runtime_check.json",
+              "fund100_pre_live_release_lock_v1_5.py",
+              "test_fund100_pre_live_release_lock_v1_5.py",
+              ".github/workflows/fund100-pre-live-release-lock.yml",
           ]
 
           for filename in required:
@@ -635,51 +701,23 @@ jobs:
               ).hexdigest()
 
               assert (
-                  actual
-                  == hashes[
+                  hashes[
                       filename
                   ]
+                  == actual
               )
 
-          print(
-              "Release-lock SHA256: PASS"
-          )
-
-          print(
-              "Offline writer rehearsal evidence: LOCKED"
-          )
-
-          print(
-              "Restart/idempotency proof: LOCKED"
-          )
-
-          print(
-              "Static Audit v1.12: LOCKED"
-          )
-
-          print(
-              "Candidate TRANSPORT_RELEASED: FALSE"
-          )
-
-          print(
-              "Candidate PUBLIC_EXECUTION_ENABLED: FALSE"
-          )
-
-          print(
-              "GET-only runtime pre-connect check required: YES"
-          )
-
-          print(
-              "Live execution authorized: FALSE"
-          )
-
-          print(
-              "Permit issued: FALSE"
-          )
-
-          print(
-              "Writer connected: FALSE"
-          )
+          print("Release-lock SHA256: PASS")
+          print("Pre-connect runtime evidence: LOCKED")
+          print("Static Audit v1.13: LOCKED")
+          print("Runtime broker methods: GET ONLY")
+          print("Runtime broker write requests: 0")
+          print("Candidate transport released: FALSE")
+          print("Candidate public execution enabled: FALSE")
+          print("PAPER writer parity required: YES")
+          print("Live execution authorized: FALSE")
+          print("Permit issued: FALSE")
+          print("Writer connected: FALSE")
           PY
 
       - name: Verify only release lock changed
@@ -698,12 +736,10 @@ jobs:
           )"
 
           if [ -n "$EXTRA" ]; then
-
             echo "Unexpected working-tree changes detected:"
             echo "$EXTRA"
             git status --short
             exit 1
-
           fi
 
           echo "Only expected release-lock change is present."
@@ -719,20 +755,15 @@ jobs:
           )"
 
           if [ -z "$CHANGES" ]; then
-
             echo "Release lock unchanged."
             echo "changed=false" >> "$GITHUB_OUTPUT"
-
           else
-
             echo "Release lock changed:"
             echo "$CHANGES"
-
             echo "changed=true" >> "$GITHUB_OUTPUT"
-
           fi
 
-      - name: Commit rehearsal-evidence release lock
+      - name: Commit pre-connect evidence release lock
         if: steps.lock_check.outputs.changed == 'true'
         run: |
           set -euo pipefail
@@ -749,21 +780,17 @@ jobs:
             release_outputs/v5_002/pre_live_release_lock.json
 
           if git diff --cached --quiet; then
-
             echo "Nothing staged."
             exit 0
-
           fi
 
           git commit \
-            -m "Freeze offline V5-002 writer rehearsal evidence"
+            -m "Freeze V5-002 live pre-connect evidence"
 
           if [ -n "$(git status --porcelain)" ]; then
-
             echo "Unexpected dirty working tree."
             git status --short
             exit 1
-
           fi
 
           git pull --rebase origin main
@@ -772,21 +799,20 @@ jobs:
       - name: Final safety status
         run: |
           echo "========================================"
-          echo "FUND-100 OFFLINE-REHEARSED BASELINE LOCK COMPLETE"
+          echo "FUND-100 PRE-CONNECT EVIDENCE LOCK COMPLETE"
           echo "========================================"
           echo "Broker credentials supplied: NO"
           echo "Broker network access: NONE"
-          echo "Position-aware baseline: LOCKED"
-          echo "Issuer-aware baseline: LOCKED"
-          echo "Execution materializer: LOCKED"
-          echo "Connected-writer candidate: LOCKED"
           echo "Offline writer rehearsal evidence: LOCKED"
-          echo "Restart/idempotency evidence: LOCKED"
-          echo "Static Audit v1.12: LOCKED"
+          echo "LIVE GET-only pre-connect evidence: LOCKED"
+          echo "Static Audit v1.13: LOCKED"
+          echo "Pre-connect runtime requirement: COMPLETE"
+          echo "Runtime broker methods: GET ONLY"
+          echo "Runtime broker write requests: 0"
           echo "Candidate transport released: FALSE"
           echo "Candidate public execution enabled: FALSE"
-          echo "GET-only runtime pre-connect check required: YES"
-          echo "Connected-writer release still required: YES"
+          echo "PAPER connected-writer parity required: YES"
+          echo "Connected-writer LIVE release still required: YES"
           echo "Automatic activation allowed: FALSE"
           echo "Live execution authorized: FALSE"
           echo "Permit issued: FALSE"
