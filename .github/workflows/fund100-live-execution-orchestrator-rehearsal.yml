@@ -1,0 +1,163 @@
+name: Fund-100 LIVE Execution Orchestrator Rehearsal
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-live-execution-orchestrator-rehearsal
+  cancel-in-progress: false
+
+env:
+  FUND100_BROKER_KILL_SWITCH: ENGAGED
+
+jobs:
+  rehearsal:
+    name: Rehearse Restart-Safe Execution Orchestration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify broker kill switch remains engaged
+        run: |
+          set -euo pipefail
+
+          if [ "${FUND100_BROKER_KILL_SWITCH}" != "ENGAGED" ]; then
+            echo "STOP: broker kill switch is not ENGAGED."
+            exit 1
+          fi
+
+          echo "FUND100_BROKER_KILL_SWITCH = ENGAGED"
+
+      - name: Run complete regression suite
+        run: |
+          set -euo pipefail
+          pytest -q
+
+      - name: Re-run prior Static Audit v1.17
+        run: |
+          set -euo pipefail
+          python audit_fund100_live_boundary_v1_17.py
+
+      - name: Run Static Audit v1.18
+        run: |
+          set -euo pipefail
+          python audit_fund100_live_boundary_v1_18.py
+
+      - name: Run execution orchestrator rehearsal
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_live_execution_orchestrator_rehearsal_v1_0.py
+
+      - name: Verify rehearsal evidence
+        run: |
+          set -euo pipefail
+
+          test -f \
+            live_activation_outputs/v5_002/execution_orchestrator_rehearsal_v1_0.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path(
+              "live_activation_outputs/v5_002/"
+              "execution_orchestrator_rehearsal_v1_0.json"
+          )
+
+          body = json.loads(
+              path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          required_true = [
+              "release_lock_v1_8_source_present",
+              "exact_cap_across_sell_restart_buy",
+              "over_cap_blocked_before_writer",
+              "lost_response_restart_reconstruction",
+              "restart_duplicate_post_prevention",
+              "partial_fill_full_notional_accounting",
+              "unsafe_terminal_history_blocked",
+              "incomplete_history_blocked",
+          ]
+
+          for key in required_true:
+              if body.get(key) is not True:
+                  raise SystemExit(
+                      f"STOP: evidence field {key} != true"
+                  )
+
+          if body.get(
+              "orders_submitted_to_alpaca"
+          ) != 0:
+              raise SystemExit(
+                  "STOP: rehearsal claims Alpaca order submission."
+              )
+
+          print(
+              "Execution orchestrator evidence: VERIFIED"
+          )
+          PY
+
+      - name: Commit rehearsal evidence
+        run: |
+          set -euo pipefail
+
+          git config user.name "fund100-research-bot"
+          git config user.email "fund100-research-bot@users.noreply.github.com"
+
+          git add \
+            live_activation_outputs/v5_002/execution_orchestrator_rehearsal_v1_0.json
+
+          if git diff --cached --quiet; then
+            echo "Rehearsal evidence unchanged; nothing to commit."
+          else
+            git commit -m \
+              "Record offline execution orchestrator rehearsal v1.0"
+
+            git push
+          fi
+
+      - name: Final safety summary
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "FUND-100 EXECUTION ORCHESTRATOR REHEARSAL COMPLETE"
+          echo "========================================"
+          echo "Release Lock v1.8: PRESERVED"
+          echo "Writer candidate v1.1: HARD LOCKED"
+          echo "Execution orchestrator v1.0: OFFLINE ONLY"
+          echo "Fresh broker reconstruction per phase: PASS"
+          echo "SELL -> restart -> BUY cumulative accounting: PASS"
+          echo "Single permit ceiling across phases: PASS"
+          echo "Over-cap phase: BLOCKED BEFORE WRITER"
+          echo "Lost-response reconstruction: PASS"
+          echo "Restart duplicate POST prevention: PASS"
+          echo "Partial-fill full-notional accounting: PASS"
+          echo "Unsafe terminal history: BLOCKED"
+          echo "Incomplete broker reconstruction: BLOCKED"
+          echo "Real Alpaca credentials supplied: NO"
+          echo "Real broker network access: NONE"
+          echo "Candidate transport released: FALSE"
+          echo "Candidate public execution enabled: FALSE"
+          echo "Orchestrator released: FALSE"
+          echo "Live execution authorized: FALSE"
+          echo "Orders submitted to Alpaca: 0"
