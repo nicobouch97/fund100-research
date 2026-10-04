@@ -63,55 +63,48 @@ jobs:
         run: |
           set -euo pipefail
 
-          test -f audit_fund100_live_boundary.py
-          test -f audit_fund100_live_boundary_v1_9.py
           test -f audit_fund100_live_boundary_v1_10.py
           test -f audit_fund100_live_boundary_v1_11.py
-
-          test -f fund100_alpaca_live_writer_disconnected_v1_1.py
-          test -f fund100_alpaca_live_writer_candidate_v1_0.py
-
-          test -f fund100_alpaca_live_position_reconcile.py
-          test -f fund100_alpaca_live_manifest_v1_1.py
-          test -f fund100_alpaca_live_intent_validator_v1_1.py
-          test -f fund100_alpaca_live_scheduled_compiler_v1_1.py
-          test -f fund100_alpaca_live_permit_v2_issuer_v1_1.py
+          test -f audit_fund100_live_boundary_v1_12.py
 
           test -f fund100_alpaca_live_execution_materializer.py
+          test -f fund100_alpaca_live_writer_candidate_v1_0.py
 
-          test -f test_fund100_alpaca_live_execution_materializer.py
-          test -f test_fund100_alpaca_live_writer_candidate_v1_0.py
+          test -f \
+            fund100_alpaca_live_writer_transport_rehearsal_v1_0.py
 
-          echo "LIVE static-audit v1.11 dependencies found."
+          test -f \
+            test_fund100_alpaca_live_writer_transport_rehearsal_v1_0.py
+
+          test -f \
+            .github/workflows/fund100-live-writer-transport-rehearsal.yml
+
+          echo "LIVE static-audit v1.12 dependencies found."
 
       - name: Run full Fund-100 test suite
         run: |
           set -euo pipefail
           python -m pytest -q
 
-      - name: Run offline LIVE boundary audit v1.11
+      - name: Run offline LIVE boundary audit v1.12
         run: |
           set -euo pipefail
-          python audit_fund100_live_boundary_v1_11.py
+          python audit_fund100_live_boundary_v1_12.py
 
       - name: Final safety status
         run: |
           echo "========================================"
           echo "FUND-100 LIVE STATIC AUDIT COMPLETE"
           echo "========================================"
-          echo "Static audit safety layer: v1.11"
-          echo "Frozen V5 execution universe: VERIFIED"
-          echo "Position-aware reconciliation: VERIFIED"
-          echo "Position-aware manifest: VERIFIED"
-          echo "Position-aware intents: VERIFIED"
-          echo "Position-aware scheduled compiler: VERIFIED"
-          echo "V2 issuer v1.1 compatibility: VERIFIED"
+          echo "Static audit safety layer: v1.12"
           echo "Execution materializer: VERIFIED"
           echo "Connected-writer candidate source: PRESENT"
           echo "Candidate POST transport shape: REVIEWED"
           echo "Candidate transport released: FALSE"
           echo "Candidate public execution enabled: FALSE"
-          echo "Candidate workflow invocation: NONE"
-          echo "Candidate live credentials supplied: NO"
+          echo "Dedicated offline transport rehearsal: ALLOWLISTED"
+          echo "Rehearsal Alpaca credentials: NONE"
+          echo "Rehearsal real network access: NONE"
+          echo "Ordinary workflow candidate invocation: NONE"
           echo "Current live writer connected: FALSE"
           echo "Orders submitted: 0"
