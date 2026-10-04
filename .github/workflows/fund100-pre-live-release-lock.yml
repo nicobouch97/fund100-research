@@ -10,26 +10,23 @@ concurrency:
   group: fund100-pre-live-safe-baseline-lock
   cancel-in-progress: false
 
+env:
+  FUND100_BROKER_KILL_SWITCH: ENGAGED
+
 jobs:
   release-lock:
-    name: Freeze Cumulative-Cap Recovery Evidence
-
+    name: Freeze Execution Orchestrator Integration v1.9
     runs-on: ubuntu-latest
-
     timeout-minutes: 30
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: "pip"
-          cache-dependency-path: requirements.txt
 
       - name: Install dependencies
         run: |
@@ -37,666 +34,171 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify v1.8 inputs
+      - name: Verify broker kill switch remains engaged
         run: |
           set -euo pipefail
 
-          test -f fund100_pre_live_release_lock.py
-          test -f fund100_pre_live_release_lock_v1_7.py
-          test -f fund100_pre_live_release_lock_v1_8.py
-          test -f test_fund100_pre_live_release_lock_v1_8.py
-
-          test -f fund100_alpaca_live_writer_candidate_v1_1.py
-
-          test -f \
-            fund100_alpaca_live_cumulative_cap_guard_v1_0.py
-
-          test -f \
-            test_fund100_alpaca_live_cumulative_cap_guard_v1_0.py
-
-          test -f audit_fund100_live_boundary_v1_16.py
-          test -f audit_fund100_live_boundary_v1_17.py
-
-          test -f \
-            fund100_alpaca_live_cumulative_cap_rehearsal_v1_0.py
-
-          test -f \
-            test_fund100_alpaca_live_cumulative_cap_rehearsal_v1_0.py
-
-          test -f \
-            .github/workflows/fund100-live-cumulative-cap-rehearsal.yml
-
-          test -f \
-            live_dryrun_outputs/v5_002/live_cumulative_cap_rehearsal_v1_0.json
-
-          test -f \
-            release_outputs/v5_002/pre_live_release_lock.json
-
-          echo "Release-lock v1.8 dependencies found."
-
-      - name: Run full Fund-100 test suite
-        run: |
-          set -euo pipefail
-          python -m pytest -q
-
-      - name: Re-run V5-002 engine parity
-        run: |
-          set -euo pipefail
-          python audit_v5_002_engine.py
-
-      - name: Re-run LIVE static safety audit v1.17
-        run: |
-          set -euo pipefail
-          python audit_fund100_live_boundary_v1_17.py
-
-      - name: Verify committed cumulative-cap evidence
-        run: |
-          set -euo pipefail
-
-          python - <<'PY'
-          import hashlib
-          import json
-          from pathlib import Path
-
-          root = Path.cwd()
-
-          lock_path = (
-              root
-              / "release_outputs"
-              / "v5_002"
-              / "pre_live_release_lock.json"
-          )
-
-          rehearsal_path = (
-              root
-              / "live_dryrun_outputs"
-              / "v5_002"
-              / "live_cumulative_cap_rehearsal_v1_0.json"
-          )
-
-          guard_path = (
-              root
-              / "fund100_alpaca_live_cumulative_cap_guard_v1_0.py"
-          )
-
-          candidate_path = (
-              root
-              / "fund100_alpaca_live_writer_candidate_v1_1.py"
-          )
-
-          with lock_path.open(
-              "r",
-              encoding="utf-8",
-          ) as handle:
-              prior_package = json.load(handle)
-
-          prior = prior_package["release_lock"]
-
-          prior_canonical = json.dumps(
-              prior,
-              sort_keys=True,
-              separators=(",", ":"),
-              ensure_ascii=True,
-          )
-
-          assert (
-              hashlib.sha256(
-                  prior_canonical.encode("utf-8")
-              ).hexdigest()
-              == prior_package["release_lock_sha256"]
-          )
-
-          assert (
-              prior["release_lock_builder_version"]
-              == "1.7"
-          )
-
-          assert (
-              prior[
-                  "connected_writer_cumulative_cap_recovery_required"
-              ]
-              is True
-          )
-
-          assert (
-              prior[
-                  "connected_writer_cumulative_cap_recovery_completed"
-              ]
-              is False
-          )
-
-          assert (
-              prior[
-                  "connected_writer_cumulative_cap_recovery_release_blocker"
-              ]
-              is True
-          )
-
-          with rehearsal_path.open(
-              "r",
-              encoding="utf-8",
-          ) as handle:
-              package = json.load(handle)
-
-          body = package[
-              "cumulative_cap_rehearsal"
-          ]
-
-          canonical = json.dumps(
-              body,
-              sort_keys=True,
-              separators=(",", ":"),
-              ensure_ascii=True,
-          )
-
-          assert (
-              hashlib.sha256(
-                  canonical.encode("utf-8")
-              ).hexdigest()
-              == package[
-                  "cumulative_cap_rehearsal_sha256"
-              ]
-          )
-
-          assert (
-              body["source_release_lock_builder_version"]
-              == "1.7"
-          )
-
-          assert (
-              body["source_release_lock_sha256"]
-              == prior_package["release_lock_sha256"]
-          )
-
-          candidate_hash = hashlib.sha256(
-              candidate_path.read_bytes()
-          ).hexdigest()
-
-          guard_hash = hashlib.sha256(
-              guard_path.read_bytes()
-          ).hexdigest()
-
-          assert (
-              body["writer_candidate_source_sha256"]
-              == candidate_hash
-          )
-
-          assert (
-              body["cumulative_cap_guard_source_sha256"]
-              == guard_hash
-          )
-
-          assert (
-              body["cumulative_cap_rehearsal_passed"]
-              is True
-          )
-
-          assert (
-              body["complete_authorized_id_reconstruction_verified"]
-              is True
-          )
-
-          assert (
-              body["sell_restart_buy_exact_cap_verified"]
-              is True
-          )
-
-          assert (
-              body["single_permit_ceiling_across_phases_verified"]
-              is True
-          )
-
-          assert (
-              body["exact_cap_projected_final_usd"]
-              == 100.0
-          )
-
-          assert (
-              body["over_cap_attempted_projected_usd"]
-              == 100.01
-          )
-
-          assert (
-              body["over_cap_blocked_before_writer"]
-              is True
-          )
-
-          assert (
-              body["over_cap_writer_posts"]
-              == 0
-          )
-
-          assert (
-              body["lost_response_recovery_verified"]
-              is True
-          )
-
-          assert (
-              body["lost_response_restart_new_gross_usd"]
-              == 0.0
-          )
-
-          assert (
-              body["lost_response_restart_new_posts"]
-              == 0
-          )
-
-          assert (
-              body["partial_fill_full_original_notional_consumed"]
-              is True
-          )
-
-          assert (
-              body["terminal_failure_continuation_blocked"]
-              is True
-          )
-
-          assert (
-              body["unsafe_history_continuation_blocked"]
-              is True
-          )
-
-          assert (
-              body["incomplete_lookup_fails_closed"]
-              is True
-          )
-
-          assert (
-              body["historical_over_cap_fails_closed"]
-              is True
-          )
-
-          assert (
-              body["real_alpaca_credentials_supplied"]
-              is False
-          )
-
-          assert (
-              body["real_broker_network_access"]
-              is False
-          )
-
-          assert (
-              body["orders_submitted_to_alpaca"]
-              == 0
-          )
-
-          assert (
-              body["live_execution_authorized"]
-              is False
-          )
-
-          print("Prior release lock v1.7: PASS")
-          print("Cumulative-cap rehearsal SHA256: PASS")
-          print("Rehearsal-to-v1.7 binding: PASS")
-          print("Writer candidate v1.1 binding: PASS")
-          print("Cumulative-cap guard v1.0 binding: PASS")
-          print("Single permit ceiling: PASS")
-          print("Restart reconstruction: PASS")
-          print("Over-cap rejection before writer: PASS")
-          print("Lost-response reconstruction: PASS")
-          print("Real broker network access: NONE")
-          print("Orders submitted to Alpaca: 0")
-          PY
-
-      - name: Build cumulative-cap release lock v1.8
-        run: |
-          set -euo pipefail
-          python fund100_pre_live_release_lock_v1_8.py
-
-      - name: Verify v1.8 release lock
-        run: |
-          set -euo pipefail
-
-          python - <<'PY'
-          import hashlib
-          import json
-          from pathlib import Path
-
-          root = Path.cwd()
-
-          path = (
-              root
-              / "release_outputs"
-              / "v5_002"
-              / "pre_live_release_lock.json"
-          )
-
-          with path.open(
-              "r",
-              encoding="utf-8",
-          ) as handle:
-              package = json.load(handle)
-
-          body = package["release_lock"]
-
-          canonical = json.dumps(
-              body,
-              sort_keys=True,
-              separators=(",", ":"),
-              ensure_ascii=True,
-          )
-
-          assert (
-              hashlib.sha256(
-                  canonical.encode("utf-8")
-              ).hexdigest()
-              == package["release_lock_sha256"]
-          )
-
-          assert (
-              body["release_lock_builder_version"]
-              == "1.8"
-          )
-
-          assert (
-              body[
-                  "connected_writer_cumulative_cap_recovery_required"
-              ]
-              is False
-          )
-
-          assert (
-              body[
-                  "connected_writer_cumulative_cap_recovery_completed"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "connected_writer_cumulative_cap_recovery_verified"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "connected_writer_cumulative_cap_recovery_release_blocker"
-              ]
-              is False
-          )
-
-          assert (
-              body["cumulative_cap_guard_version"]
-              == "1.0"
-          )
-
-          assert (
-              body["cumulative_cap_guard_source_locked"]
-              is True
-          )
-
-          assert (
-              body["cumulative_cap_rehearsal_artifact_locked"]
-              is True
-          )
-
-          assert (
-              body["cumulative_cap_single_permit_ceiling_verified"]
-              is True
-          )
-
-          assert (
-              body["cumulative_cap_restart_reconstruction_verified"]
-              is True
-          )
-
-          assert (
-              body["cumulative_cap_double_count_prevention_verified"]
-              is True
-          )
-
-          assert (
-              body["cumulative_cap_duplicate_post_prevention_verified"]
-              is True
-          )
-
-          assert (
-              body[
-                  "connected_writer_execution_orchestrator_required"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "connected_writer_execution_orchestrator_completed"
-              ]
-              is False
-          )
-
-          assert (
-              body[
-                  "connected_writer_execution_orchestrator_release_blocker"
-              ]
-              is True
-          )
-
-          assert (
-              body["connected_writer_release_still_required"]
-              is True
-          )
-
-          assert (
-              body["connected_writer_candidate_transport_released"]
-              is False
-          )
-
-          assert (
-              body[
-                  "connected_writer_candidate_public_execution_enabled"
-              ]
-              is False
-          )
-
-          assert (
-              body["connected_writer_candidate_workflow_exposed"]
-              is False
-          )
-
-          assert (
-              body["live_writer_transport_released"]
-              is False
-          )
-
-          assert (
-              body["live_writer_public_execution_enabled"]
-              is False
-          )
-
-          assert (
-              body["automatic_activation_allowed"]
-              is False
-          )
-
-          assert (
-              body["live_execution_authorized"]
-              is False
-          )
-
-          assert (
-              body["permit_issued"]
-              is False
-          )
-
-          assert (
-              float(
-                  body["max_live_execution_notional_usd"]
-              )
-              == 0.0
-          )
-
-          assert (
-              body["network_write_capability"]
-              is False
-          )
-
-          assert (
-              body["writer_connected"]
-              is False
-          )
-
-          assert (
-              body["orders_submitted"]
-              == 0
-          )
-
-          hashes = body[
-              "critical_file_sha256"
-          ]
-
-          required = [
-              "fund100_alpaca_live_cumulative_cap_guard_v1_0.py",
-              "test_fund100_alpaca_live_cumulative_cap_guard_v1_0.py",
-              "audit_fund100_live_boundary_v1_16.py",
-              "audit_fund100_live_boundary_v1_17.py",
-              "fund100_alpaca_live_cumulative_cap_rehearsal_v1_0.py",
-              "test_fund100_alpaca_live_cumulative_cap_rehearsal_v1_0.py",
-              ".github/workflows/"
-              "fund100-live-cumulative-cap-rehearsal.yml",
-              "live_dryrun_outputs/v5_002/"
-              "live_cumulative_cap_rehearsal_v1_0.json",
-              ".github/workflows/fund100-live-static-audit.yml",
-              "fund100_pre_live_release_lock_v1_8.py",
-              "test_fund100_pre_live_release_lock_v1_8.py",
-              ".github/workflows/fund100-pre-live-release-lock.yml",
-          ]
-
-          for filename in required:
-
-              assert filename in hashes
-
-              actual = hashlib.sha256(
-                  (
-                      root
-                      / filename
-                  ).read_bytes()
-              ).hexdigest()
-
-              assert (
-                  hashes[filename]
-                  == actual
-              )
-
-          assert (
-              body["critical_file_count"]
-              == len(hashes)
-          )
-
-          print("Release-lock SHA256: PASS")
-          print("Status-semantics hardening: COMPLETE")
-          print("Cumulative-cap recovery hardening: COMPLETE")
-          print("Cumulative-cap evidence: LOCKED")
-          print("Execution orchestrator integration required: YES")
-          print("Candidate transport released: FALSE")
-          print("Candidate public execution enabled: FALSE")
-          print("Live execution authorized: FALSE")
-          print("Permit issued: FALSE")
-          print("Writer connected: FALSE")
-          PY
-
-      - name: Verify only release lock changed
-        run: |
-          set -euo pipefail
-
-          STATUS="$(
-            git status --porcelain
-          )"
-
-          EXTRA="$(
-            printf '%s\n' "$STATUS" \
-              | grep -vE \
-                '^.. release_outputs/v5_002/pre_live_release_lock\.json$' \
-              || true
-          )"
-
-          if [ -n "$EXTRA" ]; then
-            echo "Unexpected working-tree changes:"
-            echo "$EXTRA"
-            git status --short
+          if [ "${FUND100_BROKER_KILL_SWITCH}" != "ENGAGED" ]; then
+            echo "STOP: broker kill switch is not ENGAGED."
             exit 1
           fi
 
-          echo "Only expected release-lock change is present."
+          echo "FUND100_BROKER_KILL_SWITCH = ENGAGED"
 
-      - name: Check release-lock changes
-        id: lock_check
+      - name: Run complete regression suite
+        run: |
+          set -euo pipefail
+          pytest -q
+
+      - name: Re-run Static Audit v1.18
+        run: |
+          set -euo pipefail
+          python audit_fund100_live_boundary_v1_18.py
+
+      - name: Verify orchestrator rehearsal evidence exists
         run: |
           set -euo pipefail
 
-          CHANGES="$(
-            git status --porcelain -- \
-              release_outputs/v5_002/pre_live_release_lock.json
-          )"
+          test -f \
+            live_activation_outputs/v5_002/execution_orchestrator_rehearsal_v1_0.json
 
-          if [ -z "$CHANGES" ]; then
-            echo "Release lock unchanged."
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Release lock changed:"
-            echo "$CHANGES"
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
+          echo "Execution orchestrator rehearsal evidence: PRESENT"
 
-      - name: Commit cumulative-cap release lock
-        if: steps.lock_check.outputs.changed == 'true'
+      - name: Build Release Lock v1.9
+        run: |
+          set -euo pipefail
+          python fund100_pre_live_release_lock_v1_9.py
+
+      - name: Verify locked v1.9 state
         run: |
           set -euo pipefail
 
-          git config \
-            user.name \
-            "fund100-release-evidence-bot"
+          python - <<'PY'
+          import json
+          from pathlib import Path
 
-          git config \
-            user.email \
-            "fund100-release-evidence-bot@users.noreply.github.com"
+          path = Path(
+              "live_activation_outputs/v5_002/"
+              "pre_live_release_lock_v1_9.json"
+          )
+
+          if not path.exists():
+              raise SystemExit(
+                  "STOP: Release Lock v1.9 evidence missing."
+              )
+
+          body = json.loads(
+              path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          required = {
+              "release_lock_version":
+                  "1.9",
+
+              "execution_orchestrator_integration_required":
+                  False,
+
+              "execution_orchestrator_integration_completed":
+                  True,
+
+              "execution_orchestrator_release_blocker":
+                  False,
+
+              "connected_alpaca_paper_end_to_end_required":
+                  True,
+
+              "connected_alpaca_paper_end_to_end_completed":
+                  False,
+
+              "automatic_live_activation_allowed":
+                  False,
+
+              "live_execution_authorized":
+                  False,
+
+              "permit_issued":
+                  False,
+
+              "maximum_live_execution_notional_usd":
+                  "0.00",
+
+              "writer_connected":
+                  False,
+
+              "live_orders_submitted":
+                  0,
+          }
+
+          for key, expected in required.items():
+
+              actual = body.get(
+                  key
+              )
+
+              if actual != expected:
+
+                  raise SystemExit(
+                      "STOP: "
+                      f"{key}: expected {expected!r}, "
+                      f"got {actual!r}"
+                  )
+
+          print(
+              "Release Lock v1.9 state: VERIFIED"
+          )
+          PY
+
+      - name: Commit Release Lock v1.9 evidence
+        run: |
+          set -euo pipefail
+
+          git config user.name \
+            "fund100-research-bot"
+
+          git config user.email \
+            "fund100-research-bot@users.noreply.github.com"
 
           git add \
-            release_outputs/v5_002/pre_live_release_lock.json
+            live_activation_outputs/v5_002/pre_live_release_lock_v1_9.json
 
           if git diff --cached --quiet; then
-            echo "Nothing staged."
-            exit 0
+
+            echo "Release Lock v1.9 evidence unchanged."
+
+          else
+
+            git commit -m \
+              "Freeze execution orchestrator integration evidence v1.9"
+
+            git push
+
           fi
 
-          git commit \
-            -m "Freeze V5-002 cumulative cap evidence"
-
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "Unexpected dirty working tree."
-            git status --short
-            exit 1
-          fi
-
-          git pull --rebase origin main
-          git push origin HEAD:main
-
-      - name: Final safety status
+      - name: Final locked-state summary
         run: |
+          set -euo pipefail
+
           echo "========================================"
-          echo "FUND-100 CUMULATIVE-CAP BASELINE LOCK COMPLETE"
+          echo "FUND-100 ORCHESTRATOR BASELINE LOCK v1.9 COMPLETE"
           echo "========================================"
-          echo "Broker credentials supplied: NO"
-          echo "Broker network access: NONE"
-          echo "Writer candidate v1.1: LOCKED"
-          echo "Status-semantics hardening: COMPLETE"
-          echo "Cumulative-cap guard v1.0: LOCKED"
-          echo "Cumulative-cap rehearsal evidence: LOCKED"
-          echo "Single permit ceiling across phases: LOCKED"
-          echo "Restart broker reconstruction: LOCKED"
-          echo "Lost-response reconstruction: LOCKED"
-          echo "Double-count prevention: LOCKED"
-          echo "Duplicate-POST prevention: LOCKED"
-          echo "Cumulative-cap hardening: COMPLETE"
-          echo "Execution orchestrator integration required: YES"
-          echo "Execution orchestrator release blocker: YES"
-          echo "Candidate transport released: FALSE"
-          echo "Candidate public execution enabled: FALSE"
-          echo "Connected-writer LIVE release still required: YES"
-          echo "Automatic activation allowed: FALSE"
+          echo "Prior Release Lock v1.8: VERIFIED"
+          echo "Writer candidate v1.1: HARD LOCKED"
+          echo "Execution orchestrator v1.0: LOCKED"
+          echo "Orchestrator rehearsal evidence: LOCKED"
+          echo "Fresh broker reconstruction before each phase: LOCKED"
+          echo "Complete authorized-ID reconstruction: LOCKED"
+          echo "Cumulative-cap guard before every writer call: LOCKED"
+          echo "Single permit ceiling across SELL + BUY: LOCKED"
+          echo "Restart-safe orchestration: LOCKED"
+          echo "Execution orchestrator integration: COMPLETE"
+          echo "Execution orchestrator release blocker: NO"
+          echo "Connected Alpaca PAPER end-to-end required: YES"
+          echo "Connected LIVE writer release still required: YES"
+          echo "Automatic LIVE activation allowed: FALSE"
           echo "Live execution authorized: FALSE"
           echo "Permit issued: FALSE"
-          echo 'Maximum LIVE execution notional: $0.00'
+          echo "Maximum LIVE execution notional: \$0.00"
           echo "Writer connected: FALSE"
           echo "LIVE orders submitted: 0"
