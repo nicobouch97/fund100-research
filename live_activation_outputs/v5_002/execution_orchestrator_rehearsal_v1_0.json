@@ -1,0 +1,18 @@
+{
+  "broker_credentials_accessed": false,
+  "broker_mode": "COMPLETELY_OFFLINE",
+  "exact_cap_across_sell_restart_buy": true,
+  "incomplete_history_blocked": true,
+  "lost_response_restart_reconstruction": true,
+  "orchestrator_released": false,
+  "orders_submitted_to_alpaca": 0,
+  "over_cap_blocked_before_writer": true,
+  "partial_fill_full_notional_accounting": true,
+  "real_broker_network_access": "NONE",
+  "release_lock_v1_8_source_present": true,
+  "restart_duplicate_post_prevention": true,
+  "schema": "FUND100_EXECUTION_ORCHESTRATOR_REHEARSAL_V1",
+  "unsafe_terminal_history_blocked": true,
+  "writer_candidate_v1_1_public_execution_enabled": false,
+  "writer_candidate_v1_1_transport_released": false
+}
