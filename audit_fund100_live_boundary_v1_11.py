@@ -17,7 +17,7 @@ import fund100_alpaca_live_writer_candidate_v1_0 as candidate
 #
 # Adds the first POST-shaped connected-writer candidate.
 #
-# The candidate is allowed to contain reviewed GET/POST code,
+# The candidate may contain reviewed GET/POST transport code,
 # but:
 #
 # - transport release is hard-coded FALSE
@@ -25,15 +25,20 @@ import fund100_alpaca_live_writer_candidate_v1_0 as candidate
 # - no environment-variable activation exists
 # - no credential-environment access exists
 # - no main() exists
-# - no workflow may execute/import the candidate
-# - GET/POST helpers must begin with the hard release guard
+# - no workflow may invoke/import the candidate
+# - GET/POST helpers must begin with hard release guards
 #
 # IMPORTANT:
 #
-# Runtime activation checks are AST-based.
+# Both:
 #
-# Comments and documentation strings do NOT count as
-# executable environment-variable access.
+#   - environment-hook detection
+#   - repository HTTP-mutation detection
+#
+# are AST-based.
+#
+# Comments, documentation and audit pattern strings therefore
+# cannot masquerade as executable network/write capability.
 #
 # ============================================================
 
@@ -61,9 +66,52 @@ CANDIDATE_PATH = (
 )
 
 
+WRITE_METHODS = {
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+}
+
+
 # ============================================================
-# AST GUARD VERIFICATION
+# AST HELPERS
 # ============================================================
+
+
+def dotted_name(
+    node,
+):
+
+    if isinstance(
+        node,
+        ast.Name,
+    ):
+
+        return node.id
+
+    if isinstance(
+        node,
+        ast.Attribute,
+    ):
+
+        prefix = (
+            dotted_name(
+                node.value
+            )
+        )
+
+        if prefix:
+
+            return (
+                prefix
+                + "."
+                + node.attr
+            )
+
+        return node.attr
+
+    return None
 
 
 def function_first_call_name(
@@ -77,59 +125,269 @@ def function_first_call_name(
 
     for node in tree.body:
 
-        if (
-            isinstance(
-                node,
-                (
-                    ast.FunctionDef,
-                    ast.AsyncFunctionDef,
-                ),
-            )
-            and
-            node.name
-            == function_name
+        if not isinstance(
+            node,
+            (
+                ast.FunctionDef,
+                ast.AsyncFunctionDef,
+            ),
         ):
 
-            if not node.body:
+            continue
 
-                return None
+        if (
+            node.name
+            != function_name
+        ):
 
-            first = (
-                node.body[
-                    0
+            continue
+
+        body = list(
+            node.body
+        )
+
+        # ----------------------------------------------------
+        # Skip a real function docstring if one exists.
+        # ----------------------------------------------------
+
+        if (
+            body
+            and isinstance(
+                body[0],
+                ast.Expr,
+            )
+            and isinstance(
+                body[0].value,
+                ast.Constant,
+            )
+            and isinstance(
+                body[0].value.value,
+                str,
+            )
+        ):
+
+            body = (
+                body[
+                    1:
                 ]
             )
 
-            if not isinstance(
-                first,
-                ast.Expr,
-            ):
-
-                return None
-
-            call = (
-                first.value
-            )
-
-            if not isinstance(
-                call,
-                ast.Call,
-            ):
-
-                return None
-
-            if isinstance(
-                call.func,
-                ast.Name,
-            ):
-
-                return (
-                    call.func.id
-                )
+        if not body:
 
             return None
 
+        first = (
+            body[
+                0
+            ]
+        )
+
+        if not isinstance(
+            first,
+            ast.Expr,
+        ):
+
+            return None
+
+        call = (
+            first.value
+        )
+
+        if not isinstance(
+            call,
+            ast.Call,
+        ):
+
+            return None
+
+        return (
+            dotted_name(
+                call.func
+            )
+        )
+
     return None
+
+
+# ============================================================
+# AST REQUEST-METHOD DETECTION
+# ============================================================
+
+
+def request_methods_in_ast(
+    source: str,
+):
+
+    tree = ast.parse(
+        source
+    )
+
+    methods = []
+
+    for node in ast.walk(
+        tree
+    ):
+
+        if not isinstance(
+            node,
+            ast.Call,
+        ):
+
+            continue
+
+        function_name = (
+            dotted_name(
+                node.func
+            )
+        )
+
+        if not function_name:
+
+            continue
+
+        # ----------------------------------------------------
+        # urllib.request.Request(..., method="GET/POST")
+        #
+        # Candidate imports Request directly, but support both
+        # direct and dotted forms.
+        # ----------------------------------------------------
+
+        if (
+            function_name
+            == "Request"
+            or function_name.endswith(
+                ".Request"
+            )
+        ):
+
+            for keyword in node.keywords:
+
+                if (
+                    keyword.arg
+                    != "method"
+                ):
+
+                    continue
+
+                if not isinstance(
+                    keyword.value,
+                    ast.Constant,
+                ):
+
+                    continue
+
+                if not isinstance(
+                    keyword.value.value,
+                    str,
+                ):
+
+                    continue
+
+                methods.append(
+                    keyword.value.value.upper()
+                )
+
+    return methods
+
+
+# ============================================================
+# AST HTTP-MUTATION DETECTION
+# ============================================================
+
+
+def executable_http_mutations(
+    source: str,
+):
+
+    tree = ast.parse(
+        source
+    )
+
+    findings = []
+
+    # --------------------------------------------------------
+    # urllib Request(... method="POST"/PUT/PATCH/DELETE)
+    # --------------------------------------------------------
+
+    for method in (
+        request_methods_in_ast(
+            source
+        )
+    ):
+
+        if (
+            method
+            in WRITE_METHODS
+        ):
+
+            findings.append(
+                f"Request(method={method})"
+            )
+
+    # --------------------------------------------------------
+    # requests.post(...)
+    # httpx.post(...)
+    # session.post(...)
+    #
+    # and corresponding PUT/PATCH/DELETE methods.
+    # --------------------------------------------------------
+
+    for node in ast.walk(
+        tree
+    ):
+
+        if not isinstance(
+            node,
+            ast.Call,
+        ):
+
+            continue
+
+        function_name = (
+            dotted_name(
+                node.func
+            )
+        )
+
+        if not function_name:
+
+            continue
+
+        lowered = (
+            function_name.lower()
+        )
+
+        explicit_mutators = {
+            "requests.post",
+            "requests.put",
+            "requests.patch",
+            "requests.delete",
+
+            "httpx.post",
+            "httpx.put",
+            "httpx.patch",
+            "httpx.delete",
+
+            "session.post",
+            "session.put",
+            "session.patch",
+            "session.delete",
+        }
+
+        if (
+            lowered
+            in explicit_mutators
+        ):
+
+            findings.append(
+                function_name
+            )
+
+    return sorted(
+        set(
+            findings
+        )
+    )
 
 
 # ============================================================
@@ -197,10 +455,7 @@ def detect_runtime_environment_hooks(
                 )
 
         # ----------------------------------------------------
-        # Executable attribute access:
-        #
-        #   os.environ
-        #   os.getenv
+        # os.environ / os.getenv
         # ----------------------------------------------------
 
         if isinstance(
@@ -229,12 +484,7 @@ def detect_runtime_environment_hooks(
                 )
 
         # ----------------------------------------------------
-        # Explicit getenv imported directly:
-        #
-        #   getenv(...)
-        #
-        # This is defensive even though importing from os is
-        # already independently prohibited.
+        # getenv(...) imported directly.
         # ----------------------------------------------------
 
         if isinstance(
@@ -257,10 +507,10 @@ def detect_runtime_environment_hooks(
                 )
 
         # ----------------------------------------------------
-        # Credential / activation environment names appearing
-        # as executable Python string constants.
+        # Credential/activation environment names appearing
+        # in executable string constants.
         #
-        # Comments are excluded automatically by AST parsing.
+        # Comments are not represented in the AST.
         # ----------------------------------------------------
 
         if isinstance(
@@ -268,24 +518,25 @@ def detect_runtime_environment_hooks(
             ast.Constant,
         ):
 
-            if isinstance(
+            if not isinstance(
                 node.value,
                 str,
             ):
 
-                value = (
-                    node.value
-                )
+                continue
 
-                for name in (
-                    forbidden_environment_names
+            for name in (
+                forbidden_environment_names
+            ):
+
+                if (
+                    name
+                    in node.value
                 ):
 
-                    if name in value:
-
-                        findings.append(
-                            f"runtime string constant: {name}"
-                        )
+                    findings.append(
+                        f"runtime string constant: {name}"
+                    )
 
     return sorted(
         set(
@@ -361,7 +612,7 @@ def candidate_workflow_invocations():
 
 
 # ============================================================
-# PATCH ROOT WRITE-SCAN
+# PATCH ROOT LIVE WRITE SCAN
 # ============================================================
 
 
@@ -380,8 +631,20 @@ def audit_live_python_files_v1_11(
         root_audit.repository_python_files()
     ):
 
-        if (
+        resolved = (
             path.resolve()
+        )
+
+        # ----------------------------------------------------
+        # These two write-shaped modules are reviewed
+        # separately:
+        #
+        # 1. original disconnected writer
+        # 2. hard-locked connected-writer candidate
+        # ----------------------------------------------------
+
+        if (
+            resolved
             in permitted_write_shape_files
         ):
 
@@ -405,36 +668,57 @@ def audit_live_python_files_v1_11(
 
             continue
 
-        for pattern in (
-            root_audit.PYTHON_WRITE_PATTERNS
-        ):
+        # ----------------------------------------------------
+        # IMPORTANT:
+        #
+        # Do NOT use raw regex to detect HTTP mutation here.
+        #
+        # Audit files legitimately contain strings discussing
+        # POST/PUT/PATCH/DELETE.
+        #
+        # Count only executable Python AST calls.
+        # ----------------------------------------------------
 
-            if pattern.search(
+        mutations = (
+            executable_http_mutations(
                 source
-            ):
+            )
+        )
 
-                write_files.append(
+        if mutations:
+
+            write_files.append(
+                (
                     str(
                         path.relative_to(
                             ROOT
                         )
-                    )
+                    ),
+                    mutations,
                 )
-
-                break
+            )
 
     if write_files:
 
-        audit.failed(
-            "LIVE Python write method exists "
-            "outside the reviewed writer boundary: "
-            + ", ".join(
-                sorted(
-                    set(
-                        write_files
-                    )
+        details = "; ".join(
+            (
+                filename
+                + " -> "
+                + ", ".join(
+                    mutations
                 )
             )
+            for (
+                filename,
+                mutations,
+            )
+            in write_files
+        )
+
+        audit.failed(
+            "LIVE executable Python HTTP mutation exists "
+            "outside the reviewed writer boundary: "
+            + details
         )
 
     else:
@@ -442,7 +726,7 @@ def audit_live_python_files_v1_11(
         audit.passed(
             "No LIVE Python module outside the "
             "reviewed disconnected/candidate writer "
-            "boundary contains HTTP mutation."
+            "boundary contains executable HTTP mutation."
         )
 
 
@@ -498,17 +782,7 @@ def verify_writer_candidate():
         )
 
     # --------------------------------------------------------
-    # NO RUNTIME ENVIRONMENT ACTIVATION
-    #
-    # IMPORTANT:
-    #
-    # This is AST-based rather than raw-text based.
-    #
-    # Therefore comments such as:
-    #
-    #   "this file contains no environment activation"
-    #
-    # cannot trigger false positives.
+    # NO ENVIRONMENT ACTIVATION
     # --------------------------------------------------------
 
     environment_hooks = (
@@ -529,35 +803,37 @@ def verify_writer_candidate():
         )
 
     # --------------------------------------------------------
-    # REVIEWED TRANSPORT SHAPE MUST EXIST
+    # REVIEWED GET / POST TRANSPORT SHAPE MUST EXIST
+    #
+    # AST-based, so comments/audit strings do not count.
     # --------------------------------------------------------
 
+    request_methods = set(
+        request_methods_in_ast(
+            source
+        )
+    )
+
     if (
-        'method="POST"'
-        not in source
-        and
-        "method='POST'"
-        not in source
+        "POST"
+        not in request_methods
     ):
 
         raise RuntimeError(
             "LIVE STATIC AUDIT STOP: "
-            "candidate does not contain the reviewed "
-            "POST transport shape."
+            "candidate does not contain an executable "
+            "reviewed POST Request transport shape."
         )
 
     if (
-        'method="GET"'
-        not in source
-        and
-        "method='GET'"
-        not in source
+        "GET"
+        not in request_methods
     ):
 
         raise RuntimeError(
             "LIVE STATIC AUDIT STOP: "
-            "candidate does not contain the reviewed "
-            "idempotency GET transport shape."
+            "candidate does not contain an executable "
+            "reviewed GET idempotency transport shape."
         )
 
     # --------------------------------------------------------
@@ -587,7 +863,10 @@ def verify_writer_candidate():
             )
         )
 
-        if actual != expected_guard:
+        if (
+            actual
+            != expected_guard
+        ):
 
             raise RuntimeError(
                 "LIVE STATIC AUDIT STOP: "
@@ -648,7 +927,7 @@ def verify_writer_candidate():
         )
 
     # --------------------------------------------------------
-    # EXPECTED LIVE HOST
+    # EXPECTED ALPACA LIVE HOST
     # --------------------------------------------------------
 
     if (
@@ -673,7 +952,7 @@ def verify_writer_candidate():
         )
 
     # --------------------------------------------------------
-    # EXPECTED ORDER ENDPOINT
+    # EXPECTED ORDER ENDPOINTS
     # --------------------------------------------------------
 
     if (
@@ -762,6 +1041,11 @@ def verify_writer_candidate():
         "order endpoints."
     )
 
+    print(
+        "PASS: Repository LIVE write-path detection "
+        "is executable-AST based."
+    )
+
 
 # ============================================================
 # MAIN
@@ -775,12 +1059,14 @@ def main():
     )
 
     # --------------------------------------------------------
-    # The historical root audit allowed exactly one POST-shaped
-    # Python file: the disconnected writer.
+    # Historical root audit allowed exactly one POST-shaped
+    # file: the disconnected writer.
     #
-    # v1.11 permits exactly one additional reviewed candidate,
-    # audited above, while preserving the prohibition for every
-    # other LIVE Python module.
+    # v1.11 permits one additional reviewed candidate.
+    #
+    # The repository-wide scan is replaced with an AST-based
+    # implementation so audit strings/comments cannot create
+    # false positive write paths.
     # --------------------------------------------------------
 
     root_audit.audit_live_python_files = (
