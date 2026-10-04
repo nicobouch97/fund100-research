@@ -23,9 +23,17 @@ import fund100_alpaca_live_writer_candidate_v1_0 as candidate
 # - transport release is hard-coded FALSE
 # - public execution release is hard-coded FALSE
 # - no environment-variable activation exists
+# - no credential-environment access exists
 # - no main() exists
 # - no workflow may execute/import the candidate
 # - GET/POST helpers must begin with the hard release guard
+#
+# IMPORTANT:
+#
+# Runtime activation checks are AST-based.
+#
+# Comments and documentation strings do NOT count as
+# executable environment-variable access.
 #
 # ============================================================
 
@@ -122,6 +130,168 @@ def function_first_call_name(
             return None
 
     return None
+
+
+# ============================================================
+# AST ENVIRONMENT / ACTIVATION CHECK
+# ============================================================
+
+
+def detect_runtime_environment_hooks(
+    source: str,
+):
+
+    tree = ast.parse(
+        source
+    )
+
+    findings = []
+
+    forbidden_environment_names = {
+        "ALPACA_LIVE_KEY",
+        "ALPACA_LIVE_SECRET",
+        "FUND100_LIVE_WRITE_MODE",
+        "FUND100_ENABLE_LIVE_WRITER",
+    }
+
+    for node in ast.walk(
+        tree
+    ):
+
+        # ----------------------------------------------------
+        # import os
+        # ----------------------------------------------------
+
+        if isinstance(
+            node,
+            ast.Import,
+        ):
+
+            for alias in node.names:
+
+                if (
+                    alias.name
+                    == "os"
+                ):
+
+                    findings.append(
+                        "import os"
+                    )
+
+        # ----------------------------------------------------
+        # from os import ...
+        # ----------------------------------------------------
+
+        if isinstance(
+            node,
+            ast.ImportFrom,
+        ):
+
+            if (
+                node.module
+                == "os"
+            ):
+
+                findings.append(
+                    "from os import ..."
+                )
+
+        # ----------------------------------------------------
+        # Executable attribute access:
+        #
+        #   os.environ
+        #   os.getenv
+        # ----------------------------------------------------
+
+        if isinstance(
+            node,
+            ast.Attribute,
+        ):
+
+            if (
+                isinstance(
+                    node.value,
+                    ast.Name,
+                )
+                and
+                node.value.id
+                == "os"
+                and
+                node.attr
+                in {
+                    "environ",
+                    "getenv",
+                }
+            ):
+
+                findings.append(
+                    f"os.{node.attr}"
+                )
+
+        # ----------------------------------------------------
+        # Explicit getenv imported directly:
+        #
+        #   getenv(...)
+        #
+        # This is defensive even though importing from os is
+        # already independently prohibited.
+        # ----------------------------------------------------
+
+        if isinstance(
+            node,
+            ast.Call,
+        ):
+
+            if (
+                isinstance(
+                    node.func,
+                    ast.Name,
+                )
+                and
+                node.func.id
+                == "getenv"
+            ):
+
+                findings.append(
+                    "getenv(...)"
+                )
+
+        # ----------------------------------------------------
+        # Credential / activation environment names appearing
+        # as executable Python string constants.
+        #
+        # Comments are excluded automatically by AST parsing.
+        # ----------------------------------------------------
+
+        if isinstance(
+            node,
+            ast.Constant,
+        ):
+
+            if isinstance(
+                node.value,
+                str,
+            ):
+
+                value = (
+                    node.value
+                )
+
+                for name in (
+                    forbidden_environment_names
+                ):
+
+                    if name in value:
+
+                        findings.append(
+                            f"runtime string constant: {name}"
+                        )
+
+    return sorted(
+        set(
+            findings
+        )
+    )
 
 
 # ============================================================
@@ -289,6 +459,10 @@ def verify_writer_candidate():
         )
     )
 
+    # --------------------------------------------------------
+    # HARD-CODED RELEASE STATE
+    # --------------------------------------------------------
+
     if (
         candidate.TRANSPORT_RELEASED
         is not False
@@ -309,6 +483,10 @@ def verify_writer_candidate():
             "candidate public execution is enabled."
         )
 
+    # --------------------------------------------------------
+    # NO RUNNABLE ENTRYPOINT
+    # --------------------------------------------------------
+
     if hasattr(
         candidate,
         "main",
@@ -319,33 +497,40 @@ def verify_writer_candidate():
             "candidate contains main()."
         )
 
-    forbidden_activation_tokens = [
-        "os.environ",
-        "os.getenv",
-        "ALPACA_LIVE_KEY",
-        "ALPACA_LIVE_SECRET",
-        "FUND100_LIVE_WRITE_MODE",
-        "FUND100_ENABLE_LIVE_WRITER",
-    ]
+    # --------------------------------------------------------
+    # NO RUNTIME ENVIRONMENT ACTIVATION
+    #
+    # IMPORTANT:
+    #
+    # This is AST-based rather than raw-text based.
+    #
+    # Therefore comments such as:
+    #
+    #   "this file contains no environment activation"
+    #
+    # cannot trigger false positives.
+    # --------------------------------------------------------
 
-    detected = [
-        token
-        for token
-        in forbidden_activation_tokens
-        if token
-        in source
-    ]
+    environment_hooks = (
+        detect_runtime_environment_hooks(
+            source
+        )
+    )
 
-    if detected:
+    if environment_hooks:
 
         raise RuntimeError(
             "LIVE STATIC AUDIT STOP: "
-            "candidate contains runtime activation/"
-            "credential environment hooks: "
+            "candidate contains executable runtime "
+            "environment/credential hooks: "
             + ", ".join(
-                detected
+                environment_hooks
             )
         )
+
+    # --------------------------------------------------------
+    # REVIEWED TRANSPORT SHAPE MUST EXIST
+    # --------------------------------------------------------
 
     if (
         'method="POST"'
@@ -374,6 +559,10 @@ def verify_writer_candidate():
             "candidate does not contain the reviewed "
             "idempotency GET transport shape."
         )
+
+    # --------------------------------------------------------
+    # NETWORK PATHS MUST BEGIN WITH HARD RELEASE GUARDS
+    # --------------------------------------------------------
 
     guarded_functions = {
         "_get_order_by_client_id":
@@ -407,6 +596,10 @@ def verify_writer_candidate():
                 f"First call was {actual!r}."
             )
 
+    # --------------------------------------------------------
+    # NO WORKFLOW INVOCATION
+    # --------------------------------------------------------
+
     invocations = (
         candidate_workflow_invocations()
     )
@@ -422,24 +615,30 @@ def verify_writer_candidate():
             )
         )
 
+    # --------------------------------------------------------
+    # FULL FROZEN V5 UNIVERSE
+    # --------------------------------------------------------
+
+    expected_symbols = {
+        "ACWI",
+        "SPY",
+        "IWM",
+        "EFA",
+        "EEM",
+        "VNQ",
+        "XLK",
+        "XLF",
+        "XLI",
+        "XLV",
+        "XLP",
+        "XLY",
+        "XLE",
+        "XLU",
+    }
+
     if (
         candidate.ALLOWED_SYMBOLS
-        != {
-            "ACWI",
-            "SPY",
-            "IWM",
-            "EFA",
-            "EEM",
-            "VNQ",
-            "XLK",
-            "XLF",
-            "XLI",
-            "XLV",
-            "XLP",
-            "XLY",
-            "XLE",
-            "XLU",
-        }
+        != expected_symbols
     ):
 
         raise RuntimeError(
@@ -448,21 +647,82 @@ def verify_writer_candidate():
             "full frozen V5 execution universe."
         )
 
+    # --------------------------------------------------------
+    # EXPECTED LIVE HOST
+    # --------------------------------------------------------
+
+    if (
+        candidate.EXPECTED_LIVE_HOST
+        != "api.alpaca.markets"
+    ):
+
+        raise RuntimeError(
+            "LIVE STATIC AUDIT STOP: "
+            "candidate does not target the expected "
+            "Alpaca LIVE host."
+        )
+
+    if (
+        candidate.LIVE_BASE_URL
+        != "https://api.alpaca.markets"
+    ):
+
+        raise RuntimeError(
+            "LIVE STATIC AUDIT STOP: "
+            "candidate LIVE base URL is unexpected."
+        )
+
+    # --------------------------------------------------------
+    # EXPECTED ORDER ENDPOINT
+    # --------------------------------------------------------
+
+    if (
+        candidate.LIVE_ORDER_PATH
+        != "/v2/orders"
+    ):
+
+        raise RuntimeError(
+            "LIVE STATIC AUDIT STOP: "
+            "candidate order endpoint is unexpected."
+        )
+
+    if (
+        candidate.LIVE_ORDER_BY_CLIENT_ID_PATH
+        != "/v2/orders:by_client_order_id"
+    ):
+
+        raise RuntimeError(
+            "LIVE STATIC AUDIT STOP: "
+            "candidate idempotency endpoint is unexpected."
+        )
+
+    # --------------------------------------------------------
+    # REPORT
+    # --------------------------------------------------------
+
     print(
         "PASS: Connected-writer candidate contains "
         "reviewed Alpaca GET/POST transport shape."
     )
 
     print(
-        "PASS: Candidate transport release is hard-coded FALSE."
+        "PASS: Candidate transport release is "
+        "hard-coded FALSE."
     )
 
     print(
-        "PASS: Candidate public execution is hard-coded FALSE."
+        "PASS: Candidate public execution is "
+        "hard-coded FALSE."
     )
 
     print(
-        "PASS: Candidate has no environment activation hook."
+        "PASS: Candidate executable AST has no "
+        "environment activation hook."
+    )
+
+    print(
+        "PASS: Candidate executable AST has no "
+        "credential-environment hook."
     )
 
     print(
@@ -470,11 +730,13 @@ def verify_writer_candidate():
     )
 
     print(
-        "PASS: Candidate GET begins with hard release guard."
+        "PASS: Candidate GET begins with "
+        "hard release guard."
     )
 
     print(
-        "PASS: Candidate POST begins with hard release guard."
+        "PASS: Candidate POST begins with "
+        "hard release guard."
     )
 
     print(
@@ -489,6 +751,15 @@ def verify_writer_candidate():
 
     print(
         "PASS: Candidate uses the full frozen V5 universe."
+    )
+
+    print(
+        "PASS: Candidate targets expected Alpaca LIVE host."
+    )
+
+    print(
+        "PASS: Candidate uses expected Alpaca "
+        "order endpoints."
     )
 
 
