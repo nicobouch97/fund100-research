@@ -63,54 +63,56 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify v1.15 audit inputs
+      - name: Verify v1.16 audit inputs
         run: |
           set -euo pipefail
 
-          test -f audit_fund100_live_boundary_v1_13.py
           test -f audit_fund100_live_boundary_v1_14.py
           test -f audit_fund100_live_boundary_v1_15.py
+          test -f audit_fund100_live_boundary_v1_16.py
 
-          test -f fund100_alpaca_live_writer_candidate_v1_0.py
           test -f fund100_alpaca_live_writer_candidate_v1_1.py
+
+          test -f \
+            fund100_alpaca_live_cumulative_cap_guard_v1_0.py
+
+          test -f \
+            test_fund100_alpaca_live_cumulative_cap_guard_v1_0.py
 
           test -f \
             fund100_alpaca_live_writer_status_rehearsal_v1_0.py
 
           test -f \
-            test_fund100_alpaca_live_writer_status_rehearsal_v1_0.py
-
-          test -f \
             .github/workflows/fund100-live-writer-status-rehearsal.yml
 
-          echo "LIVE static-audit v1.15 dependencies found."
+          echo "LIVE static-audit v1.16 dependencies found."
 
       - name: Run full Fund-100 test suite
         run: |
           set -euo pipefail
           python -m pytest -q
 
-      - name: Run offline LIVE boundary audit v1.15
+      - name: Run offline LIVE boundary audit v1.16
         run: |
           set -euo pipefail
-          python audit_fund100_live_boundary_v1_15.py
+          python audit_fund100_live_boundary_v1_16.py
 
       - name: Final safety status
         run: |
           echo "========================================"
           echo "FUND-100 LIVE STATIC AUDIT COMPLETE"
           echo "========================================"
-          echo "Static audit safety layer: v1.15"
-          echo "Writer candidate v1.0: LOCKED"
+          echo "Static audit safety layer: v1.16"
           echo "Writer candidate v1.1: HARD LOCKED"
-          echo "Status/restart rehearsal: OFFLINE ONLY"
-          echo "Rehearsal direct network client: NONE"
-          echo "Rehearsal broker credentials: NONE"
-          echo "Fake transport before guard bypass: VERIFIED"
-          echo "Filled recovery semantics: VERIFIED"
-          echo "Active/partial no-resubmit semantics: VERIFIED"
-          echo "Terminal-failure rejection semantics: VERIFIED"
-          echo "Ambiguous/unknown rejection semantics: VERIFIED"
+          echo "Status-semantics hardening: VERIFIED"
+          echo "Cumulative-cap guard: PURE / OFFLINE"
+          echo "Cumulative-cap network capability: NONE"
+          echo "Cumulative-cap credential access: NONE"
+          echo "Cumulative-cap persistence: NONE"
+          echo "Complete client-ID reconstruction: REQUIRED"
+          echo "Historical gross reconstruction: VERIFIED"
+          echo "Historical + new gross single-cap check: VERIFIED"
+          echo "Terminal/unsafe history: FAIL CLOSED"
           echo "Candidate transport released: FALSE"
           echo "Candidate public execution enabled: FALSE"
           echo "Current live writer connected: FALSE"
