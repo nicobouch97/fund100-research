@@ -1,0 +1,331 @@
+name: Fund-100 LIVE Writer Offline Transport Rehearsal
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-live-writer-offline-transport-rehearsal
+  cancel-in-progress: false
+
+jobs:
+  rehearsal:
+    name: Rehearse Writer Transport Against Fake Broker
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify offline rehearsal inputs
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_live_writer_candidate_v1_0.py
+
+          test -f \
+            fund100_alpaca_live_writer_transport_rehearsal_v1_0.py
+
+          test -f \
+            test_fund100_alpaca_live_writer_transport_rehearsal_v1_0.py
+
+          test -f audit_fund100_live_boundary_v1_12.py
+
+          test -f \
+            release_outputs/v5_002/pre_live_release_lock.json
+
+          echo "Offline writer-transport rehearsal inputs found."
+
+      - name: Run full Fund-100 test suite
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Re-run LIVE static safety audit v1.12
+        run: |
+          set -euo pipefail
+          python audit_fund100_live_boundary_v1_12.py
+
+      - name: Run completely offline writer transport rehearsal
+        run: |
+          set -euo pipefail
+
+          python fund100_alpaca_live_writer_transport_rehearsal_v1_0.py
+
+      - name: Verify safe rehearsal artifact
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import hashlib
+          import json
+
+          path = (
+              "live_dryrun_outputs/v5_002/"
+              "live_writer_transport_rehearsal_v1_0.json"
+          )
+
+          with open(
+              path,
+              "r",
+              encoding="utf-8",
+          ) as handle:
+              package = json.load(handle)
+
+          body = package["rehearsal"]
+
+          canonical = json.dumps(
+              body,
+              sort_keys=True,
+              separators=(",", ":"),
+              ensure_ascii=True,
+          )
+
+          calculated = hashlib.sha256(
+              canonical.encode("utf-8")
+          ).hexdigest()
+
+          assert (
+              calculated
+              == package["rehearsal_sha256"]
+          )
+
+          assert (
+              body["schema"]
+              == "FUND100_LIVE_WRITER_TRANSPORT_REHEARSAL_V1"
+          )
+
+          assert (
+              body["writer_candidate_source_locked"]
+              is True
+          )
+
+          assert (
+              body[
+                  "candidate_transport_constant_false_before_after"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "candidate_public_execution_constant_false_before_after"
+              ]
+              is True
+          )
+
+          assert (
+              body["clean_restart_duplicate_suppression"]
+              is True
+          )
+
+          assert (
+              body["partial_restart_missing_only"]
+              is True
+          )
+
+          assert (
+              body[
+                  "response_loss_restart_duplicate_suppression"
+              ]
+              is True
+          )
+
+          assert (
+              body["existing_order_mismatch_rejected"]
+              is True
+          )
+
+          assert (
+              body["restart_recovery_verified"]
+              is True
+          )
+
+          assert (
+              body[
+                  "at_most_once_client_order_id_behavior_verified"
+              ]
+              is True
+          )
+
+          assert (
+              body["real_alpaca_credentials_supplied"]
+              is False
+          )
+
+          assert (
+              body["real_broker_network_access"]
+              is False
+          )
+
+          assert (
+              body["real_broker_get_requests"]
+              == 0
+          )
+
+          assert (
+              body["real_broker_post_requests"]
+              == 0
+          )
+
+          assert (
+              body["orders_submitted_to_alpaca"]
+              == 0
+          )
+
+          assert (
+              body["synthetic_permit_persisted"]
+              is False
+          )
+
+          assert (
+              body["synthetic_executable_intents_persisted"]
+              is False
+          )
+
+          assert (
+              body["live_execution_authorized"]
+              is False
+          )
+
+          assert (
+              body["permit_issued"]
+              is False
+          )
+
+          assert (
+              body["writer_connected"]
+              is False
+          )
+
+          forbidden = {
+              "permit",
+              "orders",
+              "intents",
+              "candidate_intents",
+              "api_key",
+              "api_secret",
+              "approval_token",
+          }
+
+          assert (
+              forbidden.intersection(
+                  body.keys()
+              )
+              == set()
+          )
+
+          print("Rehearsal SHA256: PASS")
+          print("Clean restart duplicate suppression: PASS")
+          print("Partial restart recovery: PASS")
+          print("Lost-response recovery: PASS")
+          print("Existing-order mismatch rejection: PASS")
+          print("At-most-once client-order behavior: PASS")
+          print("Real Alpaca credentials supplied: NO")
+          print("Real broker network access: NONE")
+          print("Orders submitted to Alpaca: 0")
+          PY
+
+      - name: Check rehearsal artifact
+        id: rehearsal_check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHANGES="$(
+            git status --porcelain -- \
+              live_dryrun_outputs/v5_002/live_writer_transport_rehearsal_v1_0.json
+          )"
+
+          if [ -z "$CHANGES" ]; then
+
+            echo "Offline transport rehearsal artifact unchanged."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+
+          else
+
+            echo "Offline transport rehearsal artifact changed:"
+            echo "$CHANGES"
+
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+
+          fi
+
+      - name: Commit safe rehearsal artifact
+        if: steps.rehearsal_check.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config \
+            user.name \
+            "fund100-live-dryrun-bot"
+
+          git config \
+            user.email \
+            "fund100-live-dryrun-bot@users.noreply.github.com"
+
+          git add \
+            live_dryrun_outputs/v5_002/live_writer_transport_rehearsal_v1_0.json
+
+          if git diff --cached --quiet; then
+
+            echo "Nothing staged."
+            exit 0
+
+          fi
+
+          git commit \
+            -m "Record offline V5-002 writer transport rehearsal"
+
+          if [ -n "$(git status --porcelain)" ]; then
+
+            echo "Unexpected dirty working tree."
+            git status --short
+            exit 1
+
+          fi
+
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 OFFLINE CONNECTED-WRITER REHEARSAL COMPLETE"
+          echo "========================================"
+          echo "Writer-candidate release lock: VERIFIED"
+          echo "Fresh submission path: PASS"
+          echo "Clean restart duplicate suppression: PASS"
+          echo "Partial restart recovery: PASS"
+          echo "Lost-response recovery: PASS"
+          echo "Existing-order mismatch rejection: PASS"
+          echo "At-most-once client-order behavior: VERIFIED"
+          echo "Real Alpaca credentials supplied: NO"
+          echo "Real broker network access: NONE"
+          echo "Candidate transport released: FALSE"
+          echo "Candidate public execution enabled: FALSE"
+          echo "Live execution authorized: FALSE"
+          echo "Permit issued: FALSE"
+          echo "Writer connected: FALSE"
+          echo "Orders submitted to Alpaca: 0"
