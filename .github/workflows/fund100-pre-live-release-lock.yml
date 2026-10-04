@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   release-lock:
-    name: Freeze Writer Status-Semantics Evidence
+    name: Freeze Cumulative-Cap Recovery Evidence
 
     runs-on: ubuntu-latest
 
@@ -37,40 +37,42 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify v1.7 inputs
+      - name: Verify v1.8 inputs
         run: |
           set -euo pipefail
 
           test -f fund100_pre_live_release_lock.py
-          test -f fund100_pre_live_release_lock_v1_6.py
           test -f fund100_pre_live_release_lock_v1_7.py
+          test -f fund100_pre_live_release_lock_v1_8.py
+          test -f test_fund100_pre_live_release_lock_v1_8.py
 
-          test -f test_fund100_pre_live_release_lock_v1_7.py
-
-          test -f fund100_alpaca_live_writer_candidate_v1_0.py
           test -f fund100_alpaca_live_writer_candidate_v1_1.py
 
-          test -f test_fund100_alpaca_live_writer_candidate_v1_1.py
-
-          test -f audit_fund100_live_boundary_v1_14.py
-          test -f audit_fund100_live_boundary_v1_15.py
+          test -f \
+            fund100_alpaca_live_cumulative_cap_guard_v1_0.py
 
           test -f \
-            fund100_alpaca_live_writer_status_rehearsal_v1_0.py
+            test_fund100_alpaca_live_cumulative_cap_guard_v1_0.py
+
+          test -f audit_fund100_live_boundary_v1_16.py
+          test -f audit_fund100_live_boundary_v1_17.py
 
           test -f \
-            test_fund100_alpaca_live_writer_status_rehearsal_v1_0.py
+            fund100_alpaca_live_cumulative_cap_rehearsal_v1_0.py
 
           test -f \
-            .github/workflows/fund100-live-writer-status-rehearsal.yml
+            test_fund100_alpaca_live_cumulative_cap_rehearsal_v1_0.py
 
           test -f \
-            live_dryrun_outputs/v5_002/live_writer_status_rehearsal_v1_0.json
+            .github/workflows/fund100-live-cumulative-cap-rehearsal.yml
+
+          test -f \
+            live_dryrun_outputs/v5_002/live_cumulative_cap_rehearsal_v1_0.json
 
           test -f \
             release_outputs/v5_002/pre_live_release_lock.json
 
-          echo "Release-lock v1.7 dependencies found."
+          echo "Release-lock v1.8 dependencies found."
 
       - name: Run full Fund-100 test suite
         run: |
@@ -82,12 +84,12 @@ jobs:
           set -euo pipefail
           python audit_v5_002_engine.py
 
-      - name: Re-run LIVE static safety audit v1.15
+      - name: Re-run LIVE static safety audit v1.17
         run: |
           set -euo pipefail
-          python audit_fund100_live_boundary_v1_15.py
+          python audit_fund100_live_boundary_v1_17.py
 
-      - name: Verify committed status/restart rehearsal
+      - name: Verify committed cumulative-cap evidence
         run: |
           set -euo pipefail
 
@@ -109,7 +111,12 @@ jobs:
               root
               / "live_dryrun_outputs"
               / "v5_002"
-              / "live_writer_status_rehearsal_v1_0.json"
+              / "live_cumulative_cap_rehearsal_v1_0.json"
+          )
+
+          guard_path = (
+              root
+              / "fund100_alpaca_live_cumulative_cap_guard_v1_0.py"
           )
 
           candidate_path = (
@@ -121,12 +128,12 @@ jobs:
               "r",
               encoding="utf-8",
           ) as handle:
-              lock_package = json.load(handle)
+              prior_package = json.load(handle)
 
-          lock_body = lock_package["release_lock"]
+          prior = prior_package["release_lock"]
 
-          canonical_lock = json.dumps(
-              lock_body,
+          prior_canonical = json.dumps(
+              prior,
               sort_keys=True,
               separators=(",", ":"),
               ensure_ascii=True,
@@ -134,56 +141,49 @@ jobs:
 
           assert (
               hashlib.sha256(
-                  canonical_lock.encode("utf-8")
+                  prior_canonical.encode("utf-8")
               ).hexdigest()
-              == lock_package["release_lock_sha256"]
+              == prior_package["release_lock_sha256"]
           )
 
           assert (
-              lock_body["release_lock_builder_version"]
-              == "1.6"
+              prior["release_lock_builder_version"]
+              == "1.7"
           )
 
           assert (
-              lock_body[
-                  "connected_writer_status_semantics_hardening_required"
-              ]
-              is True
-          )
-
-          assert (
-              lock_body[
-                  "connected_writer_status_semantics_hardening_completed"
-              ]
-              is False
-          )
-
-          assert (
-              lock_body[
+              prior[
                   "connected_writer_cumulative_cap_recovery_required"
               ]
               is True
           )
 
           assert (
-              lock_body[
+              prior[
                   "connected_writer_cumulative_cap_recovery_completed"
               ]
               is False
+          )
+
+          assert (
+              prior[
+                  "connected_writer_cumulative_cap_recovery_release_blocker"
+              ]
+              is True
           )
 
           with rehearsal_path.open(
               "r",
               encoding="utf-8",
           ) as handle:
-              rehearsal_package = json.load(handle)
+              package = json.load(handle)
 
-          rehearsal = rehearsal_package[
-              "status_rehearsal"
+          body = package[
+              "cumulative_cap_rehearsal"
           ]
 
-          canonical_rehearsal = json.dumps(
-              rehearsal,
+          canonical = json.dumps(
+              body,
               sort_keys=True,
               separators=(",", ":"),
               ensure_ascii=True,
@@ -191,192 +191,160 @@ jobs:
 
           assert (
               hashlib.sha256(
-                  canonical_rehearsal.encode("utf-8")
+                  canonical.encode("utf-8")
               ).hexdigest()
-              == rehearsal_package[
-                  "status_rehearsal_sha256"
+              == package[
+                  "cumulative_cap_rehearsal_sha256"
               ]
           )
 
           assert (
-              rehearsal["source_release_lock_builder_version"]
-              == "1.6"
+              body["source_release_lock_builder_version"]
+              == "1.7"
           )
 
           assert (
-              rehearsal["source_release_lock_sha256"]
-              == lock_package["release_lock_sha256"]
+              body["source_release_lock_sha256"]
+              == prior_package["release_lock_sha256"]
           )
 
           candidate_hash = hashlib.sha256(
               candidate_path.read_bytes()
           ).hexdigest()
 
+          guard_hash = hashlib.sha256(
+              guard_path.read_bytes()
+          ).hexdigest()
+
           assert (
-              rehearsal["writer_candidate_source_sha256"]
+              body["writer_candidate_source_sha256"]
               == candidate_hash
           )
 
           assert (
-              rehearsal["writer_candidate_version"]
-              == "1.1"
+              body["cumulative_cap_guard_source_sha256"]
+              == guard_hash
           )
 
           assert (
-              rehearsal["status_semantics_rehearsal_passed"]
+              body["cumulative_cap_rehearsal_passed"]
               is True
           )
 
           assert (
-              rehearsal[
-                  "candidate_transport_constant_false_before_after"
-              ]
+              body["complete_authorized_id_reconstruction_verified"]
               is True
           )
 
           assert (
-              rehearsal[
-                  "candidate_public_execution_constant_false_before_after"
-              ]
+              body["sell_restart_buy_exact_cap_verified"]
               is True
           )
 
           assert (
-              rehearsal["real_alpaca_credentials_supplied"]
-              is False
-          )
-
-          assert (
-              rehearsal["real_broker_network_access"]
-              is False
-          )
-
-          assert (
-              rehearsal["real_broker_get_requests"]
-              == 0
-          )
-
-          assert (
-              rehearsal["real_broker_post_requests"]
-              == 0
-          )
-
-          assert (
-              rehearsal["orders_submitted_to_alpaca"]
-              == 0
-          )
-
-          assert (
-              rehearsal["filled_existing_order_recovery_verified"]
+              body["single_permit_ceiling_across_phases_verified"]
               is True
           )
 
           assert (
-              rehearsal["filled_existing_order_posts"]
-              == 0
+              body["exact_cap_projected_final_usd"]
+              == 100.0
           )
 
           assert (
-              rehearsal["no_resubmit_status_posts"]
-              == 0
+              body["over_cap_attempted_projected_usd"]
+              == 100.01
           )
 
           assert (
-              rehearsal["terminal_failure_posts"]
-              == 0
-          )
-
-          assert (
-              rehearsal["unsafe_status_posts"]
-              == 0
-          )
-
-          assert (
-              rehearsal["structural_mismatch_posts"]
-              == 0
-          )
-
-          assert (
-              rehearsal["response_loss_restart_verified"]
+              body["over_cap_blocked_before_writer"]
               is True
           )
 
           assert (
-              rehearsal["response_loss_restart_new_posts"]
+              body["over_cap_writer_posts"]
               == 0
           )
 
           assert (
-              rehearsal["response_loss_duplicate_suppression"]
+              body["lost_response_recovery_verified"]
               is True
           )
 
           assert (
-              rehearsal[
-                  "automatic_resubmission_after_failed_terminal_status"
-              ]
-              is False
-          )
-
-          assert (
-              rehearsal[
-                  "automatic_resubmission_after_unsafe_status"
-              ]
-              is False
-          )
-
-          assert (
-              rehearsal["cumulative_cap_hardening_tested"]
-              is False
-          )
-
-          assert (
-              rehearsal["cumulative_cap_hardening_still_required"]
-              is True
-          )
-
-          assert (
-              rehearsal["live_execution_authorized"]
-              is False
-          )
-
-          assert (
-              rehearsal["permit_issued"]
-              is False
-          )
-
-          assert (
-              float(
-                  rehearsal["max_live_execution_notional_usd"]
-              )
+              body["lost_response_restart_new_gross_usd"]
               == 0.0
           )
 
           assert (
-              rehearsal["writer_connected"]
+              body["lost_response_restart_new_posts"]
+              == 0
+          )
+
+          assert (
+              body["partial_fill_full_original_notional_consumed"]
+              is True
+          )
+
+          assert (
+              body["terminal_failure_continuation_blocked"]
+              is True
+          )
+
+          assert (
+              body["unsafe_history_continuation_blocked"]
+              is True
+          )
+
+          assert (
+              body["incomplete_lookup_fails_closed"]
+              is True
+          )
+
+          assert (
+              body["historical_over_cap_fails_closed"]
+              is True
+          )
+
+          assert (
+              body["real_alpaca_credentials_supplied"]
               is False
           )
 
-          print("Prior release lock v1.6: PASS")
-          print("Status rehearsal SHA256: PASS")
-          print("Status rehearsal to v1.6 binding: PASS")
+          assert (
+              body["real_broker_network_access"]
+              is False
+          )
+
+          assert (
+              body["orders_submitted_to_alpaca"]
+              == 0
+          )
+
+          assert (
+              body["live_execution_authorized"]
+              is False
+          )
+
+          print("Prior release lock v1.7: PASS")
+          print("Cumulative-cap rehearsal SHA256: PASS")
+          print("Rehearsal-to-v1.7 binding: PASS")
           print("Writer candidate v1.1 binding: PASS")
-          print("Filled restart recovery: PASS")
-          print("Active/partial no-resubmit: PASS")
-          print("Terminal failure rejection: PASS")
-          print("Unsafe/unknown rejection: PASS")
-          print("Lost-response duplicate suppression: PASS")
+          print("Cumulative-cap guard v1.0 binding: PASS")
+          print("Single permit ceiling: PASS")
+          print("Restart reconstruction: PASS")
+          print("Over-cap rejection before writer: PASS")
+          print("Lost-response reconstruction: PASS")
           print("Real broker network access: NONE")
           print("Orders submitted to Alpaca: 0")
-          print("Cumulative-cap hardening still required: YES")
           PY
 
-      - name: Build status-evidence release lock v1.7
+      - name: Build cumulative-cap release lock v1.8
         run: |
           set -euo pipefail
-          python fund100_pre_live_release_lock_v1_7.py
+          python fund100_pre_live_release_lock_v1_8.py
 
-      - name: Verify v1.7 release lock
+      - name: Verify v1.8 release lock
         run: |
           set -euo pipefail
 
@@ -418,87 +386,89 @@ jobs:
 
           assert (
               body["release_lock_builder_version"]
-              == "1.7"
-          )
-
-          assert (
-              body["connected_writer_candidate_version"]
-              == "1.1"
-          )
-
-          assert (
-              body[
-                  "connected_writer_candidate_v1_1_source_locked"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "connected_writer_status_semantics_hardening_required"
-              ]
-              is False
-          )
-
-          assert (
-              body[
-                  "connected_writer_status_semantics_hardening_completed"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "connected_writer_status_semantics_hardening_verified"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "connected_writer_status_rehearsal_artifact_locked"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "connected_writer_response_loss_duplicate_suppression_verified"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "connected_writer_failed_terminal_auto_resubmit_blocked"
-              ]
-              is True
-          )
-
-          assert (
-              body[
-                  "connected_writer_unsafe_auto_resubmit_blocked"
-              ]
-              is True
+              == "1.8"
           )
 
           assert (
               body[
                   "connected_writer_cumulative_cap_recovery_required"
               ]
-              is True
+              is False
           )
 
           assert (
               body[
                   "connected_writer_cumulative_cap_recovery_completed"
               ]
-              is False
+              is True
+          )
+
+          assert (
+              body[
+                  "connected_writer_cumulative_cap_recovery_verified"
+              ]
+              is True
           )
 
           assert (
               body[
                   "connected_writer_cumulative_cap_recovery_release_blocker"
+              ]
+              is False
+          )
+
+          assert (
+              body["cumulative_cap_guard_version"]
+              == "1.0"
+          )
+
+          assert (
+              body["cumulative_cap_guard_source_locked"]
+              is True
+          )
+
+          assert (
+              body["cumulative_cap_rehearsal_artifact_locked"]
+              is True
+          )
+
+          assert (
+              body["cumulative_cap_single_permit_ceiling_verified"]
+              is True
+          )
+
+          assert (
+              body["cumulative_cap_restart_reconstruction_verified"]
+              is True
+          )
+
+          assert (
+              body["cumulative_cap_double_count_prevention_verified"]
+              is True
+          )
+
+          assert (
+              body["cumulative_cap_duplicate_post_prevention_verified"]
+              is True
+          )
+
+          assert (
+              body[
+                  "connected_writer_execution_orchestrator_required"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "connected_writer_execution_orchestrator_completed"
+              ]
+              is False
+          )
+
+          assert (
+              body[
+                  "connected_writer_execution_orchestrator_release_blocker"
               ]
               is True
           )
@@ -572,24 +542,25 @@ jobs:
               == 0
           )
 
-          hashes = body["critical_file_sha256"]
+          hashes = body[
+              "critical_file_sha256"
+          ]
 
           required = [
-              "fund100_alpaca_live_writer_candidate_v1_1.py",
-              "test_fund100_alpaca_live_writer_candidate_v1_1.py",
-              "audit_fund100_live_boundary_v1_14.py",
-              "audit_fund100_live_boundary_v1_15.py",
-              "fund100_alpaca_live_writer_status_rehearsal_v1_0.py",
-              "test_fund100_alpaca_live_writer_status_rehearsal_v1_0.py",
+              "fund100_alpaca_live_cumulative_cap_guard_v1_0.py",
+              "test_fund100_alpaca_live_cumulative_cap_guard_v1_0.py",
+              "audit_fund100_live_boundary_v1_16.py",
+              "audit_fund100_live_boundary_v1_17.py",
+              "fund100_alpaca_live_cumulative_cap_rehearsal_v1_0.py",
+              "test_fund100_alpaca_live_cumulative_cap_rehearsal_v1_0.py",
               ".github/workflows/"
-              "fund100-live-writer-status-rehearsal.yml",
+              "fund100-live-cumulative-cap-rehearsal.yml",
               "live_dryrun_outputs/v5_002/"
-              "live_writer_status_rehearsal_v1_0.json",
+              "live_cumulative_cap_rehearsal_v1_0.json",
               ".github/workflows/fund100-live-static-audit.yml",
-              "fund100_pre_live_release_lock_v1_7.py",
-              "test_fund100_pre_live_release_lock_v1_7.py",
-              ".github/workflows/"
-              "fund100-pre-live-release-lock.yml",
+              "fund100_pre_live_release_lock_v1_8.py",
+              "test_fund100_pre_live_release_lock_v1_8.py",
+              ".github/workflows/fund100-pre-live-release-lock.yml",
           ]
 
           for filename in required:
@@ -614,10 +585,10 @@ jobs:
           )
 
           print("Release-lock SHA256: PASS")
-          print("Writer candidate v1.1: LOCKED")
-          print("Status/restart rehearsal: LOCKED")
           print("Status-semantics hardening: COMPLETE")
-          print("Cumulative-cap recovery hardening: REQUIRED")
+          print("Cumulative-cap recovery hardening: COMPLETE")
+          print("Cumulative-cap evidence: LOCKED")
+          print("Execution orchestrator integration required: YES")
           print("Candidate transport released: FALSE")
           print("Candidate public execution enabled: FALSE")
           print("Live execution authorized: FALSE")
@@ -668,7 +639,7 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Commit status-evidence release lock
+      - name: Commit cumulative-cap release lock
         if: steps.lock_check.outputs.changed == 'true'
         run: |
           set -euo pipefail
@@ -690,7 +661,7 @@ jobs:
           fi
 
           git commit \
-            -m "Freeze V5-002 writer status evidence"
+            -m "Freeze V5-002 cumulative cap evidence"
 
           if [ -n "$(git status --porcelain)" ]; then
             echo "Unexpected dirty working tree."
@@ -704,20 +675,22 @@ jobs:
       - name: Final safety status
         run: |
           echo "========================================"
-          echo "FUND-100 STATUS-SEMANTICS BASELINE LOCK COMPLETE"
+          echo "FUND-100 CUMULATIVE-CAP BASELINE LOCK COMPLETE"
           echo "========================================"
           echo "Broker credentials supplied: NO"
           echo "Broker network access: NONE"
           echo "Writer candidate v1.1: LOCKED"
-          echo "Status/restart rehearsal evidence: LOCKED"
-          echo "Filled restart recovery: LOCKED"
-          echo "Active/partial no-resubmit: LOCKED"
-          echo "Canceled/expired/rejected rejection: LOCKED"
-          echo "Ambiguous/unknown/missing rejection: LOCKED"
-          echo "Lost-response duplicate suppression: LOCKED"
           echo "Status-semantics hardening: COMPLETE"
-          echo "Cumulative-cap recovery hardening: REQUIRED"
-          echo "Cumulative-cap recovery release blocker: YES"
+          echo "Cumulative-cap guard v1.0: LOCKED"
+          echo "Cumulative-cap rehearsal evidence: LOCKED"
+          echo "Single permit ceiling across phases: LOCKED"
+          echo "Restart broker reconstruction: LOCKED"
+          echo "Lost-response reconstruction: LOCKED"
+          echo "Double-count prevention: LOCKED"
+          echo "Duplicate-POST prevention: LOCKED"
+          echo "Cumulative-cap hardening: COMPLETE"
+          echo "Execution orchestrator integration required: YES"
+          echo "Execution orchestrator release blocker: YES"
           echo "Candidate transport released: FALSE"
           echo "Candidate public execution enabled: FALSE"
           echo "Connected-writer LIVE release still required: YES"
