@@ -37,27 +37,38 @@ from fund100_broker_safety import (
 #
 # Sequence:
 #
-#   1. Verify release lock v1.5.
-#   2. Verify candidate source hash.
-#   3. Require kill switch ENGAGED.
-#   4. Require Alpaca PAPER market CLOSED.
-#   5. Require no existing PAPER open orders.
-#   6. Redirect candidate transport IN MEMORY to paper host.
-#   7. Use exact candidate:
+# 1. Verify release lock v1.5.
+# 2. Verify candidate source hash.
+# 3. Require kill switch ENGAGED.
+# 4. Require Alpaca PAPER market CLOSED.
+# 5. Require no genuinely open PAPER orders.
+# 6. Redirect candidate transport IN MEMORY to PAPER.
+# 7. Exercise exact writer candidate:
 #
-#          GET client_order_id
-#          POST $1 PAPER test order
+#       GET client_order_id
+#       POST $1 PAPER order
 #
-#   8. Run same batch again:
+# 8. Exercise restart:
 #
-#          GET client_order_id
-#          existing matching order
-#          NO duplicate POST
+#       GET client_order_id
+#       existing matching order
+#       NO duplicate POST
 #
-#   9. Restore candidate immediately.
-#  10. Cancel PAPER order.
-#  11. Verify zero fill and canceled/expired/rejected state.
-#  12. Persist structural evidence only.
+# 9. Restore candidate immediately.
+# 10. Cancel the PAPER order.
+# 11. Poll direct order state until terminal + zero-fill.
+# 12. Poll the account-wide open-order index until it
+#     converges with that terminal state.
+# 13. Persist structural evidence only.
+#
+# Alpaca cancellation is asynchronous. A successful DELETE
+# means the cancel request was accepted; an order can pass
+# through pending_cancel before all API views converge.
+#
+# We therefore require BOTH:
+#
+# - direct order endpoint => terminal + zero-fill
+# - open-order index => eventual absence of the test order
 #
 # ============================================================
 
@@ -124,6 +135,13 @@ SAFE_TERMINAL_STATUSES = {
 }
 
 
+TERMINAL_POLL_ATTEMPTS = 45
+
+OPEN_INDEX_POLL_ATTEMPTS = 45
+
+POLL_INTERVAL_SECONDS = 1.0
+
+
 # ============================================================
 # HASHING
 # ============================================================
@@ -172,6 +190,13 @@ def load_json(
     path: Path,
 ):
 
+    if not path.exists():
+
+        raise RuntimeError(
+            "PAPER PARITY STOP: "
+            f"required file missing: {path}"
+        )
+
     with path.open(
         "r",
         encoding="utf-8",
@@ -184,19 +209,42 @@ def load_json(
 
 def verify_release_lock():
 
-    package = load_json(
-        LOCK_PATH
+    package = (
+        load_json(
+            LOCK_PATH
+        )
     )
 
-    body = package[
+    if not isinstance(
+        package,
+        dict,
+    ):
+
+        raise RuntimeError(
+            "PAPER PARITY STOP: "
+            "invalid release-lock package."
+        )
+
+    body = package.get(
         "release_lock"
-    ]
+    )
 
     recorded = str(
-        package[
-            "release_lock_sha256"
-        ]
+        package.get(
+            "release_lock_sha256",
+            "",
+        )
     )
+
+    if not isinstance(
+        body,
+        dict,
+    ):
+
+        raise RuntimeError(
+            "PAPER PARITY STOP: "
+            "release-lock body missing."
+        )
 
     if (
         sha256_json(
@@ -320,10 +368,23 @@ def verify_release_lock():
             "live ceiling is not $0.00."
         )
 
+    hashes = body.get(
+        "critical_file_sha256",
+        {},
+    )
+
+    if not isinstance(
+        hashes,
+        dict,
+    ):
+
+        raise RuntimeError(
+            "PAPER PARITY STOP: "
+            "critical-file map missing."
+        )
+
     expected_candidate_hash = (
-        body[
-            "critical_file_sha256"
-        ].get(
+        hashes.get(
             "fund100_alpaca_live_writer_candidate_v1_0.py"
         )
     )
@@ -563,8 +624,10 @@ def paper_candidate_transport(
             request.full_url
         )
 
-        parsed = urlparse(
-            url
+        parsed = (
+            urlparse(
+                url
+            )
         )
 
         if (
@@ -615,10 +678,8 @@ def paper_candidate_transport(
         )
 
     # --------------------------------------------------------
-    # Order matters.
-    #
-    # Install PAPER destination and host-rejecting urlopen
-    # BEFORE guards are bypassed.
+    # Install the PAPER-only destination BEFORE guards are
+    # bypassed.
     # --------------------------------------------------------
 
     candidate.LIVE_BASE_URL = (
@@ -697,7 +758,7 @@ def paper_candidate_transport(
 
 
 # ============================================================
-# PAPER ACCOUNT PRECHECK
+# PAPER ACCOUNT VALIDATION
 # ============================================================
 
 
@@ -809,8 +870,20 @@ def verify_market_closed(
 
 
 # ============================================================
-# CLEANUP
+# ORDER-STATE HELPERS
 # ============================================================
+
+
+def normalized_status(
+    order: dict,
+) -> str:
+
+    return str(
+        order.get(
+            "status",
+            "",
+        )
+    ).strip().lower()
 
 
 def zero_filled_quantity(
@@ -837,6 +910,262 @@ def zero_filled_quantity(
     ):
 
         return False
+
+
+def is_safe_terminal_zero_fill(
+    order: dict,
+) -> bool:
+
+    return (
+        normalized_status(
+            order
+        )
+        in SAFE_TERMINAL_STATUSES
+        and
+        zero_filled_quantity(
+            order
+        )
+    )
+
+
+def get_direct_order_for_index_item(
+    *,
+    item: dict,
+    key: str,
+    secret: str,
+):
+
+    order_id = str(
+        item.get(
+            "id",
+            "",
+        )
+    ).strip()
+
+    if order_id:
+
+        return paper.get_order_by_id(
+            order_id=
+                order_id,
+
+            key=
+                key,
+
+            secret=
+                secret,
+        )
+
+    client_order_id = str(
+        item.get(
+            "client_order_id",
+            "",
+        )
+    ).strip()
+
+    if client_order_id:
+
+        return paper.get_order_by_client_id(
+            client_order_id=
+                client_order_id,
+
+            key=
+                key,
+
+            secret=
+                secret,
+        )
+
+    return None
+
+
+def classify_open_order_snapshot(
+    *,
+    open_orders: list,
+    key: str,
+    secret: str,
+):
+
+    if not isinstance(
+        open_orders,
+        list,
+    ):
+
+        raise RuntimeError(
+            "PAPER PARITY STOP: "
+            "invalid open-order response."
+        )
+
+    genuinely_open = []
+
+    stale_terminal = []
+
+    indeterminate = []
+
+    for item in open_orders:
+
+        if not isinstance(
+            item,
+            dict,
+        ):
+
+            indeterminate.append(
+                item
+            )
+
+            continue
+
+        direct = (
+            get_direct_order_for_index_item(
+                item=
+                    item,
+
+                key=
+                    key,
+
+                secret=
+                    secret,
+            )
+        )
+
+        if not isinstance(
+            direct,
+            dict,
+        ):
+
+            indeterminate.append(
+                item
+            )
+
+            continue
+
+        status = (
+            normalized_status(
+                direct
+            )
+        )
+
+        if (
+            status
+            in SAFE_TERMINAL_STATUSES
+        ):
+
+            # The list endpoint can temporarily lag the
+            # direct order endpoint after cancellation.
+            stale_terminal.append(
+                item
+            )
+
+            continue
+
+        genuinely_open.append(
+            item
+        )
+
+    return {
+        "genuinely_open":
+            genuinely_open,
+
+        "stale_terminal":
+            stale_terminal,
+
+        "indeterminate":
+            indeterminate,
+    }
+
+
+def get_open_orders(
+    *,
+    key: str,
+    secret: str,
+):
+
+    result = (
+        paper.get_json(
+            path="/v2/orders",
+            key=key,
+            secret=secret,
+            params={
+                "status":
+                    "open",
+
+                "limit":
+                    100,
+            },
+        )
+    )
+
+    if not isinstance(
+        result,
+        list,
+    ):
+
+        raise RuntimeError(
+            "PAPER PARITY STOP: "
+            "invalid open-order response."
+        )
+
+    return result
+
+
+def verify_no_genuinely_open_orders_before_test(
+    *,
+    key: str,
+    secret: str,
+):
+
+    open_orders = (
+        get_open_orders(
+            key=key,
+            secret=secret,
+        )
+    )
+
+    classified = (
+        classify_open_order_snapshot(
+            open_orders=
+                open_orders,
+
+            key=
+                key,
+
+            secret=
+                secret,
+        )
+    )
+
+    if (
+        classified[
+            "indeterminate"
+        ]
+    ):
+
+        raise RuntimeError(
+            "PAPER PARITY STOP: "
+            "paper open-order state is indeterminate."
+        )
+
+    if (
+        classified[
+            "genuinely_open"
+        ]
+    ):
+
+        raise RuntimeError(
+            "PAPER PARITY STOP: "
+            "paper account contains a genuinely "
+            "open order before parity test."
+        )
+
+    return len(
+        classified[
+            "stale_terminal"
+        ]
+    )
+
+
+# ============================================================
+# CLEANUP
+# ============================================================
 
 
 def cleanup_test_order(
@@ -871,11 +1200,17 @@ def cleanup_test_order(
                 "cancel_requested":
                     False,
 
+                "cancel_response_code":
+                    None,
+
                 "terminal_status":
                     "NOT_FOUND",
 
                 "zero_fill":
                     True,
+
+                "terminal_poll_count":
+                    0,
             }
 
         order_id = str(
@@ -914,40 +1249,38 @@ def cleanup_test_order(
             "synthetic paper order received a fill."
         )
 
-    status = str(
-        current.get(
-            "status",
-            "",
-        )
-    ).lower()
-
     cancel_requested = False
 
+    cancel_response_code = None
+
     if (
-        status
+        normalized_status(
+            current
+        )
         not in SAFE_TERMINAL_STATUSES
     ):
 
-        paper.cancel_order(
-            order_id=
-                order_id,
+        cancel_response_code = (
+            paper.cancel_order(
+                order_id=
+                    order_id,
 
-            key=
-                key,
+                key=
+                    key,
 
-            secret=
-                secret,
+                secret=
+                    secret,
+            )
         )
 
         cancel_requested = True
 
-    final = current
-
-    for _ in range(
-        15
+    for poll_number in range(
+        1,
+        TERMINAL_POLL_ATTEMPTS + 1,
     ):
 
-        final = (
+        current = (
             paper.get_order_by_id(
                 order_id=
                     order_id,
@@ -961,7 +1294,7 @@ def cleanup_test_order(
         )
 
         if not zero_filled_quantity(
-            final
+            current
         ):
 
             raise RuntimeError(
@@ -969,15 +1302,14 @@ def cleanup_test_order(
                 "synthetic paper order received a fill."
             )
 
-        final_status = str(
-            final.get(
-                "status",
-                "",
+        status = (
+            normalized_status(
+                current
             )
-        ).lower()
+        )
 
         if (
-            final_status
+            status
             in SAFE_TERMINAL_STATUSES
         ):
 
@@ -988,21 +1320,220 @@ def cleanup_test_order(
                 "cancel_requested":
                     cancel_requested,
 
+                "cancel_response_code":
+                    cancel_response_code,
+
                 "terminal_status":
-                    final_status.upper(),
+                    status.upper(),
 
                 "zero_fill":
                     True,
+
+                "terminal_poll_count":
+                    poll_number,
             }
 
         time.sleep(
-            1
+            POLL_INTERVAL_SECONDS
         )
 
     raise RuntimeError(
         "PAPER PARITY CLEANUP STOP: "
         "paper test order did not reach "
-        "a safe terminal state."
+        "a terminal zero-fill state."
+    )
+
+
+def wait_for_test_order_absent_from_open_index(
+    *,
+    client_order_id: str,
+    order_id: str,
+    key: str,
+    secret: str,
+):
+
+    stale_observations = 0
+
+    for poll_number in range(
+        1,
+        OPEN_INDEX_POLL_ATTEMPTS + 1,
+    ):
+
+        open_orders = (
+            get_open_orders(
+                key=key,
+                secret=secret,
+            )
+        )
+
+        matching = [
+            item
+            for item
+            in open_orders
+            if (
+                str(
+                    item.get(
+                        "client_order_id",
+                        "",
+                    )
+                )
+                == client_order_id
+                or
+                str(
+                    item.get(
+                        "id",
+                        "",
+                    )
+                )
+                == order_id
+            )
+        ]
+
+        if not matching:
+
+            return {
+                "converged":
+                    True,
+
+                "poll_count":
+                    poll_number,
+
+                "stale_open_index_observations":
+                    stale_observations,
+            }
+
+        direct = (
+            paper.get_order_by_id(
+                order_id=
+                    order_id,
+
+                key=
+                    key,
+
+                secret=
+                    secret,
+            )
+        )
+
+        if not zero_filled_quantity(
+            direct
+        ):
+
+            raise RuntimeError(
+                "PAPER PARITY CLEANUP STOP: "
+                "synthetic paper order received a fill "
+                "while waiting for open-order index "
+                "convergence."
+            )
+
+        direct_status = (
+            normalized_status(
+                direct
+            )
+        )
+
+        if (
+            direct_status
+            in SAFE_TERMINAL_STATUSES
+        ):
+
+            stale_observations += 1
+
+        time.sleep(
+            POLL_INTERVAL_SECONDS
+        )
+
+    # --------------------------------------------------------
+    # Final direct state check before failing.
+    #
+    # We do NOT silently accept a permanently stale open-order
+    # index. Both views must converge for parity evidence.
+    # --------------------------------------------------------
+
+    direct = (
+        paper.get_order_by_id(
+            order_id=
+                order_id,
+
+            key=
+                key,
+
+            secret=
+                secret,
+        )
+    )
+
+    if not zero_filled_quantity(
+        direct
+    ):
+
+        raise RuntimeError(
+            "PAPER PARITY CLEANUP STOP: "
+            "synthetic paper order received a fill."
+        )
+
+    raise RuntimeError(
+        "PAPER PARITY CLEANUP STOP: "
+        "direct order state is "
+        f"{normalized_status(direct)!r} but "
+        "the PAPER open-order index did not converge."
+    )
+
+
+def verify_no_genuinely_open_orders_after_test(
+    *,
+    key: str,
+    secret: str,
+):
+
+    open_orders = (
+        get_open_orders(
+            key=key,
+            secret=secret,
+        )
+    )
+
+    classified = (
+        classify_open_order_snapshot(
+            open_orders=
+                open_orders,
+
+            key=
+                key,
+
+            secret=
+                secret,
+        )
+    )
+
+    if (
+        classified[
+            "indeterminate"
+        ]
+    ):
+
+        raise RuntimeError(
+            "PAPER PARITY STOP: "
+            "final paper open-order state "
+            "is indeterminate."
+        )
+
+    if (
+        classified[
+            "genuinely_open"
+        ]
+    ):
+
+        raise RuntimeError(
+            "PAPER PARITY STOP: "
+            "paper account contains a genuinely "
+            "open order after parity cleanup."
+        )
+
+    return len(
+        classified[
+            "stale_terminal"
+        ]
     )
 
 
@@ -1018,7 +1549,23 @@ def build_safe_output(
     client_order_id: str,
     counters: dict,
     cleanup: dict,
+    open_index: dict | None = None,
+    precheck_stale_terminal_count: int = 0,
+    final_stale_terminal_count: int = 0,
 ):
+
+    if open_index is None:
+
+        open_index = {
+            "converged":
+                True,
+
+            "poll_count":
+                1,
+
+            "stale_open_index_observations":
+                0,
+        }
 
     body = {
         "schema":
@@ -1115,6 +1662,51 @@ def build_safe_output(
             cleanup[
                 "zero_fill"
             ],
+
+        "paper_cancel_requested":
+            cleanup.get(
+                "cancel_requested",
+                False,
+            ),
+
+        "paper_cancel_response_code":
+            cleanup.get(
+                "cancel_response_code"
+            ),
+
+        "terminal_state_poll_count":
+            cleanup.get(
+                "terminal_poll_count",
+                0,
+            ),
+
+        "open_order_index_converged":
+            open_index[
+                "converged"
+            ],
+
+        "open_order_index_poll_count":
+            open_index[
+                "poll_count"
+            ],
+
+        "open_order_index_stale_observations":
+            open_index[
+                "stale_open_index_observations"
+            ],
+
+        "precheck_stale_terminal_entries_ignored":
+            int(
+                precheck_stale_terminal_count
+            ),
+
+        "final_stale_terminal_entries":
+            int(
+                final_stale_terminal_count
+            ),
+
+        "final_genuinely_open_orders":
+            0,
 
         "paper_position_created":
             False,
@@ -1255,38 +1847,12 @@ def main():
         clock
     )
 
-    open_orders = (
-        paper.get_json(
-            path="/v2/orders",
+    precheck_stale_count = (
+        verify_no_genuinely_open_orders_before_test(
             key=key,
             secret=secret,
-            params={
-                "status":
-                    "open",
-
-                "limit":
-                    100,
-            },
         )
     )
-
-    if not isinstance(
-        open_orders,
-        list,
-    ):
-
-        raise RuntimeError(
-            "PAPER PARITY STOP: "
-            "invalid open-order response."
-        )
-
-    if open_orders:
-
-        raise RuntimeError(
-            "PAPER PARITY STOP: "
-            "paper account must have zero open orders "
-            "before transport parity."
-        )
 
     permit = (
         build_synthetic_permit()
@@ -1320,6 +1886,8 @@ def main():
     restart_status = None
 
     cleanup = None
+
+    open_index = None
 
     try:
 
@@ -1358,7 +1926,10 @@ def main():
                 ]
             )
 
-            if first_status != "SUBMITTED":
+            if (
+                first_status
+                != "SUBMITTED"
+            ):
 
                 raise RuntimeError(
                     "PAPER PARITY STOP: "
@@ -1475,7 +2046,10 @@ def main():
             )
         )
 
-    if first_status != "SUBMITTED":
+    if (
+        first_status
+        != "SUBMITTED"
+    ):
 
         raise RuntimeError(
             "PAPER PARITY STOP: "
@@ -1504,38 +2078,60 @@ def main():
             "paper test was not zero-fill."
         )
 
-    final_open_orders = (
-        paper.get_json(
-            path="/v2/orders",
-            key=key,
-            secret=secret,
-            params={
-                "status":
-                    "open",
+    if (
+        cleanup[
+            "terminal_status"
+        ].lower()
+        not in SAFE_TERMINAL_STATUSES
+    ):
 
-                "limit":
-                    100,
-            },
+        raise RuntimeError(
+            "PAPER PARITY STOP: "
+            "paper test order did not finish terminal."
+        )
+
+    if not order_id:
+
+        raise RuntimeError(
+            "PAPER PARITY STOP: "
+            "paper broker order ID missing "
+            "before open-index convergence."
+        )
+
+    open_index = (
+        wait_for_test_order_absent_from_open_index(
+            client_order_id=
+                client_order_id,
+
+            order_id=
+                order_id,
+
+            key=
+                key,
+
+            secret=
+                secret,
         )
     )
 
-    for item in final_open_orders:
+    if (
+        open_index[
+            "converged"
+        ]
+        is not True
+    ):
 
-        if (
-            str(
-                item.get(
-                    "client_order_id",
-                    "",
-                )
-            )
-            == client_order_id
-        ):
+        raise RuntimeError(
+            "PAPER PARITY STOP: "
+            "paper open-order index did not converge."
+        )
 
-            raise RuntimeError(
-                "PAPER PARITY STOP: "
-                "synthetic paper test order "
-                "remains open after cleanup."
-            )
+    final_stale_count = (
+        verify_no_genuinely_open_orders_after_test(
+            key=key,
+            secret=secret,
+        )
+    )
 
     package = (
         build_safe_output(
@@ -1553,6 +2149,15 @@ def main():
 
             cleanup=
                 cleanup,
+
+            open_index=
+                open_index,
+
+            precheck_stale_terminal_count=
+                precheck_stale_count,
+
+            final_stale_terminal_count=
+                final_stale_count,
         )
     )
 
@@ -1577,7 +2182,6 @@ def main():
             "\n"
         )
 
-    # Remove credential/synthetic object references.
     key = None
     secret = None
     permit = None
@@ -1604,7 +2208,7 @@ def main():
     )
 
     print(
-        "Pre-existing PAPER open orders: 0"
+        "Genuinely open PAPER orders before test: 0"
     )
 
     print(
@@ -1628,7 +2232,11 @@ def main():
     )
 
     print(
-        "PAPER cleanup: PASS"
+        "Direct PAPER terminal-state cleanup: PASS"
+    )
+
+    print(
+        "PAPER open-order index convergence: PASS"
     )
 
     print(
@@ -1637,6 +2245,10 @@ def main():
 
     print(
         "PAPER position created: NO"
+    )
+
+    print(
+        "Genuinely open PAPER orders after test: 0"
     )
 
     print(
@@ -1685,7 +2297,11 @@ def main():
     )
 
     print(
-        "Paper cleanup / zero-fill: PASS"
+        "Paper direct-order cleanup / zero-fill: PASS"
+    )
+
+    print(
+        "Paper open-order index convergence: PASS"
     )
 
     print(
