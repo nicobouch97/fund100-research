@@ -117,22 +117,30 @@ jobs:
           set -euo pipefail
 
           python - <<'PY'
+          import ast
           import hashlib
           import json
           from pathlib import Path
 
-          import fund100_alpaca_live_writer_candidate_v1_0 as candidate
-
           root = Path.cwd()
 
-          path = (
+          lock_path = (
               root
               / "release_outputs"
               / "v5_002"
               / "pre_live_release_lock.json"
           )
 
-          with path.open(
+          candidate_path = (
+              root
+              / "fund100_alpaca_live_writer_candidate_v1_0.py"
+          )
+
+          # ==================================================
+          # LOAD RELEASE LOCK
+          # ==================================================
+
+          with lock_path.open(
               "r",
               encoding="utf-8",
           ) as handle:
@@ -155,6 +163,10 @@ jobs:
               calculated
               == package["release_lock_sha256"]
           )
+
+          # ==================================================
+          # RELEASE LOCK CONTRACT
+          # ==================================================
 
           assert (
               body["schema"]
@@ -287,23 +299,96 @@ jobs:
               == 0
           )
 
-          # ----------------------------------------------
-          # Actual candidate module must still be locked.
-          # ----------------------------------------------
+          # ==================================================
+          # VERIFY CANDIDATE RELEASE CONSTANTS WITHOUT IMPORTING
+          #
+          # Static Audit v1.11 intentionally prohibits any
+          # workflow from importing the writer candidate.
+          #
+          # Therefore inspect its source AST only.
+          # ==================================================
+
+          candidate_source = (
+              candidate_path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          candidate_tree = ast.parse(
+              candidate_source
+          )
+
+          constants = {}
+
+          for node in candidate_tree.body:
+
+              if not isinstance(
+                  node,
+                  ast.Assign,
+              ):
+
+                  continue
+
+              if (
+                  len(
+                      node.targets
+                  )
+                  != 1
+              ):
+
+                  continue
+
+              target = node.targets[0]
+
+              if not isinstance(
+                  target,
+                  ast.Name,
+              ):
+
+                  continue
+
+              if (
+                  target.id
+                  not in {
+                      "TRANSPORT_RELEASED",
+                      "PUBLIC_EXECUTION_ENABLED",
+                  }
+              ):
+
+                  continue
+
+              if not isinstance(
+                  node.value,
+                  ast.Constant,
+              ):
+
+                  raise AssertionError(
+                      f"{target.id} must be a literal constant."
+                  )
+
+              constants[
+                  target.id
+              ] = (
+                  node.value.value
+              )
 
           assert (
-              candidate.TRANSPORT_RELEASED
+              constants.get(
+                  "TRANSPORT_RELEASED"
+              )
               is False
           )
 
           assert (
-              candidate.PUBLIC_EXECUTION_ENABLED
+              constants.get(
+                  "PUBLIC_EXECUTION_ENABLED"
+              )
               is False
           )
 
-          # ----------------------------------------------
-          # Required files must be exact hash matches.
-          # ----------------------------------------------
+          # ==================================================
+          # REQUIRED HASH BINDINGS
+          # ==================================================
 
           hashes = (
               body[
@@ -339,6 +424,10 @@ jobs:
                   == actual
               )
 
+          # ==================================================
+          # REPORT
+          # ==================================================
+
           print(
               "Release-lock SHA256: PASS"
           )
@@ -364,11 +453,15 @@ jobs:
           )
 
           print(
-              "Candidate transport released: FALSE"
+              "Candidate source inspected without import: PASS"
           )
 
           print(
-              "Candidate public execution enabled: FALSE"
+              "Candidate TRANSPORT_RELEASED literal: FALSE"
+          )
+
+          print(
+              "Candidate PUBLIC_EXECUTION_ENABLED literal: FALSE"
           )
 
           print(
@@ -404,6 +497,7 @@ jobs:
 
             echo "Unexpected working-tree changes detected:"
             echo "$EXTRA"
+
             git status --short
             exit 1
 
@@ -582,6 +676,7 @@ jobs:
           echo "Static Audit v1.11: LOCKED"
           echo "Candidate transport released: FALSE"
           echo "Candidate public execution enabled: FALSE"
+          echo "Candidate workflow import: NONE"
           echo "Offline connected-writer rehearsal required: YES"
           echo "Automatic activation allowed: FALSE"
           echo "Live execution authorized: FALSE"
