@@ -1,0 +1,265 @@
+name: Fund-100 Connected Alpaca PAPER Orchestrator
+
+on:
+  workflow_dispatch:
+    inputs:
+      connected_test_arm:
+        description: "Run the one-time connected PAPER orchestrator integration"
+        required: true
+        default: "YES"
+        type: choice
+        options:
+          - "YES"
+          - "NO"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-connected-alpaca-paper-orchestrator
+  cancel-in-progress: false
+
+env:
+  FUND100_BROKER_KILL_SWITCH: ENGAGED
+  FUND100_PAPER_ORCHESTRATOR_TEST_ARM: ${{ inputs.connected_test_arm }}
+
+jobs:
+  connected-paper:
+    name: Run Connected PAPER Orchestrator v1.0
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify connected test arm
+        run: |
+          set -euo pipefail
+
+          if [ "${FUND100_PAPER_ORCHESTRATOR_TEST_ARM}" != "YES" ]; then
+            echo "STOP: connected PAPER test arm is not YES."
+            exit 1
+          fi
+
+      - name: Verify LIVE kill switch remains engaged
+        run: |
+          set -euo pipefail
+
+          if [ "${FUND100_BROKER_KILL_SWITCH}" != "ENGAGED" ]; then
+            echo "STOP: broker kill switch is not ENGAGED."
+            exit 1
+          fi
+
+          echo "FUND100_BROKER_KILL_SWITCH = ENGAGED"
+
+      - name: Run complete regression suite
+        run: |
+          set -euo pipefail
+          pytest -q
+
+      - name: Verify Release Lock v1.9 evidence exists
+        run: |
+          set -euo pipefail
+
+          test -f \
+            live_activation_outputs/v5_002/pre_live_release_lock_v1_9.json
+
+          echo "Release Lock v1.9 evidence: PRESENT"
+
+      - name: Run connected Alpaca PAPER orchestrator
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+        run: |
+          set -euo pipefail
+
+          python \
+            fund100_alpaca_paper_orchestrator_connected_v1_0.py
+
+      - name: Verify connected PAPER evidence
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path(
+              "live_activation_outputs/v5_002/"
+              "connected_paper_orchestrator_v1_0.json"
+          )
+
+          if not path.exists():
+              raise SystemExit(
+                  "STOP: connected PAPER evidence missing."
+              )
+
+          body = json.loads(
+              path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          required = {
+              "release_lock_version":
+                  "1.9",
+
+              "broker_environment":
+                  "ALPACA_PAPER_ONLY",
+
+              "live_endpoint_contacted":
+                  False,
+
+              "live_credentials_supplied":
+                  False,
+
+              "broker_kill_switch":
+                  "ENGAGED",
+
+              "writer_candidate_v1_1_transport_released":
+                  False,
+
+              "writer_candidate_v1_1_public_execution_enabled":
+                  False,
+
+              "orchestrator_v1_0_released":
+                  False,
+
+              "market_open_during_test":
+                  False,
+
+              "synthetic_notional_usd":
+                  "1.00",
+
+              "single_paper_ceiling_usd":
+                  "1.00",
+
+              "initial_paper_post_count":
+                  1,
+
+              "total_paper_post_count_after_restart":
+                  1,
+
+              "duplicate_paper_posts":
+                  0,
+
+              "restart_existing_order_recovered":
+                  True,
+
+              "restart_duplicate_suppression":
+                  True,
+
+              "cleanup_zero_fill":
+                  True,
+
+              "open_order_index_converged":
+                  True,
+
+              "genuinely_open_test_orders_after_cleanup":
+                  0,
+
+              "connected_paper_orchestrator_integration":
+                  "PASS",
+
+              "live_execution_authorized":
+                  False,
+
+              "live_permit_issued":
+                  False,
+
+              "maximum_live_execution_notional_usd":
+                  "0.00",
+
+              "live_writer_connected":
+                  False,
+
+              "live_orders_submitted":
+                  0,
+          }
+
+          for key, expected in required.items():
+
+              actual = body.get(
+                  key
+              )
+
+              if actual != expected:
+
+                  raise SystemExit(
+                      "STOP: "
+                      f"{key}: expected {expected!r}, "
+                      f"got {actual!r}"
+                  )
+
+          print(
+              "Connected Alpaca PAPER orchestrator evidence: VERIFIED"
+          )
+          PY
+
+      - name: Commit connected PAPER evidence
+        run: |
+          set -euo pipefail
+
+          git config user.name \
+            "fund100-research-bot"
+
+          git config user.email \
+            "fund100-research-bot@users.noreply.github.com"
+
+          git add \
+            live_activation_outputs/v5_002/connected_paper_orchestrator_v1_0.json
+
+          if git diff --cached --quiet; then
+
+            echo "Connected PAPER evidence unchanged."
+
+          else
+
+            git commit -m \
+              "Record connected Alpaca PAPER orchestrator evidence"
+
+            git push
+
+          fi
+
+      - name: Final integration summary
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "FUND-100 CONNECTED PAPER ORCHESTRATOR COMPLETE"
+          echo "========================================"
+          echo "Release Lock v1.9: VERIFIED"
+          echo "Broker environment: ALPACA PAPER ONLY"
+          echo "Real PAPER account reconstruction: PASS"
+          echo "Real PAPER client-ID lookup: PASS"
+          echo "Cumulative cap before writer: PASS"
+          echo "Initial PAPER POST: PASS"
+          echo "Restart broker reconstruction: PASS"
+          echo "Restart existing-order recovery: PASS"
+          echo "Restart duplicate PAPER POSTs: 0"
+          echo "Direct PAPER cleanup: PASS"
+          echo "Terminal PAPER zero-fill state: PASS"
+          echo "PAPER open-order index convergence: PASS"
+          echo "LIVE credentials supplied: NO"
+          echo "LIVE endpoint contacted: NO"
+          echo "Writer candidate transport released: FALSE"
+          echo "Writer candidate public execution enabled: FALSE"
+          echo "Orchestrator released: FALSE"
+          echo "Live execution authorized: FALSE"
+          echo "Live permit issued: FALSE"
+          echo "Maximum LIVE execution notional: \$0.00"
+          echo "LIVE writer connected: FALSE"
+          echo "LIVE orders submitted: 0"
