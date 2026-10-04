@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   release-lock:
-    name: Freeze PAPER Connected-Writer Parity Evidence
+    name: Freeze Writer Status-Semantics Evidence
 
     runs-on: ubuntu-latest
 
@@ -37,32 +37,40 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify v1.6 inputs
+      - name: Verify v1.7 inputs
         run: |
           set -euo pipefail
 
           test -f fund100_pre_live_release_lock.py
-          test -f fund100_pre_live_release_lock_v1_5.py
           test -f fund100_pre_live_release_lock_v1_6.py
+          test -f fund100_pre_live_release_lock_v1_7.py
 
-          test -f test_fund100_pre_live_release_lock_v1_6.py
+          test -f test_fund100_pre_live_release_lock_v1_7.py
 
-          test -f fund100_alpaca_paper_transport_v1_0.py
-          test -f fund100_alpaca_paper_writer_parity_v1_0.py
-          test -f test_fund100_alpaca_paper_writer_parity_v1_0.py
+          test -f fund100_alpaca_live_writer_candidate_v1_0.py
+          test -f fund100_alpaca_live_writer_candidate_v1_1.py
+
+          test -f test_fund100_alpaca_live_writer_candidate_v1_1.py
+
+          test -f audit_fund100_live_boundary_v1_14.py
+          test -f audit_fund100_live_boundary_v1_15.py
 
           test -f \
-            .github/workflows/fund100-alpaca-paper-writer-parity.yml
+            fund100_alpaca_live_writer_status_rehearsal_v1_0.py
 
           test -f \
-            live_dryrun_outputs/v5_002/paper_connected_writer_parity_v1_0.json
+            test_fund100_alpaca_live_writer_status_rehearsal_v1_0.py
 
-          test -f audit_fund100_live_boundary_v1_13.py
+          test -f \
+            .github/workflows/fund100-live-writer-status-rehearsal.yml
+
+          test -f \
+            live_dryrun_outputs/v5_002/live_writer_status_rehearsal_v1_0.json
 
           test -f \
             release_outputs/v5_002/pre_live_release_lock.json
 
-          echo "Release-lock v1.6 dependencies found."
+          echo "Release-lock v1.7 dependencies found."
 
       - name: Run full Fund-100 test suite
         run: |
@@ -74,31 +82,42 @@ jobs:
           set -euo pipefail
           python audit_v5_002_engine.py
 
-      - name: Re-run LIVE static safety audit v1.13
+      - name: Re-run LIVE static safety audit v1.15
         run: |
           set -euo pipefail
-          python audit_fund100_live_boundary_v1_13.py
+          python audit_fund100_live_boundary_v1_15.py
 
-      - name: Verify committed PAPER parity evidence
+      - name: Verify committed status/restart rehearsal
         run: |
           set -euo pipefail
 
           python - <<'PY'
           import hashlib
           import json
+          from pathlib import Path
+
+          root = Path.cwd()
 
           lock_path = (
-              "release_outputs/v5_002/"
-              "pre_live_release_lock.json"
+              root
+              / "release_outputs"
+              / "v5_002"
+              / "pre_live_release_lock.json"
           )
 
-          parity_path = (
-              "live_dryrun_outputs/v5_002/"
-              "paper_connected_writer_parity_v1_0.json"
+          rehearsal_path = (
+              root
+              / "live_dryrun_outputs"
+              / "v5_002"
+              / "live_writer_status_rehearsal_v1_0.json"
           )
 
-          with open(
-              lock_path,
+          candidate_path = (
+              root
+              / "fund100_alpaca_live_writer_candidate_v1_1.py"
+          )
+
+          with lock_path.open(
               "r",
               encoding="utf-8",
           ) as handle:
@@ -106,7 +125,7 @@ jobs:
 
           lock_body = lock_package["release_lock"]
 
-          lock_canonical = json.dumps(
+          canonical_lock = json.dumps(
               lock_body,
               sort_keys=True,
               separators=(",", ":"),
@@ -115,49 +134,56 @@ jobs:
 
           assert (
               hashlib.sha256(
-                  lock_canonical.encode("utf-8")
+                  canonical_lock.encode("utf-8")
               ).hexdigest()
               == lock_package["release_lock_sha256"]
           )
 
           assert (
               lock_body["release_lock_builder_version"]
-              == "1.5"
+              == "1.6"
           )
 
           assert (
-              lock_body["paper_connected_writer_parity_required"]
+              lock_body[
+                  "connected_writer_status_semantics_hardening_required"
+              ]
               is True
           )
 
           assert (
-              lock_body["paper_connected_writer_parity_completed"]
-              is False
-          )
-
-          assert (
-              lock_body["connected_writer_candidate_transport_released"]
+              lock_body[
+                  "connected_writer_status_semantics_hardening_completed"
+              ]
               is False
           )
 
           assert (
               lock_body[
-                  "connected_writer_candidate_public_execution_enabled"
+                  "connected_writer_cumulative_cap_recovery_required"
+              ]
+              is True
+          )
+
+          assert (
+              lock_body[
+                  "connected_writer_cumulative_cap_recovery_completed"
               ]
               is False
           )
 
-          with open(
-              parity_path,
+          with rehearsal_path.open(
               "r",
               encoding="utf-8",
           ) as handle:
-              parity_package = json.load(handle)
+              rehearsal_package = json.load(handle)
 
-          parity = parity_package["paper_parity"]
+          rehearsal = rehearsal_package[
+              "status_rehearsal"
+          ]
 
-          parity_canonical = json.dumps(
-              parity,
+          canonical_rehearsal = json.dumps(
+              rehearsal,
               sort_keys=True,
               separators=(",", ":"),
               ensure_ascii=True,
@@ -165,139 +191,192 @@ jobs:
 
           assert (
               hashlib.sha256(
-                  parity_canonical.encode("utf-8")
+                  canonical_rehearsal.encode("utf-8")
               ).hexdigest()
-              == parity_package["paper_parity_sha256"]
+              == rehearsal_package[
+                  "status_rehearsal_sha256"
+              ]
           )
 
           assert (
-              parity["source_release_lock_builder_version"]
-              == "1.5"
+              rehearsal["source_release_lock_builder_version"]
+              == "1.6"
           )
 
           assert (
-              parity["source_release_lock_sha256"]
+              rehearsal["source_release_lock_sha256"]
               == lock_package["release_lock_sha256"]
           )
 
+          candidate_hash = hashlib.sha256(
+              candidate_path.read_bytes()
+          ).hexdigest()
+
           assert (
-              parity["first_submission_status"]
-              == "SUBMITTED"
+              rehearsal["writer_candidate_source_sha256"]
+              == candidate_hash
           )
 
           assert (
-              parity["restart_status"]
-              == "EXISTING_MATCHING_ORDER"
+              rehearsal["writer_candidate_version"]
+              == "1.1"
           )
 
           assert (
-              parity["candidate_get_requests"]
-              == 2
-          )
-
-          assert (
-              parity["candidate_post_requests"]
-              == 1
-          )
-
-          assert (
-              parity["duplicate_post_requests"]
-              == 0
-          )
-
-          assert (
-              parity["candidate_non_paper_host_requests"]
-              == 0
-          )
-
-          assert (
-              parity["paper_cancel_requested"]
+              rehearsal["status_semantics_rehearsal_passed"]
               is True
           )
 
           assert (
-              parity["paper_cancel_response_code"]
-              == 204
-          )
-
-          assert (
-              parity["paper_order_terminal_status"]
-              == "CANCELED"
-          )
-
-          assert (
-              parity["paper_order_zero_fill_verified"]
+              rehearsal[
+                  "candidate_transport_constant_false_before_after"
+              ]
               is True
           )
 
           assert (
-              parity["open_order_index_converged"]
+              rehearsal[
+                  "candidate_public_execution_constant_false_before_after"
+              ]
               is True
           )
 
           assert (
-              parity["final_genuinely_open_orders"]
+              rehearsal["real_alpaca_credentials_supplied"]
+              is False
+          )
+
+          assert (
+              rehearsal["real_broker_network_access"]
+              is False
+          )
+
+          assert (
+              rehearsal["real_broker_get_requests"]
               == 0
           )
 
           assert (
-              parity["live_endpoint_contacted"]
+              rehearsal["real_broker_post_requests"]
+              == 0
+          )
+
+          assert (
+              rehearsal["orders_submitted_to_alpaca"]
+              == 0
+          )
+
+          assert (
+              rehearsal["filled_existing_order_recovery_verified"]
+              is True
+          )
+
+          assert (
+              rehearsal["filled_existing_order_posts"]
+              == 0
+          )
+
+          assert (
+              rehearsal["no_resubmit_status_posts"]
+              == 0
+          )
+
+          assert (
+              rehearsal["terminal_failure_posts"]
+              == 0
+          )
+
+          assert (
+              rehearsal["unsafe_status_posts"]
+              == 0
+          )
+
+          assert (
+              rehearsal["structural_mismatch_posts"]
+              == 0
+          )
+
+          assert (
+              rehearsal["response_loss_restart_verified"]
+              is True
+          )
+
+          assert (
+              rehearsal["response_loss_restart_new_posts"]
+              == 0
+          )
+
+          assert (
+              rehearsal["response_loss_duplicate_suppression"]
+              is True
+          )
+
+          assert (
+              rehearsal[
+                  "automatic_resubmission_after_failed_terminal_status"
+              ]
               is False
           )
 
           assert (
-              parity["live_credentials_supplied"]
+              rehearsal[
+                  "automatic_resubmission_after_unsafe_status"
+              ]
               is False
           )
 
           assert (
-              parity["live_execution_authorized"]
+              rehearsal["cumulative_cap_hardening_tested"]
               is False
           )
 
           assert (
-              parity["live_permit_issued"]
+              rehearsal["cumulative_cap_hardening_still_required"]
+              is True
+          )
+
+          assert (
+              rehearsal["live_execution_authorized"]
+              is False
+          )
+
+          assert (
+              rehearsal["permit_issued"]
               is False
           )
 
           assert (
               float(
-                  parity["live_max_execution_notional_usd"]
+                  rehearsal["max_live_execution_notional_usd"]
               )
               == 0.0
           )
 
           assert (
-              parity["live_writer_connected"]
+              rehearsal["writer_connected"]
               is False
           )
 
-          assert (
-              parity["live_orders_submitted"]
-              == 0
-          )
-
-          print("Prior release lock v1.5: PASS")
-          print("PAPER parity SHA256: PASS")
-          print("Parity-to-v1.5 binding: PASS")
-          print("Candidate GET-before-POST: PASS")
-          print("Candidate POST count: 1")
-          print("Duplicate POST count: 0")
-          print("PAPER cancel response: 204")
-          print("PAPER terminal state: CANCELED")
-          print("PAPER zero-fill: PASS")
-          print("Open-order index convergence: PASS")
-          print("Final genuinely open orders: 0")
-          print("LIVE endpoint contact: NONE")
-          print("LIVE orders submitted: 0")
+          print("Prior release lock v1.6: PASS")
+          print("Status rehearsal SHA256: PASS")
+          print("Status rehearsal to v1.6 binding: PASS")
+          print("Writer candidate v1.1 binding: PASS")
+          print("Filled restart recovery: PASS")
+          print("Active/partial no-resubmit: PASS")
+          print("Terminal failure rejection: PASS")
+          print("Unsafe/unknown rejection: PASS")
+          print("Lost-response duplicate suppression: PASS")
+          print("Real broker network access: NONE")
+          print("Orders submitted to Alpaca: 0")
+          print("Cumulative-cap hardening still required: YES")
           PY
 
-      - name: Build PAPER parity release lock v1.6
+      - name: Build status-evidence release lock v1.7
         run: |
           set -euo pipefail
-          python fund100_pre_live_release_lock_v1_6.py
+          python fund100_pre_live_release_lock_v1_7.py
 
-      - name: Verify v1.6 release lock
+      - name: Verify v1.7 release lock
         run: |
           set -euo pipefail
 
@@ -339,61 +418,68 @@ jobs:
 
           assert (
               body["release_lock_builder_version"]
-              == "1.6"
+              == "1.7"
           )
 
           assert (
-              body["paper_connected_writer_parity_required"]
-              is False
+              body["connected_writer_candidate_version"]
+              == "1.1"
           )
 
           assert (
-              body["paper_connected_writer_parity_completed"]
+              body[
+                  "connected_writer_candidate_v1_1_source_locked"
+              ]
               is True
-          )
-
-          assert (
-              body["paper_connected_writer_parity_verified"]
-              is True
-          )
-
-          assert (
-              body["paper_connected_writer_zero_fill_verified"]
-              is True
-          )
-
-          assert (
-              body["paper_connected_writer_open_index_converged"]
-              is True
-          )
-
-          assert (
-              body["paper_connected_writer_duplicate_posts"]
-              == 0
-          )
-
-          assert (
-              body["paper_connected_writer_live_endpoint_contacts"]
-              == 0
-          )
-
-          assert (
-              body["paper_connected_writer_live_orders"]
-              == 0
           )
 
           assert (
               body[
                   "connected_writer_status_semantics_hardening_required"
               ]
-              is True
+              is False
           )
 
           assert (
               body[
                   "connected_writer_status_semantics_hardening_completed"
               ]
-              is False
+              is True
+          )
+
+          assert (
+              body[
+                  "connected_writer_status_semantics_hardening_verified"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "connected_writer_status_rehearsal_artifact_locked"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "connected_writer_response_loss_duplicate_suppression_verified"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "connected_writer_failed_terminal_auto_resubmit_blocked"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "connected_writer_unsafe_auto_resubmit_blocked"
+              ]
+              is True
           )
 
           assert (
@@ -408,6 +494,13 @@ jobs:
                   "connected_writer_cumulative_cap_recovery_completed"
               ]
               is False
+          )
+
+          assert (
+              body[
+                  "connected_writer_cumulative_cap_recovery_release_blocker"
+              ]
+              is True
           )
 
           assert (
@@ -481,21 +574,20 @@ jobs:
 
           hashes = body["critical_file_sha256"]
 
-          assert (
-              body["critical_file_count"]
-              == len(hashes)
-          )
-
           required = [
-              "fund100_alpaca_paper_transport_v1_0.py",
-              "fund100_alpaca_paper_writer_parity_v1_0.py",
-              "test_fund100_alpaca_paper_writer_parity_v1_0.py",
+              "fund100_alpaca_live_writer_candidate_v1_1.py",
+              "test_fund100_alpaca_live_writer_candidate_v1_1.py",
+              "audit_fund100_live_boundary_v1_14.py",
+              "audit_fund100_live_boundary_v1_15.py",
+              "fund100_alpaca_live_writer_status_rehearsal_v1_0.py",
+              "test_fund100_alpaca_live_writer_status_rehearsal_v1_0.py",
               ".github/workflows/"
-              "fund100-alpaca-paper-writer-parity.yml",
+              "fund100-live-writer-status-rehearsal.yml",
               "live_dryrun_outputs/v5_002/"
-              "paper_connected_writer_parity_v1_0.json",
-              "fund100_pre_live_release_lock_v1_6.py",
-              "test_fund100_pre_live_release_lock_v1_6.py",
+              "live_writer_status_rehearsal_v1_0.json",
+              ".github/workflows/fund100-live-static-audit.yml",
+              "fund100_pre_live_release_lock_v1_7.py",
+              "test_fund100_pre_live_release_lock_v1_7.py",
               ".github/workflows/"
               "fund100-pre-live-release-lock.yml",
           ]
@@ -516,14 +608,18 @@ jobs:
                   == actual
               )
 
+          assert (
+              body["critical_file_count"]
+              == len(hashes)
+          )
+
           print("Release-lock SHA256: PASS")
-          print("PAPER connected-writer parity: LOCKED")
-          print("PAPER zero-fill evidence: LOCKED")
-          print("PAPER restart/idempotency evidence: LOCKED")
+          print("Writer candidate v1.1: LOCKED")
+          print("Status/restart rehearsal: LOCKED")
+          print("Status-semantics hardening: COMPLETE")
+          print("Cumulative-cap recovery hardening: REQUIRED")
           print("Candidate transport released: FALSE")
           print("Candidate public execution enabled: FALSE")
-          print("Status-semantics hardening required: YES")
-          print("Cumulative-cap recovery hardening required: YES")
           print("Live execution authorized: FALSE")
           print("Permit issued: FALSE")
           print("Writer connected: FALSE")
@@ -572,7 +668,7 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Commit PAPER parity release lock
+      - name: Commit status-evidence release lock
         if: steps.lock_check.outputs.changed == 'true'
         run: |
           set -euo pipefail
@@ -594,7 +690,7 @@ jobs:
           fi
 
           git commit \
-            -m "Freeze V5-002 PAPER writer parity evidence"
+            -m "Freeze V5-002 writer status evidence"
 
           if [ -n "$(git status --porcelain)" ]; then
             echo "Unexpected dirty working tree."
@@ -608,20 +704,22 @@ jobs:
       - name: Final safety status
         run: |
           echo "========================================"
-          echo "FUND-100 PAPER-PARITY BASELINE LOCK COMPLETE"
+          echo "FUND-100 STATUS-SEMANTICS BASELINE LOCK COMPLETE"
           echo "========================================"
           echo "Broker credentials supplied: NO"
           echo "Broker network access: NONE"
-          echo "LIVE GET-only pre-connect evidence: LOCKED"
-          echo "PAPER connected-writer parity: LOCKED"
-          echo "PAPER GET-before-POST evidence: LOCKED"
-          echo "PAPER restart duplicate suppression: LOCKED"
-          echo "PAPER zero-fill cleanup: LOCKED"
-          echo "PAPER open-order convergence: LOCKED"
+          echo "Writer candidate v1.1: LOCKED"
+          echo "Status/restart rehearsal evidence: LOCKED"
+          echo "Filled restart recovery: LOCKED"
+          echo "Active/partial no-resubmit: LOCKED"
+          echo "Canceled/expired/rejected rejection: LOCKED"
+          echo "Ambiguous/unknown/missing rejection: LOCKED"
+          echo "Lost-response duplicate suppression: LOCKED"
+          echo "Status-semantics hardening: COMPLETE"
+          echo "Cumulative-cap recovery hardening: REQUIRED"
+          echo "Cumulative-cap recovery release blocker: YES"
           echo "Candidate transport released: FALSE"
           echo "Candidate public execution enabled: FALSE"
-          echo "Status-semantics hardening required: YES"
-          echo "Cumulative-cap recovery hardening required: YES"
           echo "Connected-writer LIVE release still required: YES"
           echo "Automatic activation allowed: FALSE"
           echo "Live execution authorized: FALSE"
