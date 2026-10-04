@@ -35,27 +35,26 @@ permissions:
   contents: read
 
 concurrency:
-  group: fund100-live-static-audit-${{ github.ref }}
+  group: fund100-live-static-safety-audit
   cancel-in-progress: false
 
+env:
+  FUND100_BROKER_KILL_SWITCH: ENGAGED
+
 jobs:
-  static-audit:
-    name: Prove LIVE Boundary Remains Non-Writing
-
+  audit:
+    name: Audit LIVE Boundary Through v1.18
     runs-on: ubuntu-latest
-
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: "pip"
-          cache-dependency-path: requirements.txt
 
       - name: Install dependencies
         run: |
@@ -63,61 +62,49 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify v1.17 audit inputs
+      - name: Verify broker kill switch remains engaged
         run: |
           set -euo pipefail
 
-          test -f audit_fund100_live_boundary_v1_15.py
-          test -f audit_fund100_live_boundary_v1_16.py
-          test -f audit_fund100_live_boundary_v1_17.py
+          if [ "${FUND100_BROKER_KILL_SWITCH}" != "ENGAGED" ]; then
+            echo "STOP: broker kill switch is not ENGAGED."
+            exit 1
+          fi
 
-          test -f fund100_alpaca_live_writer_candidate_v1_1.py
+          echo "FUND100_BROKER_KILL_SWITCH = ENGAGED"
 
-          test -f \
-            fund100_alpaca_live_cumulative_cap_guard_v1_0.py
-
-          test -f \
-            test_fund100_alpaca_live_cumulative_cap_guard_v1_0.py
-
-          test -f \
-            fund100_alpaca_live_cumulative_cap_rehearsal_v1_0.py
-
-          test -f \
-            test_fund100_alpaca_live_cumulative_cap_rehearsal_v1_0.py
-
-          test -f \
-            .github/workflows/fund100-live-cumulative-cap-rehearsal.yml
-
-          echo "LIVE static-audit v1.17 dependencies found."
-
-      - name: Run full Fund-100 test suite
+      - name: Run full test suite
         run: |
           set -euo pipefail
-          python -m pytest -q
+          pytest -q
 
-      - name: Run offline LIVE boundary audit v1.17
+      - name: Re-run Static Audit v1.17 baseline
         run: |
           set -euo pipefail
           python audit_fund100_live_boundary_v1_17.py
 
-      - name: Final safety status
+      - name: Run Static Audit v1.18
         run: |
+          set -euo pipefail
+          python audit_fund100_live_boundary_v1_18.py
+
+      - name: Final locked-state summary
+        run: |
+          set -euo pipefail
+
           echo "========================================"
           echo "FUND-100 LIVE STATIC AUDIT COMPLETE"
           echo "========================================"
-          echo "Static audit safety layer: v1.17"
+          echo "Static audit safety layer: v1.18"
+          echo "Release Lock v1.8 prerequisite: PRESERVED"
           echo "Writer candidate v1.1: HARD LOCKED"
-          echo "Status-semantics hardening: VERIFIED"
-          echo "Cumulative-cap guard: PURE / OFFLINE"
-          echo "Cumulative-cap rehearsal: OFFLINE ONLY"
-          echo "Rehearsal direct network client: NONE"
-          echo "Rehearsal broker credentials: NONE"
-          echo "SELL/restart/BUY scenario: PRESENT"
-          echo "Over-cap-before-writer scenario: PRESENT"
-          echo "Lost-response reconstruction scenario: PRESENT"
-          echo "Partial-fill accounting scenario: PRESENT"
-          echo "Terminal-history blocking scenario: PRESENT"
+          echo "Execution orchestrator v1.0: PURE / OFFLINE"
+          echo "Fresh broker reconstruction before materialization: VERIFIED"
+          echo "Complete authorized-ID reconstruction before cap: VERIFIED"
+          echo "Cumulative-cap guard before writer: VERIFIED"
+          echo "Orchestrator rehearsal workflow credentials: NONE"
           echo "Candidate transport released: FALSE"
           echo "Candidate public execution enabled: FALSE"
+          echo "Orchestrator released: FALSE"
           echo "Current live writer connected: FALSE"
           echo "Orders submitted: 0"
