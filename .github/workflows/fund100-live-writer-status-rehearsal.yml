@@ -1,0 +1,457 @@
+name: Fund-100 LIVE Writer Status/Reboot Rehearsal
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-live-writer-status-rehearsal
+  cancel-in-progress: false
+
+jobs:
+  rehearsal:
+    name: Rehearse v1.1 Order Status and Restart Semantics
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify status rehearsal inputs
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_live_writer_candidate_v1_0.py
+          test -f fund100_alpaca_live_writer_candidate_v1_1.py
+
+          test -f \
+            fund100_alpaca_live_writer_status_rehearsal_v1_0.py
+
+          test -f \
+            test_fund100_alpaca_live_writer_status_rehearsal_v1_0.py
+
+          test -f audit_fund100_live_boundary_v1_15.py
+
+          test -f \
+            release_outputs/v5_002/pre_live_release_lock.json
+
+          echo "Writer-status rehearsal inputs found."
+
+      - name: Run full Fund-100 test suite
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Re-run LIVE static safety audit v1.15
+        run: |
+          set -euo pipefail
+          python audit_fund100_live_boundary_v1_15.py
+
+      - name: Run completely offline status/restart rehearsal
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_live_writer_status_rehearsal_v1_0.py
+
+      - name: Verify safe status rehearsal artifact
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import hashlib
+          import json
+
+          path = (
+              "live_dryrun_outputs/v5_002/"
+              "live_writer_status_rehearsal_v1_0.json"
+          )
+
+          with open(
+              path,
+              "r",
+              encoding="utf-8",
+          ) as handle:
+              package = json.load(handle)
+
+          body = package[
+              "status_rehearsal"
+          ]
+
+          canonical = json.dumps(
+              body,
+              sort_keys=True,
+              separators=(",", ":"),
+              ensure_ascii=True,
+          )
+
+          assert (
+              hashlib.sha256(
+                  canonical.encode("utf-8")
+              ).hexdigest()
+              == package[
+                  "status_rehearsal_sha256"
+              ]
+          )
+
+          assert (
+              body["schema"]
+              == "FUND100_LIVE_WRITER_STATUS_REHEARSAL_V1"
+          )
+
+          assert (
+              body["mode"]
+              == "COMPLETELY_OFFLINE_FAKE_BROKER"
+          )
+
+          assert (
+              body["source_release_lock_builder_version"]
+              == "1.6"
+          )
+
+          assert (
+              body["writer_candidate_version"]
+              == "1.1"
+          )
+
+          assert (
+              body[
+                  "candidate_transport_constant_false_before_after"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "candidate_public_execution_constant_false_before_after"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "fake_transport_installed_before_guard_bypass"
+              ]
+              is True
+          )
+
+          assert (
+              body["real_alpaca_credentials_supplied"]
+              is False
+          )
+
+          assert (
+              body["real_broker_network_access"]
+              is False
+          )
+
+          assert (
+              body["real_broker_get_requests"]
+              == 0
+          )
+
+          assert (
+              body["real_broker_post_requests"]
+              == 0
+          )
+
+          assert (
+              body["orders_submitted_to_alpaca"]
+              == 0
+          )
+
+          assert (
+              body["filled_existing_order_recovery_verified"]
+              is True
+          )
+
+          assert (
+              body["filled_existing_order_posts"]
+              == 0
+          )
+
+          assert (
+              body["no_resubmit_status_posts"]
+              == 0
+          )
+
+          assert (
+              body["terminal_failure_statuses_verified"]
+              == [
+                  "canceled",
+                  "expired",
+                  "rejected",
+              ]
+          )
+
+          assert (
+              body["terminal_failure_posts"]
+              == 0
+          )
+
+          assert (
+              body["missing_status_rejected"]
+              is True
+          )
+
+          assert (
+              body["unsafe_status_posts"]
+              == 0
+          )
+
+          assert (
+              body[
+                  "existing_order_structural_mismatch_rejected"
+              ]
+              is True
+          )
+
+          assert (
+              body["structural_mismatch_posts"]
+              == 0
+          )
+
+          assert (
+              body["response_loss_restart_verified"]
+              is True
+          )
+
+          assert (
+              body["response_loss_initial_fake_posts"]
+              == 1
+          )
+
+          assert (
+              body["response_loss_restart_new_posts"]
+              == 0
+          )
+
+          assert (
+              body["response_loss_duplicate_suppression"]
+              is True
+          )
+
+          assert (
+              body["submitted_terminal_failure_rejected"]
+              is True
+          )
+
+          assert (
+              body[
+                  "submitted_terminal_failure_restart_rejected"
+              ]
+              is True
+          )
+
+          assert (
+              body[
+                  "submitted_terminal_failure_total_fake_posts"
+              ]
+              == 1
+          )
+
+          assert (
+              body["submitted_unsafe_status_rejected"]
+              is True
+          )
+
+          assert (
+              body["submitted_unsafe_restart_rejected"]
+              is True
+          )
+
+          assert (
+              body["submitted_unsafe_total_fake_posts"]
+              == 1
+          )
+
+          assert (
+              body[
+                  "automatic_resubmission_after_failed_terminal_status"
+              ]
+              is False
+          )
+
+          assert (
+              body[
+                  "automatic_resubmission_after_unsafe_status"
+              ]
+              is False
+          )
+
+          assert (
+              body["status_semantics_rehearsal_passed"]
+              is True
+          )
+
+          assert (
+              body["cumulative_cap_hardening_tested"]
+              is False
+          )
+
+          assert (
+              body["cumulative_cap_hardening_still_required"]
+              is True
+          )
+
+          assert (
+              body["live_execution_authorized"]
+              is False
+          )
+
+          assert (
+              body["permit_issued"]
+              is False
+          )
+
+          assert (
+              float(
+                  body["max_live_execution_notional_usd"]
+              )
+              == 0.0
+          )
+
+          assert (
+              body["network_write_capability"]
+              is False
+          )
+
+          assert (
+              body["writer_connected"]
+              is False
+          )
+
+          print("Status rehearsal artifact SHA256: PASS")
+          print("Filled restart recovery: PASS")
+          print("Active/partial no-resubmit: PASS")
+          print("Terminal-failure rejection: PASS")
+          print("Ambiguous/unknown rejection: PASS")
+          print("Missing-status rejection: PASS")
+          print("Lost-response duplicate suppression: PASS")
+          print("Failed terminal automatic retry: BLOCKED")
+          print("Unsafe status automatic retry: BLOCKED")
+          print("Real broker network access: NONE")
+          print("Orders submitted to Alpaca: 0")
+          PY
+
+      - name: Verify only rehearsal artifact changed
+        run: |
+          set -euo pipefail
+
+          STATUS="$(
+            git status --porcelain
+          )"
+
+          EXTRA="$(
+            printf '%s\n' "$STATUS" \
+              | grep -vE \
+                '^.. live_dryrun_outputs/v5_002/live_writer_status_rehearsal_v1_0\.json$' \
+              || true
+          )"
+
+          if [ -n "$EXTRA" ]; then
+            echo "Unexpected working-tree changes:"
+            echo "$EXTRA"
+            git status --short
+            exit 1
+          fi
+
+          echo "Only expected status rehearsal artifact changed."
+
+      - name: Check rehearsal artifact changes
+        id: rehearsal_check
+        run: |
+          set -euo pipefail
+
+          CHANGES="$(
+            git status --porcelain -- \
+              live_dryrun_outputs/v5_002/live_writer_status_rehearsal_v1_0.json
+          )"
+
+          if [ -z "$CHANGES" ]; then
+            echo "Status rehearsal artifact unchanged."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Status rehearsal artifact changed."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit safe status rehearsal artifact
+        if: steps.rehearsal_check.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+
+          git config \
+            user.name \
+            "fund100-status-rehearsal-bot"
+
+          git config \
+            user.email \
+            "fund100-status-rehearsal-bot@users.noreply.github.com"
+
+          git add \
+            live_dryrun_outputs/v5_002/live_writer_status_rehearsal_v1_0.json
+
+          if git diff --cached --quiet; then
+            echo "Nothing staged."
+            exit 0
+          fi
+
+          git commit \
+            -m "Record V5-002 writer status rehearsal"
+
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Unexpected dirty working tree."
+            git status --short
+            exit 1
+          fi
+
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 WRITER STATUS REHEARSAL COMPLETE"
+          echo "========================================"
+          echo "Release lock v1.6: VERIFIED"
+          echo "Writer candidate v1.1: VERIFIED"
+          echo "Mode: COMPLETELY OFFLINE"
+          echo "Filled restart recovery: PASS"
+          echo "Active/partial no-resubmit: PASS"
+          echo "Canceled/expired/rejected rejection: PASS"
+          echo "Ambiguous/unknown status rejection: PASS"
+          echo "Missing status rejection: PASS"
+          echo "Existing-order structural mismatch rejection: PASS"
+          echo "Lost-response duplicate suppression: PASS"
+          echo "Failed-terminal automatic resubmission: BLOCKED"
+          echo "Unsafe-status automatic resubmission: BLOCKED"
+          echo "Real Alpaca credentials supplied: NO"
+          echo "Real broker network access: NONE"
+          echo "Candidate transport released: FALSE"
+          echo "Candidate public execution enabled: FALSE"
+          echo "Cumulative-cap hardening tested: NO"
+          echo "Cumulative-cap hardening still required: YES"
+          echo "Live execution authorized: FALSE"
+          echo "Permit issued: FALSE"
+          echo 'Maximum LIVE execution notional: $0.00'
+          echo "Writer connected: FALSE"
+          echo "Orders submitted to Alpaca: 0"
