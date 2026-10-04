@@ -59,52 +59,48 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify audit files
+      - name: Verify v1.13 audit inputs
         run: |
           set -euo pipefail
 
-          test -f audit_fund100_live_boundary_v1_10.py
           test -f audit_fund100_live_boundary_v1_11.py
           test -f audit_fund100_live_boundary_v1_12.py
+          test -f audit_fund100_live_boundary_v1_13.py
 
           test -f fund100_alpaca_live_execution_materializer.py
           test -f fund100_alpaca_live_writer_candidate_v1_0.py
 
-          test -f \
-            fund100_alpaca_live_writer_transport_rehearsal_v1_0.py
+          test -f fund100_alpaca_live_preconnect_runtime_check.py
+          test -f test_fund100_alpaca_live_preconnect_runtime_check.py
 
           test -f \
-            test_fund100_alpaca_live_writer_transport_rehearsal_v1_0.py
+            .github/workflows/fund100-alpaca-live-preconnect-runtime-check.yml
 
-          test -f \
-            .github/workflows/fund100-live-writer-transport-rehearsal.yml
-
-          echo "LIVE static-audit v1.12 dependencies found."
+          echo "LIVE static-audit v1.13 dependencies found."
 
       - name: Run full Fund-100 test suite
         run: |
           set -euo pipefail
           python -m pytest -q
 
-      - name: Run offline LIVE boundary audit v1.12
+      - name: Run offline LIVE boundary audit v1.13
         run: |
           set -euo pipefail
-          python audit_fund100_live_boundary_v1_12.py
+          python audit_fund100_live_boundary_v1_13.py
 
       - name: Final safety status
         run: |
           echo "========================================"
           echo "FUND-100 LIVE STATIC AUDIT COMPLETE"
           echo "========================================"
-          echo "Static audit safety layer: v1.12"
+          echo "Static audit safety layer: v1.13"
           echo "Execution materializer: VERIFIED"
-          echo "Connected-writer candidate source: PRESENT"
-          echo "Candidate POST transport shape: REVIEWED"
+          echo "Connected-writer candidate: HARD LOCKED"
+          echo "Offline transport rehearsal: VERIFIED"
+          echo "Pre-connect runtime checker: GET ONLY"
+          echo "Pre-connect candidate import: NONE"
+          echo "Pre-connect HTTP mutation capability: NONE"
           echo "Candidate transport released: FALSE"
           echo "Candidate public execution enabled: FALSE"
-          echo "Dedicated offline transport rehearsal: ALLOWLISTED"
-          echo "Rehearsal Alpaca credentials: NONE"
-          echo "Rehearsal real network access: NONE"
-          echo "Ordinary workflow candidate invocation: NONE"
           echo "Current live writer connected: FALSE"
           echo "Orders submitted: 0"
