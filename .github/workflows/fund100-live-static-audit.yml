@@ -8,8 +8,10 @@ on:
       - main
     paths:
       - "fund100_alpaca_live_*.py"
+      - "fund100_alpaca_paper_*.py"
       - "fund100_broker_safety.py"
       - "test_fund100_alpaca_live_*.py"
+      - "test_fund100_alpaca_paper_*.py"
       - "test_fund100_live_*.py"
       - "audit_fund100_live_boundary*.py"
       - ".github/workflows/**"
@@ -19,8 +21,10 @@ on:
   pull_request:
     paths:
       - "fund100_alpaca_live_*.py"
+      - "fund100_alpaca_paper_*.py"
       - "fund100_broker_safety.py"
       - "test_fund100_alpaca_live_*.py"
+      - "test_fund100_alpaca_paper_*.py"
       - "test_fund100_live_*.py"
       - "audit_fund100_live_boundary*.py"
       - ".github/workflows/**"
@@ -59,48 +63,48 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify v1.13 audit inputs
+      - name: Verify v1.14 audit inputs
         run: |
           set -euo pipefail
 
           test -f audit_fund100_live_boundary_v1_11.py
           test -f audit_fund100_live_boundary_v1_12.py
           test -f audit_fund100_live_boundary_v1_13.py
+          test -f audit_fund100_live_boundary_v1_14.py
 
-          test -f fund100_alpaca_live_execution_materializer.py
           test -f fund100_alpaca_live_writer_candidate_v1_0.py
+          test -f fund100_alpaca_live_writer_candidate_v1_1.py
 
-          test -f fund100_alpaca_live_preconnect_runtime_check.py
-          test -f test_fund100_alpaca_live_preconnect_runtime_check.py
+          test -f test_fund100_alpaca_live_writer_candidate_v1_0.py
+          test -f test_fund100_alpaca_live_writer_candidate_v1_1.py
 
-          test -f \
-            .github/workflows/fund100-alpaca-live-preconnect-runtime-check.yml
-
-          echo "LIVE static-audit v1.13 dependencies found."
+          echo "LIVE static-audit v1.14 dependencies found."
 
       - name: Run full Fund-100 test suite
         run: |
           set -euo pipefail
           python -m pytest -q
 
-      - name: Run offline LIVE boundary audit v1.13
+      - name: Run offline LIVE boundary audit v1.14
         run: |
           set -euo pipefail
-          python audit_fund100_live_boundary_v1_13.py
+          python audit_fund100_live_boundary_v1_14.py
 
       - name: Final safety status
         run: |
           echo "========================================"
           echo "FUND-100 LIVE STATIC AUDIT COMPLETE"
           echo "========================================"
-          echo "Static audit safety layer: v1.13"
-          echo "Execution materializer: VERIFIED"
-          echo "Connected-writer candidate: HARD LOCKED"
-          echo "Offline transport rehearsal: VERIFIED"
-          echo "Pre-connect runtime checker: GET ONLY"
-          echo "Pre-connect candidate import: NONE"
-          echo "Pre-connect HTTP mutation capability: NONE"
+          echo "Static audit safety layer: v1.14"
+          echo "Writer candidate v1.0: LOCKED"
+          echo "Writer candidate v1.1: HARD LOCKED"
+          echo "Candidate v1.1 filled recovery: VERIFIED"
+          echo "Candidate v1.1 partial/active no-resubmit: VERIFIED"
+          echo "Candidate v1.1 terminal-failure rejection: VERIFIED"
+          echo "Candidate v1.1 ambiguous-status rejection: VERIFIED"
+          echo "Candidate v1.1 unknown-status rejection: VERIFIED"
           echo "Candidate transport released: FALSE"
           echo "Candidate public execution enabled: FALSE"
+          echo "Candidate v1.1 workflow invocation: NONE"
           echo "Current live writer connected: FALSE"
           echo "Orders submitted: 0"
