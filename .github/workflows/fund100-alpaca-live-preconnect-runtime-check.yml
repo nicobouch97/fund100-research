@@ -1,0 +1,432 @@
+name: Fund-100 Alpaca LIVE Pre-Connect Runtime Check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-alpaca-live-preconnect-runtime-check
+  cancel-in-progress: false
+
+jobs:
+  preconnect:
+    name: Verify Real LIVE State Before Writer Release
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify pre-connect inputs
+        run: |
+          set -euo pipefail
+
+          test -f fund100_alpaca_live_preconnect_runtime_check.py
+          test -f test_fund100_alpaca_live_preconnect_runtime_check.py
+
+          test -f fund100_alpaca_live_readonly_smoke.py
+          test -f fund100_alpaca_live_position_reconcile.py
+          test -f fund100_alpaca_live_execution_boundary.py
+
+          test -f fund100_alpaca_live_writer_candidate_v1_0.py
+
+          test -f \
+            release_outputs/v5_002/pre_live_release_lock.json
+
+          test -f \
+            live_dryrun_outputs/v5_002/live_execution_manifest.json
+
+          test -f \
+            live_dryrun_outputs/v5_002/scheduled_execution_time.json
+
+          echo "LIVE pre-connect runtime-check inputs found."
+
+      - name: Run full Fund-100 test suite
+        run: |
+          set -euo pipefail
+          python -m pytest -q
+
+      - name: Run GET-only LIVE pre-connect runtime check
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+          FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+
+          FUND100_LIVE_WRITE_MODE: DISABLED
+
+          FUND100_ENABLE_LIVE_PRECONNECT_CHECK: YES_GET_ONLY_PRECONNECT
+
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_live_preconnect_runtime_check.py
+
+      - name: Verify safe runtime-check artifact
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import hashlib
+          import json
+
+          path = (
+              "live_dryrun_outputs/v5_002/"
+              "live_preconnect_runtime_check.json"
+          )
+
+          with open(
+              path,
+              "r",
+              encoding="utf-8",
+          ) as handle:
+              package = json.load(handle)
+
+          body = package["runtime_check"]
+
+          canonical = json.dumps(
+              body,
+              sort_keys=True,
+              separators=(",", ":"),
+              ensure_ascii=True,
+          )
+
+          assert (
+              hashlib.sha256(
+                  canonical.encode("utf-8")
+              ).hexdigest()
+              == package[
+                  "runtime_check_sha256"
+              ]
+          )
+
+          assert (
+              body["schema"]
+              == "FUND100_LIVE_PRECONNECT_RUNTIME_CHECK_V1"
+          )
+
+          assert (
+              body["source_release_lock_builder_version"]
+              == "1.4"
+          )
+
+          assert (
+              body["candidate_module_imported"]
+              is False
+          )
+
+          assert (
+              body["candidate_transport_released"]
+              is False
+          )
+
+          assert (
+              body["candidate_public_execution_enabled"]
+              is False
+          )
+
+          assert (
+              body["release_lock_verified"]
+              is True
+          )
+
+          assert (
+              body["locked_manifest_verified"]
+              is True
+          )
+
+          assert (
+              body["locked_compiler_verified"]
+              is True
+          )
+
+          assert (
+              body["runtime_binding_matches_locked_chain"]
+              is True
+          )
+
+          assert (
+              body["frozen_execution_universe_verified"]
+              is True
+          )
+
+          assert (
+              body["long_only_verified"]
+              is True
+          )
+
+          assert (
+              body["no_unmanaged_positions_verified"]
+              is True
+          )
+
+          assert (
+              body["no_open_orders_verified"]
+              is True
+          )
+
+          assert (
+              body["open_order_count"]
+              == 0
+          )
+
+          assert (
+              body["broker_http_methods"]
+              == "GET_ONLY"
+          )
+
+          assert (
+              body["broker_get_request_count"]
+              == 4
+          )
+
+          assert (
+              body["broker_post_request_count"]
+              == 0
+          )
+
+          assert (
+              body["broker_put_request_count"]
+              == 0
+          )
+
+          assert (
+              body["broker_patch_request_count"]
+              == 0
+          )
+
+          assert (
+              body["broker_delete_request_count"]
+              == 0
+          )
+
+          assert (
+              body["live_credentials_persisted"]
+              is False
+          )
+
+          assert (
+              body["live_holdings_persisted"]
+              is False
+          )
+
+          assert (
+              body["live_dollar_values_persisted"]
+              is False
+          )
+
+          assert (
+              body["broker_snapshot_hash_persisted"]
+              is False
+          )
+
+          assert (
+              body["executable_intents_persisted"]
+              is False
+          )
+
+          assert (
+              body["live_execution_authorized"]
+              is False
+          )
+
+          assert (
+              body["permit_issued"]
+              is False
+          )
+
+          assert (
+              float(
+                  body["max_live_execution_notional_usd"]
+              )
+              == 0.0
+          )
+
+          assert (
+              body["network_write_capability"]
+              is False
+          )
+
+          assert (
+              body["broker_write_mode"]
+              == "DISABLED"
+          )
+
+          assert (
+              body["writer_connected"]
+              is False
+          )
+
+          assert (
+              body["orders_submitted"]
+              == 0
+          )
+
+          forbidden = {
+              "positions",
+              "holdings",
+              "reconciliation_rows",
+              "portfolio_value",
+              "cash",
+              "market_value",
+              "current_price",
+              "broker_snapshot_sha256",
+              "candidate_intents",
+              "executable_intents",
+              "api_key",
+              "api_secret",
+          }
+
+          assert (
+              forbidden.intersection(
+                  body.keys()
+              )
+              == set()
+          )
+
+          print("Runtime-check SHA256: PASS")
+          print("Release lock v1.4: PASS")
+          print("Writer candidate imported: NO")
+          print("Candidate transport released: FALSE")
+          print("Candidate public execution enabled: FALSE")
+          print("LIVE account structural binding: PASS")
+          print("Open orders: 0")
+          print("Broker HTTP methods: GET ONLY")
+          print("Broker POST requests: 0")
+          print("Persisted live holdings: NO")
+          print("Persisted live dollar values: NO")
+          print("Live execution authorized: FALSE")
+          print("Orders submitted: 0")
+          PY
+
+      - name: Verify only safe runtime artifact changed
+        run: |
+          set -euo pipefail
+
+          STATUS="$(
+            git status --porcelain
+          )"
+
+          EXTRA="$(
+            printf '%s\n' "$STATUS" \
+              | grep -vE \
+                '^.. live_dryrun_outputs/v5_002/live_preconnect_runtime_check\.json$' \
+              || true
+          )"
+
+          if [ -n "$EXTRA" ]; then
+
+            echo "Unexpected working-tree changes:"
+            echo "$EXTRA"
+            git status --short
+            exit 1
+
+          fi
+
+          echo "Only expected pre-connect artifact changed."
+
+      - name: Check runtime-artifact changes
+        id: runtime_check
+        run: |
+          set -euo pipefail
+
+          CHANGES="$(
+            git status --porcelain -- \
+              live_dryrun_outputs/v5_002/live_preconnect_runtime_check.json
+          )"
+
+          if [ -z "$CHANGES" ]; then
+
+            echo "Pre-connect runtime artifact unchanged."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+
+          else
+
+            echo "Pre-connect runtime artifact changed:"
+            echo "$CHANGES"
+
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+
+          fi
+
+      - name: Commit safe runtime-check artifact
+        if: steps.runtime_check.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+
+          git config \
+            user.name \
+            "fund100-live-dryrun-bot"
+
+          git config \
+            user.email \
+            "fund100-live-dryrun-bot@users.noreply.github.com"
+
+          git add \
+            live_dryrun_outputs/v5_002/live_preconnect_runtime_check.json
+
+          if git diff --cached --quiet; then
+
+            echo "Nothing staged."
+            exit 0
+
+          fi
+
+          git commit \
+            -m "Record V5-002 live pre-connect runtime check"
+
+          if [ -n "$(git status --porcelain)" ]; then
+
+            echo "Unexpected dirty working tree."
+            git status --short
+            exit 1
+
+          fi
+
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Final safety status
+        run: |
+          echo "========================================"
+          echo "FUND-100 LIVE PRE-CONNECT RUNTIME CHECK COMPLETE"
+          echo "========================================"
+          echo "Release lock v1.4: VERIFIED"
+          echo "Writer candidate source: VERIFIED"
+          echo "Writer candidate imported: NO"
+          echo "Candidate transport released: FALSE"
+          echo "Candidate public execution enabled: FALSE"
+          echo "Locked execution chain: VERIFIED"
+          echo "Fresh LIVE account reconciliation: PASS"
+          echo "Live account binding: PASS"
+          echo "Open orders: 0"
+          echo "Broker HTTP methods: GET ONLY"
+          echo "Broker POST requests: 0"
+          echo "Live holdings persisted: NO"
+          echo "Live dollar values persisted: NO"
+          echo "Live execution authorized: FALSE"
+          echo "Permit issued: FALSE"
+          echo 'Maximum live execution notional: $0.00'
+          echo "Writer connected: FALSE"
+          echo "Orders submitted: 0"
