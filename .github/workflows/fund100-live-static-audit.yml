@@ -64,15 +64,13 @@ jobs:
           set -euo pipefail
 
           test -f audit_fund100_live_boundary.py
-          test -f audit_fund100_live_boundary_v1_4.py
-          test -f audit_fund100_live_boundary_v1_5.py
-          test -f audit_fund100_live_boundary_v1_6.py
-          test -f audit_fund100_live_boundary_v1_7.py
-          test -f audit_fund100_live_boundary_v1_8.py
           test -f audit_fund100_live_boundary_v1_9.py
           test -f audit_fund100_live_boundary_v1_10.py
+          test -f audit_fund100_live_boundary_v1_11.py
 
           test -f fund100_alpaca_live_writer_disconnected_v1_1.py
+          test -f fund100_alpaca_live_writer_candidate_v1_0.py
+
           test -f fund100_alpaca_live_position_reconcile.py
           test -f fund100_alpaca_live_manifest_v1_1.py
           test -f fund100_alpaca_live_intent_validator_v1_1.py
@@ -80,26 +78,28 @@ jobs:
           test -f fund100_alpaca_live_permit_v2_issuer_v1_1.py
 
           test -f fund100_alpaca_live_execution_materializer.py
-          test -f test_fund100_alpaca_live_execution_materializer.py
 
-          echo "LIVE static-audit dependencies found."
+          test -f test_fund100_alpaca_live_execution_materializer.py
+          test -f test_fund100_alpaca_live_writer_candidate_v1_0.py
+
+          echo "LIVE static-audit v1.11 dependencies found."
 
       - name: Run full Fund-100 test suite
         run: |
           set -euo pipefail
           python -m pytest -q
 
-      - name: Run offline LIVE boundary audit v1.10
+      - name: Run offline LIVE boundary audit v1.11
         run: |
           set -euo pipefail
-          python audit_fund100_live_boundary_v1_10.py
+          python audit_fund100_live_boundary_v1_11.py
 
       - name: Final safety status
         run: |
           echo "========================================"
           echo "FUND-100 LIVE STATIC AUDIT COMPLETE"
           echo "========================================"
-          echo "Static audit safety layer: v1.10"
+          echo "Static audit safety layer: v1.11"
           echo "Frozen V5 execution universe: VERIFIED"
           echo "Position-aware reconciliation: VERIFIED"
           echo "Position-aware manifest: VERIFIED"
@@ -107,10 +107,11 @@ jobs:
           echo "Position-aware scheduled compiler: VERIFIED"
           echo "V2 issuer v1.1 compatibility: VERIFIED"
           echo "Execution materializer: VERIFIED"
-          echo "Materializer broker network capability: NONE"
-          echo "Materializer broker write capability: NONE"
-          echo "Connected live writer implemented: NO"
-          echo "Live credentials supplied: NO"
-          echo "Broker network access: NONE"
-          echo "Live writer connected: FALSE"
+          echo "Connected-writer candidate source: PRESENT"
+          echo "Candidate POST transport shape: REVIEWED"
+          echo "Candidate transport released: FALSE"
+          echo "Candidate public execution enabled: FALSE"
+          echo "Candidate workflow invocation: NONE"
+          echo "Candidate live credentials supplied: NO"
+          echo "Current live writer connected: FALSE"
           echo "Orders submitted: 0"
