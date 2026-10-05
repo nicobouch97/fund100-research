@@ -3,14 +3,14 @@
   "broker_methods_used": [
     "GET"
   ],
-  "created_utc": "2026-10-05T09:24:49.210543+00:00",
+  "created_utc": "2026-10-05T14:29:45.598912+00:00",
   "existing_open_orders": 0,
   "existing_positions": 0,
   "live_account_status": "ACTIVE",
   "live_deletes": 0,
   "live_patches": 0,
   "live_posts": 0,
-  "market_open": false,
+  "market_open": true,
   "orders_submitted": 0,
   "pilot_ceiling_usd": "130.30",
   "pilot_ceiling_within_current_cash": true,

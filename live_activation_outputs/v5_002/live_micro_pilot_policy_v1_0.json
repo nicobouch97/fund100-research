@@ -10,7 +10,7 @@
   "capital_ceiling_is_standing_upper_bound": true,
   "capital_ceiling_usd": "130.30",
   "complete_client_id_reconstruction_required": true,
-  "created_utc": "2026-10-05T09:24:49.210242+00:00",
+  "created_utc": "2026-10-05T14:29:45.598443+00:00",
   "crypto_allowed": false,
   "deployment_mode": "LIVE_MICRO_PILOT",
   "deterministic_client_order_ids_required": true,
