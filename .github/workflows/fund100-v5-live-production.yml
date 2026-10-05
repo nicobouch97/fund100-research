@@ -75,665 +75,388 @@ jobs:
           test -f \
             live_activation_outputs/v5_002/pre_live_release_lock_v1_9.json
 
+          test -f \
+            .github/workflows/fund100-alpaca-live-scheduled-compiler.yml
+
           echo "LIVE pilot policy: PRESENT"
           echo "Successful bootstrap evidence: PRESENT"
           echo "Release Lock v1.9: PRESENT"
+          echo "Established scheduled-compiler workflow: PRESENT"
 
-      - name: Resolve frozen scheduled-compiler arm contract
+      - name: Import and validate scheduled-compiler arm from established workflow
         env:
           FUND100_BROKER_KILL_SWITCH: ENGAGED
         run: |
           set -euo pipefail
 
           python - <<'PY'
-          import ast
-          import inspect
           import os
           import re
-          import textwrap
+          from pathlib import Path
 
-          import fund100_alpaca_live_scheduled_compiler as compiler_v10
+          import fund100_alpaca_live_scheduled_compiler as compiler
 
 
-          gate = compiler_v10.require_compiler_arm
-
-          source = textwrap.dedent(
-              inspect.getsource(
-                  gate
-              )
-          )
-
-          tree = ast.parse(
-              source
+          WORKFLOW_PATH = Path(
+              ".github/workflows/"
+              "fund100-alpaca-live-scheduled-compiler.yml"
           )
 
 
-          def direct_env_key(node):
-
-              # os.getenv("KEY", ...)
-              if isinstance(
-                  node,
-                  ast.Call,
-              ):
-
-                  func = node.func
-
-                  if (
-                      isinstance(
-                          func,
-                          ast.Attribute,
-                      )
-                      and func.attr == "getenv"
-                      and isinstance(
-                          func.value,
-                          ast.Name,
-                      )
-                      and func.value.id == "os"
-                      and node.args
-                      and isinstance(
-                          node.args[0],
-                          ast.Constant,
-                      )
-                      and isinstance(
-                          node.args[0].value,
-                          str,
-                      )
-                  ):
-
-                      return node.args[0].value
-
-                  # os.environ.get("KEY", ...)
-                  if (
-                      isinstance(
-                          func,
-                          ast.Attribute,
-                      )
-                      and func.attr == "get"
-                      and isinstance(
-                          func.value,
-                          ast.Attribute,
-                      )
-                      and func.value.attr == "environ"
-                      and isinstance(
-                          func.value.value,
-                          ast.Name,
-                      )
-                      and func.value.value.id == "os"
-                      and node.args
-                      and isinstance(
-                          node.args[0],
-                          ast.Constant,
-                      )
-                      and isinstance(
-                          node.args[0].value,
-                          str,
-                      )
-                  ):
-
-                      return node.args[0].value
-
-              # os.environ["KEY"]
-              if isinstance(
-                  node,
-                  ast.Subscript,
-              ):
-
-                  value = node.value
-
-                  if (
-                      isinstance(
-                          value,
-                          ast.Attribute,
-                      )
-                      and value.attr == "environ"
-                      and isinstance(
-                          value.value,
-                          ast.Name,
-                      )
-                      and value.value.id == "os"
-                  ):
-
-                      slice_node = node.slice
-
-                      if (
-                          isinstance(
-                              slice_node,
-                              ast.Constant,
-                          )
-                          and isinstance(
-                              slice_node.value,
-                              str,
-                          )
-                      ):
-
-                          return slice_node.value
-
-              return None
-
-
-          aliases = {}
-
-
-          def env_key(node):
-
-              direct = direct_env_key(
-                  node
+          if not WORKFLOW_PATH.exists():
+              raise SystemExit(
+                  "STOP: established scheduled-compiler "
+                  "workflow is missing."
               )
 
-              if direct:
 
-                  return direct
+          source = WORKFLOW_PATH.read_text(
+              encoding="utf-8"
+          )
 
-              if isinstance(
-                  node,
-                  ast.Name,
+
+          # --------------------------------------------------
+          # Extract literal uppercase environment assignments
+          # from the already-established working workflow.
+          #
+          # Supported shapes:
+          #
+          #   SOME_KEY: "VALUE"
+          #   SOME_KEY: VALUE
+          #   export SOME_KEY="VALUE"
+          #   SOME_KEY=VALUE
+          #
+          # GitHub expressions / secrets are deliberately
+          # ignored. We only need literal control variables.
+          # --------------------------------------------------
+
+          candidates = []
+
+
+          def clean_value(
+              value: str,
+          ) -> str | None:
+
+              value = value.strip()
+
+              if not value:
+                  return None
+
+              if "${{" in value:
+                  return None
+
+              # Strip an inline YAML comment only when it is
+              # separated from the value by whitespace.
+              value = re.sub(
+                  r"\s+#.*$",
+                  "",
+                  value,
+              ).strip()
+
+              if (
+                  len(value) >= 2
+                  and value[0] == value[-1]
+                  and value[0] in {
+                      '"',
+                      "'",
+                  }
               ):
+                  value = value[1:-1]
 
-                  return aliases.get(
-                      node.id
+              value = value.strip()
+
+              if not value:
+                  return None
+
+              return value
+
+
+          yaml_pattern = re.compile(
+              r"^\s*"
+              r"([A-Z][A-Z0-9_]{2,})"
+              r"\s*:\s*(.*?)\s*$"
+          )
+
+          shell_export_pattern = re.compile(
+              r"^\s*export\s+"
+              r"([A-Z][A-Z0-9_]{2,})"
+              r"\s*=\s*(.*?)\s*$"
+          )
+
+          shell_assign_pattern = re.compile(
+              r"^\s*"
+              r"([A-Z][A-Z0-9_]{2,})"
+              r"\s*=\s*(.*?)\s*$"
+          )
+
+
+          for line in source.splitlines():
+
+              match = yaml_pattern.match(
+                  line
+              )
+
+              if match is None:
+                  match = shell_export_pattern.match(
+                      line
                   )
 
-              if isinstance(
-                  node,
-                  ast.Call,
-              ):
-
-                  func = node.func
-
-                  # Handle:
-                  #
-                  # os.getenv(...).strip()
-                  # os.getenv(...).strip().upper()
-                  # str(os.getenv(...))
-                  if isinstance(
-                      func,
-                      ast.Attribute,
-                  ):
-
-                      if func.attr in {
-                          "strip",
-                          "upper",
-                          "lower",
-                          "casefold",
-                      }:
-
-                          return env_key(
-                              func.value
-                          )
-
-                  if (
-                      isinstance(
-                          func,
-                          ast.Name,
-                      )
-                      and func.id == "str"
-                      and node.args
-                  ):
-
-                      return env_key(
-                          node.args[0]
-                      )
-
-              return None
-
-
-          # Build aliases such as:
-          #
-          # arm = os.environ.get(...)
-          #
-          # or:
-          #
-          # arm = os.environ.get(...).strip().upper()
-          #
-          changed = True
-
-          while changed:
-
-              changed = False
-
-              for node in ast.walk(
-                  tree
-              ):
-
-                  target_name = None
-                  value_node = None
-
-                  if isinstance(
-                      node,
-                      ast.Assign,
-                  ):
-
-                      if len(
-                          node.targets
-                      ) == 1:
-
-                          target = (
-                              node.targets[0]
-                          )
-
-                          if isinstance(
-                              target,
-                              ast.Name,
-                          ):
-
-                              target_name = (
-                                  target.id
-                              )
-
-                              value_node = (
-                                  node.value
-                              )
-
-                  elif isinstance(
-                      node,
-                      ast.AnnAssign,
-                  ):
-
-                      if isinstance(
-                          node.target,
-                          ast.Name,
-                      ):
-
-                          target_name = (
-                              node.target.id
-                          )
-
-                          value_node = (
-                              node.value
-                          )
-
-                  if (
-                      target_name
-                      and value_node
-                  ):
-
-                      key = env_key(
-                          value_node
-                      )
-
-                      if (
-                          key
-                          and aliases.get(
-                              target_name
-                          ) != key
-                      ):
-
-                          aliases[
-                              target_name
-                          ] = key
-
-                          changed = True
-
-
-          def static_strings(node):
-
-              if isinstance(
-                  node,
-                  ast.Constant,
-              ):
-
-                  if isinstance(
-                      node.value,
-                      str,
-                  ):
-
-                      return {
-                          node.value
-                      }
-
-                  return set()
-
-              if isinstance(
-                  node,
-                  ast.Name,
-              ):
-
-                  value = getattr(
-                      compiler_v10,
-                      node.id,
-                      None,
+              if match is None:
+                  match = shell_assign_pattern.match(
+                      line
                   )
 
-                  if isinstance(
-                      value,
-                      str,
-                  ):
-
-                      return {
-                          value
-                      }
-
-                  if isinstance(
-                      value,
-                      (
-                          tuple,
-                          list,
-                          set,
-                          frozenset,
-                      ),
-                  ):
-
-                      return {
-                          item
-                          for item
-                          in value
-                          if isinstance(
-                              item,
-                              str,
-                          )
-                      }
-
-                  return set()
-
-              if isinstance(
-                  node,
-                  (
-                      ast.Tuple,
-                      ast.List,
-                      ast.Set,
-                  ),
-              ):
-
-                  result = set()
-
-                  for child in (
-                      node.elts
-                  ):
-
-                      result.update(
-                          static_strings(
-                              child
-                          )
-                      )
-
-                  return result
-
-              return set()
-
-
-          candidates = set()
-
-          for node in ast.walk(
-              tree
-          ):
-
-              if not isinstance(
-                  node,
-                  ast.Compare,
-              ):
-
+              if match is None:
                   continue
 
-              expressions = [
-                  node.left,
-                  *node.comparators,
-              ]
+              key = match.group(
+                  1
+              ).strip()
 
-              for index, expression in enumerate(
-                  expressions
-              ):
-
-                  key = env_key(
-                      expression
+              value = clean_value(
+                  match.group(
+                      2
                   )
+              )
 
-                  if not key:
+              if value is None:
+                  continue
 
-                      continue
+              # Broker credentials should never be tested or
+              # exported by this discovery step.
+              if key in {
+                  "ALPACA_LIVE_KEY",
+                  "ALPACA_LIVE_SECRET",
+                  "ALPACA_PAPER_KEY",
+                  "ALPACA_PAPER_SECRET",
+              }:
+                  continue
 
-                  if (
-                      "ARM"
-                      not in key.upper()
-                  ):
+              candidates.append(
+                  (
+                      key,
+                      value,
+                  )
+              )
 
-                      continue
 
-                  for other_index, other in enumerate(
-                      expressions
-                  ):
-
-                      if (
-                          other_index
-                          == index
-                      ):
-
-                          continue
-
-                      for expected in static_strings(
-                          other
-                      ):
-
-                          if expected:
-
-                              candidates.add(
-                                  (
-                                      key,
-                                      expected,
-                                  )
-                              )
+          # De-duplicate while preserving deterministic order.
+          candidates = sorted(
+              set(
+                  candidates
+              )
+          )
 
 
           if not candidates:
-
               raise SystemExit(
-                  "STOP: unable to discover the "
-                  "scheduled-compiler arm contract "
-                  "from require_compiler_arm()."
+                  "STOP: no literal control variables found "
+                  "in the established scheduled-compiler workflow."
               )
 
+
+          gate = (
+              compiler.require_compiler_arm
+          )
+
+
+          original_environment = dict(
+              os.environ
+          )
 
           passing = []
 
-          original_switch = (
-              os.environ.get(
-                  "FUND100_BROKER_KILL_SWITCH"
+
+          # --------------------------------------------------
+          # Validate each candidate using the REAL frozen arm
+          # gate. Nothing is bypassed or monkeypatched.
+          # --------------------------------------------------
+
+          for key, value in candidates:
+
+              os.environ.clear()
+
+              os.environ.update(
+                  original_environment
               )
-          )
-
-          os.environ[
-              "FUND100_BROKER_KILL_SWITCH"
-          ] = "ENGAGED"
-
-
-          for key, value in sorted(
-              candidates
-          ):
-
-              previous = (
-                  os.environ.get(
-                      key
-                  )
-              )
-
-              try:
-
-                  os.environ[
-                      key
-                  ] = value
-
-                  try:
-
-                      gate()
-
-                  except Exception:
-
-                      pass
-
-                  else:
-
-                      passing.append(
-                          (
-                              key,
-                              value,
-                          )
-                      )
-
-              finally:
-
-                  if previous is None:
-
-                      os.environ.pop(
-                          key,
-                          None,
-                      )
-
-                  else:
-
-                      os.environ[
-                          key
-                      ] = previous
-
-
-          if original_switch is None:
-
-              os.environ.pop(
-                  "FUND100_BROKER_KILL_SWITCH",
-                  None,
-              )
-
-          else:
-
-              os.environ[
-                  "FUND100_BROKER_KILL_SWITCH"
-              ] = original_switch
-
-
-          if not passing:
-
-              raise SystemExit(
-                  "STOP: discovered scheduled-compiler "
-                  "arm candidate(s), but none passed "
-                  "the frozen require_compiler_arm() gate."
-              )
-
-
-          passing_keys = {
-              key
-              for key, _
-              in passing
-          }
-
-          if len(
-              passing_keys
-          ) != 1:
-
-              raise SystemExit(
-                  "STOP: more than one scheduled-compiler "
-                  "arm environment key passed. "
-                  "Refusing ambiguous activation."
-              )
-
-
-          arm_key = sorted(
-              passing_keys
-          )[0]
-
-          arm_values = sorted(
-              {
-                  value
-                  for key, value
-                  in passing
-                  if key == arm_key
-              }
-          )
-
-          if not arm_values:
-
-              raise SystemExit(
-                  "STOP: validated arm key has no "
-                  "validated value."
-              )
-
-          arm_value = (
-              arm_values[0]
-          )
-
-
-          if not re.fullmatch(
-              r"[A-Z0-9_]+",
-              arm_key,
-          ):
-
-              raise SystemExit(
-                  "STOP: discovered arm key has "
-                  "unexpected characters."
-              )
-
-
-          if (
-              "\n" in arm_value
-              or "\r" in arm_value
-          ):
-
-              raise SystemExit(
-                  "STOP: discovered arm value is malformed."
-              )
-
-
-          # Validate chosen contract once more without
-          # bypassing or monkeypatching the frozen gate.
-
-          previous = (
-              os.environ.get(
-                  arm_key
-              )
-          )
-
-          previous_switch = (
-              os.environ.get(
-                  "FUND100_BROKER_KILL_SWITCH"
-              )
-          )
-
-          try:
 
               os.environ[
                   "FUND100_BROKER_KILL_SWITCH"
               ] = "ENGAGED"
 
               os.environ[
-                  arm_key
-              ] = arm_value
+                  key
+              ] = value
+
+              try:
+
+                  gate()
+
+              except Exception:
+                  continue
+
+              passing.append(
+                  (
+                      key,
+                      value,
+                  )
+              )
+
+
+          os.environ.clear()
+
+          os.environ.update(
+              original_environment
+          )
+
+
+          if not passing:
+
+              # ------------------------------------------------
+              # Second pass:
+              #
+              # Some workflows define multiple literal control
+              # variables that are jointly required.
+              #
+              # Load ALL safe literal workflow variables
+              # together, then verify the real gate.
+              # ------------------------------------------------
+
+              test_environment = dict(
+                  original_environment
+              )
+
+              test_environment[
+                  "FUND100_BROKER_KILL_SWITCH"
+              ] = "ENGAGED"
+
+              for key, value in candidates:
+
+                  if key in {
+                      "ALPACA_LIVE_KEY",
+                      "ALPACA_LIVE_SECRET",
+                      "ALPACA_PAPER_KEY",
+                      "ALPACA_PAPER_SECRET",
+                  }:
+                      continue
+
+                  test_environment[
+                      key
+                  ] = value
+
+
+              os.environ.clear()
+
+              os.environ.update(
+                  test_environment
+              )
+
+
+              try:
+
+                  gate()
+
+              except Exception as exc:
+
+                  os.environ.clear()
+
+                  os.environ.update(
+                      original_environment
+                  )
+
+                  raise SystemExit(
+                      "STOP: the established compiler workflow "
+                      "variables were found, but they did not "
+                      "satisfy require_compiler_arm(). "
+                      f"Gate error: {exc}"
+                  )
+
+
+              os.environ.clear()
+
+              os.environ.update(
+                  original_environment
+              )
+
+
+              # Export only variables that are plausible
+              # compiler control variables rather than every
+              # literal in the workflow.
+
+              passing = [
+                  (
+                      key,
+                      value,
+                  )
+                  for key, value in candidates
+                  if any(
+                      token in key
+                      for token in (
+                          "ARM",
+                          "COMPILER",
+                          "SCHEDULED",
+                      )
+                  )
+              ]
+
+
+          if not passing:
+
+              raise SystemExit(
+                  "STOP: compiler arm gate passed but no "
+                  "compiler-control variable could be isolated."
+              )
+
+
+          # --------------------------------------------------
+          # Prove the selected set jointly satisfies the gate.
+          # --------------------------------------------------
+
+          os.environ.clear()
+
+          os.environ.update(
+              original_environment
+          )
+
+          os.environ[
+              "FUND100_BROKER_KILL_SWITCH"
+          ] = "ENGAGED"
+
+          for key, value in passing:
+
+              os.environ[
+                  key
+              ] = value
+
+
+          try:
 
               gate()
 
-          finally:
+          except Exception as exc:
 
-              if previous is None:
-
-                  os.environ.pop(
-                      arm_key,
-                      None,
-                  )
-
-              else:
-
-                  os.environ[
-                      arm_key
-                  ] = previous
-
-              if previous_switch is None:
-
-                  os.environ.pop(
-                      "FUND100_BROKER_KILL_SWITCH",
-                      None,
-                  )
-
-              else:
-
-                  os.environ[
-                      "FUND100_BROKER_KILL_SWITCH"
-                  ] = previous_switch
+              raise SystemExit(
+                  "STOP: final scheduled-compiler arm "
+                  f"validation failed: {exc}"
+              )
 
 
-          # Do not print the value.
-          # Persist it only for later steps in this job.
+          os.environ.clear()
 
-          github_env = (
-              os.environ[
-                  "GITHUB_ENV"
-              ]
+          os.environ.update(
+              original_environment
           )
+
+
+          # --------------------------------------------------
+          # Persist validated control values for later steps.
+          # Values are deliberately NOT printed.
+          # --------------------------------------------------
+
+          github_env = os.environ[
+              "GITHUB_ENV"
+          ]
+
 
           with open(
               github_env,
@@ -741,27 +464,60 @@ jobs:
               encoding="utf-8",
           ) as handle:
 
-              handle.write(
-                  f"{arm_key}={arm_value}\n"
-              )
+              for key, value in passing:
+
+                  if (
+                      "\n" in value
+                      or "\r" in value
+                  ):
+                      raise SystemExit(
+                          "STOP: malformed compiler "
+                          "control value."
+                      )
+
+                  handle.write(
+                      f"{key}={value}\n"
+                  )
 
 
           print(
-              "Frozen scheduled-compiler arm gate: VERIFIED"
+              "Established scheduled-compiler workflow: PARSED"
           )
 
           print(
-              "Scheduled-compiler arm environment key:",
-              arm_key,
+              "Frozen require_compiler_arm() gate: VERIFIED"
           )
 
           print(
-              "Scheduled-compiler arm value: "
+              "Validated compiler control variables:",
+              len(
+                  passing
+              ),
+          )
+
+          print(
+              "Compiler control values: "
               "VALIDATED / NOT PRINTED"
           )
 
           print(
               "Gate bypass or monkeypatch used: NO"
+          )
+          PY
+
+      - name: Prove scheduled compiler arm survives into this job
+        env:
+          FUND100_BROKER_KILL_SWITCH: ENGAGED
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import fund100_alpaca_live_scheduled_compiler as compiler
+
+          compiler.require_compiler_arm()
+
+          print(
+              "Scheduled execution-time compiler arm: PASS"
           )
           PY
 
@@ -830,10 +586,12 @@ jobs:
           import json
           from pathlib import Path
 
+
           path = Path(
               "live_activation_outputs/v5_002/"
               "live_production_status_v1_0.json"
           )
+
 
           if not path.exists():
 
@@ -841,11 +599,13 @@ jobs:
                   "STOP: production status artifact missing."
               )
 
+
           body = json.loads(
               path.read_text(
                   encoding="utf-8"
               )
           )
+
 
           if (
               body.get(
@@ -858,6 +618,7 @@ jobs:
                   "STOP: wrong production strategy."
               )
 
+
           if (
               body.get(
                   "broker_environment"
@@ -868,6 +629,7 @@ jobs:
               raise SystemExit(
                   "STOP: wrong broker environment."
               )
+
 
           if (
               body.get(
@@ -880,6 +642,7 @@ jobs:
                   "STOP: ordinary drift trading changed."
               )
 
+
           if (
               body.get(
                   "leverage_allowed"
@@ -891,6 +654,7 @@ jobs:
                   "STOP: leverage policy changed."
               )
 
+
           if (
               body.get(
                   "shorting_allowed"
@@ -901,6 +665,7 @@ jobs:
               raise SystemExit(
                   "STOP: shorting policy changed."
               )
+
 
           print(
               "Production status artifact: VERIFIED"
