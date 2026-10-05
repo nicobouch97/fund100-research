@@ -1,0 +1,24 @@
+{
+  "account_binding_sha256": "1739bb3720c916ccfc6732ecd24236ab0cdbbbc1915879e0296d15fb055f49bf",
+  "broker_methods_used": [
+    "GET"
+  ],
+  "created_utc": "2026-10-05T09:24:49.210543+00:00",
+  "existing_open_orders": 0,
+  "existing_positions": 0,
+  "live_account_status": "ACTIVE",
+  "live_deletes": 0,
+  "live_patches": 0,
+  "live_posts": 0,
+  "market_open": false,
+  "orders_submitted": 0,
+  "pilot_ceiling_usd": "130.30",
+  "pilot_ceiling_within_current_cash": true,
+  "pilot_policy_path": "live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json",
+  "positive_cash_verified": true,
+  "release_lock_version": "1.9",
+  "schema": "FUND100_LIVE_MICRO_PILOT_PREPARATION_V1",
+  "shadow_state_sha256": "a69684eb2fad35f12d3007a4c9b082ccf41defbd93261b410e7c1a5b8b5b44fa",
+  "strategy": "V5-002_SHADOW",
+  "trading_blocked": false
+}
