@@ -91,13 +91,14 @@ jobs:
           echo "Release Lock v1.9: PRESENT"
           echo "LIVE pilot policy: PRESENT"
           echo "LIVE pilot preparation: PRESENT"
-          echo "Current LIVE manifest: PRESENT"
+          echo "LIVE manifest package: PRESENT"
 
-      - name: Verify manifest and pilot-policy lineage before any broker write
+      - name: Verify manifest package and LIVE-pilot lineage before broker write
         run: |
           set -euo pipefail
 
           python - <<'PY'
+          import hashlib
           import json
           from pathlib import Path
 
@@ -139,11 +140,57 @@ jobs:
               )
           )
 
-          manifest = json.loads(
+          package = json.loads(
               manifest_path.read_text(
                   encoding="utf-8"
               )
           )
+
+          if "manifest" in package:
+              manifest = package.get(
+                  "manifest"
+              )
+
+              if not isinstance(
+                  manifest,
+                  dict
+              ):
+                  raise SystemExit(
+                      "STOP: manifest package body is malformed."
+                  )
+
+              recorded_hash = str(
+                  package.get(
+                      "manifest_sha256",
+                      ""
+                  )
+              ).strip().lower()
+
+              if len(recorded_hash) != 64:
+                  raise SystemExit(
+                      "STOP: manifest_sha256 missing or malformed."
+                  )
+
+              canonical = json.dumps(
+                  manifest,
+                  sort_keys=True,
+                  separators=(",", ":"),
+                  ensure_ascii=True,
+              )
+
+              actual_hash = hashlib.sha256(
+                  canonical.encode(
+                      "utf-8"
+                  )
+              ).hexdigest()
+
+              if actual_hash != recorded_hash:
+                  raise SystemExit(
+                      "STOP: manifest SHA256 verification failed."
+                  )
+
+          else:
+              manifest = package
 
           if release_lock.get(
               "release_lock_version"
@@ -194,36 +241,51 @@ jobs:
                   "STOP: preparation artifact is not clean."
               )
 
+          if manifest.get(
+              "strategy"
+          ) != "V5-002_SHADOW":
+              raise SystemExit(
+                  "STOP: manifest strategy is not V5-002."
+              )
+
           policy_state_hash = str(
               policy.get(
                   "activation_shadow_state_sha256",
                   ""
               )
-          ).strip()
+          ).strip().lower()
 
           manifest_state_hash = str(
               manifest.get(
                   "strategy_state_sha256",
                   ""
               )
-          ).strip()
+          ).strip().lower()
 
-          if not policy_state_hash:
+          if len(
+              policy_state_hash
+          ) != 64:
               raise SystemExit(
-                  "STOP: policy shadow-state hash missing."
+                  "STOP: policy shadow-state hash is invalid."
               )
 
-          if not manifest_state_hash:
+          if len(
+              manifest_state_hash
+          ) != 64:
               raise SystemExit(
-                  "STOP: manifest shadow-state hash missing."
+                  "STOP: manifest strategy_state_sha256 "
+                  "is missing or invalid."
               )
 
-          if manifest_state_hash != policy_state_hash:
+          if (
+              manifest_state_hash
+              != policy_state_hash
+          ):
               raise SystemExit(
-                  "STOP: manifest and pilot policy refer to "
-                  "different V5-002 shadow states. "
-                  "Re-run LIVE Micro-Pilot Preparation before "
-                  "attempting bootstrap."
+                  "STOP: the current manifest and LIVE pilot "
+                  "policy refer to different V5-002 shadow "
+                  "states. Re-engage the kill switch and "
+                  "re-run LIVE Micro-Pilot Preparation."
               )
 
           if manifest.get(
@@ -234,16 +296,41 @@ jobs:
                   "authorizes LIVE execution."
               )
 
+          target_weights = manifest.get(
+              "target_weights"
+          )
+
+          if not isinstance(
+              target_weights,
+              dict
+          ):
+              raise SystemExit(
+                  "STOP: manifest target weights missing."
+              )
+
+          if not target_weights:
+              raise SystemExit(
+                  "STOP: manifest target portfolio is empty."
+              )
+
+          print(
+              "Manifest package SHA256: VERIFIED"
+          )
+
           print(
               "Release Lock lineage: VERIFIED"
           )
 
           print(
-              "V5-002 policy binding: VERIFIED"
+              "V5-002 pilot-policy binding: VERIFIED"
           )
 
           print(
               "Manifest shadow-state binding: VERIFIED"
+          )
+
+          print(
+              "Manifest target weights: PRESENT"
           )
 
           print(
@@ -288,6 +375,9 @@ jobs:
           )
 
           required = {
+              "schema":
+                  "FUND100_LIVE_MICRO_PILOT_BOOTSTRAP_V1",
+
               "strategy":
                   "V5-002_SHADOW",
 
@@ -329,7 +419,6 @@ jobs:
           if reconciliation.get(
               "open_orders"
           ) != 0:
-
               raise SystemExit(
                   "STOP: LIVE open orders remain after bootstrap."
               )
@@ -337,9 +426,15 @@ jobs:
           if reconciliation.get(
               "equity_positive"
           ) is not True:
-
               raise SystemExit(
                   "STOP: final LIVE equity validation failed."
+              )
+
+          if not body.get(
+              "manifest_sha256"
+          ):
+              raise SystemExit(
+                  "STOP: bootstrap evidence lost manifest binding."
               )
 
           print(
@@ -383,6 +478,7 @@ jobs:
           echo "Strategy: V5-002"
           echo "Environment: ALPACA LIVE"
           echo "Release Lock v1.9: VERIFIED"
+          echo "Manifest package SHA256: VERIFIED"
           echo "Pilot account binding: VERIFIED"
           echo "Current shadow-state binding: VERIFIED"
           echo "LIVE capital ceiling: ENFORCED"
