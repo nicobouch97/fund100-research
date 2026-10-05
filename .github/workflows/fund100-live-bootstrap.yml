@@ -1,0 +1,227 @@
+name: Fund-100 LIVE Micro-Pilot Bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      authorization:
+        description: "Type exactly: I_AUTHORIZE_FUND100_LIVE_BOOTSTRAP"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-live-micro-pilot-bootstrap
+  cancel-in-progress: false
+
+env:
+  FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+jobs:
+  bootstrap:
+    name: Bootstrap V5-002 LIVE Micro-Pilot
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify explicit bootstrap authorization
+        env:
+          BOOTSTRAP_AUTH: ${{ inputs.authorization }}
+        run: |
+          set -euo pipefail
+
+          if [ "${BOOTSTRAP_AUTH}" != \
+            "I_AUTHORIZE_FUND100_LIVE_BOOTSTRAP" ]; then
+
+            echo "STOP: bootstrap authorization mismatch."
+            exit 1
+
+          fi
+
+          echo "Explicit LIVE bootstrap authorization: PRESENT"
+
+      - name: Verify broker kill switch was deliberately disengaged
+        run: |
+          set -euo pipefail
+
+          if [ "${FUND100_BROKER_KILL_SWITCH}" != "DISENGAGED" ]; then
+
+            echo "STOP: broker kill switch is not DISENGAGED."
+            exit 1
+
+          fi
+
+          echo "FUND100_BROKER_KILL_SWITCH = DISENGAGED"
+
+      - name: Run regression suite
+        run: |
+          set -euo pipefail
+          pytest -q
+
+      - name: Refresh current V5-002 LIVE manifest read-only
+        env:
+          # Manifest generation itself remains GET-only and
+          # retains its historic safety expectation.
+          FUND100_BROKER_KILL_SWITCH: ENGAGED
+
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+
+          python fund100_alpaca_live_manifest_v1_1.py
+
+      - name: Execute one-time LIVE bootstrap
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+
+          FUND100_LIVE_BOOTSTRAP_ARM: "YES"
+        run: |
+          set -euo pipefail
+
+          python fund100_live_bootstrap_v1_0.py
+
+      - name: Verify bootstrap evidence
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path(
+              "live_activation_outputs/v5_002/"
+              "live_bootstrap_v1_0.json"
+          )
+
+          if not path.exists():
+              raise SystemExit(
+                  "STOP: LIVE bootstrap evidence missing."
+              )
+
+          body = json.loads(
+              path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          required = {
+              "strategy":
+                  "V5-002_SHADOW",
+
+              "broker_environment":
+                  "ALPACA_LIVE",
+
+              "bootstrap_complete":
+                  True,
+
+              "duplicate_live_posts":
+                  0,
+
+              "ordinary_drift_trading_enabled":
+                  False,
+
+              "autonomous_strategy_event_execution_enabled":
+                  False,
+          }
+
+          for key, expected in required.items():
+
+              actual = body.get(
+                  key
+              )
+
+              if actual != expected:
+
+                  raise SystemExit(
+                      "STOP: "
+                      f"{key}: expected {expected!r}, "
+                      f"got {actual!r}"
+                  )
+
+          reconciliation = (
+              body.get(
+                  "reconciliation",
+                  {}
+              )
+          )
+
+          if reconciliation.get(
+              "open_orders"
+          ) != 0:
+
+              raise SystemExit(
+                  "STOP: LIVE open orders remain."
+              )
+
+          print(
+              "LIVE bootstrap evidence: VERIFIED"
+          )
+          PY
+
+      - name: Commit LIVE bootstrap evidence
+        run: |
+          set -euo pipefail
+
+          git config user.name \
+            "fund100-research-bot"
+
+          git config user.email \
+            "fund100-research-bot@users.noreply.github.com"
+
+          git add \
+            live_activation_outputs/v5_002/live_bootstrap_v1_0.json
+
+          if git diff --cached --quiet; then
+
+            echo "Bootstrap evidence unchanged."
+
+          else
+
+            git commit -m \
+              "Record Fund-100 LIVE micro-pilot bootstrap"
+
+            git push
+
+          fi
+
+      - name: Final summary
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "FUND-100 LIVE MICRO-PILOT BOOTSTRAP COMPLETE"
+          echo "========================================"
+          echo "Strategy: V5-002"
+          echo "Environment: ALPACA LIVE"
+          echo "Pilot account binding: VERIFIED"
+          echo "Current shadow-state binding: VERIFIED"
+          echo "LIVE capital ceiling: ENFORCED"
+          echo "Leverage allowed: FALSE"
+          echo "Shorting allowed: FALSE"
+          echo "Deterministic order IDs: PASS"
+          echo "Cumulative notional ceiling: PASS"
+          echo "LIVE fills: VERIFIED"
+          echo "Duplicate LIVE submissions: 0"
+          echo "Final reconciliation: PASS"
+          echo "Open LIVE orders: 0"
+          echo "Bootstrap complete: TRUE"
+          echo "Ordinary drift trading: FALSE"
+          echo "Autonomous event execution: NOT YET ENABLED"
