@@ -1,0 +1,259 @@
+name: Fund-100 V5-002 LIVE Production
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: "17,29,41 15 * * 1-5"
+      timezone: "America/New_York"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-v5-002-live-production
+  cancel-in-progress: false
+
+env:
+  FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+jobs:
+  production:
+    name: V5-002 LIVE Production Controller
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile new production source
+        run: |
+          set -euo pipefail
+
+          python -m py_compile \
+            fund100_live_production_controller_v1_0.py
+
+          python -m py_compile \
+            test_fund100_live_production_controller_v1_0.py
+
+          echo "Production controller syntax: PASS"
+
+      - name: Run full regression suite on manual validation
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          FUND100_BROKER_KILL_SWITCH: ENGAGED
+        run: |
+          set -euo pipefail
+
+          pytest -q
+
+      - name: Verify bootstrap and policy artifacts exist
+        run: |
+          set -euo pipefail
+
+          test -f \
+            live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json
+
+          test -f \
+            live_activation_outputs/v5_002/live_bootstrap_v1_0.json
+
+          test -f \
+            live_activation_outputs/v5_002/pre_live_release_lock_v1_9.json
+
+          echo "LIVE pilot policy: PRESENT"
+          echo "Successful bootstrap evidence: PRESENT"
+          echo "Release Lock v1.9: PRESENT"
+
+      - name: Run V5-002 LIVE production controller
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+
+        run: |
+          set -euo pipefail
+
+          python fund100_live_production_controller_v1_0.py
+
+      - name: Verify production status artifact
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path(
+              "live_activation_outputs/v5_002/"
+              "live_production_status_v1_0.json"
+          )
+
+          if not path.exists():
+              raise SystemExit(
+                  "STOP: production status artifact missing."
+              )
+
+          body = json.loads(
+              path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          if body.get(
+              "strategy"
+          ) != "V5-002_SHADOW":
+              raise SystemExit(
+                  "STOP: wrong production strategy."
+              )
+
+          if body.get(
+              "broker_environment"
+          ) != "ALPACA_LIVE":
+              raise SystemExit(
+                  "STOP: wrong broker environment."
+              )
+
+          if body.get(
+              "ordinary_drift_trading"
+          ) is not False:
+              raise SystemExit(
+                  "STOP: ordinary drift trading changed."
+              )
+
+          if body.get(
+              "leverage_allowed"
+          ) is not False:
+              raise SystemExit(
+                  "STOP: leverage policy changed."
+              )
+
+          if body.get(
+              "shorting_allowed"
+          ) is not False:
+              raise SystemExit(
+                  "STOP: shorting policy changed."
+              )
+
+          print(
+              "Production status artifact: VERIFIED"
+          )
+
+          print(
+              "Controller status:",
+              body.get(
+                  "status"
+              ),
+          )
+
+          print(
+              "Orders submitted this run:",
+              body.get(
+                  "orders_submitted_this_run"
+              ),
+          )
+          PY
+
+      - name: Upload production status
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-live-production-status-${{ github.run_id }}
+          path: live_activation_outputs/v5_002/live_production_status_v1_0.json
+          retention-days: 30
+
+      - name: Restore transient compiler and status files
+        run: |
+          set -euo pipefail
+
+          git restore --worktree -- \
+            live_dryrun_outputs/v5_002 \
+            2>/dev/null || true
+
+          git restore --worktree -- \
+            live_activation_outputs/v5_002/live_production_status_v1_0.json \
+            2>/dev/null || true
+
+          if git ls-files --error-unmatch \
+            live_activation_outputs/v5_002/live_production_status_v1_0.json \
+            >/dev/null 2>&1; then
+
+            true
+
+          else
+
+            rm -f \
+              live_activation_outputs/v5_002/live_production_status_v1_0.json
+
+          fi
+
+      - name: Commit completed LIVE event ledger if changed
+        run: |
+          set -euo pipefail
+
+          if [ ! -d \
+            live_activation_outputs/v5_002/live_production_events ]; then
+
+            echo "No completed production event to commit."
+            exit 0
+
+          fi
+
+          git config user.name \
+            "fund100-production-bot"
+
+          git config user.email \
+            "fund100-production-bot@users.noreply.github.com"
+
+          git add \
+            live_activation_outputs/v5_002/live_production_events
+
+          if git diff --cached --quiet; then
+
+            echo "No new completed LIVE event evidence."
+            exit 0
+
+          fi
+
+          git commit -m \
+            "Record completed V5-002 LIVE production event"
+
+          git pull --rebase origin main
+
+          git push origin HEAD:main
+
+      - name: Final production summary
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "FUND-100 V5-002 LIVE PRODUCTION RUN COMPLETE"
+          echo "========================================"
+          echo "Strategy: V5-002"
+          echo "Environment: ALPACA LIVE"
+          echo "Bootstrap: COMPLETE"
+          echo "Scheduled compiler: CURRENT / V1.1"
+          echo "Frozen 2.5% threshold: PRESERVED"
+          echo "Ordinary drift trading: FALSE"
+          echo "Position-aware execution: TRUE"
+          echo "SELL before BUY: ENFORCED"
+          echo "Fresh broker reconstruction: ENFORCED"
+          echo "Deterministic client IDs: ENFORCED"
+          echo "Cumulative pilot ceiling: ENFORCED"
+          echo "Leverage allowed: FALSE"
+          echo "Shorting allowed: FALSE"
+          echo "Additional deposits automatically usable: FALSE"
