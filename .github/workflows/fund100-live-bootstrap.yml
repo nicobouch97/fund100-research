@@ -46,46 +46,210 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ "${BOOTSTRAP_AUTH}" != \
-            "I_AUTHORIZE_FUND100_LIVE_BOOTSTRAP" ]; then
-
+          if [ "${BOOTSTRAP_AUTH}" != "I_AUTHORIZE_FUND100_LIVE_BOOTSTRAP" ]; then
             echo "STOP: bootstrap authorization mismatch."
             exit 1
-
           fi
 
           echo "Explicit LIVE bootstrap authorization: PRESENT"
 
-      - name: Verify broker kill switch was deliberately disengaged
+      - name: Verify repository kill switch was deliberately disengaged
         run: |
           set -euo pipefail
 
           if [ "${FUND100_BROKER_KILL_SWITCH}" != "DISENGAGED" ]; then
-
             echo "STOP: broker kill switch is not DISENGAGED."
             exit 1
-
           fi
 
           echo "FUND100_BROKER_KILL_SWITCH = DISENGAGED"
 
-      - name: Run regression suite
+      - name: Run regression suite under safe test state
+        env:
+          FUND100_BROKER_KILL_SWITCH: ENGAGED
         run: |
           set -euo pipefail
+
           pytest -q
 
-      - name: Refresh current V5-002 LIVE manifest read-only
-        env:
-          # Manifest generation itself remains GET-only and
-          # retains its historic safety expectation.
-          FUND100_BROKER_KILL_SWITCH: ENGAGED
-
-          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
-          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+      - name: Verify required locked artifacts exist
         run: |
           set -euo pipefail
 
-          python fund100_alpaca_live_manifest_v1_1.py
+          test -f \
+            live_activation_outputs/v5_002/pre_live_release_lock_v1_9.json
+
+          test -f \
+            live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json
+
+          test -f \
+            live_activation_outputs/v5_002/live_micro_pilot_preparation_v1_0.json
+
+          test -f \
+            live_dryrun_outputs/v5_002/live_execution_manifest.json
+
+          echo "Release Lock v1.9: PRESENT"
+          echo "LIVE pilot policy: PRESENT"
+          echo "LIVE pilot preparation: PRESENT"
+          echo "Current LIVE manifest: PRESENT"
+
+      - name: Verify manifest and pilot-policy lineage before any broker write
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          policy_path = Path(
+              "live_activation_outputs/v5_002/"
+              "live_micro_pilot_policy_v1_0.json"
+          )
+
+          preparation_path = Path(
+              "live_activation_outputs/v5_002/"
+              "live_micro_pilot_preparation_v1_0.json"
+          )
+
+          lock_path = Path(
+              "live_activation_outputs/v5_002/"
+              "pre_live_release_lock_v1_9.json"
+          )
+
+          manifest_path = Path(
+              "live_dryrun_outputs/v5_002/"
+              "live_execution_manifest.json"
+          )
+
+          policy = json.loads(
+              policy_path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          preparation = json.loads(
+              preparation_path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          release_lock = json.loads(
+              lock_path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          manifest = json.loads(
+              manifest_path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          if release_lock.get(
+              "release_lock_version"
+          ) != "1.9":
+              raise SystemExit(
+                  "STOP: Release Lock v1.9 is not current."
+              )
+
+          if policy.get(
+              "strategy"
+          ) != "V5-002_SHADOW":
+              raise SystemExit(
+                  "STOP: pilot policy strategy is not V5-002."
+              )
+
+          if policy.get(
+              "deployment_mode"
+          ) != "LIVE_MICRO_PILOT":
+              raise SystemExit(
+                  "STOP: policy is not LIVE_MICRO_PILOT."
+              )
+
+          if policy.get(
+              "bootstrap_alignment_allowed"
+          ) is not True:
+              raise SystemExit(
+                  "STOP: policy does not authorize bootstrap."
+              )
+
+          if policy.get(
+              "leverage_allowed"
+          ) is not False:
+              raise SystemExit(
+                  "STOP: leverage unexpectedly authorized."
+              )
+
+          if policy.get(
+              "shorting_allowed"
+          ) is not False:
+              raise SystemExit(
+                  "STOP: shorting unexpectedly authorized."
+              )
+
+          if preparation.get(
+              "orders_submitted"
+          ) != 0:
+              raise SystemExit(
+                  "STOP: preparation artifact is not clean."
+              )
+
+          policy_state_hash = str(
+              policy.get(
+                  "activation_shadow_state_sha256",
+                  ""
+              )
+          ).strip()
+
+          manifest_state_hash = str(
+              manifest.get(
+                  "strategy_state_sha256",
+                  ""
+              )
+          ).strip()
+
+          if not policy_state_hash:
+              raise SystemExit(
+                  "STOP: policy shadow-state hash missing."
+              )
+
+          if not manifest_state_hash:
+              raise SystemExit(
+                  "STOP: manifest shadow-state hash missing."
+              )
+
+          if manifest_state_hash != policy_state_hash:
+              raise SystemExit(
+                  "STOP: manifest and pilot policy refer to "
+                  "different V5-002 shadow states. "
+                  "Re-run LIVE Micro-Pilot Preparation before "
+                  "attempting bootstrap."
+              )
+
+          if manifest.get(
+              "live_execution_authorized"
+          ) is not False:
+              raise SystemExit(
+                  "STOP: dry-run manifest unexpectedly "
+                  "authorizes LIVE execution."
+              )
+
+          print(
+              "Release Lock lineage: VERIFIED"
+          )
+
+          print(
+              "V5-002 policy binding: VERIFIED"
+          )
+
+          print(
+              "Manifest shadow-state binding: VERIFIED"
+          )
+
+          print(
+              "Pre-write lineage gate: PASS"
+          )
+          PY
 
       - name: Execute one-time LIVE bootstrap
         env:
@@ -93,6 +257,7 @@ jobs:
           ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
 
           FUND100_LIVE_BOOTSTRAP_ARM: "YES"
+
         run: |
           set -euo pipefail
 
@@ -156,11 +321,9 @@ jobs:
                       f"got {actual!r}"
                   )
 
-          reconciliation = (
-              body.get(
-                  "reconciliation",
-                  {}
-              )
+          reconciliation = body.get(
+              "reconciliation",
+              {}
           )
 
           if reconciliation.get(
@@ -168,7 +331,15 @@ jobs:
           ) != 0:
 
               raise SystemExit(
-                  "STOP: LIVE open orders remain."
+                  "STOP: LIVE open orders remain after bootstrap."
+              )
+
+          if reconciliation.get(
+              "equity_positive"
+          ) is not True:
+
+              raise SystemExit(
+                  "STOP: final LIVE equity validation failed."
               )
 
           print(
@@ -211,6 +382,7 @@ jobs:
           echo "========================================"
           echo "Strategy: V5-002"
           echo "Environment: ALPACA LIVE"
+          echo "Release Lock v1.9: VERIFIED"
           echo "Pilot account binding: VERIFIED"
           echo "Current shadow-state binding: VERIFIED"
           echo "LIVE capital ceiling: ENFORCED"
