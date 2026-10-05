@@ -1,0 +1,217 @@
+name: Fund-100 LIVE Micro-Pilot Preparation
+
+on:
+  workflow_dispatch:
+    inputs:
+      pilot_cap_usd:
+        description: "Standing LIVE experiment ceiling in USD"
+        required: true
+        type: string
+
+      authorization_reference:
+        description: "Type exactly: I_AUTHORIZE_FUND100_LIVE_PILOT_PREPARATION"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-live-micro-pilot-preparation
+  cancel-in-progress: false
+
+env:
+  FUND100_BROKER_KILL_SWITCH: ENGAGED
+
+jobs:
+  prepare:
+    name: Bind Fund-100 LIVE Pilot Policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify preparation authorization phrase
+        env:
+          AUTH_REFERENCE: ${{ inputs.authorization_reference }}
+        run: |
+          set -euo pipefail
+
+          if [ "${AUTH_REFERENCE}" != \
+            "I_AUTHORIZE_FUND100_LIVE_PILOT_PREPARATION" ]; then
+
+            echo "STOP: preparation authorization phrase mismatch."
+            exit 1
+
+          fi
+
+          echo "Preparation authorization: PRESENT"
+
+      - name: Verify kill switch remains engaged
+        run: |
+          set -euo pipefail
+
+          if [ "${FUND100_BROKER_KILL_SWITCH}" != "ENGAGED" ]; then
+
+            echo "STOP: broker kill switch must remain ENGAGED."
+            exit 1
+
+          fi
+
+          echo "FUND100_BROKER_KILL_SWITCH = ENGAGED"
+
+      - name: Run full regression suite
+        run: |
+          set -euo pipefail
+          pytest -q
+
+      - name: Verify Release Lock v1.9 exists
+        run: |
+          set -euo pipefail
+
+          test -f \
+            live_activation_outputs/v5_002/pre_live_release_lock_v1_9.json
+
+      - name: Build LIVE pilot policy from real account state
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+
+          FUND100_LIVE_PILOT_CAP_USD: ${{ inputs.pilot_cap_usd }}
+
+          FUND100_LIVE_PILOT_AUTHORIZATION_REFERENCE: \
+            ${{ inputs.authorization_reference }}
+
+        run: |
+          set -euo pipefail
+
+          python fund100_live_pilot_prepare_v1_0.py
+
+      - name: Verify no LIVE order authorization was created
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          prep_path = Path(
+              "live_activation_outputs/v5_002/"
+              "live_micro_pilot_preparation_v1_0.json"
+          )
+
+          policy_path = Path(
+              "live_activation_outputs/v5_002/"
+              "live_micro_pilot_policy_v1_0.json"
+          )
+
+          prep = json.loads(
+              prep_path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          policy = json.loads(
+              policy_path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          if prep.get(
+              "orders_submitted"
+          ) != 0:
+              raise SystemExit(
+                  "STOP: preparation reports order submission."
+              )
+
+          if policy.get(
+              "order_authorization_present"
+          ) is not False:
+              raise SystemExit(
+                  "STOP: preparation unexpectedly created "
+                  "order authorization."
+              )
+
+          if prep.get(
+              "existing_positions"
+          ) != 0:
+              raise SystemExit(
+                  "STOP: bootstrap account is not clean."
+              )
+
+          if prep.get(
+              "existing_open_orders"
+          ) != 0:
+              raise SystemExit(
+                  "STOP: bootstrap account has open orders."
+              )
+
+          print(
+              "LIVE pilot preparation evidence: VERIFIED"
+          )
+          PY
+
+      - name: Commit LIVE pilot policy
+        run: |
+          set -euo pipefail
+
+          git config user.name \
+            "fund100-research-bot"
+
+          git config user.email \
+            "fund100-research-bot@users.noreply.github.com"
+
+          git add \
+            live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json \
+            live_activation_outputs/v5_002/live_micro_pilot_preparation_v1_0.json
+
+          if git diff --cached --quiet; then
+
+            echo "Pilot preparation evidence unchanged."
+
+          else
+
+            git commit -m \
+              "Bind Fund-100 live micro-pilot policy"
+
+            git push
+
+          fi
+
+      - name: Final summary
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "FUND-100 LIVE MICRO-PILOT PREPARATION COMPLETE"
+          echo "========================================"
+          echo "Release Lock v1.9: VERIFIED"
+          echo "Strategy: V5-002"
+          echo "Real LIVE account binding: VERIFIED"
+          echo "Funded LIVE cash: VERIFIED"
+          echo "Pilot ceiling <= funded cash: VERIFIED"
+          echo "Existing positions: 0"
+          echo "Existing open orders: 0"
+          echo "Pilot policy: CREATED"
+          echo "Additional deposits automatically usable: FALSE"
+          echo "Leverage allowed: FALSE"
+          echo "Shorting allowed: FALSE"
+          echo "Ordinary drift trading: FALSE"
+          echo "Bootstrap authorization present: YES"
+          echo "LIVE order authorization present: FALSE"
+          echo "Broker mutation capability: NONE"
+          echo "LIVE orders submitted: 0"
