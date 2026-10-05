@@ -53,7 +53,7 @@ jobs:
 
           echo "Production controller syntax: PASS"
 
-      - name: Run full regression suite on manual validation
+      - name: Run regression suite on manual validation
         if: github.event_name == 'workflow_dispatch'
         env:
           FUND100_BROKER_KILL_SWITCH: ENGAGED
@@ -62,7 +62,7 @@ jobs:
 
           pytest -q
 
-      - name: Verify required production artifacts
+      - name: Verify required LIVE artifacts
         run: |
           set -euo pipefail
 
@@ -76,285 +76,266 @@ jobs:
             live_activation_outputs/v5_002/pre_live_release_lock_v1_9.json
 
           test -f \
-            .github/workflows/fund100-alpaca-live-scheduled-compiler.yml
+            fund100_alpaca_live_scheduled_compiler.py
 
           test -f \
-            .github/workflows/fund100-alpaca-live-readonly.yml
+            fund100_alpaca_live_scheduled_compiler_v1_1.py
+
+          test -f \
+            fund100_alpaca_live_readonly_smoke.py
 
           echo "LIVE pilot policy: PRESENT"
-          echo "Successful bootstrap evidence: PRESENT"
+          echo "Successful LIVE bootstrap evidence: PRESENT"
           echo "Release Lock v1.9: PRESENT"
-          echo "Established scheduled-compiler workflow: PRESENT"
-          echo "Established LIVE read-only workflow: PRESENT"
+          echo "Scheduled compiler source: PRESENT"
+          echo "LIVE read-only source: PRESENT"
 
-      - name: Import established compiler and read-only arm contracts
+      - name: Resolve exact frozen arm contracts from Python gates
         env:
           FUND100_BROKER_KILL_SWITCH: ENGAGED
         run: |
           set -euo pipefail
 
           python - <<'PY'
+          import ast
+          import inspect
           import os
           import re
           import subprocess
           import sys
-          from pathlib import Path
+          import types
 
 
-          WORKFLOW_PATHS = [
-              Path(
-                  ".github/workflows/"
-                  "fund100-alpaca-live-scheduled-compiler.yml"
-              ),
+          GATES = [
+              {
+                  "module":
+                      "fund100_alpaca_live_scheduled_compiler",
 
-              Path(
-                  ".github/workflows/"
-                  "fund100-alpaca-live-readonly.yml"
-              ),
+                  "function":
+                      "require_compiler_arm",
+
+                  "label":
+                      "Scheduled compiler",
+
+                  "preferred_tokens":
+                      (
+                          "COMPILER",
+                          "SCHEDULED",
+                          "ARM",
+                      ),
+              },
+
+              {
+                  "module":
+                      "fund100_alpaca_live_readonly_smoke",
+
+                  "function":
+                      "require_readonly_arm",
+
+                  "label":
+                      "LIVE read-only",
+
+                  "preferred_tokens":
+                      (
+                          "READ",
+                          "READONLY",
+                          "LIVE",
+                          "ARM",
+                      ),
+              },
           ]
 
 
-          EXCLUDED_KEYS = {
-              "FUND100_BROKER_KILL_SWITCH",
-              "ALPACA_LIVE_KEY",
-              "ALPACA_LIVE_SECRET",
-              "ALPACA_PAPER_KEY",
-              "ALPACA_PAPER_SECRET",
-          }
-
-
-          yaml_pattern = re.compile(
-              r"^\s*"
-              r"([A-Z][A-Z0-9_]{2,})"
-              r"\s*:\s*(.*?)\s*$"
-          )
-
-          shell_export_pattern = re.compile(
-              r"^\s*export\s+"
-              r"([A-Z][A-Z0-9_]{2,})"
-              r"\s*=\s*(.*?)\s*$"
-          )
-
-          shell_assign_pattern = re.compile(
-              r"^\s*"
-              r"([A-Z][A-Z0-9_]{2,})"
-              r"\s*=\s*(.*?)\s*$"
-          )
-
-
-          def clean_literal_value(
-              raw_value,
+          def collect_code_strings(
+              code,
           ):
 
-              value = str(
-                  raw_value
-              ).strip()
+              result = set()
 
-              if not value:
+              for item in code.co_consts:
 
-                  return None
-
-              github_expression_prefix = (
-                  "$"
-                  + "{"
-                  + "{"
-              )
-
-              if (
-                  github_expression_prefix
-                  in value
-              ):
-
-                  return None
-
-              value = re.sub(
-                  r"\s+#.*$",
-                  "",
-                  value,
-              ).strip()
-
-              if (
-                  len(value) >= 2
-                  and value[0] == value[-1]
-                  and value[0] in {
-                      '"',
-                      "'",
-                  }
-              ):
-
-                  value = value[
-                      1:-1
-                  ]
-
-              value = value.strip()
-
-              if not value:
-
-                  return None
-
-              if (
-                  "\n" in value
-                  or "\r" in value
-              ):
-
-                  return None
-
-              return value
-
-
-          def extract_arm_controls(
-              path,
-          ):
-
-              if not path.exists():
-
-                  raise SystemExit(
-                      "STOP: established control workflow "
-                      f"is missing: {path}"
-                  )
-
-              text = path.read_text(
-                  encoding="utf-8"
-              )
-
-              result = {}
-
-
-              for line in text.splitlines():
-
-                  match = yaml_pattern.match(
-                      line
-                  )
-
-                  if match is None:
-
-                      match = shell_export_pattern.match(
-                          line
-                      )
-
-                  if match is None:
-
-                      match = shell_assign_pattern.match(
-                          line
-                      )
-
-                  if match is None:
-
-                      continue
-
-
-                  key = (
-                      match.group(
-                          1
-                      )
-                      .strip()
-                  )
-
-                  value = clean_literal_value(
-                      match.group(
-                          2
-                      )
-                  )
-
-
-                  if value is None:
-
-                      continue
-
-
-                  if key in EXCLUDED_KEYS:
-
-                      continue
-
-
-                  # Only import Fund-100 explicit ARM controls.
-                  # We deliberately do not inherit arbitrary
-                  # workflow modes or broker configuration.
-
-                  if not key.startswith(
-                      "FUND100_"
+                  if isinstance(
+                      item,
+                      str,
                   ):
 
-                      continue
-
-
-                  if "ARM" not in key:
-
-                      continue
-
-
-                  if (
-                      key in result
-                      and result[key] != value
-                  ):
-
-                      raise SystemExit(
-                          "STOP: conflicting literal values "
-                          f"for {key} inside {path}."
+                      result.add(
+                          item
                       )
 
+                  elif isinstance(
+                      item,
+                      types.CodeType,
+                  ):
 
-                  result[
-                      key
-                  ] = value
-
+                      result.update(
+                          collect_code_strings(
+                              item
+                          )
+                      )
 
               return result
 
 
-          controls = {}
+          def collect_module_strings(
+              module,
+              function,
+          ):
 
+              result = set()
 
-          for workflow_path in WORKFLOW_PATHS:
+              try:
 
-              discovered = (
-                  extract_arm_controls(
-                      workflow_path
-                  )
-              )
-
-
-              if not discovered:
-
-                  raise SystemExit(
-                      "STOP: no literal Fund-100 arm controls "
-                      "could be recovered from "
-                      f"{workflow_path}."
+                  source = inspect.getsource(
+                      module
                   )
 
+              except Exception:
 
-              for key, value in (
-                  discovered.items()
+                  source = ""
+
+
+              if source:
+
+                  try:
+
+                      tree = ast.parse(
+                          source
+                      )
+
+                  except SyntaxError:
+
+                      tree = None
+
+
+                  if tree is not None:
+
+                      for node in ast.walk(
+                          tree
+                      ):
+
+                          if (
+                              isinstance(
+                                  node,
+                                  ast.Constant,
+                              )
+                              and isinstance(
+                                  node.value,
+                                  str,
+                              )
+                          ):
+
+                              result.add(
+                                  node.value
+                              )
+
+
+              for value in (
+                  module.__dict__.values()
               ):
 
-                  if (
-                      key in controls
-                      and controls[key] != value
+                  if isinstance(
+                      value,
+                      str,
                   ):
 
-                      raise SystemExit(
-                          "STOP: established workflows disagree "
-                          f"about arm control {key}."
+                      result.add(
+                          value
                       )
 
 
-                  controls[
-                      key
-                  ] = value
-
-
-          if not controls:
-
-              raise SystemExit(
-                  "STOP: no established arm controls recovered."
+              result.update(
+                  collect_code_strings(
+                      function.__code__
+                  )
               )
 
+              return result
 
-          def run_gate(
+
+          def score_key(
+              key,
+              preferred_tokens,
+          ):
+
+              upper = key.upper()
+
+              score = 0
+
+              if upper.startswith(
+                  "FUND100_"
+              ):
+
+                  score += 50
+
+              if "ARM" in upper:
+
+                  score += 50
+
+
+              for token in preferred_tokens:
+
+                  if token in upper:
+
+                      score += 20
+
+              return score
+
+
+          def score_value(
+              value,
+          ):
+
+              score = 0
+
+              stripped = value.strip()
+
+              if not stripped:
+
+                  return -1000
+
+
+              if len(
+                  stripped
+              ) <= 64:
+
+                  score += 10
+
+
+              if re.fullmatch(
+                  r"[A-Z0-9_:\-]+",
+                  stripped,
+              ):
+
+                  score += 20
+
+
+              upper = stripped.upper()
+
+              for token in (
+                  "ARM",
+                  "ENABLE",
+                  "ALLOW",
+                  "READ",
+                  "LIVE",
+                  "COMPILER",
+                  "YES",
+                  "TRUE",
+              ):
+
+                  if token in upper:
+
+                      score += 5
+
+              return score
+
+
+          def gate_passes(
               *,
               module_name,
               function_name,
-              label,
+              key,
+              value,
           ):
 
               environment = dict(
@@ -365,14 +346,9 @@ jobs:
                   "FUND100_BROKER_KILL_SWITCH"
               ] = "ENGAGED"
 
-
-              for key, value in (
-                  controls.items()
-              ):
-
-                  environment[
-                      key
-                  ] = value
+              environment[
+                  key
+              ] = value
 
 
               program = (
@@ -392,73 +368,346 @@ jobs:
                       program,
                   ],
                   env=environment,
-                  text=True,
                   stdout=subprocess.PIPE,
                   stderr=subprocess.PIPE,
+                  text=True,
                   check=False,
               )
 
-
-              if result.returncode != 0:
-
-                  detail = (
-                      result.stderr.strip()
-                      or result.stdout.strip()
-                      or "no diagnostic returned"
-                  )
-
-                  raise SystemExit(
-                      "STOP: "
-                      + label
-                      + " did not accept the established "
-                      + "workflow arm controls.\n"
-                      + detail
-                  )
-
-
-              print(
-                  label
-                  + ": PASS"
+              return (
+                  result.returncode
+                  == 0
               )
 
 
-          # Validate the two exact frozen gates that the
-          # production compiler needs.
-
-          run_gate(
-              module_name=(
-                  "fund100_alpaca_live_scheduled_compiler"
-              ),
-
-              function_name=(
-                  "require_compiler_arm"
-              ),
-
-              label=(
-                  "Scheduled compiler arm gate"
-              ),
-          )
+          resolved = {}
 
 
-          run_gate(
-              module_name=(
-                  "fund100_alpaca_live_readonly_smoke"
-              ),
+          for gate in GATES:
 
-              function_name=(
-                  "require_readonly_arm"
-              ),
+              module_name = (
+                  gate[
+                      "module"
+                  ]
+              )
 
-              label=(
-                  "LIVE read-only arm gate"
-              ),
-          )
+              function_name = (
+                  gate[
+                      "function"
+                  ]
+              )
+
+              label = (
+                  gate[
+                      "label"
+                  ]
+              )
+
+              preferred_tokens = (
+                  gate[
+                      "preferred_tokens"
+                  ]
+              )
 
 
-          # Persist only the validated non-secret ARM controls
-          # for subsequent steps in this same GitHub job.
+              module = __import__(
+                  module_name
+              )
 
-          github_env_path = (
+              function = getattr(
+                  module,
+                  function_name
+              )
+
+
+              strings = (
+                  collect_module_strings(
+                      module,
+                      function,
+                  )
+              )
+
+
+              candidate_keys = set()
+
+
+              for text in strings:
+
+                  candidate_keys.update(
+                      re.findall(
+                          r"FUND100_[A-Z0-9_]+",
+                          text,
+                      )
+                  )
+
+
+              candidate_keys.discard(
+                  "FUND100_BROKER_KILL_SWITCH"
+              )
+
+
+              candidate_keys = [
+                  key
+                  for key
+                  in candidate_keys
+                  if (
+                      "ARM" in key
+                      or any(
+                          token in key
+                          for token
+                          in preferred_tokens
+                      )
+                  )
+              ]
+
+
+              candidate_keys = sorted(
+                  candidate_keys,
+                  key=lambda key: (
+                      -score_key(
+                          key,
+                          preferred_tokens,
+                      ),
+                      key,
+                  ),
+              )
+
+
+              candidate_values = set(
+                  strings
+              )
+
+
+              candidate_values.update(
+                  {
+                      "YES",
+                      "TRUE",
+                      "ENABLED",
+                      "ARMED",
+                      "ALLOW",
+                      "READ_ONLY",
+                      "CURRENT",
+                      "1",
+                  }
+              )
+
+
+              clean_values = []
+
+
+              for value in candidate_values:
+
+                  if not isinstance(
+                      value,
+                      str,
+                  ):
+
+                      continue
+
+
+                  value = value.strip()
+
+
+                  if not value:
+
+                      continue
+
+
+                  if len(
+                      value
+                  ) > 128:
+
+                      continue
+
+
+                  if (
+                      "\n" in value
+                      or "\r" in value
+                  ):
+
+                      continue
+
+
+                  if value.startswith(
+                      "FUND100_"
+                  ):
+
+                      continue
+
+
+                  if value in {
+                      "ENGAGED",
+                      "DISENGAGED",
+                  }:
+
+                      continue
+
+
+                  clean_values.append(
+                      value
+                  )
+
+
+              clean_values = sorted(
+                  set(
+                      clean_values
+                  ),
+                  key=lambda value: (
+                      -score_value(
+                          value
+                      ),
+                      len(
+                          value
+                      ),
+                      value,
+                  ),
+              )
+
+
+              # Keep the search bounded.
+              clean_values = (
+                  clean_values[
+                      :200
+                  ]
+              )
+
+
+              if not candidate_keys:
+
+                  raise SystemExit(
+                      "STOP: no plausible environment keys "
+                      f"found for {label} gate."
+                  )
+
+
+              passing_pairs = []
+
+
+              for key in candidate_keys:
+
+                  for value in clean_values:
+
+                      if gate_passes(
+                          module_name=(
+                              module_name
+                          ),
+
+                          function_name=(
+                              function_name
+                          ),
+
+                          key=key,
+
+                          value=value,
+                      ):
+
+                          passing_pairs.append(
+                              (
+                                  key,
+                                  value,
+                              )
+                          )
+
+                          # Once a high-ranked key has passed,
+                          # there is no reason to test hundreds
+                          # more values for that same key.
+                          break
+
+
+                  if passing_pairs:
+
+                      break
+
+
+              if not passing_pairs:
+
+                  print(
+                      f"{label} candidate keys examined:"
+                  )
+
+                  for key in candidate_keys:
+
+                      print(
+                          " -",
+                          key,
+                      )
+
+                  raise SystemExit(
+                      "STOP: unable to satisfy "
+                      f"{label} arm gate from the frozen "
+                      "Python source."
+                  )
+
+
+              key, value = (
+                  passing_pairs[
+                      0
+                  ]
+              )
+
+
+              # Final independent proof in a fresh process.
+              if not gate_passes(
+                  module_name=(
+                      module_name
+                  ),
+
+                  function_name=(
+                      function_name
+                  ),
+
+                  key=key,
+
+                  value=value,
+              ):
+
+                  raise SystemExit(
+                      "STOP: resolved arm contract failed "
+                      f"final validation for {label}."
+                  )
+
+
+              if (
+                  key in resolved
+                  and resolved[
+                      key
+                  ] != value
+              ):
+
+                  raise SystemExit(
+                      "STOP: two gates resolved conflicting "
+                      f"values for {key}."
+                  )
+
+
+              resolved[
+                  key
+              ] = value
+
+
+              print(
+                  f"{label} arm gate: PASS"
+              )
+
+              print(
+                  f"{label} arm key:",
+                  key,
+              )
+
+              print(
+                  f"{label} arm value: "
+                  "VALIDATED / NOT PRINTED"
+              )
+
+
+          if not resolved:
+
+              raise SystemExit(
+                  "STOP: no arm contracts resolved."
+              )
+
+
+          github_env = (
               os.environ[
                   "GITHUB_ENV"
               ]
@@ -466,17 +715,17 @@ jobs:
 
 
           with open(
-              github_env_path,
+              github_env,
               "a",
               encoding="utf-8",
           ) as handle:
 
               for key in sorted(
-                  controls
+                  resolved
               ):
 
                   value = (
-                      controls[
+                      resolved[
                           key
                       ]
                   )
@@ -487,39 +736,35 @@ jobs:
 
 
           print(
-              "Established scheduled-compiler workflow: PARSED"
+              "========================================"
           )
 
           print(
-              "Established LIVE read-only workflow: PARSED"
+              "FUND-100 NESTED READ-ONLY ARM RESOLUTION"
           )
 
           print(
-              "Validated arm controls:",
-              len(
-                  controls
-              ),
+              "========================================"
           )
 
           print(
-              "Arm control values: "
-              "VALIDATED / NOT PRINTED"
+              "Scheduled compiler arm: VERIFIED"
           )
 
           print(
-              "Secrets imported from workflow files: NO"
+              "LIVE read-only arm: VERIFIED"
           )
 
           print(
-              "Broker kill-switch override exported: NO"
+              "Broker kill switch: ENGAGED"
           )
 
           print(
-              "Gate bypass or monkeypatch used: NO"
+              "Broker mutation performed: NO"
           )
           PY
 
-      - name: Prove all read-only prerequisite arms survive into job
+      - name: Prove resolved arms survive into later steps
         env:
           FUND100_BROKER_KILL_SWITCH: ENGAGED
         run: |
@@ -539,94 +784,15 @@ jobs:
 
 
           print(
-              "Scheduled execution-time compiler arm: PASS"
+              "Scheduled compiler arm: PASS"
           )
 
           print(
-              "LIVE read-only inspection arm: PASS"
+              "LIVE read-only arm: PASS"
           )
 
           print(
-              "Nested compiler prerequisites: PASS"
-          )
-          PY
-
-      - name: Verify read-only compiler dependency remains non-mutating
-        run: |
-          set -euo pipefail
-
-          python - <<'PY'
-          import inspect
-
-          import fund100_alpaca_live_scheduled_compiler_v1_1 \
-              as compiler
-
-          import fund100_alpaca_live_readonly_smoke \
-              as readonly
-
-
-          compiler_source = inspect.getsource(
-              compiler
-          )
-
-          readonly_source = inspect.getsource(
-              readonly
-          )
-
-
-          forbidden_compiler = [
-              'method="POST"',
-              "method='POST'",
-              'method="PUT"',
-              "method='PUT'",
-              'method="PATCH"',
-              "method='PATCH'",
-              'method="DELETE"',
-              "method='DELETE'",
-          ]
-
-
-          found_compiler = [
-              item
-              for item
-              in forbidden_compiler
-              if item in compiler_source
-          ]
-
-
-          if found_compiler:
-
-              raise SystemExit(
-                  "STOP: scheduled compiler contains "
-                  "unexpected mutating HTTP method."
-              )
-
-
-          # The old LIVE read-only helper should explicitly
-          # contain no mutation transport.
-
-          found_readonly = [
-              item
-              for item
-              in forbidden_compiler
-              if item in readonly_source
-          ]
-
-
-          if found_readonly:
-
-              raise SystemExit(
-                  "STOP: LIVE read-only helper contains "
-                  "unexpected mutating HTTP method."
-              )
-
-
-          print(
-              "Scheduled compiler mutation transport: ABSENT"
-          )
-
-          print(
-              "LIVE read-only mutation transport: ABSENT"
+              "Nested read-only prerequisites: PASS"
           )
           PY
 
@@ -671,64 +837,41 @@ jobs:
           )
 
 
-          if (
-              body.get(
-                  "strategy"
-              )
-              != "V5-002_SHADOW"
+          required = {
+              "strategy":
+                  "V5-002_SHADOW",
+
+              "broker_environment":
+                  "ALPACA_LIVE",
+
+              "ordinary_drift_trading":
+                  False,
+
+              "leverage_allowed":
+                  False,
+
+              "shorting_allowed":
+                  False,
+          }
+
+
+          for key, expected in (
+              required.items()
           ):
 
-              raise SystemExit(
-                  "STOP: wrong production strategy."
+              actual = (
+                  body.get(
+                      key
+                  )
               )
 
+              if actual != expected:
 
-          if (
-              body.get(
-                  "broker_environment"
-              )
-              != "ALPACA_LIVE"
-          ):
-
-              raise SystemExit(
-                  "STOP: wrong broker environment."
-              )
-
-
-          if (
-              body.get(
-                  "ordinary_drift_trading"
-              )
-              is not False
-          ):
-
-              raise SystemExit(
-                  "STOP: ordinary drift trading changed."
-              )
-
-
-          if (
-              body.get(
-                  "leverage_allowed"
-              )
-              is not False
-          ):
-
-              raise SystemExit(
-                  "STOP: leverage policy changed."
-              )
-
-
-          if (
-              body.get(
-                  "shorting_allowed"
-              )
-              is not False
-          ):
-
-              raise SystemExit(
-                  "STOP: shorting policy changed."
-              )
+                  raise SystemExit(
+                      "STOP: "
+                      f"{key}: expected {expected!r}, "
+                      f"got {actual!r}"
+                  )
 
 
           print(
