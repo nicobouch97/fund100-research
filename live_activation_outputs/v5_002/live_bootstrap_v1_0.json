@@ -1,0 +1,97 @@
+{
+  "account_binding_sha256": "1739bb3720c916ccfc6732ecd24236ab0cdbbbc1915879e0296d15fb055f49bf",
+  "autonomous_strategy_event_execution_enabled": false,
+  "bootstrap_complete": true,
+  "broker_environment": "ALPACA_LIVE",
+  "cap_proof": {
+    "approved": true,
+    "historical_notional_usd": "0",
+    "pilot_ceiling_usd": "130.30",
+    "projected_notional_usd": "130.28",
+    "unseen_notional_usd": "130.28"
+  },
+  "created_utc": "2026-10-05T14:43:57.077185+00:00",
+  "duplicate_live_posts": 0,
+  "live_get_requests": 24,
+  "live_post_requests": 4,
+  "manifest_sha256": "7885b7afcfae73d44b308e7947a8b29f9d61b5f0d330281613bc7934dd69bf0a",
+  "orchestrator_trace": [
+    "release_lock_verified",
+    "broker_snapshot_reconstructed",
+    "phase_materialized",
+    "authorized_history_reconstructed",
+    "cumulative_cap_approved",
+    "writer_invoked"
+  ],
+  "orders": {
+    "ACWI": {
+      "client_order_id": "f100-live-bootstrap-d2e7ed390b43e8a6-b-acwi",
+      "filled_avg_price": "160.614",
+      "filled_qty": "0.608975556",
+      "status": "filled"
+    },
+    "EEM": {
+      "client_order_id": "f100-live-bootstrap-d2e7ed390b43e8a6-b-eem",
+      "filled_avg_price": "68.618",
+      "filled_qty": "0.159141916",
+      "status": "filled"
+    },
+    "XLE": {
+      "client_order_id": "f100-live-bootstrap-d2e7ed390b43e8a6-b-xle",
+      "filled_avg_price": "62.918",
+      "filled_qty": "0.170698369",
+      "status": "filled"
+    },
+    "XLV": {
+      "client_order_id": "f100-live-bootstrap-d2e7ed390b43e8a6-b-xlv",
+      "filled_avg_price": "165.946",
+      "filled_qty": "0.06490063",
+      "status": "filled"
+    }
+  },
+  "ordinary_drift_trading_enabled": false,
+  "pilot_ceiling_usd": "130.30",
+  "reconciliation": {
+    "equity_positive": true,
+    "open_orders": 0,
+    "positions": 4,
+    "weight_reconciliation": {
+      "ACWI": {
+        "absolute_difference": "0.0000573387498332821614983113",
+        "actual_weight": "0.7507255066011667178385016887",
+        "target_weight": "0.750782845351"
+      },
+      "EEM": {
+        "absolute_difference": "0.00008231375642708013509364446",
+        "actual_weight": "0.08382190666257291986490635554",
+        "target_weight": "0.083904220419"
+      },
+      "XLE": {
+        "absolute_difference": "0.00011155838354774332207552963",
+        "actual_weight": "0.08242734111145225667792447037",
+        "target_weight": "0.082538899495"
+      },
+      "XLV": {
+        "absolute_difference": "0.00010892113352625115136628800",
+        "actual_weight": "0.08266511360147374884863371200",
+        "target_weight": "0.082774034735"
+      }
+    }
+  },
+  "release_lock_version": "1.9",
+  "schema": "FUND100_LIVE_MICRO_PILOT_BOOTSTRAP_V1",
+  "shadow_state_sha256": "d2e7ed390b43e8a60ea0cf2025a32cad5c57a9eebe0d5706e28cc1dff1f5afe0",
+  "strategy": "V5-002_SHADOW",
+  "target_notionals_usd": {
+    "ACWI": "97.82",
+    "EEM": "10.93",
+    "XLE": "10.75",
+    "XLV": "10.78"
+  },
+  "target_weights": {
+    "ACWI": "0.750782845351",
+    "EEM": "0.083904220419",
+    "XLE": "0.082538899495",
+    "XLV": "0.082774034735"
+  }
+}
