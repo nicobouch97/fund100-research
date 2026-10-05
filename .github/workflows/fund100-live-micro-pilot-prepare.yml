@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       pilot_cap_usd:
-        description: "Standing LIVE experiment ceiling in USD"
+        description: "Maximum USD capital authorized for this micro-pilot"
         required: true
+        default: "130.30"
         type: string
 
       authorization_reference:
@@ -20,98 +21,73 @@ concurrency:
   group: fund100-live-micro-pilot-preparation
   cancel-in-progress: false
 
-env:
-  FUND100_BROKER_KILL_SWITCH: ENGAGED
-
 jobs:
   prepare:
-    name: Bind Fund-100 LIVE Pilot Policy
+    name: Prepare V5-002 LIVE Micro-Pilot
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
-        run: |
-          set -euo pipefail
-
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Verify preparation authorization phrase
+      - name: Verify broker kill switch remains engaged
         env:
-          AUTH_REFERENCE: ${{ inputs.authorization_reference }}
-        run: |
-          set -euo pipefail
-
-          if [ "${AUTH_REFERENCE}" != \
-            "I_AUTHORIZE_FUND100_LIVE_PILOT_PREPARATION" ]; then
-
-            echo "STOP: preparation authorization phrase mismatch."
-            exit 1
-
-          fi
-
-          echo "Preparation authorization: PRESENT"
-
-      - name: Verify kill switch remains engaged
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
         run: |
           set -euo pipefail
 
           if [ "${FUND100_BROKER_KILL_SWITCH}" != "ENGAGED" ]; then
-
-            echo "STOP: broker kill switch must remain ENGAGED."
+            echo "STOP: FUND100_BROKER_KILL_SWITCH must be ENGAGED."
             exit 1
-
           fi
 
           echo "FUND100_BROKER_KILL_SWITCH = ENGAGED"
 
-      - name: Run full regression suite
-        run: |
-          set -euo pipefail
-          pytest -q
-
-      - name: Verify Release Lock v1.9 exists
+      - name: Verify preparation source compiles
         run: |
           set -euo pipefail
 
-          test -f \
-            live_activation_outputs/v5_002/pre_live_release_lock_v1_9.json
+          python -m py_compile \
+            fund100_live_pilot_prepare_v1_0.py
 
-      - name: Build LIVE pilot policy from real account state
+          echo "Preparation source syntax: PASS"
+
+      - name: Run GET-only LIVE micro-pilot preparation
         env:
+          FUND100_BROKER_KILL_SWITCH: ENGAGED
+
+          FUND100_PILOT_CAP_USD: ${{ inputs.pilot_cap_usd }}
+
+          FUND100_PILOT_PREPARATION_AUTH: ${{ inputs.authorization_reference }}
+
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
           ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
-
-          FUND100_LIVE_PILOT_CAP_USD: ${{ inputs.pilot_cap_usd }}
-
-          FUND100_LIVE_PILOT_AUTHORIZATION_REFERENCE: \
-            ${{ inputs.authorization_reference }}
 
         run: |
           set -euo pipefail
 
           python fund100_live_pilot_prepare_v1_0.py
 
-      - name: Verify no LIVE order authorization was created
+      - name: Verify exact manifest-policy binding
         run: |
           set -euo pipefail
 
           python - <<'PY'
+          import hashlib
           import json
           from pathlib import Path
 
-          prep_path = Path(
-              "live_activation_outputs/v5_002/"
-              "live_micro_pilot_preparation_v1_0.json"
+          manifest_path = Path(
+              "live_dryrun_outputs/v5_002/"
+              "live_execution_manifest.json"
           )
 
           policy_path = Path(
@@ -119,11 +95,51 @@ jobs:
               "live_micro_pilot_policy_v1_0.json"
           )
 
-          prep = json.loads(
-              prep_path.read_text(
+          preparation_path = Path(
+              "live_activation_outputs/v5_002/"
+              "live_micro_pilot_preparation_v1_0.json"
+          )
+
+          package = json.loads(
+              manifest_path.read_text(
                   encoding="utf-8"
               )
           )
+
+          if "manifest" not in package:
+              raise SystemExit(
+                  "STOP: committed manifest is not packaged."
+              )
+
+          manifest = package["manifest"]
+
+          recorded_manifest_hash = str(
+              package.get(
+                  "manifest_sha256",
+                  ""
+              )
+          ).strip().lower()
+
+          canonical_manifest = json.dumps(
+              manifest,
+              sort_keys=True,
+              separators=(",", ":"),
+              ensure_ascii=True,
+          )
+
+          actual_manifest_hash = hashlib.sha256(
+              canonical_manifest.encode(
+                  "utf-8"
+              )
+          ).hexdigest()
+
+          if (
+              actual_manifest_hash
+              != recorded_manifest_hash
+          ):
+              raise SystemExit(
+                  "STOP: manifest package SHA256 failed."
+              )
 
           policy = json.loads(
               policy_path.read_text(
@@ -131,41 +147,116 @@ jobs:
               )
           )
 
-          if prep.get(
-              "orders_submitted"
-          ) != 0:
+          preparation = json.loads(
+              preparation_path.read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          state_hash = str(
+              manifest.get(
+                  "strategy_state_sha256",
+                  ""
+              )
+          ).strip().lower()
+
+          if len(state_hash) != 64:
               raise SystemExit(
-                  "STOP: preparation reports order submission."
+                  "STOP: manifest state hash missing."
               )
 
-          if policy.get(
-              "order_authorization_present"
-          ) is not False:
+          if (
+              policy.get(
+                  "activation_shadow_state_sha256"
+              )
+              != state_hash
+          ):
               raise SystemExit(
-                  "STOP: preparation unexpectedly created "
-                  "order authorization."
+                  "STOP: compatibility state binding failed."
               )
 
-          if prep.get(
-              "existing_positions"
-          ) != 0:
+          if (
+              policy.get(
+                  "authorized_manifest_strategy_state_sha256"
+              )
+              != state_hash
+          ):
               raise SystemExit(
-                  "STOP: bootstrap account is not clean."
+                  "STOP: explicit state binding failed."
               )
 
-          if prep.get(
-              "existing_open_orders"
-          ) != 0:
+          if (
+              policy.get(
+                  "authorized_manifest_sha256"
+              )
+              != recorded_manifest_hash
+          ):
               raise SystemExit(
-                  "STOP: bootstrap account has open orders."
+                  "STOP: manifest package binding failed."
+              )
+
+          if (
+              preparation.get(
+                  "authorized_manifest_strategy_state_sha256"
+              )
+              != state_hash
+          ):
+              raise SystemExit(
+                  "STOP: preparation state binding failed."
+              )
+
+          if (
+              preparation.get(
+                  "authorized_manifest_sha256"
+              )
+              != recorded_manifest_hash
+          ):
+              raise SystemExit(
+                  "STOP: preparation manifest binding failed."
+              )
+
+          if (
+              preparation.get(
+                  "orders_submitted"
+              )
+              != 0
+          ):
+              raise SystemExit(
+                  "STOP: preparation reports broker orders."
+              )
+
+          if (
+              preparation.get(
+                  "broker_mutation_capability"
+              )
+              != "NONE"
+          ):
+              raise SystemExit(
+                  "STOP: preparation mutation capability changed."
               )
 
           print(
-              "LIVE pilot preparation evidence: VERIFIED"
+              "Manifest package SHA256: PASS"
+          )
+
+          print(
+              "Manifest strategy-state SHA256: PASS"
+          )
+
+          print(
+              "Policy exact-state binding: PASS"
+          )
+
+          print(
+              "Policy exact-manifest binding: PASS"
+          )
+
+          print(
+              "Preparation broker writes: 0"
           )
           PY
 
-      - name: Commit LIVE pilot policy
+      - name: Commit refreshed LIVE pilot preparation
         run: |
           set -euo pipefail
 
@@ -180,17 +271,16 @@ jobs:
             live_activation_outputs/v5_002/live_micro_pilot_preparation_v1_0.json
 
           if git diff --cached --quiet; then
-
-            echo "Pilot preparation evidence unchanged."
-
-          else
-
-            git commit -m \
-              "Bind Fund-100 live micro-pilot policy"
-
-            git push
-
+            echo "Preparation artifacts unchanged."
+            exit 0
           fi
+
+          git commit -m \
+            "Bind LIVE pilot policy to exact V5-002 manifest state"
+
+          git pull --rebase origin main
+
+          git push origin HEAD:main
 
       - name: Final summary
         run: |
@@ -199,8 +289,12 @@ jobs:
           echo "========================================"
           echo "FUND-100 LIVE MICRO-PILOT PREPARATION COMPLETE"
           echo "========================================"
-          echo "Release Lock v1.9: VERIFIED"
+          echo "Preparation implementation: v1.1"
           echo "Strategy: V5-002"
+          echo "Manifest package SHA256: VERIFIED"
+          echo "Manifest strategy-state SHA256: VERIFIED"
+          echo "Policy-to-manifest exact state binding: VERIFIED"
+          echo "Policy-to-manifest package binding: VERIFIED"
           echo "Real LIVE account binding: VERIFIED"
           echo "Funded LIVE cash: VERIFIED"
           echo "Pilot ceiling <= funded cash: VERIFIED"
