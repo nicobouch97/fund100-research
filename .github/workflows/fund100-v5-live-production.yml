@@ -104,6 +104,7 @@ jobs:
 
 
           if not WORKFLOW_PATH.exists():
+
               raise SystemExit(
                   "STOP: established scheduled-compiler "
                   "workflow is missing."
@@ -115,21 +116,6 @@ jobs:
           )
 
 
-          # --------------------------------------------------
-          # Extract literal uppercase environment assignments
-          # from the already-established working workflow.
-          #
-          # Supported shapes:
-          #
-          #   SOME_KEY: "VALUE"
-          #   SOME_KEY: VALUE
-          #   export SOME_KEY="VALUE"
-          #   SOME_KEY=VALUE
-          #
-          # GitHub expressions / secrets are deliberately
-          # ignored. We only need literal control variables.
-          # --------------------------------------------------
-
           candidates = []
 
 
@@ -140,13 +126,22 @@ jobs:
               value = value.strip()
 
               if not value:
+
                   return None
 
-              if "${{" in value:
+              github_expression_prefix = (
+                  "$"
+                  + "{"
+                  + "{"
+              )
+
+              if (
+                  github_expression_prefix
+                  in value
+              ):
+
                   return None
 
-              # Strip an inline YAML comment only when it is
-              # separated from the value by whitespace.
               value = re.sub(
                   r"\s+#.*$",
                   "",
@@ -161,11 +156,15 @@ jobs:
                       "'",
                   }
               ):
-                  value = value[1:-1]
+
+                  value = value[
+                      1:-1
+                  ]
 
               value = value.strip()
 
               if not value:
+
                   return None
 
               return value
@@ -197,21 +196,27 @@ jobs:
               )
 
               if match is None:
+
                   match = shell_export_pattern.match(
                       line
                   )
 
               if match is None:
+
                   match = shell_assign_pattern.match(
                       line
                   )
 
               if match is None:
+
                   continue
 
-              key = match.group(
-                  1
-              ).strip()
+              key = (
+                  match.group(
+                      1
+                  )
+                  .strip()
+              )
 
               value = clean_value(
                   match.group(
@@ -220,16 +225,16 @@ jobs:
               )
 
               if value is None:
+
                   continue
 
-              # Broker credentials should never be tested or
-              # exported by this discovery step.
               if key in {
                   "ALPACA_LIVE_KEY",
                   "ALPACA_LIVE_SECRET",
                   "ALPACA_PAPER_KEY",
                   "ALPACA_PAPER_SECRET",
               }:
+
                   continue
 
               candidates.append(
@@ -240,7 +245,6 @@ jobs:
               )
 
 
-          # De-duplicate while preserving deterministic order.
           candidates = sorted(
               set(
                   candidates
@@ -249,6 +253,7 @@ jobs:
 
 
           if not candidates:
+
               raise SystemExit(
                   "STOP: no literal control variables found "
                   "in the established scheduled-compiler workflow."
@@ -266,11 +271,6 @@ jobs:
 
           passing = []
 
-
-          # --------------------------------------------------
-          # Validate each candidate using the REAL frozen arm
-          # gate. Nothing is bypassed or monkeypatched.
-          # --------------------------------------------------
 
           for key, value in candidates:
 
@@ -293,6 +293,7 @@ jobs:
                   gate()
 
               except Exception:
+
                   continue
 
               passing.append(
@@ -312,16 +313,6 @@ jobs:
 
           if not passing:
 
-              # ------------------------------------------------
-              # Second pass:
-              #
-              # Some workflows define multiple literal control
-              # variables that are jointly required.
-              #
-              # Load ALL safe literal workflow variables
-              # together, then verify the real gate.
-              # ------------------------------------------------
-
               test_environment = dict(
                   original_environment
               )
@@ -330,15 +321,8 @@ jobs:
                   "FUND100_BROKER_KILL_SWITCH"
               ] = "ENGAGED"
 
-              for key, value in candidates:
 
-                  if key in {
-                      "ALPACA_LIVE_KEY",
-                      "ALPACA_LIVE_SECRET",
-                      "ALPACA_PAPER_KEY",
-                      "ALPACA_PAPER_SECRET",
-                  }:
-                      continue
+              for key, value in candidates:
 
                   test_environment[
                       key
@@ -365,7 +349,7 @@ jobs:
                   )
 
                   raise SystemExit(
-                      "STOP: the established compiler workflow "
+                      "STOP: established compiler workflow "
                       "variables were found, but they did not "
                       "satisfy require_compiler_arm(). "
                       f"Gate error: {exc}"
@@ -379,16 +363,13 @@ jobs:
               )
 
 
-              # Export only variables that are plausible
-              # compiler control variables rather than every
-              # literal in the workflow.
-
               passing = [
                   (
                       key,
                       value,
                   )
-                  for key, value in candidates
+                  for key, value
+                  in candidates
                   if any(
                       token in key
                       for token in (
@@ -408,10 +389,6 @@ jobs:
               )
 
 
-          # --------------------------------------------------
-          # Prove the selected set jointly satisfies the gate.
-          # --------------------------------------------------
-
           os.environ.clear()
 
           os.environ.update(
@@ -421,6 +398,7 @@ jobs:
           os.environ[
               "FUND100_BROKER_KILL_SWITCH"
           ] = "ENGAGED"
+
 
           for key, value in passing:
 
@@ -448,14 +426,11 @@ jobs:
           )
 
 
-          # --------------------------------------------------
-          # Persist validated control values for later steps.
-          # Values are deliberately NOT printed.
-          # --------------------------------------------------
-
-          github_env = os.environ[
-              "GITHUB_ENV"
-          ]
+          github_env = (
+              os.environ[
+                  "GITHUB_ENV"
+              ]
+          )
 
 
           with open(
@@ -470,6 +445,7 @@ jobs:
                       "\n" in value
                       or "\r" in value
                   ):
+
                       raise SystemExit(
                           "STOP: malformed compiler "
                           "control value."
@@ -554,12 +530,14 @@ jobs:
               if item in source
           ]
 
+
           if found:
 
               raise SystemExit(
                   "STOP: scheduled compiler source "
                   "contains unexpected mutating HTTP method."
               )
+
 
           print(
               "Scheduled compiler mutation transport: ABSENT"
