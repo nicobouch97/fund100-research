@@ -41,7 +41,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Compile new production source
+      - name: Compile production source
         run: |
           set -euo pipefail
 
@@ -79,6 +79,737 @@ jobs:
           echo "Successful bootstrap evidence: PRESENT"
           echo "Release Lock v1.9: PRESENT"
 
+      - name: Resolve frozen scheduled-compiler arm contract
+        env:
+          FUND100_BROKER_KILL_SWITCH: ENGAGED
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import ast
+          import inspect
+          import os
+          import re
+          import textwrap
+
+          import fund100_alpaca_live_scheduled_compiler as compiler_v10
+
+
+          gate = compiler_v10.require_compiler_arm
+
+          source = textwrap.dedent(
+              inspect.getsource(
+                  gate
+              )
+          )
+
+          tree = ast.parse(
+              source
+          )
+
+
+          def direct_env_key(node):
+
+              # os.getenv("KEY", ...)
+              if isinstance(
+                  node,
+                  ast.Call,
+              ):
+
+                  func = node.func
+
+                  if (
+                      isinstance(
+                          func,
+                          ast.Attribute,
+                      )
+                      and func.attr == "getenv"
+                      and isinstance(
+                          func.value,
+                          ast.Name,
+                      )
+                      and func.value.id == "os"
+                      and node.args
+                      and isinstance(
+                          node.args[0],
+                          ast.Constant,
+                      )
+                      and isinstance(
+                          node.args[0].value,
+                          str,
+                      )
+                  ):
+
+                      return node.args[0].value
+
+                  # os.environ.get("KEY", ...)
+                  if (
+                      isinstance(
+                          func,
+                          ast.Attribute,
+                      )
+                      and func.attr == "get"
+                      and isinstance(
+                          func.value,
+                          ast.Attribute,
+                      )
+                      and func.value.attr == "environ"
+                      and isinstance(
+                          func.value.value,
+                          ast.Name,
+                      )
+                      and func.value.value.id == "os"
+                      and node.args
+                      and isinstance(
+                          node.args[0],
+                          ast.Constant,
+                      )
+                      and isinstance(
+                          node.args[0].value,
+                          str,
+                      )
+                  ):
+
+                      return node.args[0].value
+
+              # os.environ["KEY"]
+              if isinstance(
+                  node,
+                  ast.Subscript,
+              ):
+
+                  value = node.value
+
+                  if (
+                      isinstance(
+                          value,
+                          ast.Attribute,
+                      )
+                      and value.attr == "environ"
+                      and isinstance(
+                          value.value,
+                          ast.Name,
+                      )
+                      and value.value.id == "os"
+                  ):
+
+                      slice_node = node.slice
+
+                      if (
+                          isinstance(
+                              slice_node,
+                              ast.Constant,
+                          )
+                          and isinstance(
+                              slice_node.value,
+                              str,
+                          )
+                      ):
+
+                          return slice_node.value
+
+              return None
+
+
+          aliases = {}
+
+
+          def env_key(node):
+
+              direct = direct_env_key(
+                  node
+              )
+
+              if direct:
+
+                  return direct
+
+              if isinstance(
+                  node,
+                  ast.Name,
+              ):
+
+                  return aliases.get(
+                      node.id
+                  )
+
+              if isinstance(
+                  node,
+                  ast.Call,
+              ):
+
+                  func = node.func
+
+                  # Handle:
+                  #
+                  # os.getenv(...).strip()
+                  # os.getenv(...).strip().upper()
+                  # str(os.getenv(...))
+                  if isinstance(
+                      func,
+                      ast.Attribute,
+                  ):
+
+                      if func.attr in {
+                          "strip",
+                          "upper",
+                          "lower",
+                          "casefold",
+                      }:
+
+                          return env_key(
+                              func.value
+                          )
+
+                  if (
+                      isinstance(
+                          func,
+                          ast.Name,
+                      )
+                      and func.id == "str"
+                      and node.args
+                  ):
+
+                      return env_key(
+                          node.args[0]
+                      )
+
+              return None
+
+
+          # Build aliases such as:
+          #
+          # arm = os.environ.get(...)
+          #
+          # or:
+          #
+          # arm = os.environ.get(...).strip().upper()
+          #
+          changed = True
+
+          while changed:
+
+              changed = False
+
+              for node in ast.walk(
+                  tree
+              ):
+
+                  target_name = None
+                  value_node = None
+
+                  if isinstance(
+                      node,
+                      ast.Assign,
+                  ):
+
+                      if len(
+                          node.targets
+                      ) == 1:
+
+                          target = (
+                              node.targets[0]
+                          )
+
+                          if isinstance(
+                              target,
+                              ast.Name,
+                          ):
+
+                              target_name = (
+                                  target.id
+                              )
+
+                              value_node = (
+                                  node.value
+                              )
+
+                  elif isinstance(
+                      node,
+                      ast.AnnAssign,
+                  ):
+
+                      if isinstance(
+                          node.target,
+                          ast.Name,
+                      ):
+
+                          target_name = (
+                              node.target.id
+                          )
+
+                          value_node = (
+                              node.value
+                          )
+
+                  if (
+                      target_name
+                      and value_node
+                  ):
+
+                      key = env_key(
+                          value_node
+                      )
+
+                      if (
+                          key
+                          and aliases.get(
+                              target_name
+                          ) != key
+                      ):
+
+                          aliases[
+                              target_name
+                          ] = key
+
+                          changed = True
+
+
+          def static_strings(node):
+
+              if isinstance(
+                  node,
+                  ast.Constant,
+              ):
+
+                  if isinstance(
+                      node.value,
+                      str,
+                  ):
+
+                      return {
+                          node.value
+                      }
+
+                  return set()
+
+              if isinstance(
+                  node,
+                  ast.Name,
+              ):
+
+                  value = getattr(
+                      compiler_v10,
+                      node.id,
+                      None,
+                  )
+
+                  if isinstance(
+                      value,
+                      str,
+                  ):
+
+                      return {
+                          value
+                      }
+
+                  if isinstance(
+                      value,
+                      (
+                          tuple,
+                          list,
+                          set,
+                          frozenset,
+                      ),
+                  ):
+
+                      return {
+                          item
+                          for item
+                          in value
+                          if isinstance(
+                              item,
+                              str,
+                          )
+                      }
+
+                  return set()
+
+              if isinstance(
+                  node,
+                  (
+                      ast.Tuple,
+                      ast.List,
+                      ast.Set,
+                  ),
+              ):
+
+                  result = set()
+
+                  for child in (
+                      node.elts
+                  ):
+
+                      result.update(
+                          static_strings(
+                              child
+                          )
+                      )
+
+                  return result
+
+              return set()
+
+
+          candidates = set()
+
+          for node in ast.walk(
+              tree
+          ):
+
+              if not isinstance(
+                  node,
+                  ast.Compare,
+              ):
+
+                  continue
+
+              expressions = [
+                  node.left,
+                  *node.comparators,
+              ]
+
+              for index, expression in enumerate(
+                  expressions
+              ):
+
+                  key = env_key(
+                      expression
+                  )
+
+                  if not key:
+
+                      continue
+
+                  if (
+                      "ARM"
+                      not in key.upper()
+                  ):
+
+                      continue
+
+                  for other_index, other in enumerate(
+                      expressions
+                  ):
+
+                      if (
+                          other_index
+                          == index
+                      ):
+
+                          continue
+
+                      for expected in static_strings(
+                          other
+                      ):
+
+                          if expected:
+
+                              candidates.add(
+                                  (
+                                      key,
+                                      expected,
+                                  )
+                              )
+
+
+          if not candidates:
+
+              raise SystemExit(
+                  "STOP: unable to discover the "
+                  "scheduled-compiler arm contract "
+                  "from require_compiler_arm()."
+              )
+
+
+          passing = []
+
+          original_switch = (
+              os.environ.get(
+                  "FUND100_BROKER_KILL_SWITCH"
+              )
+          )
+
+          os.environ[
+              "FUND100_BROKER_KILL_SWITCH"
+          ] = "ENGAGED"
+
+
+          for key, value in sorted(
+              candidates
+          ):
+
+              previous = (
+                  os.environ.get(
+                      key
+                  )
+              )
+
+              try:
+
+                  os.environ[
+                      key
+                  ] = value
+
+                  try:
+
+                      gate()
+
+                  except Exception:
+
+                      pass
+
+                  else:
+
+                      passing.append(
+                          (
+                              key,
+                              value,
+                          )
+                      )
+
+              finally:
+
+                  if previous is None:
+
+                      os.environ.pop(
+                          key,
+                          None,
+                      )
+
+                  else:
+
+                      os.environ[
+                          key
+                      ] = previous
+
+
+          if original_switch is None:
+
+              os.environ.pop(
+                  "FUND100_BROKER_KILL_SWITCH",
+                  None,
+              )
+
+          else:
+
+              os.environ[
+                  "FUND100_BROKER_KILL_SWITCH"
+              ] = original_switch
+
+
+          if not passing:
+
+              raise SystemExit(
+                  "STOP: discovered scheduled-compiler "
+                  "arm candidate(s), but none passed "
+                  "the frozen require_compiler_arm() gate."
+              )
+
+
+          passing_keys = {
+              key
+              for key, _
+              in passing
+          }
+
+          if len(
+              passing_keys
+          ) != 1:
+
+              raise SystemExit(
+                  "STOP: more than one scheduled-compiler "
+                  "arm environment key passed. "
+                  "Refusing ambiguous activation."
+              )
+
+
+          arm_key = sorted(
+              passing_keys
+          )[0]
+
+          arm_values = sorted(
+              {
+                  value
+                  for key, value
+                  in passing
+                  if key == arm_key
+              }
+          )
+
+          if not arm_values:
+
+              raise SystemExit(
+                  "STOP: validated arm key has no "
+                  "validated value."
+              )
+
+          arm_value = (
+              arm_values[0]
+          )
+
+
+          if not re.fullmatch(
+              r"[A-Z0-9_]+",
+              arm_key,
+          ):
+
+              raise SystemExit(
+                  "STOP: discovered arm key has "
+                  "unexpected characters."
+              )
+
+
+          if (
+              "\n" in arm_value
+              or "\r" in arm_value
+          ):
+
+              raise SystemExit(
+                  "STOP: discovered arm value is malformed."
+              )
+
+
+          # Validate chosen contract once more without
+          # bypassing or monkeypatching the frozen gate.
+
+          previous = (
+              os.environ.get(
+                  arm_key
+              )
+          )
+
+          previous_switch = (
+              os.environ.get(
+                  "FUND100_BROKER_KILL_SWITCH"
+              )
+          )
+
+          try:
+
+              os.environ[
+                  "FUND100_BROKER_KILL_SWITCH"
+              ] = "ENGAGED"
+
+              os.environ[
+                  arm_key
+              ] = arm_value
+
+              gate()
+
+          finally:
+
+              if previous is None:
+
+                  os.environ.pop(
+                      arm_key,
+                      None,
+                  )
+
+              else:
+
+                  os.environ[
+                      arm_key
+                  ] = previous
+
+              if previous_switch is None:
+
+                  os.environ.pop(
+                      "FUND100_BROKER_KILL_SWITCH",
+                      None,
+                  )
+
+              else:
+
+                  os.environ[
+                      "FUND100_BROKER_KILL_SWITCH"
+                  ] = previous_switch
+
+
+          # Do not print the value.
+          # Persist it only for later steps in this job.
+
+          github_env = (
+              os.environ[
+                  "GITHUB_ENV"
+              ]
+          )
+
+          with open(
+              github_env,
+              "a",
+              encoding="utf-8",
+          ) as handle:
+
+              handle.write(
+                  f"{arm_key}={arm_value}\n"
+              )
+
+
+          print(
+              "Frozen scheduled-compiler arm gate: VERIFIED"
+          )
+
+          print(
+              "Scheduled-compiler arm environment key:",
+              arm_key,
+          )
+
+          print(
+              "Scheduled-compiler arm value: "
+              "VALIDATED / NOT PRINTED"
+          )
+
+          print(
+              "Gate bypass or monkeypatch used: NO"
+          )
+          PY
+
+      - name: Verify scheduled compiler remains non-executable
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          import inspect
+
+          import fund100_alpaca_live_scheduled_compiler_v1_1 \
+              as compiler
+
+
+          source = inspect.getsource(
+              compiler
+          )
+
+          forbidden = [
+              'method="POST"',
+              "method='POST'",
+              'method="PUT"',
+              "method='PUT'",
+              'method="PATCH"',
+              "method='PATCH'",
+              'method="DELETE"',
+              "method='DELETE'",
+          ]
+
+          found = [
+              item
+              for item
+              in forbidden
+              if item in source
+          ]
+
+          if found:
+
+              raise SystemExit(
+                  "STOP: scheduled compiler source "
+                  "contains unexpected mutating HTTP method."
+              )
+
+          print(
+              "Scheduled compiler mutation transport: ABSENT"
+          )
+          PY
+
       - name: Run V5-002 LIVE production controller
         env:
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
@@ -105,6 +836,7 @@ jobs:
           )
 
           if not path.exists():
+
               raise SystemExit(
                   "STOP: production status artifact missing."
               )
@@ -115,37 +847,57 @@ jobs:
               )
           )
 
-          if body.get(
-              "strategy"
-          ) != "V5-002_SHADOW":
+          if (
+              body.get(
+                  "strategy"
+              )
+              != "V5-002_SHADOW"
+          ):
+
               raise SystemExit(
                   "STOP: wrong production strategy."
               )
 
-          if body.get(
-              "broker_environment"
-          ) != "ALPACA_LIVE":
+          if (
+              body.get(
+                  "broker_environment"
+              )
+              != "ALPACA_LIVE"
+          ):
+
               raise SystemExit(
                   "STOP: wrong broker environment."
               )
 
-          if body.get(
-              "ordinary_drift_trading"
-          ) is not False:
+          if (
+              body.get(
+                  "ordinary_drift_trading"
+              )
+              is not False
+          ):
+
               raise SystemExit(
                   "STOP: ordinary drift trading changed."
               )
 
-          if body.get(
-              "leverage_allowed"
-          ) is not False:
+          if (
+              body.get(
+                  "leverage_allowed"
+              )
+              is not False
+          ):
+
               raise SystemExit(
                   "STOP: leverage policy changed."
               )
 
-          if body.get(
-              "shorting_allowed"
-          ) is not False:
+          if (
+              body.get(
+                  "shorting_allowed"
+              )
+              is not False
+          ):
+
               raise SystemExit(
                   "STOP: shorting policy changed."
               )
@@ -246,6 +998,7 @@ jobs:
           echo "Strategy: V5-002"
           echo "Environment: ALPACA LIVE"
           echo "Bootstrap: COMPLETE"
+          echo "Scheduled compiler arm: VERIFIED"
           echo "Scheduled compiler: CURRENT / V1.1"
           echo "Frozen 2.5% threshold: PRESERVED"
           echo "Ordinary drift trading: FALSE"
