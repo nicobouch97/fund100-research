@@ -8,29 +8,54 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlparse
+from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 import fund100_alpaca_live_execution_orchestrator_v1_0 as orchestrator
 
 
 # ============================================================
-# FUND-100 V5-002 LIVE MICRO-PILOT BOOTSTRAP v1.0
+# FUND-100 V5-002 LIVE MICRO-PILOT BOOTSTRAP v1.1
 # ============================================================
 #
 # THIS MODULE CAN PLACE REAL ALPACA LIVE ORDERS.
 #
-# It exists only for the ONE-TIME initial alignment of the
-# clean funded LIVE account to the frozen V5-002 portfolio.
+# It performs the ONE-TIME initial alignment of the clean
+# funded LIVE account to the already-frozen V5-002 target.
 #
-# After bootstrap, ordinary operation must be driven only by
+# IMPORTANT:
+#
+# - exact Alpaca LIVE host only
+# - explicit workflow arm required
+# - explicit broker kill-switch disengagement required
+# - pilot policy capital ceiling enforced
+# - long only
+# - no leverage
+# - deterministic client_order_id values
+# - broker-side restart recovery
+# - complete cumulative-cap accounting
+# - manifest package SHA256 verified
+# - manifest must bind to the exact shadow state authorized
+#   by the LIVE pilot policy
+#
+# After bootstrap, this file is NOT the normal autonomous
+# trading loop. Ordinary future execution must come only from
 # genuine V5-002 events.
 #
 # ============================================================
 
 
-LIVE_BASE_URL = "https://api.alpaca.markets"
-EXPECTED_LIVE_HOST = "api.alpaca.markets"
+BOOTSTRAP_SCHEMA = (
+    "FUND100_LIVE_MICRO_PILOT_BOOTSTRAP_V1"
+)
+
+LIVE_BASE_URL = (
+    "https://api.alpaca.markets"
+)
+
+EXPECTED_LIVE_HOST = (
+    "api.alpaca.markets"
+)
 
 POLICY_PATH = Path(
     "live_activation_outputs/v5_002/"
@@ -61,9 +86,13 @@ OUTPUT_PATH = (
     / "live_bootstrap_v1_0.json"
 )
 
-MIN_ORDER_USD = Decimal("1.00")
+MIN_ORDER_USD = Decimal(
+    "1.00"
+)
 
-WEIGHT_TOLERANCE = Decimal("0.015")
+WEIGHT_TOLERANCE = Decimal(
+    "0.015"
+)
 
 SAFE_ORDER_STATUSES = {
     "new",
@@ -85,7 +114,9 @@ POST_COUNT = 0
 GET_COUNT = 0
 
 
-class LiveBootstrapStop(RuntimeError):
+class LiveBootstrapStop(
+    RuntimeError
+):
     pass
 
 
@@ -101,8 +132,11 @@ def decimal_value(
 ) -> Decimal:
 
     try:
+
         result = Decimal(
-            str(value)
+            str(
+                value
+            )
         )
 
     except (
@@ -165,15 +199,122 @@ def load_json(
     return body
 
 
-def sha256_text(
-    value: str,
+def canonical_sha256(
+    body: dict,
 ) -> str:
 
+    canonical = json.dumps(
+        body,
+        sort_keys=True,
+        separators=(
+            ",",
+            ":",
+        ),
+        ensure_ascii=True,
+    )
+
     return hashlib.sha256(
-        value.encode(
+        canonical.encode(
             "utf-8"
         )
     ).hexdigest()
+
+
+def load_manifest_package() -> tuple[
+    dict,
+    str,
+]:
+
+    package = load_json(
+        MANIFEST_PATH
+    )
+
+    # --------------------------------------------------------
+    # Existing Fund-100 LIVE manifest format:
+    #
+    # {
+    #     "manifest": {...},
+    #     "manifest_sha256": "..."
+    # }
+    #
+    # Older/unwrapped test fixtures are also accepted here,
+    # but the real committed production artifact is expected
+    # to use the package form.
+    # --------------------------------------------------------
+
+    if (
+        "manifest"
+        in package
+    ):
+
+        manifest = package.get(
+            "manifest"
+        )
+
+        if not isinstance(
+            manifest,
+            dict,
+        ):
+
+            raise LiveBootstrapStop(
+                "LIVE BOOTSTRAP STOP: "
+                "manifest package body is invalid."
+            )
+
+        recorded_sha256 = (
+            str(
+                package.get(
+                    "manifest_sha256",
+                    "",
+                )
+            )
+            .strip()
+            .lower()
+        )
+
+        if len(
+            recorded_sha256
+        ) != 64:
+
+            raise LiveBootstrapStop(
+                "LIVE BOOTSTRAP STOP: "
+                "manifest package SHA256 is missing "
+                "or malformed."
+            )
+
+        actual_sha256 = (
+            canonical_sha256(
+                manifest
+            )
+        )
+
+        if (
+            actual_sha256
+            != recorded_sha256
+        ):
+
+            raise LiveBootstrapStop(
+                "LIVE BOOTSTRAP STOP: "
+                "manifest package SHA256 verification failed."
+            )
+
+        return (
+            manifest,
+            recorded_sha256,
+        )
+
+    # --------------------------------------------------------
+    # Compatibility only.
+    # --------------------------------------------------------
+
+    manifest = package
+
+    return (
+        manifest,
+        canonical_sha256(
+            manifest
+        ),
+    )
 
 
 # ============================================================
@@ -183,13 +324,17 @@ def sha256_text(
 
 def require_environment() -> None:
 
-    if (
+    kill_switch = (
         os.environ.get(
             "FUND100_BROKER_KILL_SWITCH",
             "",
         )
         .strip()
         .upper()
+    )
+
+    if (
+        kill_switch
         != "DISENGAGED"
     ):
 
@@ -198,30 +343,41 @@ def require_environment() -> None:
             "broker kill switch is not DISENGAGED."
         )
 
-    if (
+    arm = (
         os.environ.get(
             "FUND100_LIVE_BOOTSTRAP_ARM",
             "",
         )
         .strip()
         .upper()
-        != "YES"
-    ):
+    )
+
+    if arm != "YES":
 
         raise LiveBootstrapStop(
             "LIVE BOOTSTRAP STOP: "
             "bootstrap arm is not YES."
         )
 
-    if not (
+    key = (
         os.environ.get(
             "ALPACA_LIVE_KEY",
-            ""
-        ).strip()
-        and os.environ.get(
+            "",
+        )
+        .strip()
+    )
+
+    secret = (
+        os.environ.get(
             "ALPACA_LIVE_SECRET",
-            ""
-        ).strip()
+            "",
+        )
+        .strip()
+    )
+
+    if (
+        not key
+        or not secret
     ):
 
         raise LiveBootstrapStop(
@@ -322,6 +478,18 @@ def validate_packages(
             "preparation artifact is not clean."
         )
 
+    if (
+        manifest.get(
+            "strategy"
+        )
+        != "V5-002_SHADOW"
+    ):
+
+        raise LiveBootstrapStop(
+            "LIVE BOOTSTRAP STOP: "
+            "LIVE manifest strategy is not V5-002."
+        )
+
     policy_state_hash = (
         str(
             policy.get(
@@ -330,6 +498,7 @@ def validate_packages(
             )
         )
         .strip()
+        .lower()
     )
 
     manifest_state_hash = (
@@ -340,11 +509,36 @@ def validate_packages(
             )
         )
         .strip()
+        .lower()
     )
 
     if (
-        not policy_state_hash
-        or manifest_state_hash
+        len(
+            policy_state_hash
+        )
+        != 64
+    ):
+
+        raise LiveBootstrapStop(
+            "LIVE BOOTSTRAP STOP: "
+            "pilot policy shadow-state hash is invalid."
+        )
+
+    if (
+        len(
+            manifest_state_hash
+        )
+        != 64
+    ):
+
+        raise LiveBootstrapStop(
+            "LIVE BOOTSTRAP STOP: "
+            "manifest strategy_state_sha256 is missing "
+            "or invalid."
+        )
+
+    if (
+        manifest_state_hash
         != policy_state_hash
     ):
 
@@ -352,17 +546,38 @@ def validate_packages(
             "LIVE BOOTSTRAP STOP: "
             "current manifest is not bound to the "
             "shadow state authorized by the pilot policy. "
-            "Re-run LIVE pilot preparation."
+            "Re-run LIVE Micro-Pilot Preparation before "
+            "attempting bootstrap."
+        )
+
+    if (
+        manifest.get(
+            "live_execution_authorized"
+        )
+        is not False
+    ):
+
+        raise LiveBootstrapStop(
+            "LIVE BOOTSTRAP STOP: "
+            "dry-run manifest unexpectedly authorizes "
+            "LIVE execution."
         )
 
     ceiling = decimal_value(
         policy.get(
             "capital_ceiling_usd"
         ),
-        field_name="pilot capital ceiling",
+        field_name=(
+            "pilot capital ceiling"
+        ),
     )
 
-    if ceiling <= Decimal("0"):
+    if (
+        ceiling
+        <= Decimal(
+            "0"
+        )
+    ):
 
         raise LiveBootstrapStop(
             "LIVE BOOTSTRAP STOP: "
@@ -389,7 +604,9 @@ def live_request(
     global POST_COUNT
 
     method = (
-        str(method)
+        str(
+            method
+        )
         .strip()
         .upper()
     )
@@ -423,7 +640,8 @@ def live_request(
     )
 
     if (
-        parsed.scheme != "https"
+        parsed.scheme
+        != "https"
         or parsed.hostname
         != EXPECTED_LIVE_HOST
     ):
@@ -467,9 +685,11 @@ def live_request(
     )
 
     if method == "GET":
+
         GET_COUNT += 1
 
     elif method == "POST":
+
         POST_COUNT += 1
 
     try:
@@ -479,21 +699,28 @@ def live_request(
             timeout=20,
         ) as response:
 
-            raw = response.read()
+            raw = (
+                response.read()
+            )
 
     except HTTPError as exc:
 
-        raw = exc.read()
+        raw = (
+            exc.read()
+        )
 
         if (
             allow_404
             and exc.code == 404
         ):
+
             return None
 
-        message = raw.decode(
-            "utf-8",
-            errors="replace",
+        message = (
+            raw.decode(
+                "utf-8",
+                errors="replace",
+            )
         )
 
         raise LiveBootstrapStop(
@@ -510,6 +737,7 @@ def live_request(
         ) from exc
 
     if not raw:
+
         return {}
 
     try:
@@ -573,6 +801,22 @@ def get_clock():
     )
 
 
+def get_asset(
+    symbol: str,
+):
+
+    return live_request(
+        method="GET",
+        path=(
+            "/v2/assets/"
+            + quote(
+                symbol,
+                safe="",
+            )
+        ),
+    )
+
+
 def get_order_by_client_id(
     client_order_id: str,
 ):
@@ -632,10 +876,15 @@ def account_binding(
 
 def target_weights_from_manifest(
     manifest: dict,
-) -> dict[str, Decimal]:
+) -> dict[
+    str,
+    Decimal,
+]:
 
-    raw = manifest.get(
-        "target_weights"
+    raw = (
+        manifest.get(
+            "target_weights"
+        )
     )
 
     if not isinstance(
@@ -650,9 +899,10 @@ def target_weights_from_manifest(
 
     result = {}
 
-    for raw_symbol, raw_weight in (
-        raw.items()
-    ):
+    for (
+        raw_symbol,
+        raw_weight,
+    ) in raw.items():
 
         symbol = (
             str(
@@ -662,7 +912,11 @@ def target_weights_from_manifest(
             .upper()
         )
 
-        if symbol == "ACWI_CORE":
+        if (
+            symbol
+            == "ACWI_CORE"
+        ):
+
             symbol = "ACWI"
 
         weight = decimal_value(
@@ -672,14 +926,25 @@ def target_weights_from_manifest(
             ),
         )
 
-        if weight < Decimal("0"):
+        if (
+            weight
+            < Decimal(
+                "0"
+            )
+        ):
 
             raise LiveBootstrapStop(
                 "LIVE BOOTSTRAP STOP: "
                 f"negative target weight for {symbol}."
             )
 
-        if weight == Decimal("0"):
+        if (
+            weight
+            == Decimal(
+                "0"
+            )
+        ):
+
             continue
 
         result[
@@ -695,15 +960,21 @@ def target_weights_from_manifest(
 
     total = sum(
         result.values(),
-        Decimal("0"),
+        Decimal(
+            "0"
+        ),
     )
 
     if (
         abs(
             total
-            - Decimal("1")
+            - Decimal(
+                "1"
+            )
         )
-        > Decimal("0.002")
+        > Decimal(
+            "0.002"
+        )
     ):
 
         raise LiveBootstrapStop(
@@ -714,11 +985,67 @@ def target_weights_from_manifest(
     return result
 
 
+def validate_target_assets(
+    weights: dict[
+        str,
+        Decimal,
+    ],
+) -> None:
+
+    for symbol in sorted(
+        weights
+    ):
+
+        asset = get_asset(
+            symbol
+        )
+
+        if not isinstance(
+            asset,
+            dict,
+        ):
+
+            raise LiveBootstrapStop(
+                "LIVE BOOTSTRAP STOP: "
+                f"invalid asset response for {symbol}."
+            )
+
+        if (
+            asset.get(
+                "tradable"
+            )
+            is not True
+        ):
+
+            raise LiveBootstrapStop(
+                "LIVE BOOTSTRAP STOP: "
+                f"{symbol} is not tradable."
+            )
+
+        if (
+            asset.get(
+                "fractionable"
+            )
+            is not True
+        ):
+
+            raise LiveBootstrapStop(
+                "LIVE BOOTSTRAP STOP: "
+                f"{symbol} is not fractionable."
+            )
+
+
 def build_allocations(
     *,
-    weights: dict[str, Decimal],
+    weights: dict[
+        str,
+        Decimal,
+    ],
     ceiling: Decimal,
-) -> dict[str, Decimal]:
+) -> dict[
+    str,
+    Decimal,
+]:
 
     allocations = {}
 
@@ -732,11 +1059,18 @@ def build_allocations(
                 symbol
             ]
         ).quantize(
-            Decimal("0.01"),
-            rounding=ROUND_DOWN,
+            Decimal(
+                "0.01"
+            ),
+            rounding=(
+                ROUND_DOWN
+            ),
         )
 
-        if amount < MIN_ORDER_USD:
+        if (
+            amount
+            < MIN_ORDER_USD
+        ):
 
             raise LiveBootstrapStop(
                 "LIVE BOOTSTRAP STOP: "
@@ -750,7 +1084,9 @@ def build_allocations(
 
     total = sum(
         allocations.values(),
-        Decimal("0"),
+        Decimal(
+            "0"
+        ),
     )
 
     if total > ceiling:
@@ -766,12 +1102,22 @@ def build_allocations(
 def build_client_ids(
     *,
     shadow_sha256: str,
-    allocations: dict[str, Decimal],
-) -> dict[str, str]:
+    allocations: dict[
+        str,
+        Decimal,
+    ],
+) -> dict[
+    str,
+    str,
+]:
 
     result = {}
 
-    seed = shadow_sha256[:16]
+    seed = (
+        shadow_sha256[
+            :16
+        ]
+    )
 
     for symbol in sorted(
         allocations
@@ -784,11 +1130,13 @@ def build_client_ids(
             + symbol.lower()
         )
 
-        if len(cid) > 128:
+        if len(
+            cid
+        ) > 128:
 
             raise LiveBootstrapStop(
                 "LIVE BOOTSTRAP STOP: "
-                "client_order_id exceeds Alpaca limit."
+                "client_order_id exceeds broker limit."
             )
 
         result[
@@ -810,8 +1158,14 @@ def fresh_snapshot(
 ) -> dict:
 
     account = get_account()
-    raw_positions = get_positions()
-    open_orders = get_open_orders()
+
+    raw_positions = (
+        get_positions()
+    )
+
+    open_orders = (
+        get_open_orders()
+    )
 
     if (
         account.get(
@@ -837,9 +1191,31 @@ def fresh_snapshot(
             "LIVE account is trading blocked."
         )
 
+    if not isinstance(
+        raw_positions,
+        list,
+    ):
+
+        raise LiveBootstrapStop(
+            "LIVE BOOTSTRAP STOP: "
+            "positions response is malformed."
+        )
+
+    if not isinstance(
+        open_orders,
+        list,
+    ):
+
+        raise LiveBootstrapStop(
+            "LIVE BOOTSTRAP STOP: "
+            "open-order response is malformed."
+        )
+
     positions = {}
 
-    for position in raw_positions:
+    for position in (
+        raw_positions
+    ):
 
         symbol = (
             str(
@@ -852,11 +1228,15 @@ def fresh_snapshot(
             .upper()
         )
 
-        if symbol not in allowed_symbols:
+        if (
+            symbol
+            not in allowed_symbols
+        ):
 
             raise LiveBootstrapStop(
                 "LIVE BOOTSTRAP STOP: "
-                f"unmanaged LIVE position detected: {symbol}."
+                "unmanaged LIVE position detected: "
+                f"{symbol}."
             )
 
         qty = decimal_value(
@@ -869,11 +1249,17 @@ def fresh_snapshot(
             ),
         )
 
-        if qty < Decimal("0"):
+        if (
+            qty
+            < Decimal(
+                "0"
+            )
+        ):
 
             raise LiveBootstrapStop(
                 "LIVE BOOTSTRAP STOP: "
-                f"short LIVE position detected: {symbol}."
+                "short LIVE position detected: "
+                f"{symbol}."
             )
 
         positions[
@@ -892,8 +1278,9 @@ def fresh_snapshot(
             .strip()
         )
 
-        if client_id not in (
-            allowed_client_ids
+        if (
+            client_id
+            not in allowed_client_ids
         ):
 
             raise LiveBootstrapStop(
@@ -920,12 +1307,15 @@ def fresh_snapshot(
 
 def build_dependencies(
     *,
-    release_lock: dict,
     policy: dict,
-    manifest: dict,
-    weights: dict[str, Decimal],
-    allocations: dict[str, Decimal],
-    client_ids: dict[str, str],
+    allocations: dict[
+        str,
+        Decimal,
+    ],
+    client_ids: dict[
+        str,
+        str,
+    ],
 ):
 
     allowed_ids = set(
@@ -981,12 +1371,16 @@ def build_dependencies(
             ),
         )
 
-        if (
+        current_binding = (
             account_binding(
                 snapshot[
                     "account"
                 ]
             )
+        )
+
+        if (
+            current_binding
             != policy.get(
                 "account_binding_sha256"
             )
@@ -1009,7 +1403,8 @@ def build_dependencies(
         if phase != "BUY":
 
             return {
-                "orders": [],
+                "orders":
+                    [],
             }
 
         orders = []
@@ -1070,6 +1465,16 @@ def build_dependencies(
                 )
             )
 
+        if set(
+            history
+        ) != allowed_ids:
+
+            raise LiveBootstrapStop(
+                "LIVE BOOTSTRAP STOP: "
+                "authorized client-ID reconstruction "
+                "is incomplete."
+            )
+
         return history
 
 
@@ -1079,6 +1484,15 @@ def build_dependencies(
         new_orders,
         **kwargs,
     ):
+
+        if set(
+            authorized_order_history
+        ) != allowed_ids:
+
+            raise LiveBootstrapStop(
+                "LIVE BOOTSTRAP STOP: "
+                "cumulative-cap history is incomplete."
+            )
 
         historical = Decimal(
             "0"
@@ -1108,19 +1522,27 @@ def build_dependencies(
                 .lower()
             )
 
-            if status in FAILED_ORDER_STATUSES:
+            if (
+                status
+                in FAILED_ORDER_STATUSES
+            ):
 
                 raise LiveBootstrapStop(
                     "LIVE BOOTSTRAP STOP: "
                     f"bootstrap client ID {cid} "
-                    f"is terminal-failed: {status}."
+                    "is terminal-failed: "
+                    f"{status}."
                 )
 
-            if status not in SAFE_ORDER_STATUSES:
+            if (
+                status
+                not in SAFE_ORDER_STATUSES
+            ):
 
                 raise LiveBootstrapStop(
                     "LIVE BOOTSTRAP STOP: "
-                    f"unknown order status: {status}."
+                    "unknown broker order status: "
+                    f"{status}."
                 )
 
             notional = decimal_value(
@@ -1132,7 +1554,24 @@ def build_dependencies(
                 ),
             )
 
-            historical += notional
+            if (
+                notional
+                <= Decimal(
+                    "0"
+                )
+            ):
+
+                raise LiveBootstrapStop(
+                    "LIVE BOOTSTRAP STOP: "
+                    "existing order notional "
+                    "is not positive."
+                )
+
+            # Full original submitted notional consumes
+            # the standing ceiling, regardless of fill fraction.
+            historical += (
+                notional
+            )
 
         unseen = Decimal(
             "0"
@@ -1153,13 +1592,15 @@ def build_dependencies(
                 is None
             ):
 
-                unseen += decimal_value(
-                    order[
-                        "notional_usd"
-                    ],
-                    field_name=(
-                        "new order notional"
-                    ),
+                unseen += (
+                    decimal_value(
+                        order[
+                            "notional_usd"
+                        ],
+                        field_name=(
+                            "new order notional"
+                        ),
+                    )
                 )
 
         projected = (
@@ -1180,7 +1621,7 @@ def build_dependencies(
 
             raise LiveBootstrapStop(
                 "LIVE BOOTSTRAP STOP: "
-                f"projected cumulative LIVE notional "
+                "projected cumulative LIVE notional "
                 f"${projected} exceeds "
                 f"pilot ceiling ${ceiling}."
             )
@@ -1233,7 +1674,10 @@ def build_dependencies(
                 )
             )
 
-            if existing is not None:
+            if (
+                existing
+                is not None
+            ):
 
                 status = (
                     str(
@@ -1246,15 +1690,21 @@ def build_dependencies(
                     .lower()
                 )
 
-                if status in FAILED_ORDER_STATUSES:
+                if (
+                    status
+                    in FAILED_ORDER_STATUSES
+                ):
 
                     raise LiveBootstrapStop(
                         "LIVE BOOTSTRAP STOP: "
                         f"existing order {cid} "
-                        f"is terminal-failed."
+                        "is terminal-failed."
                     )
 
-                if status not in SAFE_ORDER_STATUSES:
+                if (
+                    status
+                    not in SAFE_ORDER_STATUSES
+                ):
 
                     raise LiveBootstrapStop(
                         "LIVE BOOTSTRAP STOP: "
@@ -1318,7 +1768,8 @@ def build_dependencies(
 
                 raise LiveBootstrapStop(
                     "LIVE BOOTSTRAP STOP: "
-                    "broker returned different client_order_id."
+                    "broker returned a different "
+                    "client_order_id."
                 )
 
             results.append(
@@ -1415,14 +1866,20 @@ def wait_for_fill(
 
             return latest
 
-        if status in FAILED_ORDER_STATUSES:
+        if (
+            status
+            in FAILED_ORDER_STATUSES
+        ):
 
             raise LiveBootstrapStop(
                 "LIVE BOOTSTRAP STOP: "
                 f"{client_order_id} failed: {status}."
             )
 
-        if status not in SAFE_ORDER_STATUSES:
+        if (
+            status
+            not in SAFE_ORDER_STATUSES
+        ):
 
             raise LiveBootstrapStop(
                 "LIVE BOOTSTRAP STOP: "
@@ -1436,33 +1893,43 @@ def wait_for_fill(
     raise LiveBootstrapStop(
         "LIVE BOOTSTRAP STOP: "
         "order has not reached filled state. "
-        "Do NOT submit replacement orders; "
-        "rerun this same bootstrap workflow later."
+        "Do NOT submit replacement orders. "
+        "Rerun this exact bootstrap workflow later."
     )
 
 
 def final_reconciliation(
     *,
-    weights: dict[str, Decimal],
-    client_ids: dict[str, str],
+    weights: dict[
+        str,
+        Decimal,
+    ],
+    client_ids: dict[
+        str,
+        str,
+    ],
 ) -> dict:
 
-    snapshot = fresh_snapshot(
-        allowed_client_ids=(
-            set(
-                client_ids.values()
-            )
-        ),
-        allowed_symbols=(
-            set(
-                weights
-            )
-        ),
+    snapshot = (
+        fresh_snapshot(
+            allowed_client_ids=(
+                set(
+                    client_ids.values()
+                )
+            ),
+            allowed_symbols=(
+                set(
+                    weights
+                )
+            ),
+        )
     )
 
-    if snapshot[
-        "open_orders"
-    ]:
+    if (
+        snapshot[
+            "open_orders"
+        ]
+    ):
 
         raise LiveBootstrapStop(
             "LIVE BOOTSTRAP STOP: "
@@ -1475,10 +1942,17 @@ def final_reconciliation(
         ].get(
             "equity"
         ),
-        field_name="LIVE equity",
+        field_name=(
+            "LIVE equity"
+        ),
     )
 
-    if equity <= Decimal("0"):
+    if (
+        equity
+        <= Decimal(
+            "0"
+        )
+    ):
 
         raise LiveBootstrapStop(
             "LIVE BOOTSTRAP STOP: "
@@ -1487,10 +1961,11 @@ def final_reconciliation(
 
     proof = {}
 
-    for symbol, target in (
-        sorted(
-            weights.items()
-        )
+    for (
+        symbol,
+        target,
+    ) in sorted(
+        weights.items()
     ):
 
         position = (
@@ -1505,7 +1980,8 @@ def final_reconciliation(
 
             raise LiveBootstrapStop(
                 "LIVE BOOTSTRAP STOP: "
-                f"expected LIVE position missing: {symbol}."
+                "expected LIVE position missing: "
+                f"{symbol}."
             )
 
         market_value = decimal_value(
@@ -1527,7 +2003,10 @@ def final_reconciliation(
             - target
         )
 
-        if difference > WEIGHT_TOLERANCE:
+        if (
+            difference
+            > WEIGHT_TOLERANCE
+        ):
 
             raise LiveBootstrapStop(
                 "LIVE BOOTSTRAP STOP: "
@@ -1601,19 +2080,32 @@ def main():
         RELEASE_LOCK_PATH
     )
 
-    manifest = load_json(
-        MANIFEST_PATH
+    (
+        manifest,
+        manifest_sha256,
+    ) = (
+        load_manifest_package()
     )
 
-    ceiling = validate_packages(
-        policy=policy,
-        preparation=preparation,
-        release_lock=release_lock,
-        manifest=manifest,
+    ceiling = (
+        validate_packages(
+            policy=policy,
+            preparation=(
+                preparation
+            ),
+            release_lock=(
+                release_lock
+            ),
+            manifest=(
+                manifest
+            ),
+        )
     )
 
-    weights = target_weights_from_manifest(
-        manifest
+    weights = (
+        target_weights_from_manifest(
+            manifest
+        )
     )
 
     allowed_universe = set(
@@ -1634,9 +2126,15 @@ def main():
             "pilot execution universe."
         )
 
-    allocations = build_allocations(
-        weights=weights,
-        ceiling=ceiling,
+    validate_target_assets(
+        weights
+    )
+
+    allocations = (
+        build_allocations(
+            weights=weights,
+            ceiling=ceiling,
+        )
     )
 
     shadow_sha256 = (
@@ -1645,21 +2143,27 @@ def main():
         ]
     )
 
-    client_ids = build_client_ids(
-        shadow_sha256=(
-            shadow_sha256
-        ),
-        allocations=(
-            allocations
-        ),
+    client_ids = (
+        build_client_ids(
+            shadow_sha256=(
+                shadow_sha256
+            ),
+            allocations=(
+                allocations
+            ),
+        )
     )
 
     account = get_account()
 
-    if (
+    current_binding = (
         account_binding(
             account
         )
+    )
+
+    if (
+        current_binding
         != policy[
             "account_binding_sha256"
         ]
@@ -1668,6 +2172,35 @@ def main():
         raise LiveBootstrapStop(
             "LIVE BOOTSTRAP STOP: "
             "LIVE account binding mismatch."
+        )
+
+    available_cash = (
+        decimal_value(
+            account.get(
+                "cash"
+            ),
+            field_name=(
+                "LIVE cash"
+            ),
+        )
+    )
+
+    allocation_total = sum(
+        allocations.values(),
+        Decimal(
+            "0"
+        ),
+    )
+
+    if (
+        allocation_total
+        > available_cash
+    ):
+
+        raise LiveBootstrapStop(
+            "LIVE BOOTSTRAP STOP: "
+            "bootstrap allocations exceed "
+            "current LIVE cash."
         )
 
     clock = get_clock()
@@ -1711,10 +2244,7 @@ def main():
     }
 
     deps = build_dependencies(
-        release_lock=release_lock,
         policy=policy,
-        manifest=manifest,
-        weights=weights,
         allocations=allocations,
         client_ids=client_ids,
     )
@@ -1740,6 +2270,14 @@ def main():
     )
 
     print(
+        "Manifest package SHA256: PASS"
+    )
+
+    print(
+        "Manifest-to-policy shadow-state binding: PASS"
+    )
+
+    print(
         "US regular market open: PASS"
     )
 
@@ -1749,10 +2287,6 @@ def main():
 
     print(
         "Pilot policy binding: PASS"
-    )
-
-    print(
-        "Current shadow-state binding: PASS"
     )
 
     print(
@@ -1797,10 +2331,12 @@ def main():
         client_ids
     ):
 
-        order = wait_for_fill(
-            client_ids[
-                symbol
-            ]
+        order = (
+            wait_for_fill(
+                client_ids[
+                    symbol
+                ]
+            )
         )
 
         filled[
@@ -1836,7 +2372,7 @@ def main():
 
     evidence = {
         "schema":
-            "FUND100_LIVE_MICRO_PILOT_BOOTSTRAP_V1",
+            BOOTSTRAP_SCHEMA,
 
         "created_utc":
             datetime.now(
@@ -1857,6 +2393,9 @@ def main():
                 ceiling
             ),
 
+        "manifest_sha256":
+            manifest_sha256,
+
         "account_binding_sha256":
             policy[
                 "account_binding_sha256"
@@ -1871,8 +2410,10 @@ def main():
                     str(
                         weight
                     )
-                for symbol, weight
-                in sorted(
+                for (
+                    symbol,
+                    weight,
+                ) in sorted(
                     weights.items()
                 )
             },
@@ -1883,8 +2424,10 @@ def main():
                     str(
                         amount
                     )
-                for symbol, amount
-                in sorted(
+                for (
+                    symbol,
+                    amount,
+                ) in sorted(
                     allocations.items()
                 )
             },
