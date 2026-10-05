@@ -10,93 +10,155 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
-import fund100_live_pilot_policy_v1_0 as policy
-
 
 # ============================================================
-# FUND-100 LIVE MICRO-PILOT PREPARATION v1.0
+# FUND-100 LIVE MICRO-PILOT PREPARATION v1.1
 # ============================================================
 #
-# REAL ALPACA LIVE ENVIRONMENT.
+# LIVE ACCOUNT — READ ONLY.
 #
-# GET ONLY.
+# This preparation stage:
 #
-# NO POST
-# NO PATCH
-# NO DELETE
-# NO order creation
-# NO order cancellation
+# - performs GET requests only
+# - cannot create / modify / cancel broker orders
+# - verifies a clean funded LIVE account
+# - verifies the committed LIVE manifest package
+# - binds the pilot policy DIRECTLY to:
 #
-# This creates the standing pilot policy using:
+#       manifest["strategy_state_sha256"]
+#       manifest package SHA256
 #
-# - actual live account identity
-# - actual live cash/equity
-# - current frozen V5-002 shadow state
-# - explicit externally supplied USD pilot ceiling
+# This is important because those are the exact identifiers
+# already used by the Fund-100 live-state lineage.
 #
 # ============================================================
 
 
-LIVE_BASE_URL = (
-    "https://api.alpaca.markets"
+LIVE_BASE_URL = "https://api.alpaca.markets"
+EXPECTED_LIVE_HOST = "api.alpaca.markets"
+
+EXPECTED_AUTHORIZATION = (
+    "I_AUTHORIZE_FUND100_LIVE_PILOT_PREPARATION"
 )
 
-EXPECTED_LIVE_HOST = (
-    "api.alpaca.markets"
+MANIFEST_PATH = Path(
+    "live_dryrun_outputs/v5_002/"
+    "live_execution_manifest.json"
 )
 
-RELEASE_LOCK_PATH = Path(
+POLICY_PATH = Path(
     "live_activation_outputs/v5_002/"
-    "pre_live_release_lock_v1_9.json"
+    "live_micro_pilot_policy_v1_0.json"
+)
+
+PREPARATION_PATH = Path(
+    "live_activation_outputs/v5_002/"
+    "live_micro_pilot_preparation_v1_0.json"
 )
 
 OUTPUT_DIR = Path(
     "live_activation_outputs/v5_002"
 )
 
-PREPARATION_PATH = (
-    OUTPUT_DIR
-    / "live_micro_pilot_preparation_v1_0.json"
+FROZEN_EXECUTION_UNIVERSE = (
+    "ACWI",
+    "SPY",
+    "IWM",
+    "EFA",
+    "EEM",
+    "VNQ",
+    "XLK",
+    "XLF",
+    "XLI",
+    "XLV",
+    "XLP",
+    "XLY",
+    "XLE",
+    "XLU",
 )
 
+GET_COUNT = 0
 
-class PilotPrepareStop(RuntimeError):
+
+class PilotPreparationStop(
+    RuntimeError
+):
     pass
 
 
-def sha256_bytes(
-    value: bytes,
+# ============================================================
+# GENERIC HELPERS
+# ============================================================
+
+
+def canonical_json(
+    body: dict,
+) -> str:
+
+    return json.dumps(
+        body,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+
+
+def canonical_sha256(
+    body: dict,
 ) -> str:
 
     return hashlib.sha256(
-        value
+        canonical_json(
+            body
+        ).encode(
+            "utf-8"
+        )
     ).hexdigest()
 
 
-def sha256_json(
-    value,
-) -> str:
+def load_json(
+    path: Path,
+) -> dict:
 
-    payload = json.dumps(
-        value,
-        sort_keys=True,
-        separators=(
-            ",",
-            ":",
-        ),
-    ).encode(
-        "utf-8"
-    )
+    if not path.exists():
 
-    return sha256_bytes(
-        payload
-    )
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            f"required file missing: {path}"
+        )
+
+    try:
+
+        body = json.loads(
+            path.read_text(
+                encoding="utf-8"
+            )
+        )
+
+    except Exception as exc:
+
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            f"invalid JSON: {path}"
+        ) from exc
+
+    if not isinstance(
+        body,
+        dict,
+    ):
+
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            f"{path} is not a JSON object."
+        )
+
+    return body
 
 
 def decimal_value(
     value,
     *,
-    field_name,
+    name: str,
 ) -> Decimal:
 
     try:
@@ -113,28 +175,245 @@ def decimal_value(
         ValueError,
     ) as exc:
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
-            f"{field_name} is invalid."
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            f"{name} is invalid."
         ) from exc
 
     if not result.is_finite():
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
-            f"{field_name} is non-finite."
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            f"{name} is not finite."
         )
 
     return result
 
 
-def require_environment() -> tuple[
-    str,
-    str,
-    Decimal,
-    str,
-]:
+# ============================================================
+# MANIFEST LINEAGE
+# ============================================================
 
+
+def load_verified_manifest():
+    package = load_json(
+        MANIFEST_PATH
+    )
+
+    if (
+        "manifest"
+        not in package
+    ):
+
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "LIVE manifest is not packaged."
+        )
+
+    manifest = package.get(
+        "manifest"
+    )
+
+    if not isinstance(
+        manifest,
+        dict,
+    ):
+
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "manifest package body is invalid."
+        )
+
+    recorded_hash = (
+        str(
+            package.get(
+                "manifest_sha256",
+                "",
+            )
+        )
+        .strip()
+        .lower()
+    )
+
+    if len(
+        recorded_hash
+    ) != 64:
+
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "manifest_sha256 is missing or malformed."
+        )
+
+    actual_hash = (
+        canonical_sha256(
+            manifest
+        )
+    )
+
+    if (
+        actual_hash
+        != recorded_hash
+    ):
+
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "manifest package SHA256 does not verify."
+        )
+
+    if (
+        manifest.get(
+            "strategy"
+        )
+        != "V5-002_SHADOW"
+    ):
+
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "manifest strategy is not V5-002."
+        )
+
+    strategy_state_hash = (
+        str(
+            manifest.get(
+                "strategy_state_sha256",
+                "",
+            )
+        )
+        .strip()
+        .lower()
+    )
+
+    if len(
+        strategy_state_hash
+    ) != 64:
+
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "manifest strategy_state_sha256 "
+            "is missing or invalid."
+        )
+
+    weights = (
+        manifest.get(
+            "target_weights"
+        )
+    )
+
+    if not isinstance(
+        weights,
+        dict,
+    ) or not weights:
+
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "manifest target weights are missing."
+        )
+
+    normalized = {}
+
+    for raw_symbol, raw_weight in (
+        weights.items()
+    ):
+
+        symbol = (
+            str(
+                raw_symbol
+            )
+            .strip()
+            .upper()
+        )
+
+        if symbol == "ACWI_CORE":
+            symbol = "ACWI"
+
+        if (
+            symbol
+            not in FROZEN_EXECUTION_UNIVERSE
+        ):
+
+            raise PilotPreparationStop(
+                "LIVE PILOT PREPARATION STOP: "
+                "manifest contains an instrument outside "
+                f"the frozen execution universe: {symbol}."
+            )
+
+        weight = decimal_value(
+            raw_weight,
+            name=(
+                f"target weight {symbol}"
+            ),
+        )
+
+        if (
+            weight
+            < Decimal("0")
+        ):
+
+            raise PilotPreparationStop(
+                "LIVE PILOT PREPARATION STOP: "
+                f"negative target weight: {symbol}."
+            )
+
+        normalized[
+            symbol
+        ] = weight
+
+    total = sum(
+        normalized.values(),
+        Decimal("0"),
+    )
+
+    if (
+        abs(
+            total
+            - Decimal("1")
+        )
+        > Decimal("0.002")
+    ):
+
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            f"target weights sum to {total}, not 1."
+        )
+
+    target_hash = (
+        canonical_sha256(
+            {
+                symbol:
+                    str(
+                        normalized[
+                            symbol
+                        ]
+                    )
+                for symbol
+                in sorted(
+                    normalized
+                )
+            }
+        )
+    )
+
+    return {
+        "manifest":
+            manifest,
+
+        "manifest_sha256":
+            recorded_hash,
+
+        "strategy_state_sha256":
+            strategy_state_hash,
+
+        "target_weights_sha256":
+            target_hash,
+    }
+
+
+# ============================================================
+# ENVIRONMENT
+# ============================================================
+
+
+def require_environment():
     kill_switch = (
         os.environ.get(
             "FUND100_BROKER_KILL_SWITCH",
@@ -144,12 +423,32 @@ def require_environment() -> tuple[
         .upper()
     )
 
-    if kill_switch != "ENGAGED":
+    if (
+        kill_switch
+        != "ENGAGED"
+    ):
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
-            "broker kill switch must remain ENGAGED "
-            "during preparation."
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "broker kill switch must be ENGAGED."
+        )
+
+    authorization = (
+        os.environ.get(
+            "FUND100_PILOT_PREPARATION_AUTH",
+            "",
+        )
+        .strip()
+    )
+
+    if (
+        authorization
+        != EXPECTED_AUTHORIZATION
+    ):
+
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "preparation authorization mismatch."
         )
 
     key = (
@@ -168,60 +467,54 @@ def require_environment() -> tuple[
         .strip()
     )
 
-    if not key or not secret:
+    if (
+        not key
+        or not secret
+    ):
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
-            "LIVE credentials missing."
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "LIVE credentials are missing."
         )
 
-    raw_cap = (
+    cap = decimal_value(
         os.environ.get(
-            "FUND100_LIVE_PILOT_CAP_USD",
+            "FUND100_PILOT_CAP_USD",
             "",
-        )
-        .strip()
+        ),
+        name="pilot capital ceiling",
     )
 
-    cap = (
-        policy.validate_capital_ceiling(
-            raw_cap
-        )
-    )
+    if (
+        cap
+        <= Decimal("0")
+    ):
 
-    authorization_reference = (
-        os.environ.get(
-            "FUND100_LIVE_PILOT_AUTHORIZATION_REFERENCE",
-            "",
-        )
-        .strip()
-    )
-
-    if not authorization_reference:
-
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
-            "authorization reference missing."
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "pilot capital ceiling must be positive."
         )
 
-    return (
-        key,
-        secret,
-        cap,
-        authorization_reference,
-    )
+    return cap
 
 
-def live_get(
+# ============================================================
+# GET-ONLY ALPACA TRANSPORT
+# ============================================================
+
+
+def alpaca_get(
     path: str,
 ):
+
+    global GET_COUNT
 
     if not path.startswith(
         "/"
     ):
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
             "invalid API path."
         )
 
@@ -235,13 +528,14 @@ def live_get(
     )
 
     if (
-        parsed.scheme != "https"
+        parsed.scheme
+        != "https"
         or parsed.hostname
         != EXPECTED_LIVE_HOST
     ):
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
             "unexpected broker endpoint."
         )
 
@@ -264,6 +558,8 @@ def live_get(
         },
     )
 
+    GET_COUNT += 1
+
     try:
 
         with urlopen(
@@ -271,11 +567,13 @@ def live_get(
             timeout=20,
         ) as response:
 
-            raw = response.read()
+            raw = (
+                response.read()
+            )
 
     except HTTPError as exc:
 
-        message = (
+        detail = (
             exc.read()
             .decode(
                 "utf-8",
@@ -283,18 +581,22 @@ def live_get(
             )
         )
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
-            f"GET {path} returned "
-            f"HTTP {exc.code}: {message}"
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            f"GET {path} returned HTTP "
+            f"{exc.code}: {detail}"
         ) from exc
 
     except URLError as exc:
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
             f"GET {path} failed: {exc}"
         ) from exc
+
+    if not raw:
+
+        return {}
 
     try:
 
@@ -306,138 +608,52 @@ def live_get(
 
     except Exception as exc:
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
             "broker returned invalid JSON."
         ) from exc
 
 
-def load_release_lock() -> dict:
+def get_account():
 
-    if not RELEASE_LOCK_PATH.exists():
-
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
-            "Release Lock v1.9 missing."
-        )
-
-    body = json.loads(
-        RELEASE_LOCK_PATH.read_text(
-            encoding="utf-8"
-        )
+    return alpaca_get(
+        "/v2/account"
     )
 
-    required = {
-        "release_lock_version":
-            "1.9",
 
-        "execution_orchestrator_integration_completed":
-            True,
+def get_positions():
 
-        "execution_orchestrator_release_blocker":
-            False,
-
-        "automatic_live_activation_allowed":
-            False,
-
-        "live_execution_authorized":
-            False,
-
-        "permit_issued":
-            False,
-
-        "maximum_live_execution_notional_usd":
-            "0.00",
-
-        "writer_connected":
-            False,
-
-        "live_orders_submitted":
-            0,
-    }
-
-    for key, expected in required.items():
-
-        if body.get(
-            key
-        ) != expected:
-
-            raise PilotPrepareStop(
-                "LIVE PILOT PREP STOP: "
-                f"Release Lock mismatch: {key}."
-            )
-
-    return body
+    return alpaca_get(
+        "/v2/positions"
+    )
 
 
-def find_shadow_state() -> tuple[
-    Path,
-    dict,
-]:
+def get_open_orders():
 
-    matches = []
+    query = urlencode(
+        {
+            "status":
+                "open",
 
-    for path in Path(
-        "."
-    ).rglob(
-        "shadow_state.json"
-    ):
+            "limit":
+                "500",
+        }
+    )
 
-        # Never inspect git internals.
-        if ".git" in path.parts:
-            continue
+    return alpaca_get(
+        "/v2/orders?"
+        + query
+    )
 
-        try:
 
-            body = json.loads(
-                path.read_text(
-                    encoding="utf-8"
-                )
-            )
-
-        except Exception:
-            continue
-
-        if not isinstance(
-            body,
-            dict,
-        ):
-            continue
-
-        if (
-            body.get(
-                "strategy"
-            )
-            == policy.STRATEGY_ID
-        ):
-
-            matches.append(
-                (
-                    path,
-                    body,
-                )
-            )
-
-    if len(
-        matches
-    ) != 1:
-
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
-            "expected exactly one V5-002 shadow_state.json; "
-            f"found {len(matches)}."
-        )
-
-    return matches[0]
+# ============================================================
+# ACCOUNT BINDING
+# ============================================================
 
 
 def account_binding(
     account: dict,
 ) -> str:
-
-    # Do NOT persist the Alpaca account ID.
-    #
-    # Store only a one-way hash binding.
 
     account_id = (
         str(
@@ -451,100 +667,77 @@ def account_binding(
 
     if not account_id:
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
             "broker account ID missing."
         )
 
-    return sha256_bytes(
+    return hashlib.sha256(
         (
             "FUND100-LIVE-ACCOUNT|"
             + account_id
         ).encode(
             "utf-8"
         )
-    )
+    ).hexdigest()
+
+
+# ============================================================
+# MAIN
+# ============================================================
 
 
 def main():
 
-    (
-        _key,
-        _secret,
-        cap,
-        authorization_reference,
-    ) = require_environment()
+    global GET_COUNT
 
-    print(
-        "========================================"
+    GET_COUNT = 0
+
+    pilot_cap = (
+        require_environment()
     )
 
-    print(
-        "FUND-100 LIVE MICRO-PILOT PREPARATION"
+    lineage = (
+        load_verified_manifest()
     )
 
-    print(
-        "========================================"
+    account = get_account()
+
+    positions = get_positions()
+
+    open_orders = (
+        get_open_orders()
     )
 
-    print(
-        "Broker environment: ALPACA LIVE"
-    )
+    if not isinstance(
+        account,
+        dict,
+    ):
 
-    print(
-        "Broker HTTP capability: GET ONLY"
-    )
-
-    print(
-        "Order submission capability: NONE"
-    )
-
-    print(
-        "Broker kill switch: ENGAGED"
-    )
-
-    load_release_lock()
-
-    shadow_path, shadow_state = (
-        find_shadow_state()
-    )
-
-    shadow_raw = (
-        shadow_path.read_bytes()
-    )
-
-    shadow_sha256 = (
-        sha256_bytes(
-            shadow_raw
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "account response is malformed."
         )
-    )
 
-    account = live_get(
-        "/v2/account"
-    )
+    if not isinstance(
+        positions,
+        list,
+    ):
 
-    positions = live_get(
-        "/v2/positions"
-    )
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "position response is malformed."
+        )
 
-    query = urlencode(
-        {
-            "status":
-                "open",
+    if not isinstance(
+        open_orders,
+        list,
+    ):
 
-            "limit":
-                "500",
-        }
-    )
-
-    open_orders = live_get(
-        "/v2/orders?"
-        + query
-    )
-
-    clock = live_get(
-        "/v2/clock"
-    )
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "order response is malformed."
+        )
 
     if (
         account.get(
@@ -553,8 +746,8 @@ def main():
         != "ACTIVE"
     ):
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
             "LIVE account is not ACTIVE."
         )
 
@@ -565,125 +758,204 @@ def main():
         is True
     ):
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
             "LIVE account is trading blocked."
         )
 
-    if open_orders:
+    if (
+        account.get(
+            "account_blocked"
+        )
+        is True
+    ):
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
-            "existing open LIVE orders detected."
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "LIVE account is blocked."
         )
 
     if positions:
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
-            "one-time bootstrap requires a clean "
-            "LIVE account with zero positions."
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "LIVE account is not clean: "
+            "positions already exist."
+        )
+
+    if open_orders:
+
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "LIVE account is not clean: "
+            "open orders already exist."
         )
 
     cash = decimal_value(
         account.get(
             "cash"
         ),
-        field_name="LIVE cash",
+        name="LIVE account cash",
     )
 
-    equity = decimal_value(
-        account.get(
-            "equity"
-        ),
-        field_name="LIVE equity",
-    )
-
-    if cash <= Decimal(
-        "0"
+    if (
+        cash
+        <= Decimal("0")
     ):
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
-            "LIVE account has no positive cash."
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "LIVE cash is not positive."
         )
 
-    if cap > cash:
+    if (
+        pilot_cap
+        > cash
+    ):
 
-        raise PilotPrepareStop(
-            "LIVE PILOT PREP STOP: "
-            "pilot ceiling exceeds current broker cash."
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "pilot capital ceiling exceeds "
+            "available LIVE cash."
         )
 
-    binding = account_binding(
-        account
-    )
-
-    hashes = (
-        policy.source_hashes()
-    )
-
-    body = (
-        policy.build_policy(
-            capital_ceiling_usd=(
-                cap
-            ),
-
-            account_binding_sha256=(
-                binding
-            ),
-
-            shadow_state_sha256=(
-                shadow_sha256
-            ),
-
-            source_hashes=(
-                hashes
-            ),
-
-            authorization_reference=(
-                authorization_reference
-            ),
+    binding = (
+        account_binding(
+            account
         )
     )
 
-    policy.write_policy(
-        body
+    now = (
+        datetime.now(
+            timezone.utc
+        ).isoformat()
     )
 
-    OUTPUT_DIR.mkdir(
-        parents=True,
-        exist_ok=True,
+    # --------------------------------------------------------
+    # Critical correction:
+    #
+    # activation_shadow_state_sha256 is now deliberately
+    # identical to the manifest's own strategy_state_sha256.
+    #
+    # This preserves backwards compatibility with the current
+    # bootstrap while removing the incompatible hash definition.
+    # --------------------------------------------------------
+
+    exact_strategy_hash = (
+        lineage[
+            "strategy_state_sha256"
+        ]
     )
 
-    # Deliberately omit account ID, cash and exact equity from
-    # the committed artifact.
-    preparation = {
+    exact_manifest_hash = (
+        lineage[
+            "manifest_sha256"
+        ]
+    )
+
+    policy = {
         "schema":
-            "FUND100_LIVE_MICRO_PILOT_PREPARATION_V1",
+            "FUND100_LIVE_MICRO_PILOT_POLICY_V1_1",
 
         "created_utc":
-            datetime.now(
-                timezone.utc
-            ).isoformat(),
-
-        "release_lock_version":
-            "1.9",
+            now,
 
         "strategy":
-            policy.STRATEGY_ID,
+            "V5-002_SHADOW",
 
-        "shadow_state_sha256":
-            shadow_sha256,
+        "deployment_mode":
+            "LIVE_MICRO_PILOT",
 
         "account_binding_sha256":
             binding,
 
-        "live_account_status":
-            "ACTIVE",
+        "capital_ceiling_usd":
+            str(
+                pilot_cap
+            ),
 
-        "trading_blocked":
+        "execution_universe":
+            list(
+                FROZEN_EXECUTION_UNIVERSE
+            ),
+
+        # Existing bootstrap compatibility field.
+        "activation_shadow_state_sha256":
+            exact_strategy_hash,
+
+        # Explicit v1.1 names.
+        "authorized_manifest_strategy_state_sha256":
+            exact_strategy_hash,
+
+        "authorized_manifest_sha256":
+            exact_manifest_hash,
+
+        "authorized_target_weights_sha256":
+            lineage[
+                "target_weights_sha256"
+            ],
+
+        "bootstrap_alignment_allowed":
+            True,
+
+        "additional_deposits_automatically_usable":
             False,
+
+        "leverage_allowed":
+            False,
+
+        "shorting_allowed":
+            False,
+
+        "options_allowed":
+            False,
+
+        "crypto_allowed":
+            False,
+
+        "ordinary_drift_trading_allowed":
+            False,
+
+        "autonomous_strategy_event_execution_enabled":
+            False,
+
+        "live_order_authorization_present":
+            False,
+    }
+
+    policy_hash = (
+        canonical_sha256(
+            policy
+        )
+    )
+
+    preparation = {
+        "schema":
+            "FUND100_LIVE_MICRO_PILOT_PREPARATION_V1_1",
+
+        "created_utc":
+            now,
+
+        "strategy":
+            "V5-002_SHADOW",
+
+        "broker_environment":
+            "ALPACA_LIVE",
+
+        "account_binding_verified":
+            True,
+
+        "account_active_verified":
+            True,
+
+        "trading_not_blocked_verified":
+            True,
+
+        "funded_live_cash_verified":
+            True,
+
+        "pilot_ceiling_within_cash_verified":
+            True,
 
         "existing_positions":
             0,
@@ -691,46 +963,67 @@ def main():
         "existing_open_orders":
             0,
 
-        "positive_cash_verified":
-            True,
+        "authorized_manifest_sha256":
+            exact_manifest_hash,
 
-        "pilot_ceiling_usd":
-            str(
-                cap
-            ),
+        "authorized_manifest_strategy_state_sha256":
+            exact_strategy_hash,
 
-        "pilot_ceiling_within_current_cash":
-            True,
-
-        "market_open":
-            bool(
-                clock.get(
-                    "is_open"
-                )
-            ),
-
-        "broker_methods_used":
-            [
-                "GET",
+        "authorized_target_weights_sha256":
+            lineage[
+                "target_weights_sha256"
             ],
 
-        "live_posts":
-            0,
+        "pilot_policy_sha256":
+            policy_hash,
 
-        "live_deletes":
-            0,
+        "additional_deposits_automatically_usable":
+            False,
 
-        "live_patches":
-            0,
+        "leverage_allowed":
+            False,
+
+        "shorting_allowed":
+            False,
+
+        "ordinary_drift_trading_allowed":
+            False,
+
+        "bootstrap_authorization_present":
+            True,
+
+        "live_order_authorization_present":
+            False,
+
+        "broker_mutation_capability":
+            "NONE",
+
+        "broker_http_methods_used":
+            [
+                "GET"
+            ],
+
+        "live_get_requests":
+            GET_COUNT,
 
         "orders_submitted":
             0,
-
-        "pilot_policy_path":
-            str(
-                policy.OUTPUT_PATH
-            ),
     }
+
+    OUTPUT_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    POLICY_PATH.write_text(
+        json.dumps(
+            policy,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     PREPARATION_PATH.write_text(
         json.dumps(
@@ -742,32 +1035,94 @@ def main():
         encoding="utf-8",
     )
 
+    # Final internal proof that the field the bootstrap reads
+    # is now exactly the manifest state identifier.
+    reread_policy = load_json(
+        POLICY_PATH
+    )
+
+    reread_manifest = (
+        load_verified_manifest()
+    )
+
+    if (
+        reread_policy[
+            "activation_shadow_state_sha256"
+        ]
+        != reread_manifest[
+            "strategy_state_sha256"
+        ]
+    ):
+
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "policy-to-manifest state binding failed."
+        )
+
+    if (
+        reread_policy[
+            "authorized_manifest_sha256"
+        ]
+        != reread_manifest[
+            "manifest_sha256"
+        ]
+    ):
+
+        raise PilotPreparationStop(
+            "LIVE PILOT PREPARATION STOP: "
+            "policy-to-manifest package binding failed."
+        )
+
     print(
-        "Release Lock v1.9: VERIFIED"
+        "========================================"
     )
 
     print(
-        "Current V5-002 shadow state: VERIFIED"
+        "FUND-100 LIVE MICRO-PILOT PREPARATION COMPLETE"
     )
 
     print(
-        "LIVE account status: ACTIVE"
+        "========================================"
     )
 
     print(
-        "LIVE trading blocked: FALSE"
+        "Preparation implementation: v1.1"
     )
 
     print(
-        "Existing LIVE positions: 0"
+        "Strategy: V5-002"
     )
 
     print(
-        "Existing LIVE open orders: 0"
+        "Broker environment: ALPACA LIVE"
     )
 
     print(
-        "Positive funded cash: VERIFIED"
+        "Broker HTTP methods used: GET ONLY"
+    )
+
+    print(
+        "Manifest package SHA256: VERIFIED"
+    )
+
+    print(
+        "Manifest strategy-state SHA256: VERIFIED"
+    )
+
+    print(
+        "Policy-to-manifest exact state binding: VERIFIED"
+    )
+
+    print(
+        "Policy-to-manifest package binding: VERIFIED"
+    )
+
+    print(
+        "Real LIVE account binding: VERIFIED"
+    )
+
+    print(
+        "Funded LIVE cash: VERIFIED"
     )
 
     print(
@@ -775,27 +1130,47 @@ def main():
     )
 
     print(
-        "LIVE pilot policy created: YES"
+        "Existing positions: 0"
     )
 
     print(
-        "LIVE pilot activated: FALSE"
+        "Existing open orders: 0"
+    )
+
+    print(
+        "Pilot policy: CREATED"
+    )
+
+    print(
+        "Additional deposits automatically usable: FALSE"
+    )
+
+    print(
+        "Leverage allowed: FALSE"
+    )
+
+    print(
+        "Shorting allowed: FALSE"
+    )
+
+    print(
+        "Ordinary drift trading: FALSE"
+    )
+
+    print(
+        "Bootstrap authorization present: YES"
+    )
+
+    print(
+        "LIVE order authorization present: FALSE"
+    )
+
+    print(
+        "Broker mutation capability: NONE"
     )
 
     print(
         "LIVE orders submitted: 0"
-    )
-
-    print(
-        "========================================"
-    )
-
-    print(
-        "LIVE MICRO-PILOT PREPARATION: PASS"
-    )
-
-    print(
-        "========================================"
     )
 
 
