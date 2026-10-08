@@ -1,11 +1,11 @@
 {
-  "generated_utc": "2026-10-08T17:50:41.730453+00:00",
+  "generated_utc": "2026-10-08T19:46:10.991239+00:00",
   "strategy": "V5-002_SHADOW",
   "manifest_hash": "852a1563f236b964974b44c4cea0895c50e880bb304ae62ae5c650c61f483c10",
   "shadow_baseline": "2026-10-01",
   "first_eligible_forward_date": "2026-10-02",
   "last_processed_date": "2026-10-07",
-  "new_sessions_appended": 1,
+  "new_sessions_appended": 0,
   "paper_nav_gbp": 100.88786874028375,
   "benchmark_nav_gbp": 100.90958353379257,
   "relative_wealth_vs_acwi": -0.00021519059685293218,
