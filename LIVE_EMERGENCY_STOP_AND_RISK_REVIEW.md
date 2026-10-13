@@ -75,8 +75,8 @@ disengaging any safety control or supplying secrets to chat:
    write capability as appropriate and confirm their final status.
    Cancellation may interrupt code during broker reconciliation;
    do not then assume the account is flat or consistent.
-3. Inspect Alpaca **LIVE** (not Paper) directly for broker-held
-   **open orders**, recent submissions, fills, cancellations,
+3. Inspect Alpaca **LIVE** (not Paper) directly for broker-held open orders,
+   recent submissions, fills, cancellations,
    buying power, positions, and account equity. Handle unwanted
    open orders via authorised Alpaca controls, and verify actual
    cancellation acknowledgements/fills. Do not automatically
