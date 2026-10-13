@@ -43,7 +43,9 @@ def test_omitting_in_memory_post_path_restriction_fails_closed():
     virtual = _simulated_repair()
     needle = (
         '        if path != "/v2/orders":\n'
-        '            raise LiveBootstrapStop("Unsupported LIVE POST path")\n'
+        '            raise LiveBootstrapStop(\n'
+        '                "LIVE BOOTSTRAP STOP: unsupported LIVE POST endpoint."\n'
+        '            )\n'
     )
     assert virtual[BOOTSTRAP].count(needle) == 1
     virtual[BOOTSTRAP] = virtual[BOOTSTRAP].replace(needle, "", 1)
@@ -56,10 +58,12 @@ def test_omitting_in_memory_post_path_restriction_fails_closed():
 def test_omitting_final_in_memory_kill_gate_fails_closed():
     virtual = _simulated_repair()
     needle = (
-        '        if os.environ.get('
-        '"FUND100_BROKER_KILL_SWITCH", ""'
-        ').strip().upper() != "DISENGAGED":\n'
-        '            raise LiveBootstrapStop("LIVE kill switch engaged")\n'
+        '        if os.environ.get(\n'
+        '            "FUND100_BROKER_KILL_SWITCH", ""\n'
+        '        ).strip().upper() != "DISENGAGED":\n'
+        '            raise LiveBootstrapStop(\n'
+        '                "LIVE BOOTSTRAP STOP: broker kill switch is engaged."\n'
+        '            )\n'
     )
     assert virtual[BOOTSTRAP].count(needle) == 1
     virtual[BOOTSTRAP] = virtual[BOOTSTRAP].replace(needle, "", 1)
