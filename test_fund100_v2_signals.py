@@ -158,3 +158,10 @@ def test_price_and_membership_are_frozen_at_panel_creation():
     permissions[100] = frozenset()
     assert p.adjusted_prices["UP"][100] == 100.0
     assert p.eligible_symbols[100] == frozenset({"UP"})
+
+
+def test_perfectly_smooth_positive_trend_uses_volatility_floor():
+    panel = sample_panel()
+    score = score_on_close(panel, "risk_scaled_trend", 120, "UP")
+    assert score > 0
+    assert score < 1_000_000
