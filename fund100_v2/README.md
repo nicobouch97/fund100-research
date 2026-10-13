@@ -76,6 +76,12 @@ QuantConnect's public LEAN sample ETF constituent files have repeated SID tokens
 
 The function must be passed a QuantBook instance from the QuantConnect **Cloud Research** environment. GitHub CI tests only its mocked interface; **it has not been executed against Cloud data**. The documentation at `VENDOR_DUE_DILIGENCE.md` explains the optional Cloud execution path, Free-tier resource limits, data licensing and required source-independent verification. Cloud research access is separate from paid data downloads, and no account has been connected or created.
 
+## Separate free-Cloud ETF constituent probe
+
+`qc_etf_cloud_feasibility.py` checks a short, bounded `SPY` ETF **constituents** history using QuantConnect's documented `qb.universe.etf("SPY", universe_filter_func=...)` and `qb.universe_history(...)`. It checks reported holdings-update dates, weights, duplicate QC symbol keys and counts while exporting no vendor rows and producing no orders. It is **not** a source of tradable SPY ETF daily prices, the full ETF listings universe, contemporaneous publication timestamps, or verified delisting proceeds. The dataset can be delayed; success is not alpha or even a source-vintage audit.
+
+For the exact three-file import and research-only QuantConnect Free Cloud handoff, see `QC_CLOUD_RUNBOOK.md`. It is a prepared procedure, **not a completed Cloud execution**. GitHub currently runs offline mocks only; the Free Cloud organization has not been connected. Paid Lean CLI Cloud synchronization is not required, and must not be purchased simply to test this research case.
+
 ## Critical data and risk limitations
 
 1. **No network data provider implemented.** This module receives observations, not a broker-feed request. To avoid survivorship and lookahead bias, V2 needs a historical point-in-time constituent/eligibility data source, delisting records, date-aligned volume/spreads, and adjusted OHLCV data. Merely setting `observed_on` cannot make a present-day asset catalog historically unbiased.
