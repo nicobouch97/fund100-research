@@ -123,7 +123,9 @@ def score_on_close(
     ]
     vol = pstdev(returns)
     raw = prices[index] / prices[index - 20] - 1.0
-    return raw / vol if vol > 1e-12 else 0.0
+    # The research-only denominator floor keeps perfectly smooth
+    # synthetic trends finite; it is not a risk/position-size limit.
+    return raw / max(vol, 0.0001)
 
 
 def top_research_candidate(
