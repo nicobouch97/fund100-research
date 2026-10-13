@@ -7,6 +7,11 @@ import re
 import sys
 from pathlib import Path
 
+from fund100_live_workflow_mutex_audit_v1_0 import (
+    scan_workflow_sources,
+    read_workflow_sources,
+)
+
 
 # ============================================================
 # FUND-100 LIVE BOUNDARY STATIC AUDIT v1.1
@@ -184,23 +189,16 @@ WORKFLOW_MUTATING_CURL_PATTERN = re.compile(
 
 
 # ============================================================
-# LIVE-CREDENTIAL WORKFLOW ALLOWLIST
+# LIVE-CREDENTIAL STEP-SCOPE AUTHORISATION
 # ============================================================
-
-
-ALLOWED_LIVE_CREDENTIAL_SCRIPTS = {
-    "fund100_alpaca_live_readonly_smoke.py",
-    "fund100_alpaca_live_preflight.py",
-    "fund100_alpaca_live_execution_boundary.py",
-    "fund100_alpaca_live_manifest.py",
-    "fund100_alpaca_live_intent_validator.py",
-    "fund100_alpaca_live_scheduled_compiler.py",
-}
-
-PYTHON_SCRIPT_PATTERN = re.compile(
-    r"""(?:^|\s)python(?:3)?\s+([A-Za-z0-9_./-]+\.py)(?:\s|$)""",
-    re.IGNORECASE,
-)
+#
+# Delegate credential-bearing command identity, exact step-local secret
+# usage, event triggers, default-branch constraints and shared LIVE writer
+# mutex to fund100_live_workflow_mutex_audit_v1_0.py.
+#
+# DO NOT expand an old basename allowlist: bootstrap and production are
+# confirmed account-order writers and may never be treated as read-only.
+# ============================================================
 
 
 # ============================================================
@@ -753,6 +751,30 @@ def audit_workflows(
 
         return
 
+    # New checker scans the full 40-workflow source inventory, not merely
+    # Python commands seen anywhere in a credential-containing YAML file.
+    # Fail CLOSED on exceptions; no fallback to the obsolete basename list.
+    try:
+        credential_scope_report = scan_workflow_sources(
+            read_workflow_sources(ROOT)
+        )
+    except Exception as exc:
+        audit.failed(
+            "LIVE credential step-scope/mutex audit could not complete: "
+            + f"{type(exc).__name__}: {exc}"
+        )
+    else:
+        if credential_scope_report.problems:
+            for problem in credential_scope_report.problems:
+                audit.failed(
+                    "LIVE credential/trigger/writer gate: " + problem
+                )
+        else:
+            audit.passed(
+                "All LIVE credential commands are exact, step-local, "
+                "and writer jobs share a noncanceling main-only mutex."
+            )
+
     writer_invocations = []
 
     enabled_write_modes = []
@@ -843,31 +865,9 @@ def audit_workflows(
 
         if exposes_live_credentials:
 
-            for match in (
-                PYTHON_SCRIPT_PATTERN.finditer(
-                    source
-                )
-            ):
-
-                script = Path(
-                    match.group(
-                        1
-                    )
-                ).name
-
-                if (
-                    script
-                    not in
-                    ALLOWED_LIVE_CREDENTIAL_SCRIPTS
-                ):
-
-                    unauthorized_credential_commands.append(
-                        (
-                            relative,
-                            script,
-                        )
-                    )
-
+            # The exact credentialed command, source workflow, secret
+            # scope and allowed triggers are checked above. Preserve the
+            # older, separate blanket bans on inline Python and curl.
             if re.search(
                 r"""python(?:3)?\s+-c\b""",
                 source,
@@ -979,8 +979,9 @@ def audit_workflows(
     else:
 
         audit.passed(
-            "Live credentials are exposed only to "
-            "allowlisted read-only/compile scripts."
+            "No credential-bearing workflow uses inline Python or curl; "
+            "all credentialed script and LIVE writer checks are delegated "
+            "to the stricter step-scoped gate above."
         )
 
 
