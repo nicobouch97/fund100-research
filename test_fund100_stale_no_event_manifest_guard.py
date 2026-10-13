@@ -235,3 +235,108 @@ def test_main_requires_exact_validator_for_current_manifest(monkeypatch):
     assert len(recorded) == 1
     assert recorded[0]["compiler"]["stale_manifest_no_event_only"] is False
 
+@pytest.mark.parametrize(
+    "unsafe_manifest_change",
+    [
+        {"live_execution_authorized": True},
+        {"network_write_capability": True},
+        {"broker_write_mode": "ENABLED"},
+        {"max_live_execution_notional_usd": 0.01},
+        {"manifest_type": "PENDING_STRATEGY_EVENT"},
+        {"event_source": "EMERGENCY"},
+        {"strategy_event_present": True},
+        {"schema": "unsupported-stale-schema"},
+    ],
+)
+def test_main_stale_no_event_must_refuse_executable_or_invalid_manifest(
+    monkeypatch, unsafe_manifest_change,
+):
+    # Run the actual scheduled-compiler main path, with zero broker
+    # connections allowed and the real funded kill switch emulated ENGAGED.
+    manifest = historical_manifest()
+    manifest.update(unsafe_manifest_change)
+    with pytest.raises(RuntimeError, match="STOP"):
+        _run_compiler_offline(
+            monkeypatch, current_idle_state(), manifest,
+        )
+
+
+@pytest.mark.parametrize(
+    "unsafe_historical_reconciliation",
+    [
+        {"no_open_orders_verified": False},
+        {"long_only_verified": False},
+        {"no_unmanaged_positions_verified": False},
+        {"frozen_execution_universe_verified": False},
+        {"live_holdings_persisted": True},
+        {"live_dollar_values_persisted": True},
+        {"volatile_broker_snapshot_persisted": True},
+    ],
+)
+def test_main_stale_no_event_rejects_unsafe_historical_broker_proof(
+    monkeypatch, unsafe_historical_reconciliation,
+):
+    manifest = historical_manifest()
+    manifest["position_reconciliation"] = {
+        "policy": compiler.manifest_v11.RECONCILIATION_POLICY,
+        "live_account_binding_sha256": "synthetic-account-only",
+        "reconciliation_status": "POSITION_AWARE",
+        "position_count": 4,
+        "frozen_execution_universe_verified": True,
+        "long_only_verified": True,
+        "no_unmanaged_positions_verified": True,
+        "no_open_orders_verified": True,
+        "live_holdings_persisted": False,
+        "live_dollar_values_persisted": False,
+        "volatile_broker_snapshot_persisted": False,
+    }
+    manifest["position_reconciliation"].update(
+        unsafe_historical_reconciliation
+    )
+    with pytest.raises(RuntimeError, match="STOP"):
+        _run_compiler_offline(
+            monkeypatch, current_idle_state(), manifest,
+        )
+
+
+@pytest.mark.parametrize(
+    "unsafe_pending_state",
+    [
+        {"pending_target": {"EEM": 0.1}, "pending_source": "SCHEDULED"},
+        {"pending_target": {"EEM": 0.1}, "pending_source": "EMERGENCY"},
+        {"pending_target": None, "pending_source": "SCHEDULED"},
+        {"pending_target": {"EEM": 0.1}, "pending_source": None},
+    ],
+)
+def test_main_stale_manifest_never_falls_through_to_broker_for_pending_event(
+    monkeypatch, unsafe_pending_state,
+):
+    state = current_idle_state()
+    state.update(unsafe_pending_state)
+    with pytest.raises(RuntimeError, match="current manifest"):
+        _run_compiler_offline(
+            monkeypatch, state, historical_manifest(),
+        )
+
+
+def test_main_no_event_artifact_is_verifiably_zero_order_with_stale_proof(
+    monkeypatch,
+):
+    output, _ = _run_compiler_offline(
+        monkeypatch, current_idle_state(), historical_manifest(),
+    )
+    assert len(output) == 1
+    signed_body = output[0]["compiler"]
+    assert output[0]["compiler_sha256"] == v10.sha256_json(signed_body)
+    assert signed_body["status"] == "NO_SCHEDULED_EVENT"
+    assert signed_body["genuine_scheduled_event"] is False
+    assert signed_body["candidate_intents"] == []
+    assert signed_body["orders_submitted"] == 0
+    assert signed_body["live_execution_authorized"] is False
+    assert signed_body["network_write_capability"] is False
+    assert signed_body["broker_write_mode"] == "DISABLED"
+    assert signed_body["stale_manifest_no_event_only"] is True
+    assert signed_body["position_reconciliation_evidence"] == (
+        "HISTORICAL_REFERENCE_ONLY"
+    )
+    assert signed_body["fresh_broker_state_verified"] is False
