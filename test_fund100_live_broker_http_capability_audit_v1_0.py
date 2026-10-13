@@ -62,11 +62,15 @@ def test_removing_first_unconditional_writer_raise_rejected():
 
 
 def test_removing_first_legacy_post_guard_rejected():
-    sources = _mutate(
-        "fund100_alpaca_live_writer_disconnected.py",
-        '    require_adapter_connected()\n\n    validate_credentials(',
-        '    validate_credentials(',
+    sources = _sources()
+    filename = "fund100_alpaca_live_writer_disconnected.py"
+    prefix, suffix = sources[filename].split(
+        "def _post_live_market_order(", 1
     )
+    needle = "    require_adapter_connected()\n\n    validate_credentials("
+    assert needle in suffix
+    suffix = suffix.replace(needle, "    validate_credentials(", 1)
+    sources[filename] = prefix + "def _post_live_market_order(" + suffix
     findings = scan_capability_sources(
         sources, verify_blob_pins=False
     ).problems
