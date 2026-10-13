@@ -200,6 +200,14 @@ WORKFLOW_MUTATING_CURL_PATTERN = re.compile(
 # confirmed account-order writers and may never be treated as read-only.
 # ============================================================
 
+# Legacy extension modules v1.4/v1.8 mutate this old set at import time.
+# Keep an inert compatibility variable until those imports are refactored.
+# SECURITY: audit_workflows NEVER reads this set. The authoritative check
+# is scan_workflow_sources(), which still requires one exact step-local
+# command, job-level main guard and shared LIVE account writer mutex.
+ALLOWED_LIVE_CREDENTIAL_SCRIPTS: set[str] = set()
+
+
 
 # ============================================================
 # SECRET-HYGIENE PATTERNS
