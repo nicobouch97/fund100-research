@@ -1,7 +1,10 @@
 """Offline V2 expanding-window, purged walk-forward *research evaluation*.
 
-A signal is observed at date t CLOSE; the illustrative fill is next
-session CLOSE t+1, and the measured outcome ends at t+2 CLOSE.
+A signal is calculated from date t's CLOSE only AFTER source publication,
+by 09:00 NY on the next weekday (subject to source-vintage validation).
+The illustrative entry occurs at next session CLOSE t+1 and the outcome
+ends at t+2 CLOSE. Source timing is enforced by data_contract.py for
+bundle-derived panels. This is NOT a broker-validated close-auction fill.
 The filled trade pays per-side fees, modeled slippage and half the
 dated quoted spread at entry and exit. These fill assumptions are
 simplifications, not verified execution performance.
@@ -150,10 +153,15 @@ def evaluate_decision(
     )
 
     name = None if family == "CASH" else top_research_candidate(panel, family, t)
-    # Research eligibility can change after the signal. At the simulated
-    # entry close, a now-disallowed asset is skipped, not magically traded.
+    # Never grant a free option to cancel an adverse selected signal
+    # using next-session membership first known at the fill close.
+    # Without independently stamped pre-fill eligibility or a documented
+    # untradeable/no-fill event, this research outcome is unknowable.
     if name is not None and name not in panel.eligible_symbols[t + 1]:
-        name = None
+        raise ValueError(
+            "Entry eligibility changed after signal: independently dated "
+            "pre-fill status and auction/no-fill evidence required"
+        )
 
     gross = 0.0
     cost = 0.0
