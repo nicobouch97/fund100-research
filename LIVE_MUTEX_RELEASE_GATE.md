@@ -52,6 +52,23 @@ concurrency:
   cancel-in-progress: false
 ```
 
+**Additionally, the one account-order writer job in each workflow must
+refuse to execute code from anything except the reviewed default branch:**
+
+```yaml
+jobs:
+  bootstrap:  # V5 production uses job ID: production
+    if: github.ref == 'refs/heads/main'
+    # retain existing name, runs-on, timeout, authorisation and steps
+```
+
+These are the **two exact protected YAML changes per workflow**
+(one `concurrency.group` and one job-level `if` guard). The audit
+also freezes the existing `workflow_dispatch` input contracts and
+the production schedule. Without a branch guard, manual dispatch allows
+running a workflow on a selected branch using its code and configured
+secrets; see [GitHub documentation](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
+
 Do **not** use `cancel-in-progress: true`: cancelling a LIVE writer
 mid-reconciliation is dangerous. Do **not** rely on a separate job-level
 group or a ${{ github.workflow }} prefix, because those can fragment the
@@ -100,7 +117,7 @@ wired into an existing protected workflow by this draft PR.
 
 The supplemental scanner now validates the **entire parsed workflow YAML**, not only `steps[].env`. Secrets routed through `with` action parameters, `if` expressions, job outputs, reusable-workflow handoffs and dynamically constructed secret references fail closed. Ambiguous duplicate YAML keys are rejected. It also freezes the permitted event triggers for all 13 LIVE-credential workflows to manual dispatch, except the existing V5 production schedule (which keeps its audited cron and New York timezone). Bootstrap and preparation must retain their required manual authorization input contracts.
 
-The full-repository regression includes an **in-memory** simulation that replaces only the two existing, different workflow-level writer groups with `fund100-alpaca-live-account-writer` and reruns the complete new scanner. This is proof of the proposed file-level change **only if the test succeeds**; it does not alter protected YAML and is not sufficient to pass the unchanged legacy static audit or certify actual broker-wide exclusive ownership.
+The full-repository regression includes an **in-memory** simulation that replaces both existing workflow-level writer groups with `fund100-alpaca-live-account-writer` **and inserts both main-branch job guards**, then reruns the complete new scanner. This is proof of the proposed file-level change **only if the test succeeds**; it does not alter protected YAML and is not sufficient to pass the unchanged legacy static audit or certify actual broker-wide exclusive ownership.
 
 The offline checker cannot prove absence of all dynamically constructed HTTP mutations in transitive Python imports, local developer machines or other repositories. A real account-wide lock also requires discipline around any external order writers, plus observed position/order reconciliation and existing authorisation policy.
 
