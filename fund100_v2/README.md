@@ -64,6 +64,12 @@ These are **single-symbol, one-day, fully exited hypothetical independent trials
 
 Minimum 252 historical sessions, USD price at least $5, average 20-day dollar volume at least $5 million, quoted spread at most 40 basis points, observed snapshot at most five **calendar** days old, and the top 250 passing symbols by dollar volume. These are *exploratory universe defaults*, not LIVE exposure, risk or order bounds.
 
+## Public-source format inspection only
+
+`provider_sample_inspector.py` accepts local LEAN ETF constituent examples or ticker map-file text and returns strict **format-only** audit reports. It checks security identifier reuse, date/format anomalies, unique symbols and file SHA256, and explicitly returns `FORMAT_ONLY_NOT_HISTORICAL_EVIDENCE`. It cannot emit a `ResearchPanel` or convert ETF holdings into historical price/alpha evidence.
+
+QuantConnect's public LEAN sample ETF constituent files have repeated SID tokens (503 tickers but only 166 distinct SID tokens in each of two inspected dates); the public sample directory includes a third-party rights notice. No vendor sample rows were republished here. For sources and affordable Cloud data feasibility, see `VENDOR_DUE_DILIGENCE.md` and open historical-data gate #4.
+
 ## Critical data and risk limitations
 
 1. **No network data provider implemented.** This module receives observations, not a broker-feed request. To avoid survivorship and lookahead bias, V2 needs a historical point-in-time constituent/eligibility data source, delisting records, date-aligned volume/spreads, and adjusted OHLCV data. Merely setting `observed_on` cannot make a present-day asset catalog historically unbiased.
