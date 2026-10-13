@@ -26,6 +26,11 @@ import yaml
 # This proposed group is not yet installed in the protected workflows.
 ACCOUNT_WRITER_MUTEX = "fund100-alpaca-live-account-writer"
 
+# Repository secrets alone are accessible to unreviewed branch workflows.
+# Every LIVE credential consumer must depend on the SAME protected GitHub
+# Environment; repo-level LIVE secrets must separately be verified ABSENT.
+LIVE_CREDENTIAL_ENVIRONMENT = "fund100-live-broker"
+
 # Explicit credential-bearing script contracts. Never derive a credential
 # script from its basename alone or trust an unknown LIVE workflow.
 CREDENTIAL_SCRIPT_BY_WORKFLOW: Mapping[str, str] = {
@@ -320,6 +325,7 @@ def scan_workflow_sources(
             if not isinstance(steps, list):
                 findings.append(f"{raw_name}: malformed job steps")
                 continue
+            job_has_live_credentials = False
             for index, step in enumerate(steps):
                 if not isinstance(step, dict):
                     findings.append(f"{raw_name}: malformed step {index}")
@@ -344,6 +350,7 @@ def scan_workflow_sources(
                     continue
 
                 credential_steps += 1
+                job_has_live_credentials = True
                 if raw_name not in known:
                     findings.append(
                         f"{raw_name}: unrecognised LIVE credential workflow"
@@ -366,6 +373,15 @@ def scan_workflow_sources(
                     findings.append(
                         f"{raw_name}: cannot pass LIVE secrets to a uses step"
                     )
+
+            if job_has_live_credentials and job.get("environment") != (
+                LIVE_CREDENTIAL_ENVIRONMENT
+            ):
+                findings.append(
+                    f"{raw_name}: LIVE credential job {job_name!r} must "
+                    f"use exact protected environment "
+                    f"{LIVE_CREDENTIAL_ENVIRONMENT!r}"
+                )
 
         if raw_credential_reference or credential_steps:
             credentialed.append(raw_name)
@@ -471,6 +487,10 @@ def main() -> int:
     print("Workflows inspected:", report.workflow_count)
     print("Credential workflows:", len(report.credential_workflows))
     print("Confirmed account-order writers:", len(report.live_order_writers))
+    print(
+        "Required GitHub environment:", LIVE_CREDENTIAL_ENVIRONMENT,
+        "(configuration and repo-secret absence NOT verified here)"
+    )
     for name, group in report.writer_mutex_groups:
         print("LIVE writer group:", name, "=>", group)
     for issue in report.problems:
