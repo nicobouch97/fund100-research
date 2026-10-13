@@ -1,10 +1,9 @@
 """Offline, fail-closed terminal Alpaca LIVE POST boundary audit.
 
-Both LIVE order writers call bootstrap.live_request, whose HTTP sink
-currently accepts POST independently of the operator's process-local
-kill-switch and of a fixed POST path. The normal high-level paths have
-gates, but defense-in-depth requires the final HTTP sink to reject
-unauthorised method/path combinations itself.
+Both LIVE order writers call bootstrap.live_request. The separately
+reviewed proposed repair introduces a final local kill-switch check and
+limits HTTP POST to the exact order endpoint. This is defense-in-depth:
+it does not authenticate a remote change to an already-running process.
 
 Source audit only: no GitHub Settings, Alpaca requests, orders or keys.
 This contract is intentionally RED on the unchanged protected baseline.
@@ -21,7 +20,7 @@ from typing import Mapping
 BOOTSTRAP = "fund100_live_bootstrap_v1_0.py"
 PRODUCTION = "fund100_live_production_controller_v1_0.py"
 REVIEWED_WRITER_BLOBS = {
-    BOOTSTRAP: "2df0e9b216366b7659386d9cc541041b5365a2ab",
+    BOOTSTRAP: "3d866d415ba228b6c538adac6d0a70e6b93de34d",
     PRODUCTION: "79afbb4723c2c74bd90ff28533178430d8160cf6",
 }
 

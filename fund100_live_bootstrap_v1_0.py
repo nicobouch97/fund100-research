@@ -651,6 +651,22 @@ def live_request(
             "unexpected broker endpoint."
         )
 
+    # Last-mile LIVE write boundary. This is defense-in-depth, not
+    # replacement for release-lock, order-cap, or operator checks.
+    # A running job reads only its local env: GitHub Settings changes
+    # are NOT guaranteed to revoke an already-started process.
+    if method == "POST":
+        if path != "/v2/orders":
+            raise LiveBootstrapStop(
+                "LIVE BOOTSTRAP STOP: unsupported LIVE POST endpoint."
+            )
+        if os.environ.get(
+            "FUND100_BROKER_KILL_SWITCH", ""
+        ).strip().upper() != "DISENGAGED":
+            raise LiveBootstrapStop(
+                "LIVE BOOTSTRAP STOP: broker kill switch is engaged."
+            )
+
     data = None
 
     if body is not None:

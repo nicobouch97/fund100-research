@@ -106,12 +106,14 @@ transport has no independent final STOP. See
 integrated into the existing layered LIVE audit.
 
 **The proposed 17-edit YAML patch is NOT sufficient for LIVE approval.**
-A future separately reviewed writer-code change must enforce a final
-kill-switch and exact `/v2/orders` POST restriction, then refresh pinned
-writer-source hashes after review. Any per-request check of local
-`os.environ` remains distinct from real-time revocation across a
-running GitHub Actions process. Neither defect may be waived merely
-because the GitHub Environment/branch/mutex checks pass.
+A separately stacked **draft-only** writer-code change now proposes
+the final process kill-switch / exact `/v2/orders` POST restriction.
+Its source hash has been pinned in the draft terminal audit for code
+review; production `main` is **not modified**, and no launch permission
+has been granted. Any per-request check of local `os.environ` remains
+distinct from real-time revocation across a running GitHub Actions
+process. Neither that operational gap nor independent GitHub
+environment/secret policy may be waived because tests pass.
 
 ## Independent acceptance evidence
 

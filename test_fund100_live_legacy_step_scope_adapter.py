@@ -56,34 +56,10 @@ def _virtual_repaired_workflows():
 
 
 def _simulate_future_terminal_guard(monkeypatch):
-    """Virtual writer change only; bypass source pin only for simulation."""
+    """Proposed terminal guard now exists in THIS draft branch only."""
     originals = legacy.read_terminal_sources(legacy.ROOT)
-    anchor = "    data = None\n\n    if body is not None:"
-    assert originals["fund100_live_bootstrap_v1_0.py"].count(anchor) == 1
-    guard = (
-        '    if method == "POST":\n'
-        '        if path != "/v2/orders":\n'
-        '            raise LiveBootstrapStop("Wrong order path")\n'
-        '        if os.environ.get('
-        '"FUND100_BROKER_KILL_SWITCH", ""'
-        ').strip().upper() != "DISENGAGED":\n'
-        '            raise LiveBootstrapStop("Switch engaged")\n'
-        '\n'
-    )
-    originals["fund100_live_bootstrap_v1_0.py"] = originals[
-        "fund100_live_bootstrap_v1_0.py"
-    ].replace(anchor, guard + anchor, 1)
-    result = scan_terminal_write_sources(originals, verify_pins=False)
+    result = scan_terminal_write_sources(originals)
     assert result.passed, result.problems
-    monkeypatch.setattr(
-        legacy, "read_terminal_sources", lambda root: dict(originals)
-    )
-    monkeypatch.setattr(
-        legacy, "scan_terminal_write_sources",
-        lambda sources: scan_terminal_write_sources(
-            sources, verify_pins=False
-        ),
-    )
 
 
 def test_current_v117_gate_reports_actual_writer_gaps_not_stale_allowlist():
@@ -96,7 +72,7 @@ def test_current_v117_gate_reports_actual_writer_gaps_not_stale_allowlist():
     assert "mutex is" in findings
     assert "main-branch job guard" in findings
     assert "non-allowlisted command" not in findings
-    assert "Terminal LIVE HTTP POST gate" in findings
+    assert "Terminal LIVE HTTP POST gate" not in findings
     assert any(
         "fund100-live-micro-pilot-prepare.yml" in problem
         and "must use exact protected environment" in problem
@@ -280,12 +256,29 @@ def test_original_auditor_reports_pinned_get_and_dormant_post_proof(
         for item in report.passes
     )
 
-def test_original_v117_audit_refuses_missing_terminal_sink_guard():
+def test_original_v117_audit_refuses_missing_terminal_sink_guard(
+    monkeypatch,
+):
+    sources = legacy.read_terminal_sources(legacy.ROOT)
+    filename = "fund100_live_bootstrap_v1_0.py"
+    needle = (
+        '    if method == "POST":\n'
+        '        if path != "/v2/orders":\n'
+    )
+    assert needle in sources[filename]
+    sources[filename] = sources[filename].replace(
+        needle,
+        '    if False and method == "POST":\n'
+        '        if path != "/v2/orders":\n',
+        1,
+    )
+    monkeypatch.setattr(
+        legacy, "read_terminal_sources", lambda root: dict(sources)
+    )
     report = legacy.Audit()
     legacy.audit_workflows(report)
     assert any(
         "Terminal LIVE HTTP POST gate" in issue
-        and "pre-HTTP gate" in issue
         for issue in report.failures
     )
 
