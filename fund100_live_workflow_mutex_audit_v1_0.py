@@ -65,6 +65,15 @@ LIVE_ORDER_WRITER_WORKFLOWS = frozenset({
     "fund100-v5-live-production.yml",
 })
 
+# Treat changes to deployment triggers as a separate release operation.
+# The sole automatic writer is the pre-existing V5 production schedule.
+EXPECTED_PRODUCTION_CRON = "17,29,41 15 * * 1-5"
+EXPECTED_PRODUCTION_TZ = "America/New_York"
+MANUAL_AUTH_INPUTS = {
+    "fund100-live-bootstrap.yml": "authorization",
+    "fund100-live-micro-pilot-prepare.yml": "authorization_reference",
+}
+
 CREDENTIALS = {
     "ALPACA_LIVE_KEY": "${{ secrets.ALPACA_LIVE_KEY }}",
     "ALPACA_LIVE_SECRET": "${{ secrets.ALPACA_LIVE_SECRET }}",
@@ -189,6 +198,53 @@ def _references_outside_isolated_step(
     return tuple(sorted(set(unexpected)))
 
 
+def _trigger_problems(cfg: dict, name: str) -> tuple[str, ...]:
+    """Untrusted PR event or changed order-writing schedule must fail."""
+    if name not in CREDENTIAL_SCRIPT_BY_WORKFLOW:
+        return ()
+    # PyYAML 1.1 converts the unquoted GitHub YAML key 'on' to True.
+    raw = cfg.get("on", cfg.get(True))
+    if not isinstance(raw, dict):
+        return (f"{name}: missing explicit audited workflow triggers",)
+    event_names = set(raw)
+    allowed = (
+        {"workflow_dispatch", "schedule"}
+        if name == "fund100-v5-live-production.yml"
+        else {"workflow_dispatch"}
+    )
+    findings = []
+    if event_names != allowed:
+        findings.append(
+            f"{name}: unexpected LIVE credential trigger events: "
+            f"{sorted(str(event) for event in event_names)}"
+        )
+    if name == "fund100-v5-live-production.yml":
+        schedule = raw.get("schedule")
+        if schedule != [{
+            "cron": EXPECTED_PRODUCTION_CRON,
+            "timezone": EXPECTED_PRODUCTION_TZ,
+        }]:
+            findings.append(
+                f"{name}: production schedule differs from frozen contract"
+            )
+    if name in MANUAL_AUTH_INPUTS:
+        dispatch = raw.get("workflow_dispatch")
+        inputs = dispatch.get("inputs") if isinstance(dispatch, dict) else None
+        input_spec = (
+            inputs.get(MANUAL_AUTH_INPUTS[name])
+            if isinstance(inputs, dict) else None
+        )
+        if (
+            not isinstance(input_spec, dict)
+            or input_spec.get("required") is not True
+            or input_spec.get("type") != "string"
+        ):
+            findings.append(
+                f"{name}: required manual authorization input was weakened"
+            )
+    return tuple(findings)
+
+
 def scan_workflow_sources(
     sources: Mapping[str, str],
     *,
@@ -224,6 +280,7 @@ def scan_workflow_sources(
             continue
 
         raw_credential_reference = bool(EXPOSURE.search(source))
+        findings.extend(_trigger_problems(cfg, raw_name))
         for location in _references_outside_isolated_step(cfg, raw_name):
             findings.append(
                 f"{raw_name}: LIVE secret reference outside exact "
