@@ -44,22 +44,23 @@ jobs:
           import ast
           from pathlib import Path
 
-          source = Path("fund100_v2/universe.py").read_text(encoding="utf-8")
-          tree = ast.parse(source)
           forbidden_roots = {
               "alpaca", "requests", "httpx", "urllib", "socket",
               "subprocess", "fund100_live_bootstrap_v1_0",
               "fund100_live_production_controller_v1_0",
           }
-          for node in ast.walk(tree):
-              if isinstance(node, ast.Import):
-                  for item in node.names:
-                      assert item.name.split(".")[0] not in forbidden_roots
-              if isinstance(node, ast.ImportFrom):
-                  root = (node.module or "").split(".")[0]
-                  assert root not in forbidden_roots
-          assert "ALPACA_LIVE_KEY" not in source
-          assert "ALPACA_LIVE_SECRET" not in source
+          for file in sorted(Path("fund100_v2").glob("*.py")):
+              source = file.read_text(encoding="utf-8")
+              tree = ast.parse(source)
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.Import):
+                      for item in node.names:
+                          assert item.name.split(".")[0] not in forbidden_roots
+                  if isinstance(node, ast.ImportFrom):
+                      root = (node.module or "").split(".")[0]
+                      assert root not in forbidden_roots
+              assert "ALPACA_LIVE_KEY" not in source
+              assert "ALPACA_LIVE_SECRET" not in source
           print("Research-only import boundary: PASS")
           PY
       - name: Full offline regression suite
