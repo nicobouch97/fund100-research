@@ -261,7 +261,7 @@ def test_bad_yaml_fails_without_executing_any_steps():
     files = minimal_valid()
     files[READONLY] = "jobs: [unterminated\n"
     assert any(
-        "malformed YAML" in issue
+        "malformed or duplicate YAML" in issue
         for issue in _report(files).problems
     )
 
