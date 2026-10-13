@@ -96,6 +96,14 @@ python fund100_live_workflow_mutex_audit_v1_0.py
 workflow groups are actually repaired.** The standalone audit is not
 wired into an existing protected workflow by this draft PR.
 
+## Additional fail-closed checks after adversarial review
+
+The supplemental scanner now validates the **entire parsed workflow YAML**, not only `steps[].env`. Secrets routed through `with` action parameters, `if` expressions, job outputs, reusable-workflow handoffs and dynamically constructed secret references fail closed. Ambiguous duplicate YAML keys are rejected. It also freezes the permitted event triggers for all 13 LIVE-credential workflows to manual dispatch, except the existing V5 production schedule (which keeps its audited cron and New York timezone). Bootstrap and preparation must retain their required manual authorization input contracts.
+
+The full-repository regression includes an **in-memory** simulation that replaces only the two existing, different workflow-level writer groups with `fund100-alpaca-live-account-writer` and reruns the complete new scanner. This is proof of the proposed file-level change **only if the test succeeds**; it does not alter protected YAML and is not sufficient to pass the unchanged legacy static audit or certify actual broker-wide exclusive ownership.
+
+The offline checker cannot prove absence of all dynamically constructed HTTP mutations in transitive Python imports, local developer machines or other repositories. A real account-wide lock also requires discipline around any external order writers, plus observed position/order reconciliation and existing authorisation policy.
+
 ## Other required release checks
 
 - Reconcile the legacy static audit's credential allowlist with the
