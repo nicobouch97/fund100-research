@@ -36,6 +36,8 @@ TRANSPORT_BLOBS = {
         "cf871f849a140c7b1db29fd991c8e00da31e1974",
     "fund100_live_pilot_prepare_v1_0.py":
         "dfebc7cedcd9820b1141c74a69d85e500c287748",
+    "fund100_alpaca_live_scheduled_compiler.py":
+        "da3ddd77e8e5e455a8429014ca86a851fa1e806b",
     "fund100_alpaca_live_writer_disconnected.py":
         "9e0501d2785275748a4916df6da6862a9815de9b",
     "fund100_alpaca_live_writer_disconnected_v1_1.py":
@@ -44,6 +46,7 @@ TRANSPORT_BLOBS = {
 GET_MODULES = frozenset({
     "fund100_alpaca_live_readonly_smoke",
     "fund100_live_pilot_prepare_v1_0",
+    "fund100_alpaca_live_scheduled_compiler",
     "fund100_alpaca_live_writer_disconnected",
 })
 DORMANT_POST_MODULE = "fund100_alpaca_live_writer_disconnected"
@@ -86,11 +89,11 @@ def _local_imports(tree: ast.AST, available: set[str]) -> set[str]:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 name = alias.name.split(".")[0]
-                if name in available:
+                if name in available or name.startswith("fund100_"):
                     deps.add(name)
         if isinstance(node, ast.ImportFrom):
             name = (node.module or "").split(".")[0]
-            if name in available:
+            if name in available or name.startswith("fund100_"):
                 deps.add(name)
     return deps
 
