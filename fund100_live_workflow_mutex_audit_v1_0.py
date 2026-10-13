@@ -74,8 +74,11 @@ EXPOSURE = re.compile(
     r"secrets\.ALPACA_LIVE_(?:KEY|SECRET)",
     re.IGNORECASE,
 )
-LIVE_PYTHON_ENTRY = re.compile(
-    r"\bpython(?:3)?\s+(?:\./)?([A-Za-z0-9_./-]+\.py)\b"
+# Dynamic references can leak *all* configured secrets without spelling
+# the Alpaca LIVE names out. Never silently allow such indirection.
+DYNAMIC_SECRET_EXPR = re.compile(
+    r"\bsecrets\s*\[|\btoJSON\s*\(\s*secrets\s*\)",
+    re.IGNORECASE,
 )
 
 
@@ -107,14 +110,83 @@ def _valid_run_script(value: object, expected: str) -> bool:
     ]
 
 
+class _NoDuplicateKeysLoader(yaml.SafeLoader):
+    """Reject duplicate YAML keys instead of trusting ambiguous parsers."""
+
+
+def _unique_yaml_mapping(loader, node):
+    loader.flatten_mapping(node)
+    seen = set()
+    for key_node, _ in node.value:
+        key = loader.construct_object(key_node, deep=True)
+        if not isinstance(key, (str, int, float, bool, type(None))):
+            raise yaml.constructor.ConstructorError(
+                None, None, "unhashable YAML mapping key", node.start_mark
+            )
+        if key in seen:
+            raise yaml.constructor.ConstructorError(
+                None, None, f"duplicate YAML key: {key}", key_node.start_mark
+            )
+        seen.add(key)
+    return dict(loader.construct_pairs(node, deep=True))
+
+
+_NoDuplicateKeysLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _unique_yaml_mapping
+)
+
+
 def _valid_yaml(source: str, workflow_name: str) -> dict:
     try:
-        config = yaml.safe_load(source)
+        config = yaml.load(source, Loader=_NoDuplicateKeysLoader)
     except yaml.YAMLError as exc:
-        raise ValueError(f"{workflow_name}: malformed YAML") from exc
+        raise ValueError(f"{workflow_name}: malformed or duplicate YAML") from exc
     if not isinstance(config, dict):
         raise ValueError(f"{workflow_name}: workflow must be a map")
     return config
+
+
+def _references_outside_isolated_step(
+    cfg: object, workflow_name: str,
+) -> tuple[str, ...]:
+    """Check *all* parsed YAML values, not merely step.env fields.
+
+    A live reference in with/if/run/outputs/job.secrets/reusable workflow
+    must never inherit the privilege of a separate approved step.
+    """
+    unexpected: list[str] = []
+
+    def walk(node: object, path: tuple[str, ...]) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                part = str(key)
+                loc = path + (part,)
+                is_allowed = (
+                    workflow_name in CREDENTIAL_SCRIPT_BY_WORKFLOW
+                    and len(loc) == 6
+                    and loc[0] == "jobs"
+                    and loc[2] == "steps"
+                    and loc[3].isdigit()
+                    and loc[4] == "env"
+                    and part in CREDENTIALS
+                    and value == CREDENTIALS[part]
+                )
+                if EXPOSURE.search(part) and not is_allowed:
+                    unexpected.append(".".join(loc))
+                if is_allowed:
+                    continue
+                walk(value, loc)
+            return
+        if isinstance(node, (list, tuple)):
+            for i, value in enumerate(node):
+                walk(value, path + (str(i),))
+            return
+        if isinstance(node, str):
+            if EXPOSURE.search(node) or DYNAMIC_SECRET_EXPR.search(node):
+                unexpected.append(".".join(path))
+
+    walk(cfg, ())
+    return tuple(sorted(set(unexpected)))
 
 
 def scan_workflow_sources(
@@ -152,6 +224,11 @@ def scan_workflow_sources(
             continue
 
         raw_credential_reference = bool(EXPOSURE.search(source))
+        for location in _references_outside_isolated_step(cfg, raw_name):
+            findings.append(
+                f"{raw_name}: LIVE secret reference outside exact "
+                f"step-local env: {location}"
+            )
         job_map = cfg.get("jobs", {})
         if not isinstance(job_map, dict):
             findings.append(f"{raw_name}: malformed jobs")
@@ -170,6 +247,11 @@ def scan_workflow_sources(
             if not isinstance(job, dict):
                 findings.append(f"{raw_name}: malformed job {job_name}")
                 continue
+            if job.get("secrets") is not None:
+                findings.append(
+                    f"{raw_name}: reusable job secrets exposure requires "
+                    "independent security review"
+                )
             job_env = job.get("env") or {}
             if not isinstance(job_env, dict):
                 findings.append(f"{raw_name}: malformed job env")
@@ -177,7 +259,11 @@ def scan_workflow_sources(
             if any(EXPOSURE.search(str(v)) or EXPOSURE.search(str(k))
                    for k, v in job_env.items()):
                 findings.append(f"{raw_name}: LIVE credentials at job scope")
-            for index, step in enumerate(job.get("steps") or []):
+            steps = job.get("steps") or []
+            if not isinstance(steps, list):
+                findings.append(f"{raw_name}: malformed job steps")
+                continue
+            for index, step in enumerate(steps):
                 if not isinstance(step, dict):
                     findings.append(f"{raw_name}: malformed step {index}")
                     continue
