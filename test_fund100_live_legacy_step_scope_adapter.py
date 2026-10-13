@@ -180,3 +180,65 @@ def test_legacy_mutable_allowlist_is_inert_not_a_permission(monkeypatch):
     finally:
         legacy.ALLOWED_LIVE_CREDENTIAL_SCRIPTS.clear()
         legacy.ALLOWED_LIVE_CREDENTIAL_SCRIPTS.update(original_set)
+
+def test_original_live_auditor_now_requires_transitive_http_guard(monkeypatch):
+    """A changed GET transport must make the actual layered audit red."""
+    workflows = _virtual_repaired_workflows()
+    sources = legacy.read_python_sources(legacy.ROOT)
+    target = "fund100_alpaca_live_scheduled_compiler.py"
+    assert 'method="GET"' in sources[target]
+    sources[target] = sources[target].replace(
+        'method="GET"', 'method="POST"', 1
+    )
+    monkeypatch.setattr(
+        legacy, "read_workflow_sources", lambda root: dict(workflows)
+    )
+    monkeypatch.setattr(
+        legacy, "read_python_sources", lambda root: dict(sources)
+    )
+    report = legacy.Audit()
+    legacy.audit_workflows(report)
+    assert any(
+        "LIVE broker transport/guard gate" in msg
+        for msg in report.failures
+    )
+    assert any(
+        "unapproved HTTP POST path" in msg
+        for msg in report.failures
+    )
+
+
+def test_original_live_auditor_fails_closed_if_source_check_unavailable(
+    monkeypatch,
+):
+    workflows = _virtual_repaired_workflows()
+    monkeypatch.setattr(
+        legacy, "read_workflow_sources", lambda root: dict(workflows)
+    )
+
+    def broken(_):
+        raise OSError("could not review source tree")
+
+    monkeypatch.setattr(legacy, "read_python_sources", broken)
+    report = legacy.Audit()
+    legacy.audit_workflows(report)
+    assert any(
+        "LIVE broker transport/guard audit could not complete" in msg
+        for msg in report.failures
+    )
+
+
+def test_original_auditor_reports_pinned_get_and_dormant_post_proof(
+    monkeypatch,
+):
+    workflows = _virtual_repaired_workflows()
+    monkeypatch.setattr(
+        legacy, "read_workflow_sources", lambda root: dict(workflows)
+    )
+    report = legacy.Audit()
+    legacy.audit_workflows(report)
+    assert not report.failures, report.failures
+    assert any(
+        "GET transports and structurally disconnected POST paths" in item
+        for item in report.passes
+    )
