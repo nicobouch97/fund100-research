@@ -24,6 +24,27 @@ Authoritative public documentation:
 - QuantConnect US Equity Security Master: https://www.quantconnect.com/docs/v2/writing-algorithms/datasets/quantconnect/us-equity-security-master
 - NYSE closing-auction timing (2025-11-18): https://www.nyse.com/research/insights/nyse-closing-auction-timing-shifts-and-marketability-trends
 
+## Public LEAN reference sample inspection (13 October 2026)
+
+Public, read-only GitHub references (sample rows were **not copied into Fund-100**):
+- https://github.com/QuantConnect/Lean/tree/master/Data/equity/usa/universes/etf/spy
+- https://github.com/QuantConnect/Lean/tree/master/Data/equity/usa/map_files
+- https://github.com/QuantConnect/Lean/blob/master/Data/equity/usa/readme.md
+
+The SPY ETF constituent samples dated `20201130` and `20201201` contain **503 ticker rows each**, but only **166 distinct trailing SID tokens** per sample. In both, **eight** SID tokens map to more than one ticker, with the most reused token assigned to **309** names. This identifies an important **reference-fixture identity collision**: these tokens are not safe unique security keys as presented, and the samples cannot prove a stable issuer identity map.
+
+The reference ETF fixture is six CSV fields: ticker, LEAN ticker-plus-SID, constituent holdings date, reported fractional weight, shares, blank trailing field. The filename's calendar date is not a certified publication timestamp; the holdings dates may precede it. The referenced map-file `20501231` marker is a future sentinel, **not** an observed delisting or cash settlement. These examples supply neither independent priced trades nor historical corporate-action vintages.
+
+`provider_sample_inspector.py` now checks the format, dates, numeric fields, duplicate tickers and conflicting SID ownership. It emits SHA256 of supplied local text and rigidly marks all outputs `FORMAT_ONLY_NOT_HISTORICAL_EVIDENCE`. No network client, broker credentials, ETF holdings redistribution, implied LIVE eligibility or backtest-import path is exposed. The test fixtures are synthetic. Third-party sample directory states **AlgoSeek data, all rights reserved**; underlying vendor licensing must be resolved before any further reuse.
+
+### Zero-cost candidate (platform-specific)
+
+QuantConnect documents **free cloud access** to its historical US Equity Coarse Universe for universe-selection workflows, and free cloud use of its US Equity Security Master. Coarse history claims daily US equity membership and closing price/volume back to 1998, **but the free Cloud entitlement does not mean the local ZIP or CSV dataset may be freely downloaded or redistributed**. Local access and US equity price data can involve separate licensing. As such, QuantConnect Cloud is the leading *cost-aware feasibility environment*, **not** yet a compatible authenticated source for the existing GitHub Actions research loader. A free account and supported cloud research workflow would need separate explicit operator action and terms review before actual data access.
+
+- https://www.quantconnect.com/data/quantconnect-us-coarse-universe-constituents
+- https://www.quantconnect.com/data/quantconnect-us-equity-security-master
+- https://www.quantconnect.com/docs/v2/cloud-platform/datasets/licensing
+
 ## Required independent acceptance sample
 
 Before a vendor adapter is permitted to produce **evidence-eligible** V2 backtests, acquire a reproducible, legitimately licensed and immutable *archived vintage* for a period including:
