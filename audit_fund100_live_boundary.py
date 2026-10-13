@@ -11,6 +11,10 @@ from fund100_live_workflow_mutex_audit_v1_0 import (
     scan_workflow_sources,
     read_workflow_sources,
 )
+from fund100_live_broker_http_capability_audit_v1_0 import (
+    read_python_sources,
+    scan_capability_sources,
+)
 
 
 # ============================================================
@@ -781,6 +785,30 @@ def audit_workflows(
             audit.passed(
                 "All LIVE credential commands are exact, step-local, "
                 "and writer jobs share a noncanceling main-only mutex."
+            )
+
+    # Supplemental import-closure proof: read-only-labelled entrypoints
+    # may transitively import dormant POST code. Require the disabled
+    # writer guards and known GET transports to remain source-pinned.
+    try:
+        capability_report = scan_capability_sources(
+            read_python_sources(ROOT)
+        )
+    except Exception as exc:
+        audit.failed(
+            "LIVE broker transport/guard audit could not complete: "
+            + f"{type(exc).__name__}: {exc}"
+        )
+    else:
+        if capability_report.problems:
+            for problem in capability_report.problems:
+                audit.failed(
+                    "LIVE broker transport/guard gate: " + problem
+                )
+        else:
+            audit.passed(
+                "Credential non-order-writer import closure has reviewed "
+                "GET transports and structurally disconnected POST paths."
             )
 
     writer_invocations = []
