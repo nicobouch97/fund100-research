@@ -82,7 +82,7 @@ def test_bounded_three_window_coverage_has_no_alpha_or_order_capability():
         assert row.selected_for_research_subscription == 2
     text = aggregate_report_json(report)
     assert NOT_VALIDATED in text
-    assert "orders" not in text.lower()
+    assert "\"broker_orders_submitted\":0" in text
     assert "AAA" not in text
     assert "BBB" not in text
 
