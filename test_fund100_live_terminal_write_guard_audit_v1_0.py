@@ -22,47 +22,22 @@ def _actual():
 
 
 def _simulated_repair():
-    original = _actual()
-    anchor = "    data = None\n\n    if body is not None:"
-    assert original[BOOTSTRAP].count(anchor) == 1
-    strict_guard = (
-        '    if method == "POST":\n'
-        '        if path != "/v2/orders":\n'
-        '            raise LiveBootstrapStop("Unsupported LIVE POST path")\n'
-        '        if os.environ.get('
-        '"FUND100_BROKER_KILL_SWITCH", ""'
-        ').strip().upper() != "DISENGAGED":\n'
-        '            raise LiveBootstrapStop("LIVE kill switch engaged")\n'
-        '\n'
-    )
-    original[BOOTSTRAP] = original[BOOTSTRAP].replace(
-        anchor, strict_guard + anchor, 1
-    )
-    return original
+    """Current reviewed source, copied into memory only for negative tests."""
+    return _actual()
 
-
-def test_actual_http_sink_is_not_released_by_higher_level_kill_checks():
+def test_actual_http_sink_is_restricted_by_terminal_guard():
     audit = scan_terminal_write_sources(_actual())
     assert audit.baseline_pinned is True
     assert audit.guarded_approved_order_path_count == 2
     assert audit.raw_network_sink_count == 2
-    assert not audit.passed
-    assert any(
-        "bootstrap POST transport needs direct pre-HTTP gate" in p
-        for p in audit.problems
-    )
-
+    assert audit.passed, audit.problems
 
 def test_reviewed_in_memory_sink_guard_satisfies_explicit_release_contract():
     virtual = _simulated_repair()
-    report = scan_terminal_write_sources(
-        virtual, verify_pins=False
-    )
+    report = scan_terminal_write_sources(virtual)
     assert report.passed, report.problems
-    assert report.baseline_pinned is False
-    # Changed production code must be independently reviewed and repinned.
-    assert not scan_terminal_write_sources(virtual).passed
-
+    assert report.baseline_pinned is True
+    assert len(report.problems) == 0
 
 def test_omitting_in_memory_post_path_restriction_fails_closed():
     virtual = _simulated_repair()
@@ -126,11 +101,46 @@ def test_guard_conditional_false_cannot_pass_contract():
     assert "bootstrap POST transport needs direct pre-HTTP gate" in issues
 
 
-def test_current_transport_with_engaged_process_switch_reaches_fake_post(
+def test_engaged_switch_blocks_terminal_post_before_fake_network(monkeypatch):
+    called = []
+    def forbidden_urlopen(*args, **kwargs):
+        called.append((args, kwargs))
+        raise AssertionError("Network sink must not be reached")
+    monkeypatch.setenv("ALPACA_LIVE_KEY", "synthetic-test-key-only")
+    monkeypatch.setenv("ALPACA_LIVE_SECRET", "synthetic-test-secret-only")
+    monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "ENGAGED")
+    monkeypatch.setattr(bootstrap, "urlopen", forbidden_urlopen)
+    with pytest.raises(bootstrap.LiveBootstrapStop, match="kill switch"):
+        bootstrap.live_request(
+            method="POST",
+            path="/v2/orders",
+            body={"test": "nontrading_stub"},
+        )
+    assert called == []
+
+def test_unknown_post_path_blocks_before_fake_network(monkeypatch):
+    called = []
+    def forbidden_urlopen(*args, **kwargs):
+        called.append((args, kwargs))
+        raise AssertionError("Network sink must not be reached")
+    monkeypatch.setenv("ALPACA_LIVE_KEY", "synthetic-test-key-only")
+    monkeypatch.setenv("ALPACA_LIVE_SECRET", "synthetic-test-secret-only")
+    monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "DISENGAGED")
+    monkeypatch.setattr(bootstrap, "urlopen", forbidden_urlopen)
+    with pytest.raises(bootstrap.LiveBootstrapStop, match="POST endpoint"):
+        bootstrap.live_request(
+            method="POST",
+            path="/v2/positions",
+            body={"test": "nontrading_stub"},
+        )
+    assert called == []
+
+
+def test_allowed_post_reaches_fake_network_only_when_explicitly_disengaged(
     monkeypatch,
 ):
-    """Demonstrate missing sink-level check without any real network call."""
-    received = []
+    """Test-only process variable and fake transport; NEVER a real order."""
+    observed = []
 
     class StubResponse:
         def __enter__(self):
@@ -140,57 +150,22 @@ def test_current_transport_with_engaged_process_switch_reaches_fake_post(
             return False
 
         def read(self):
-            return b'{"test":"stubbed_only"}'
+            return b'{"synthetic":"ok"}'
 
     def fake_urlopen(req, *, timeout):
-        received.append((req.get_method(), req.full_url, timeout))
+        observed.append((req.get_method(), req.full_url, timeout))
         return StubResponse()
 
     monkeypatch.setenv("ALPACA_LIVE_KEY", "synthetic-test-key-only")
     monkeypatch.setenv("ALPACA_LIVE_SECRET", "synthetic-test-secret-only")
-    monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "ENGAGED")
-    monkeypatch.setattr(bootstrap, "urlopen", fake_urlopen)
-    result = bootstrap.live_request(
-        method="POST",
-        path="/v2/orders",
-        body={"test": "nontrading_stub"},
-    )
-    assert result == {"test": "stubbed_only"}
-    assert received == [
-        ("POST", "https://api.alpaca.markets/v2/orders", 20)
-    ]
-    # A higher-level controller would have stopped a normal order path,
-    # but the raw transport itself reached the FAKE network sink.
-
-
-def test_current_transport_does_not_restrict_fake_post_endpoint(monkeypatch):
-    received = []
-
-    class StubResponse:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_):
-            return False
-
-        def read(self):
-            return b"{}"
-
-    def fake_urlopen(req, *, timeout):
-        received.append(req.full_url)
-        return StubResponse()
-
-    monkeypatch.setenv("ALPACA_LIVE_KEY", "synthetic-test-key-only")
-    monkeypatch.setenv("ALPACA_LIVE_SECRET", "synthetic-test-secret-only")
-    monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "ENGAGED")
+    monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "DISENGAGED")
     monkeypatch.setattr(bootstrap, "urlopen", fake_urlopen)
     assert bootstrap.live_request(
-        method="POST",
-        path="/v2/positions",
-        body={"test": "nontrading_stub"},
-    ) == {}
-    assert received == ["https://api.alpaca.markets/v2/positions"]
-
+        method="POST", path="/v2/orders", body={"synthetic": True}
+    ) == {"synthetic": "ok"}
+    assert observed == [
+        ("POST", "https://api.alpaca.markets/v2/orders", 20)
+    ]
 
 @pytest.mark.parametrize("invalid", [None, 1, object()])
 def test_missing_or_invalid_source_inputs_refused(invalid):
