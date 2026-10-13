@@ -90,15 +90,13 @@ def test_no_instant_fill_at_signal_close():
     assert before.gross_fraction != after.gross_fraction
 
 
-def test_pre_entry_membership_failure_cancels_hypothetical_fill():
+def test_post_signal_membership_change_cannot_be_free_cancel():
     n = 275
     memberships = [frozenset({"UP","DOWN"}) for _ in range(n)]
     memberships[101] = frozenset({"DOWN"})
     p = research_panel(memberships=tuple(memberships))
-    out = evaluate_decision(p, "medium_momentum", 100, ResearchCosts())
-    assert out.hypothetical_symbol is None
-    assert out.net_fraction == 0
-    assert out.cost_fraction == 0
+    with pytest.raises(ValueError, match="Entry eligibility changed"):
+        evaluate_decision(p, "medium_momentum", 100, ResearchCosts())
 
 
 def test_cash_is_not_an_order_and_is_zero_return():
