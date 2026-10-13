@@ -493,3 +493,29 @@ def test_prepare_must_preserve_explicit_manual_authorization():
         "manual authorization input was weakened" in item
         for item in _report(files).problems
     )
+
+def test_actual_protected_writer_groups_would_satisfy_new_guard_if_fixed():
+    """In-memory dry-run ONLY; never changes protected GitHub workflows."""
+    root = Path(__file__).resolve().parent
+    if not (root / ".github" / "workflows").is_dir():
+        pytest.skip("Outside repository checkout")
+
+    sources = read_workflow_sources(root)
+    asserted_old_groups = {
+        BOOTSTRAP: "fund100-live-micro-pilot-bootstrap",
+        PRODUCTION: "fund100-v5-002-live-production",
+    }
+    for filename, old_group in asserted_old_groups.items():
+        source_text = sources[filename]
+        existing = f"group: {old_group}"
+        replacement = f"group: {ACCOUNT_WRITER_MUTEX}"
+        if existing in source_text:
+            assert source_text.count(existing) == 1
+            sources[filename] = source_text.replace(existing, replacement)
+        else:
+            assert replacement in source_text
+
+    report = scan_workflow_sources(sources)
+    assert len(report.credential_workflows) == len(CREDENTIAL_SCRIPT_BY_WORKFLOW)
+    assert set(report.credential_workflows) == set(CREDENTIAL_SCRIPT_BY_WORKFLOW)
+    assert report.passed, report.problems
