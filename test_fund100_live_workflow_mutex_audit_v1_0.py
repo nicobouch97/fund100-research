@@ -14,6 +14,7 @@ import yaml
 
 from fund100_live_workflow_mutex_audit_v1_0 import (
     ACCOUNT_WRITER_MUTEX,
+    LIVE_CREDENTIAL_ENVIRONMENT,
     CREDENTIAL_SCRIPT_BY_WORKFLOW,
     LIVE_ORDER_WRITER_WORKFLOWS,
     read_workflow_sources,
@@ -66,6 +67,7 @@ def fixture(
         "jobs": {
             "test": {
                 "runs-on": "ubuntu-latest",
+                "environment": LIVE_CREDENTIAL_ENVIRONMENT,
                 **({"if": "github.ref == 'refs/heads/main'"} if
                    name in LIVE_ORDER_WRITER_WORKFLOWS else {}),
                 "steps": [{
@@ -528,6 +530,17 @@ def test_actual_protected_writer_groups_would_satisfy_new_guard_if_fixed():
             )
         sources[filename] = source_text
 
+    # Every one of the 13 credential jobs needs the *same* named
+    # protected environment; changes remain entirely in-memory.
+    for filename in CREDENTIAL_SCRIPT_BY_WORKFLOW:
+        existing = sources[filename]
+        line = "    runs-on: ubuntu-latest"
+        assert existing.count(line) == 1
+        assert "    environment:" not in existing
+        sources[filename] = existing.replace(
+            line, line + "\n    environment: " + LIVE_CREDENTIAL_ENVIRONMENT,
+        )
+
     report = scan_workflow_sources(sources)
     assert len(report.credential_workflows) == len(CREDENTIAL_SCRIPT_BY_WORKFLOW)
     assert set(report.credential_workflows) == set(CREDENTIAL_SCRIPT_BY_WORKFLOW)
@@ -555,4 +568,53 @@ def test_writer_guard_on_untrusted_branch_is_not_accepted():
     assert any(
         "main-branch job guard" in issue
         for issue in _report(files).problems
+    )
+
+def test_missing_git_environment_fails_even_when_mutex_and_branch_are_safe():
+    files = minimal_valid()
+    cfg = fixture(PRODUCTION)
+    cfg["jobs"]["test"].pop("environment")
+    files[PRODUCTION] = source(cfg)
+    result = _report(files)
+    assert not result.passed
+    assert any(
+        "must use exact protected environment" in problem
+        for problem in result.problems
+    )
+
+
+def test_wrong_environment_fails_even_on_main():
+    files = minimal_valid()
+    cfg = fixture(BOOTSTRAP)
+    cfg["jobs"]["test"]["environment"] = "unrestricted-live"
+    files[BOOTSTRAP] = source(cfg)
+    assert any(
+        "must use exact protected environment" in problem
+        for problem in _report(files).problems
+    )
+
+
+def test_all_known_readonly_jobs_also_require_secret_isolation():
+    files = minimal_valid()
+    cfg = fixture(READONLY)
+    cfg["jobs"]["test"].pop("environment")
+    files[READONLY] = source(cfg)
+    assert any(
+        "must use exact protected environment" in problem
+        for problem in _report(files).problems
+    )
+
+
+def test_reusable_workflow_environment_binding_does_not_override_secret_leak():
+    files = minimal_valid()
+    cfg = fixture(READONLY)
+    cfg["jobs"]["test"]["steps"].append({
+        "name": "malicious reusable step",
+        "uses": "third-party/unsafe@v1",
+        "with": {"credential": "${{ secrets.ALPACA_LIVE_SECRET }}"},
+    })
+    files[READONLY] = source(cfg)
+    assert any(
+        "outside exact step-local env" in problem
+        for problem in _report(files).problems
     )
