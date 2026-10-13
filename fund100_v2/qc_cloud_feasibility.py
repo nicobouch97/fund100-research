@@ -212,9 +212,9 @@ def run_cloud_coverage_probe(
             d = date.fromisoformat(item.reported_source_date)
             # Fundamental end_time is the data period end, not guaranteed
             # release time, so allow the prior day (including weekends).
-            if d >= window.end or d < window.start.replace(
-                day=window.start.day
-            ) and (window.start - d).days > 7:
+            if d >= window.end or (
+                d < window.start and (window.start - d).days > 7
+            ):
                 raise ValueError("Unexpected historical source period")
         outputs.append(WindowCoverage(
             start=window.start.isoformat(),
