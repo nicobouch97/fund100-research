@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from hashlib import sha256
 import json
 import math
@@ -48,6 +48,7 @@ class BundleEvidence:
     membership_sha256: str
     combined_sha256: str
     source_verification: str = "SELF_ATTESTED_NOT_INDEPENDENTLY_VERIFIED"
+    decision_timing_policy: str = "AFTER_EOD_PUBLICATION_BEFORE_NEXT_WEEKDAY_0900_NY"
 
 
 @dataclass(frozen=True)
@@ -82,6 +83,20 @@ def _close_utc(day: date) -> datetime:
 
 def _day_end_utc(day: date) -> datetime:
     return datetime.combine(day, time(23, 59, 59), tzinfo=UTC)
+
+
+def _next_weekday_0900_utc(day: date) -> datetime:
+    """Conservative research-only cutoff, not an exchange-calendar oracle.
+
+    A dated close is not available to a decision made at that same close.
+    We permit it for a post-publication signal at the next *weekday*
+    09:00 NY, before the modeled next-session CLOSE entry.
+    Holiday/early-close validation must be added with licensed calendars.
+    """
+    future = day + timedelta(days=1)
+    while future.weekday() >= 5:
+        future += timedelta(days=1)
+    return datetime.combine(future, time(9), tzinfo=NEW_YORK).astimezone(UTC)
 
 
 def _finite_price(raw: str) -> float:
@@ -159,12 +174,16 @@ def load_research_bundle(
     """Validate a local bundle, build a dated research panel; never download.
 
     File names are fixed: manifest.json, prices.csv and membership.csv.
-    Price availability is after session close, by 23:59 UTC that day;
-    eligibility must have been known no later than the session close.
-    Missing price rows are permitted ONLY when dated eligibility is FALSE,
-    with no holes inside an instrument's observed real-price lifetime.
-    A missing delisting exit price may NEVER be valued as cash or zero.
-    This conservative assumption excludes special half-day closes.
+    Close-based prices can be used for the post-publication decision
+    at the next weekday 09:00 NY, never at the same-session close.
+    Membership remains required by the same-session close so the
+    next-close fill filter cannot inspect future membership changes.
+    Source publication times must also precede the research as_of
+    day's 23:59 UTC cutoff; no future-as-of vintage is accepted.
+    Missing prices are permitted ONLY with dated ineligibility.
+    No interior filled gaps and no imaginary delisting proceeds.
+    Weekdays are a conservative proxy; exchange holidays and special
+    early closes still need an independently verified calendar.
     """
     if not isinstance(as_of, date):
         raise ValueError("Explicit research as_of date required")
@@ -198,8 +217,15 @@ def load_research_bundle(
         if key in prices:
             raise ValueError("Duplicate research price observation")
         known = _utc_timestamp(row["price_known_at_utc"], "price")
-        if not _close_utc(day) <= known <= _day_end_utc(day):
-            raise ValueError("Research price arrived outside allowed vintage")
+        if not (
+            _close_utc(day) <= known
+            <= min(_next_weekday_0900_utc(day), _day_end_utc(as_of))
+        ):
+            raise ValueError(
+                "Research price arrived outside allowed vintage: "
+                "after-close publication must precede next premarket decision "
+                "and the declared as_of cutoff"
+            )
         prices[key] = (
             _finite_price(row["total_return_close"]),
             _finite_spread(row["spread_bps"]),
