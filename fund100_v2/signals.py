@@ -38,8 +38,8 @@ class ResearchPanel:
     """
 
     sessions: tuple[date, ...]
-    adjusted_prices: Mapping[str, Sequence[float]]
-    spread_bps: Mapping[str, Sequence[float]]
+    adjusted_prices: Mapping[str, Sequence[float | None]]
+    spread_bps: Mapping[str, Sequence[float | None]]
     eligible_symbols: tuple[frozenset[str], ...]
 
     def __post_init__(self) -> None:
@@ -62,18 +62,33 @@ class ResearchPanel:
         for sym in prices:
             if len(prices[sym]) != len(days) or len(spreads[sym]) != len(days):
                 raise ValueError("Every symbol needs a complete dated price/spread grid")
-            for price in prices[sym]:
-                if not _positive_finite(price):
+            observed = []
+            for i, (price, spread) in enumerate(zip(prices[sym], spreads[sym])):
+                if (price is None) != (spread is None):
+                    raise ValueError("Price and spread gaps must match")
+                if price is not None and not _positive_finite(price):
                     raise ValueError("Invalid or non-finite adjusted price")
-            for spread in spreads[sym]:
-                if not _nonnegative_finite(spread):
+                if spread is not None and not _nonnegative_finite(spread):
                     raise ValueError("Invalid or non-finite quoted spread")
+                if price is not None:
+                    observed.append(i)
+            if not observed:
+                raise ValueError("Each symbol requires at least one real price")
+            if len(observed) != observed[-1] - observed[0] + 1:
+                raise ValueError(
+                    "Interior missing prices cannot be filled or ignored"
+                )
 
         membership = tuple(frozenset(x) for x in self.eligible_symbols)
         if len(membership) != len(days):
             raise ValueError("Historical eligibility must cover every session")
         if any(not group.issubset(prices) for group in membership):
             raise ValueError("Eligibility contains unknown symbol")
+        for i, group in enumerate(membership):
+            if any(prices[sym][i] is None for sym in group):
+                raise ValueError(
+                    "Eligible historical asset requires real price on that day"
+                )
 
         object.__setattr__(self, "sessions", days)
         object.__setattr__(self, "adjusted_prices", MappingProxyType(prices))
@@ -93,6 +108,24 @@ def _positive_finite(value: object) -> bool:
     return _nonnegative_finite(value) and float(value) > 0
 
 
+def has_signal_history(
+    panel: ResearchPanel, index: int, symbol: str,
+) -> bool:
+    """Require every close in the 60-session research lookback.
+
+    Conservative for all three families; an IPO can enter the model only
+    once genuine data history exists. Never forward-fill pre-IPO prices.
+    """
+    if symbol not in panel.adjusted_prices:
+        raise ValueError("Unknown historical research symbol")
+    if index < REQUIRED_LOOKBACK or index >= len(panel.sessions):
+        return False
+    return all(
+        v is not None
+        for v in panel.adjusted_prices[symbol][index - REQUIRED_LOOKBACK:index + 1]
+    )
+
+
 def score_on_close(
     panel: ResearchPanel,
     family: str,
@@ -106,6 +139,8 @@ def score_on_close(
         raise ValueError("Signal requires 60 past sessions")
     if index >= len(panel.sessions) or symbol not in panel.adjusted_prices:
         raise ValueError("Invalid research signal index/symbol")
+    if not has_signal_history(panel, index, symbol):
+        raise ValueError("Missing real price within signal lookback")
     prices = panel.adjusted_prices[symbol]
 
     if family == "medium_momentum":
@@ -143,7 +178,10 @@ def top_research_candidate(
     if index < REQUIRED_LOOKBACK or index >= len(panel.sessions):
         raise ValueError("Research signal date out of range")
 
-    names = sorted(panel.eligible_symbols[index])
+    names = sorted(
+        name for name in panel.eligible_symbols[index]
+        if has_signal_history(panel, index, name)
+    )
     scores = [(score_on_close(panel, family, index, name), name)
               for name in names]
     if not scores:
