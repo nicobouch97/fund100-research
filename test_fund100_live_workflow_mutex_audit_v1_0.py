@@ -42,8 +42,19 @@ def fixture(
         "ALPACA_LIVE_SECRET": "${{ secrets.ALPACA_LIVE_SECRET }}",
     }
     env.update(env_override or {})
+    triggers = {"workflow_dispatch": None}
+    if name == PRODUCTION:
+        triggers["schedule"] = [{
+            "cron": "17,29,41 15 * * 1-5",
+            "timezone": "America/New_York",
+        }]
+    if name == BOOTSTRAP:
+        triggers["workflow_dispatch"] = {"inputs": {
+            "authorization": {"required": True, "type": "string"}
+        }}
     config = {
         "name": name,
+        "on": triggers,
         "concurrency": {
             "group": mutex,
             "cancel-in-progress": cancel,
@@ -411,5 +422,74 @@ def test_secret_references_in_extra_shell_step_rejected():
     files[READONLY] = source(cfg)
     assert any(
         "outside exact step-local env" in item
+        for item in _report(files).problems
+    )
+
+def test_untrusted_pull_request_target_event_is_rejected():
+    files = minimal_valid()
+    cfg = fixture(READONLY)
+    cfg["on"]["pull_request_target"] = None
+    files[READONLY] = source(cfg)
+    assert any(
+        "unexpected LIVE credential trigger events" in item
+        for item in _report(files).problems
+    )
+
+
+def test_unknown_scheduled_readonly_credential_event_rejected():
+    files = minimal_valid()
+    cfg = fixture(READONLY)
+    cfg["on"]["schedule"] = [{"cron": "0 * * * *"}]
+    files[READONLY] = source(cfg)
+    assert any(
+        "unexpected LIVE credential trigger events" in item
+        for item in _report(files).problems
+    )
+
+
+def test_production_cron_cannot_change_silently():
+    files = minimal_valid()
+    cfg = fixture(PRODUCTION)
+    cfg["on"]["schedule"][0]["cron"] = "*/5 * * * *"
+    files[PRODUCTION] = source(cfg)
+    assert any(
+        "production schedule differs from frozen contract" in item
+        for item in _report(files).problems
+    )
+
+
+def test_untrusted_pr_to_production_fails_even_with_mutex():
+    files = minimal_valid()
+    cfg = fixture(PRODUCTION)
+    cfg["on"]["pull_request_target"] = None
+    files[PRODUCTION] = source(cfg)
+    assert any(
+        "unexpected LIVE credential trigger events" in item
+        for item in _report(files).problems
+    )
+
+
+def test_bootstrap_must_preserve_explicit_manual_authorization():
+    files = minimal_valid()
+    cfg = fixture(BOOTSTRAP)
+    cfg["on"]["workflow_dispatch"]["inputs"].pop("authorization")
+    files[BOOTSTRAP] = source(cfg)
+    assert any(
+        "manual authorization input was weakened" in item
+        for item in _report(files).problems
+    )
+
+
+def test_prepare_must_preserve_explicit_manual_authorization():
+    files = minimal_valid()
+    cfg = fixture("fund100-live-micro-pilot-prepare.yml")
+    cfg["on"]["workflow_dispatch"] = {"inputs": {
+        "authorization_reference": {
+            "required": False, "type": "string"
+        }
+    }}
+    files["fund100-live-micro-pilot-prepare.yml"] = source(cfg)
+    assert any(
+        "manual authorization input was weakened" in item
         for item in _report(files).problems
     )
