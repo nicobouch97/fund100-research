@@ -66,6 +66,8 @@ def fixture(
         "jobs": {
             "test": {
                 "runs-on": "ubuntu-latest",
+                **({"if": "github.ref == 'refs/heads/main'"} if
+                   name in LIVE_ORDER_WRITER_WORKFLOWS else {}),
                 "steps": [{
                     "name": "run exactly expected source",
                     "env": env,
@@ -511,11 +513,46 @@ def test_actual_protected_writer_groups_would_satisfy_new_guard_if_fixed():
         replacement = f"group: {ACCOUNT_WRITER_MUTEX}"
         if existing in source_text:
             assert source_text.count(existing) == 1
-            sources[filename] = source_text.replace(existing, replacement)
+            source_text = source_text.replace(existing, replacement)
         else:
             assert replacement in source_text
+
+        # Second proposed protected edit, also entirely in memory:
+        # job-level branch guard BEFORE any LIVE-credentialled step.
+        main_guard = "    if: github.ref == 'refs/heads/main'"
+        if main_guard not in source_text:
+            job_runner = "    runs-on: ubuntu-latest"
+            assert source_text.count(job_runner) == 1
+            source_text = source_text.replace(
+                job_runner, main_guard + "\n" + job_runner,
+            )
+        sources[filename] = source_text
 
     report = scan_workflow_sources(sources)
     assert len(report.credential_workflows) == len(CREDENTIAL_SCRIPT_BY_WORKFLOW)
     assert set(report.credential_workflows) == set(CREDENTIAL_SCRIPT_BY_WORKFLOW)
     assert report.passed, report.problems
+
+def test_live_order_writers_require_exact_main_job_guard():
+    for writer in sorted(LIVE_ORDER_WRITER_WORKFLOWS):
+        files = minimal_valid()
+        cfg = fixture(writer)
+        cfg["jobs"]["test"].pop("if", None)
+        files[writer] = source(cfg)
+        assert any(
+            writer in issue and "main-branch job guard" in issue
+            for issue in _report(files).problems
+        )
+
+
+def test_writer_guard_on_untrusted_branch_is_not_accepted():
+    files = minimal_valid()
+    cfg = fixture(PRODUCTION)
+    cfg["jobs"]["test"]["if"] = (
+        "github.ref == 'refs/heads/research/test'"
+    )
+    files[PRODUCTION] = source(cfg)
+    assert any(
+        "main-branch job guard" in issue
+        for issue in _report(files).problems
+    )
