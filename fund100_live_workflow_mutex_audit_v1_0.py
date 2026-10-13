@@ -384,6 +384,18 @@ def scan_workflow_sources(
 
         if raw_name in LIVE_ORDER_WRITER_WORKFLOWS:
             writers.append(raw_name)
+            # workflow_dispatch can select an arbitrary repository branch.
+            # An authorisation string alone does NOT freeze reviewed code.
+            # Enforce the branch before the job can receive LIVE secrets.
+            if len(job_map) != 1 or any(
+                not isinstance(job, dict)
+                or job.get("if") != "github.ref == 'refs/heads/main'"
+                for job in job_map.values()
+            ):
+                findings.append(
+                    f"{raw_name}: account writer requires an exact "
+                    "main-branch job guard"
+                )
             concurrency = cfg.get("concurrency")
             if not isinstance(concurrency, dict):
                 findings.append(
