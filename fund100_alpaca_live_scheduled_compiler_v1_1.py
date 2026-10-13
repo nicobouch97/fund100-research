@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import date
 
 import fund100_experiment_runner as research_base
 import fund100_alpaca_live_execution_boundary as boundary
@@ -229,6 +230,89 @@ def structural_reconciliation_from_manifest(
 
 
 # ============================================================
+# STALE MANIFEST: STRICTLY NON-EXECUTABLE NO-EVENT FALLBACK
+# ============================================================
+
+def permit_stale_snapshot_for_no_event(
+    state: dict,
+    manifest_body: dict,
+    mode: str,
+):
+    """Permit only a no-order status when a historical no-event
+    manifest predates the current shadow state.
+
+    This does NOT authorise execution or relax the exact state-hash
+    requirement for genuine or ambiguous strategy events.
+    """
+
+    if mode != v10.MODE_CURRENT:
+        raise RuntimeError(
+            "SCHEDULED COMPILER STOP: stale manifest "
+            "cannot be used outside CURRENT mode."
+        )
+
+    if not isinstance(state, dict) or not isinstance(
+        manifest_body, dict
+    ):
+        raise RuntimeError(
+            "SCHEDULED COMPILER STOP: invalid state/manifest."
+        )
+
+    if state.get("strategy") != EXPECTED_STRATEGY:
+        raise RuntimeError(
+            "SCHEDULED COMPILER STOP: strategy identity mismatch."
+        )
+
+    if (
+        state.get("pending_target") is not None
+        or state.get("pending_source") is not None
+    ):
+        raise RuntimeError(
+            "SCHEDULED COMPILER STOP: pending or ambiguous "
+            "strategy event requires a current manifest."
+        )
+
+    if (
+        manifest_body.get("manifest_type") != "NO_EVENT_SNAPSHOT"
+        or manifest_body.get("event_source") != "NONE"
+        or manifest_body.get("strategy_event_present") is not False
+    ):
+        raise RuntimeError(
+            "SCHEDULED COMPILER STOP: stale event manifest "
+            "cannot be used for no-event reporting."
+        )
+
+    if (
+        manifest_body.get("live_execution_authorized") is not False
+        or manifest_body.get("network_write_capability") is not False
+        or manifest_body.get("broker_write_mode") != "DISABLED"
+        or manifest_body.get("max_live_execution_notional_usd") != 0
+    ):
+        raise RuntimeError(
+            "SCHEDULED COMPILER STOP: stale manifest "
+            "must be demonstrably non-executable."
+        )
+
+    try:
+        current_day = date.fromisoformat(
+            str(state.get("last_date", ""))
+        )
+        manifest_day = date.fromisoformat(
+            str(manifest_body.get("strategy_state_date", ""))
+        )
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError(
+            "SCHEDULED COMPILER STOP: invalid state/manifest dates."
+        ) from exc
+
+    if current_day <= manifest_day:
+        raise RuntimeError(
+            "SCHEDULED COMPILER STOP: stale no-event fallback "
+            "requires a strictly newer strategy date."
+        )
+
+
+# ============================================================
 # NO-EVENT OUTPUT
 # ============================================================
 
@@ -237,6 +321,8 @@ def build_no_event_output_v1_1(
     state: dict,
     mode: str,
     manifest_package: dict,
+    *,
+    stale_no_event_manifest: bool = False,
 ):
 
     manifest_body = (
@@ -266,9 +352,19 @@ def build_no_event_output_v1_1(
             ),
 
         "strategy_state_sha256":
-            manifest_body[
-                "strategy_state_sha256"
-            ],
+            v10.sha256_json(state),
+
+        "historical_manifest_strategy_state_sha256":
+            manifest_body["strategy_state_sha256"],
+
+        "stale_manifest_no_event_only":
+            stale_no_event_manifest,
+
+        "fresh_broker_state_verified":
+            False,
+
+        "position_reconciliation_evidence":
+            "HISTORICAL_REFERENCE_ONLY",
 
         "source_manifest_id":
             manifest_package[
@@ -769,11 +865,31 @@ def main():
         ]
     )
 
-    state = (
-        intent_v11.load_and_verify_state(
+    # An old NO_EVENT_SNAPSHOT is never authorisation to trade.
+    # A pending or ambiguous event still needs exact state proof.
+    current_state = manifest_v11.base.load_state()
+    state_hash_matches = (
+        v10.sha256_json(current_state)
+        == manifest_body.get("strategy_state_sha256")
+    )
+    state_date_matches = (
+        str(current_state["last_date"])
+        == str(manifest_body.get("strategy_state_date", ""))
+    )
+
+    stale_no_event_manifest = False
+    if state_hash_matches and state_date_matches:
+        state = intent_v11.load_and_verify_state(
             manifest_body
         )
-    )
+    else:
+        permit_stale_snapshot_for_no_event(
+            state=current_state,
+            manifest_body=manifest_body,
+            mode=mode,
+        )
+        state = current_state
+        stale_no_event_manifest = True
 
     if (
         manifest_body.get(
@@ -795,9 +911,17 @@ def main():
         "Manifest SHA256 verification: PASS"
     )
 
-    print(
-        "Strategy-state hash match: PASS"
-    )
+    if stale_no_event_manifest:
+        print(
+            "Historical manifest: STALE / NO-EVENT ONLY"
+        )
+        print(
+            "Trading-event manifest validation: STILL REQUIRED"
+        )
+    else:
+        print(
+            "Strategy-state hash match: PASS"
+        )
 
     signal_date = str(
         state[
@@ -882,6 +1006,9 @@ def main():
 
                     manifest_package=
                         manifest_package,
+
+                    stale_no_event_manifest=
+                        stale_no_event_manifest,
                 )
             )
 
