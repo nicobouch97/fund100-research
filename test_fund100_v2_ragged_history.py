@@ -107,14 +107,13 @@ def test_open_hypothetical_position_without_delisting_settlement_fails(tmp_path)
         )
 
 
-def test_ineligible_at_later_entry_close_skips_fill_not_past_decision(tmp_path):
+def test_ineligible_at_later_entry_close_requires_real_no_fill_evidence(tmp_path):
     days, _, _, _ = make_bundle(tmp_path)
     _delete_price_range(tmp_path, days, "UP", range(180, len(days)))
     panel = load_research_bundle(tmp_path, as_of=days[-1]).panel
     assert top_research_candidate(panel, "medium_momentum", 179) == "UP"
-    out = evaluate_decision(panel, "medium_momentum", 179, ResearchCosts())
-    assert out.hypothetical_symbol is None
-    assert out.gross_fraction == out.cost_fraction == out.net_fraction == 0
+    with pytest.raises(ValueError, match="Entry eligibility changed"):
+        evaluate_decision(panel, "medium_momentum", 179, ResearchCosts())
 
 
 def test_missing_benchmark_close_fails_instead_of_zero_return(tmp_path):
