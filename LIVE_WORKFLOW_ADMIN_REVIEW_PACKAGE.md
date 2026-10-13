@@ -94,6 +94,25 @@ against a changed or rebased main without regenerating and re-reviewing
 the source. In particular, never change the operator kill switch to
 make a failed CI job green.
 
+## Newly identified write-sink stop (independent from 17 YAML issues)
+
+Source review found that the shared `fund100_live_bootstrap_v1_0.live_request`
+accepts arbitrary POST paths and does not directly enforce the process
+kill switch at the last HTTP request boundary. Normal bootstrap and V5
+controller code have higher-level release/capability gates, but the raw
+transport has no independent final STOP. See
+`LIVE_TERMINAL_POST_WRITE_GATE.md` and the new
+`fund100_live_terminal_write_guard_audit_v1_0.py`, which has been
+integrated into the existing layered LIVE audit.
+
+**The proposed 17-edit YAML patch is NOT sufficient for LIVE approval.**
+A future separately reviewed writer-code change must enforce a final
+kill-switch and exact `/v2/orders` POST restriction, then refresh pinned
+writer-source hashes after review. Any per-request check of local
+`os.environ` remains distinct from real-time revocation across a
+running GitHub Actions process. Neither defect may be waived merely
+because the GitHub Environment/branch/mutex checks pass.
+
 ## Independent acceptance evidence
 
 The release candidate must satisfy all of the following **separately**:
