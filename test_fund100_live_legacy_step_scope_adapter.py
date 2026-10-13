@@ -58,17 +58,17 @@ def _virtual_repaired_workflows():
 def _simulate_future_terminal_guard(monkeypatch):
     """Virtual writer change only; bypass source pin only for simulation."""
     originals = legacy.read_terminal_sources(legacy.ROOT)
-    anchor = "    data = None\\n\\n    if body is not None:"
+    anchor = "    data = None\n\n    if body is not None:"
     assert originals["fund100_live_bootstrap_v1_0.py"].count(anchor) == 1
     guard = (
-        '    if method == "POST":\\n'
-        '        if path != "/v2/orders":\\n'
-        '            raise LiveBootstrapStop("Wrong order path")\\n'
+        '    if method == "POST":\n'
+        '        if path != "/v2/orders":\n'
+        '            raise LiveBootstrapStop("Wrong order path")\n'
         '        if os.environ.get('
         '"FUND100_BROKER_KILL_SWITCH", ""'
-        ').strip().upper() != "DISENGAGED":\\n'
-        '            raise LiveBootstrapStop("Switch engaged")\\n'
-        '\\n'
+        ').strip().upper() != "DISENGAGED":\n'
+        '            raise LiveBootstrapStop("Switch engaged")\n'
+        '\n'
     )
     originals["fund100_live_bootstrap_v1_0.py"] = originals[
         "fund100_live_bootstrap_v1_0.py"
