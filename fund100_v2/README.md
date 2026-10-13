@@ -37,6 +37,14 @@ The research data contract can now represent **real absence of historical prices
 
 `test_fund100_v2_ragged_history.py` verifies historical IPO absence, insufficient new-issue history, post-delisting gaps, missing-exit failures, missing benchmarks, interior gaps and reproducibility. This removes a structural survivorship-bias trap but does **not** certify independent historical universe completeness or establish an investable backtest.
 
+## Corrected publication time and entry-eligibility gate
+
+A bar dated `t` is not permitted to influence a trade instruction at the same `t` market close if the vendor publishes that bar afterward. The research-only bundle now requires its declared `price_known_at_utc` to be **after the 16:00 New York session close and no later than 09:00 New York on the next weekday**, and never later than 23:59 UTC of the requested `as_of` date. Thus a signal from session `t` is **formed after publication, by the next weekday's 09:00 New York cutoff**, and the simplistic hypothetical fill is the subsequent session's close `t+1`, with exit at `t+2`. Historical membership remains required by its own session close.
+
+This timing cutoff is a conservative **weekday approximation, not an NYSE trading calendar**: public holidays, early closes and trading halts need a dedicated, independently verified calendar and venue-aware fill model. The CSV timestamps are still vendor-self-declared; no complete historical publication archives have been authenticated.
+
+The evaluator also **refuses a free hindsight cancellation**: if the selected candidate becomes ineligible by `t+1` according to subsequently observed membership, it stops rather than assuming a zero-return skipped fill. A genuine pre-fill eligibility notice and broker/auction no-fill evidence would be required to model such a scenario. Real MOC/LOC orders can face earlier cutoff times than the 16:00 close, so the next-close assumption is **not** a guaranteed achievable price. No production orders or portfolio weights are constructed.
+
 ## Three signal families + offline walk-forward diagnostics
 
 `signals.py` defines three fixed, transparent hypotheses, independently scored with prices **available at the signal session close**:
@@ -46,7 +54,7 @@ The research data contract can now represent **real absence of historical prices
 
 All signals operate on a caller-supplied **corporate-action-adjusted return price panel** and **historically recorded per-session eligible symbols**. This differs from `market_data.DailyBar.close_usd`, which is currently unadjusted and MUST NOT be fed directly to return calculations without corporate-action and distribution adjustment. There is no authenticated price or constituent provider yet, so these components **do not establish historical alpha**.
 
-`walkforward.py` tests the three hypotheses using **expanding-window training**, a predeclared cash baseline, explicit embargo sessions and disjoint out-of-sample blocks. Each hypothetical decision uses data at close `t`, assumes a fill at **next session close `t+1`**, and measures performance from that close to close `t+2`. It applies both sides' explicit fees, illustrative slippage and half the recorded quote spread on entry and exit. Test outcomes are never used to choose that same fold's family. All scores, fold choices, OOS diagnostics and research data are hashed for reproducibility.
+`walkforward.py` tests the three hypotheses using **expanding-window training**, a predeclared cash baseline, explicit embargo sessions and disjoint out-of-sample blocks. Each hypothetical decision uses **session `t` prices after their declared publication time, by the following weekday's 09:00 New York cutoff**, assumes an illustrative fill at **next session close `t+1`**, and measures performance from that close to close `t+2`. It applies both sides' explicit fees, illustrative slippage and half the recorded quote spread on entry and exit. Test outcomes are never used to choose that same fold's family. All scores, fold choices, OOS diagnostics and research data are hashed for reproducibility.
 
 These are **single-symbol, one-day, fully exited hypothetical independent trials**, not a replicable implementation, real transaction history, or operator-authorized portfolio. The benchmark is a passive and uncosted daily reference, with different turnover economics. Actual V2 portfolio construction, multi-asset risk management, bid/ask fills, market impact, financing, exposure limits, delayed corporate actions and serial order reconciliation **do not exist here**. The reported compound fraction is purely a diagnostic based on these simplified independent trials, never observed NAV.
 
