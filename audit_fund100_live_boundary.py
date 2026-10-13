@@ -15,6 +15,10 @@ from fund100_live_broker_http_capability_audit_v1_0 import (
     read_python_sources,
     scan_capability_sources,
 )
+from fund100_live_terminal_write_guard_audit_v1_0 import (
+    read_terminal_sources,
+    scan_terminal_write_sources,
+)
 
 
 # ============================================================
@@ -809,6 +813,28 @@ def audit_workflows(
             audit.passed(
                 "Credential non-order-writer import closure has reviewed "
                 "GET transports and structurally disconnected POST paths."
+            )
+
+    # Independent last-mile POST protection must exist at the actual
+    # shared urllib transport, not only at orchestrator/controller layers.
+    # New strict gate remains red on unchanged protected writer sources.
+    try:
+        terminal_report = scan_terminal_write_sources(
+            read_terminal_sources(ROOT)
+        )
+    except Exception as exc:
+        audit.failed(
+            "Terminal LIVE HTTP POST write-sink audit could not complete: "
+            + f"{type(exc).__name__}: {exc}"
+        )
+    else:
+        if terminal_report.problems:
+            for problem in terminal_report.problems:
+                audit.failed("Terminal LIVE HTTP POST gate: " + problem)
+        else:
+            audit.passed(
+                "Terminal LIVE POST transport checks kill switch and "
+                "restricts mutation to exact broker order endpoint."
             )
 
     writer_invocations = []
