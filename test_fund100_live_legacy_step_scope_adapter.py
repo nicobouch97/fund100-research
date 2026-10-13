@@ -8,8 +8,13 @@ job guards. Tests never edit those YAML files or read account credentials.
 from __future__ import annotations
 
 import audit_fund100_live_boundary as legacy
+from fund100_live_terminal_write_guard_audit_v1_0 import (
+    scan_terminal_write_sources,
+)
 from fund100_live_workflow_mutex_audit_v1_0 import (
     ACCOUNT_WRITER_MUTEX,
+    LIVE_CREDENTIAL_ENVIRONMENT,
+    CREDENTIAL_SCRIPT_BY_WORKFLOW,
     read_workflow_sources,
     scan_workflow_sources,
 )
@@ -39,7 +44,46 @@ def _virtual_repaired_workflows():
             assert text.count(location) == 1
             text = text.replace(location, guard + "\n" + location)
         raw[name] = text
+    for filename in CREDENTIAL_SCRIPT_BY_WORKFLOW:
+        source = raw[filename]
+        marker = "    runs-on: ubuntu-latest"
+        assert source.count(marker) == 1
+        assert "    environment:" not in source
+        raw[filename] = source.replace(
+            marker, marker + "\n    environment: " + LIVE_CREDENTIAL_ENVIRONMENT
+        )
     return raw
+
+
+def _simulate_future_terminal_guard(monkeypatch):
+    """Virtual writer change only; bypass source pin only for simulation."""
+    originals = legacy.read_terminal_sources(legacy.ROOT)
+    anchor = "    data = None\n\n    if body is not None:"
+    assert originals["fund100_live_bootstrap_v1_0.py"].count(anchor) == 1
+    guard = (
+        '    if method == "POST":\n'
+        '        if path != "/v2/orders":\n'
+        '            raise LiveBootstrapStop("Wrong order path")\n'
+        '        if os.environ.get('
+        '"FUND100_BROKER_KILL_SWITCH", ""'
+        ').strip().upper() != "DISENGAGED":\n'
+        '            raise LiveBootstrapStop("Switch engaged")\n'
+        '\n'
+    )
+    originals["fund100_live_bootstrap_v1_0.py"] = originals[
+        "fund100_live_bootstrap_v1_0.py"
+    ].replace(anchor, guard + anchor, 1)
+    result = scan_terminal_write_sources(originals, verify_pins=False)
+    assert result.passed, result.problems
+    monkeypatch.setattr(
+        legacy, "read_terminal_sources", lambda root: dict(originals)
+    )
+    monkeypatch.setattr(
+        legacy, "scan_terminal_write_sources",
+        lambda sources: scan_terminal_write_sources(
+            sources, verify_pins=False
+        ),
+    )
 
 
 def test_current_v117_gate_reports_actual_writer_gaps_not_stale_allowlist():
@@ -52,8 +96,14 @@ def test_current_v117_gate_reports_actual_writer_gaps_not_stale_allowlist():
     assert "mutex is" in findings
     assert "main-branch job guard" in findings
     assert "non-allowlisted command" not in findings
+    assert "Terminal LIVE HTTP POST gate" in findings
+    assert any(
+        "fund100-live-micro-pilot-prepare.yml" in problem
+        and "must use exact protected environment" in problem
+        for problem in audit.failures
+    )
     assert all(
-        "fund100-live-micro-pilot-prepare.yml" not in problem
+        "non-allowlisted command" not in problem
         for problem in audit.failures
     )
 
@@ -71,6 +121,7 @@ def test_repaired_workflow_inputs_clear_legacy_credential_gate_in_memory(
     monkeypatch.setattr(
         legacy, "read_workflow_sources", lambda root: dict(inputs)
     )
+    _simulate_future_terminal_guard(monkeypatch)
     audit = legacy.Audit()
     legacy.audit_workflows(audit)
     assert not audit.failures, audit.failures
@@ -165,3 +216,92 @@ def test_legacy_mutable_allowlist_is_inert_not_a_permission(monkeypatch):
     finally:
         legacy.ALLOWED_LIVE_CREDENTIAL_SCRIPTS.clear()
         legacy.ALLOWED_LIVE_CREDENTIAL_SCRIPTS.update(original_set)
+
+def test_original_live_auditor_now_requires_transitive_http_guard(monkeypatch):
+    """A changed GET transport must make the actual layered audit red."""
+    workflows = _virtual_repaired_workflows()
+    sources = legacy.read_python_sources(legacy.ROOT)
+    target = "fund100_alpaca_live_scheduled_compiler.py"
+    assert 'method="GET"' in sources[target]
+    sources[target] = sources[target].replace(
+        'method="GET"', 'method="POST"', 1
+    )
+    monkeypatch.setattr(
+        legacy, "read_workflow_sources", lambda root: dict(workflows)
+    )
+    monkeypatch.setattr(
+        legacy, "read_python_sources", lambda root: dict(sources)
+    )
+    report = legacy.Audit()
+    legacy.audit_workflows(report)
+    assert any(
+        "LIVE broker transport/guard gate" in msg
+        for msg in report.failures
+    )
+    assert any(
+        "unapproved HTTP POST path" in msg
+        for msg in report.failures
+    )
+
+
+def test_original_live_auditor_fails_closed_if_source_check_unavailable(
+    monkeypatch,
+):
+    workflows = _virtual_repaired_workflows()
+    monkeypatch.setattr(
+        legacy, "read_workflow_sources", lambda root: dict(workflows)
+    )
+
+    def broken(_):
+        raise OSError("could not review source tree")
+
+    monkeypatch.setattr(legacy, "read_python_sources", broken)
+    report = legacy.Audit()
+    legacy.audit_workflows(report)
+    assert any(
+        "LIVE broker transport/guard audit could not complete" in msg
+        for msg in report.failures
+    )
+
+
+def test_original_auditor_reports_pinned_get_and_dormant_post_proof(
+    monkeypatch,
+):
+    workflows = _virtual_repaired_workflows()
+    monkeypatch.setattr(
+        legacy, "read_workflow_sources", lambda root: dict(workflows)
+    )
+    _simulate_future_terminal_guard(monkeypatch)
+    report = legacy.Audit()
+    legacy.audit_workflows(report)
+    assert not report.failures, report.failures
+    assert any(
+        "GET transports and structurally disconnected POST paths" in item
+        for item in report.passes
+    )
+
+def test_original_v117_audit_refuses_missing_terminal_sink_guard():
+    report = legacy.Audit()
+    legacy.audit_workflows(report)
+    assert any(
+        "Terminal LIVE HTTP POST gate" in issue
+        and "pre-HTTP gate" in issue
+        for issue in report.failures
+    )
+
+
+def test_original_v117_audit_fails_closed_when_sink_scanner_unavailable(
+    monkeypatch,
+):
+    def offline_scan_failure(_):
+        raise RuntimeError("terminal source audit unavailable")
+
+    monkeypatch.setattr(
+        legacy, "read_terminal_sources", offline_scan_failure
+    )
+    report = legacy.Audit()
+    legacy.audit_workflows(report)
+    assert any(
+        "Terminal LIVE HTTP POST write-sink audit could not complete"
+        in issue for issue in report.failures
+    )
