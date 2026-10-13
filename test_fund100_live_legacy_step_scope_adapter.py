@@ -135,3 +135,33 @@ def _audit():
     report = legacy.Audit()
     legacy.audit_workflows(report)
     return report
+
+def test_legacy_mutable_allowlist_is_inert_not_a_permission(monkeypatch):
+    """Old audit layers may mutate compatibility symbols without effect."""
+    inputs = _virtual_repaired_workflows()
+    name = "fund100-alpaca-live-readonly.yml"
+    original = inputs[name]
+    old_cmd = "python fund100_alpaca_live_readonly_smoke.py"
+    injected = "python unreviewed_live_broker_writer.py"
+    assert original.count(old_cmd) == 1
+    inputs[name] = original.replace(old_cmd, injected)
+
+    monkeypatch.setattr(
+        legacy, "read_workflow_sources", lambda root: dict(inputs)
+    )
+    # Even if an obsolete v1.x module adds a forbidden basename, the
+    # authoritative scoped scanner must still reject that command.
+    original_set = set(legacy.ALLOWED_LIVE_CREDENTIAL_SCRIPTS)
+    legacy.ALLOWED_LIVE_CREDENTIAL_SCRIPTS.add(
+        "unreviewed_live_broker_writer.py"
+    )
+    try:
+        report = legacy.Audit()
+        legacy.audit_workflows(report)
+        assert any(
+            "unrecognised or compound command" in message
+            for message in report.failures
+        )
+    finally:
+        legacy.ALLOWED_LIVE_CREDENTIAL_SCRIPTS.clear()
+        legacy.ALLOWED_LIVE_CREDENTIAL_SCRIPTS.update(original_set)
