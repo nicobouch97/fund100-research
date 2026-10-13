@@ -42,14 +42,12 @@ def test_eod_known_friday_night_after_midnight_utc_is_eligible_by_monday(tmp_pat
     days, friday = _friday_fixture(tmp_path)
     # Friday 20:30 New York -> Saturday 01:30 UTC, after prior contract's
     # same-UTC-day cutoff but before the next available weekday premarket.
-    _overwrite_first_price_timestamp(
-        tmp_path,
-        _stamp(friday, 20, 30) if date.fromisoformat(
-            __import__("csv").DictReader(
-                (tmp_path / "prices.csv").open(encoding="utf-8")
-            ).__next__()["session"]
-        ) == friday else "2025-01-02T21:20:00Z",
-    )
+    def revise(rows):
+        for row in rows:
+            if row["session"] == friday.isoformat():
+                row["price_known_at_utc"] = _stamp(friday, 20, 30)
+
+    modify_price(tmp_path, revise)
     bundle = load_research_bundle(tmp_path, as_of=days[-1])
     assert bundle.evidence.decision_timing_policy == (
         "AFTER_EOD_PUBLICATION_BEFORE_NEXT_WEEKDAY_0900_NY"
