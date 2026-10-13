@@ -223,7 +223,7 @@ def load_research_bundle(
         members[key] = row["eligible"] == "TRUE"
 
     if not set(prices).issubset(members):
-        raise ValueError("Historical price without dated membership evidence")
+        raise ValueError("Incomplete historical membership: price without dated membership evidence")
 
     days = tuple(sorted({day for day, _ in members}))
     symbols = tuple(sorted({symbol for _, symbol in members}))
@@ -231,7 +231,7 @@ def load_research_bundle(
         raise ValueError("Incomplete historical membership date/symbol grid")
     if any(eligible and (day, sym) not in prices
            for (day, sym), eligible in members.items()):
-        raise ValueError("Missing price for historically eligible asset")
+        raise ValueError("Incomplete: Missing price for historically eligible asset")
     if any(not any((day, sym) in prices for day in days) for sym in symbols):
         raise ValueError("No observed historical price for catalogued asset")
 
