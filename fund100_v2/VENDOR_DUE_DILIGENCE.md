@@ -45,6 +45,34 @@ QuantConnect documents **free cloud access** to its historical US Equity Coarse 
 - https://www.quantconnect.com/data/quantconnect-us-equity-security-master
 - https://www.quantconnect.com/docs/v2/cloud-platform/datasets/licensing
 
+## Bounded free-Cloud coverage probe (prepared; not run in Cloud)
+
+`qc_cloud_feasibility.py` provides a **read-only, aggregate-only** QuantBook feasibility function. It uses QuantConnect's documented current fundamental universe research API, not deprecated legacy `CoarseFundamental`: `qb.add_universe` followed by `qb.universe_history`. Default intervals are four-to-ten-day windows in September 2018, November 2020 and June 2024, with at most ten returned research subscriptions per day and a hard cap of twenty. The callback counts dated records, distinct QC symbol keys, duplicate keys and price/dollar-volume completeness. It never logs names/tickers, exports raw prices, submits broker orders, requests secrets, or calls an Alpaca endpoint. Evidence is **CLOUD_COVERAGE_ONLY_NOT_PIT_ALPHA_EVIDENCE** regardless of success.
+
+An operator with an independently created **QuantConnect Free Cloud Research** environment can add this single pure-Python module as a source file and run the following example in a research notebook (subject to the platform's licence and quota conditions):
+
+```python
+from QuantConnect.Research import QuantBook
+from fund100_v2.qc_cloud_feasibility import (
+    run_cloud_coverage_probe, aggregate_report_json
+)
+
+qb = QuantBook()
+report = run_cloud_coverage_probe(qb)
+print(aggregate_report_json(report))  # aggregate counts and evidence flags only
+```
+
+This notebook is a **proposed workflow only** and has not been run in the QuantConnect Cloud runtime; GitHub mock tests do not demonstrate a successful Cloud API request. It will not work as-is until the module is available to the Cloud notebook environment. No user account, external plugin connection, subscription or file transfer has been completed. The free plan lists **one research node** and no live-trading nodes; licensed local data download is separate.
+
+Beware October 2026 fundamental-data changes: legacy Coarse/Fine APIs were deprecated; Morningstar fundamentals underwent a migration with changed reporting dates and missing/renamed properties. The probe uses only price, dollar volume and source-period dates, and its timestamps are **not authenticated publication times**. QuantConnect's research universe history can support access validation but **cannot** establish archived vintages, delisting recoveries, executable spread quotes or independent alpha.
+
+Documentation:
+- https://www.quantconnect.com/docs/v2/research-environment/universes
+- https://www.quantconnect.com/docs/v2/writing-algorithms/datasets/quantconnect/us-equity-coarse-universe
+- https://www.quantconnect.com/docs/v2/cloud-platform/organizations/tier-features
+- https://www.quantconnect.com/docs/v2/cloud-platform/datasets/licensing
+- https://www.quantconnect.com/docs/v2/meta/change-log
+
 ## Required independent acceptance sample
 
 Before a vendor adapter is permitted to produce **evidence-eligible** V2 backtests, acquire a reproducible, legitimately licensed and immutable *archived vintage* for a period including:
