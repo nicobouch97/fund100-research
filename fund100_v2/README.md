@@ -19,6 +19,16 @@ No ticker list is frozen. The caller supplies candidate assets; the code applies
 
 The adapter deliberately uses **close × same-day volume** to estimate liquidity, not split-adjusted prices mixed with raw volumes. It is not a return engine or a performance backtest. Source timestamp provenance, trading calendars, corporate actions, delistings and survivorship-aware snapshots are still future dependencies.
 
+## Point-in-time bundle contract (new)
+
+`data_contract.py` creates a **research-only** `ResearchPanel` from three local files: `manifest.json`, `prices.csv` and `membership.csv`. It is intentionally **not** a network downloader or an Alpaca data client.
+
+Each price CSV row must provide `session,symbol,total_return_close,spread_bps,price_known_at_utc`. Each membership CSV row must provide `session,symbol,eligible,membership_known_at_utc` with uppercase `TRUE` or `FALSE`. The bundle manifest declares the provider, snapshot ID, source evidence reference, SHA256 of each CSV, `price_basis=SPLIT_AND_DIVIDEND_ADJUSTED_TOTAL_RETURN`, `membership_basis=HISTORICAL_POINT_IN_TIME`, and `includes_delisted_instrument_history=true`. The loader requires complete symbol-by-session grids and refuses future-dated or late-known membership, stale-vintage price records, duplicate records, missing symbols, incomplete hashes and malformed values.
+
+A price observation must be declared available after the regular 16:00 New York close but before 23:59 UTC on that same session; membership must be declared known by that close. This conservative cut-off does not model exchange holidays or early closes, which still need a verified trading calendar. A source with historically restated prices or present-day membership snapshots cannot pass simply by relabeling them: it needs **genuine archived as-of records**, including delisted instruments.
+
+**Important proof limit:** the SHA256 binds file bytes to a manifest; it does not authenticate the vendor or prove that the declared publication time, split/dividend adjustment, past membership or delisting coverage is truthful. `BundleEvidence.source_verification` is always `SELF_ATTESTED_NOT_INDEPENDENTLY_VERIFIED`. Current unit tests use explicitly synthetic data. Passing those tests **does not** constitute a verified provider, tradable prices, unbiased historical performance or alpha evidence.
+
 ## Three signal families + offline walk-forward diagnostics
 
 `signals.py` defines three fixed, transparent hypotheses, independently scored with prices **available at the signal session close**:
