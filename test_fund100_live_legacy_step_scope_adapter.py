@@ -10,6 +10,8 @@ from __future__ import annotations
 import audit_fund100_live_boundary as legacy
 from fund100_live_workflow_mutex_audit_v1_0 import (
     ACCOUNT_WRITER_MUTEX,
+    LIVE_CREDENTIAL_ENVIRONMENT,
+    CREDENTIAL_SCRIPT_BY_WORKFLOW,
     read_workflow_sources,
     scan_workflow_sources,
 )
@@ -39,6 +41,14 @@ def _virtual_repaired_workflows():
             assert text.count(location) == 1
             text = text.replace(location, guard + "\n" + location)
         raw[name] = text
+    for filename in CREDENTIAL_SCRIPT_BY_WORKFLOW:
+        source = raw[filename]
+        marker = "    runs-on: ubuntu-latest"
+        assert source.count(marker) == 1
+        assert "    environment:" not in source
+        raw[filename] = source.replace(
+            marker, marker + "\n    environment: " + LIVE_CREDENTIAL_ENVIRONMENT
+        )
     return raw
 
 
@@ -52,8 +62,13 @@ def test_current_v117_gate_reports_actual_writer_gaps_not_stale_allowlist():
     assert "mutex is" in findings
     assert "main-branch job guard" in findings
     assert "non-allowlisted command" not in findings
+    assert any(
+        "fund100-live-micro-pilot-prepare.yml" in problem
+        and "must use exact protected environment" in problem
+        for problem in audit.failures
+    )
     assert all(
-        "fund100-live-micro-pilot-prepare.yml" not in problem
+        "non-allowlisted command" not in problem
         for problem in audit.failures
     )
 
