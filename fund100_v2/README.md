@@ -70,6 +70,12 @@ Minimum 252 historical sessions, USD price at least $5, average 20-day dollar vo
 
 QuantConnect's public LEAN sample ETF constituent files have repeated SID tokens (503 tickers but only 166 distinct SID tokens in each of two inspected dates); the public sample directory includes a third-party rights notice. No vendor sample rows were republished here. For sources and affordable Cloud data feasibility, see `VENDOR_DUE_DILIGENCE.md` and open historical-data gate #4.
 
+## Cost-controlled QuantConnect Cloud research feasibility
+
+`qc_cloud_feasibility.py` provides a tightly bounded **QuantBook research-only** feasibility probe. It checks aggregate historical US-equity Fundamental universe coverage over three short windows (2018, 2020 and 2024), reports source-period dates, missing price/liquidity counts and duplicate QC symbol keys, and takes at most ten temporary research subscriptions per period/day. It does **not** export provider price rows or identifiers, create trading orders, use Alpaca, certify a source vintage, validate dividends or calculate alpha. Every report is marked `CLOUD_COVERAGE_ONLY_NOT_PIT_ALPHA_EVIDENCE`.
+
+The function must be passed a QuantBook instance from the QuantConnect **Cloud Research** environment. GitHub CI tests only its mocked interface; **it has not been executed against Cloud data**. The documentation at `VENDOR_DUE_DILIGENCE.md` explains the optional Cloud execution path, Free-tier resource limits, data licensing and required source-independent verification. Cloud research access is separate from paid data downloads, and no account has been connected or created.
+
 ## Critical data and risk limitations
 
 1. **No network data provider implemented.** This module receives observations, not a broker-feed request. To avoid survivorship and lookahead bias, V2 needs a historical point-in-time constituent/eligibility data source, delisting records, date-aligned volume/spreads, and adjusted OHLCV data. Merely setting `observed_on` cannot make a present-day asset catalog historically unbiased.
