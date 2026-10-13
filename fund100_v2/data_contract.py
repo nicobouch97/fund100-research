@@ -161,6 +161,9 @@ def load_research_bundle(
     File names are fixed: manifest.json, prices.csv and membership.csv.
     Price availability is after session close, by 23:59 UTC that day;
     eligibility must have been known no later than the session close.
+    Missing price rows are permitted ONLY when dated eligibility is FALSE,
+    with no holes inside an instrument's observed real-price lifetime.
+    A missing delisting exit price may NEVER be valued as cash or zero.
     This conservative assumption excludes special half-day closes.
     """
     if not isinstance(as_of, date):
@@ -219,19 +222,33 @@ def load_research_bundle(
             raise ValueError("Lookahead: membership not known at decision close")
         members[key] = row["eligible"] == "TRUE"
 
-    if prices.keys() != members.keys():
-        raise ValueError("Incomplete historical price/eligibility coverage")
+    if not set(prices).issubset(members):
+        raise ValueError("Historical price without dated membership evidence")
 
-    days = tuple(sorted({day for day, _ in prices}))
-    symbols = tuple(sorted({symbol for _, symbol in prices}))
-    if len(prices) != len(days) * len(symbols):
-        raise ValueError("Sparse data: missing date/symbol grid entries")
+    days = tuple(sorted({day for day, _ in members}))
+    symbols = tuple(sorted({symbol for _, symbol in members}))
+    if len(members) != len(days) * len(symbols):
+        raise ValueError("Incomplete historical membership date/symbol grid")
+    if any(eligible and (day, sym) not in prices
+           for (day, sym), eligible in members.items()):
+        raise ValueError("Missing price for historically eligible asset")
+    if any(not any((day, sym) in prices for day in days) for sym in symbols):
+        raise ValueError("No observed historical price for catalogued asset")
 
+    # None is genuine absence, not an imputed historical price.
+    # ResearchPanel validates paired price/spread gaps and disallows
+    # interior missing prices even on temporarily ineligible days.
     price_panel = {
-        s: tuple(prices[(day, s)][0] for day in days) for s in symbols
+        s: tuple(
+            prices[(day, s)][0] if (day, s) in prices else None
+            for day in days
+        ) for s in symbols
     }
     spread_panel = {
-        s: tuple(prices[(day, s)][1] for day in days) for s in symbols
+        s: tuple(
+            prices[(day, s)][1] if (day, s) in prices else None
+            for day in days
+        ) for s in symbols
     }
     eligibility = tuple(
         frozenset(s for s in symbols if members[(day, s)])
