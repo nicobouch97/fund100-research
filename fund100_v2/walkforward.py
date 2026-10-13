@@ -137,6 +137,13 @@ def evaluate_decision(
 
     p = panel.adjusted_prices
     t = signal_index
+    if benchmark_symbol is not None and (
+        p[benchmark_symbol][t + 1] is None
+        or p[benchmark_symbol][t + 2] is None
+    ):
+        raise ValueError(
+            "Missing benchmark entry/exit price; cannot invent benchmark return"
+        )
     benchmark = (
         p[benchmark_symbol][t + 2] / p[benchmark_symbol][t + 1] - 1.0
         if benchmark_symbol is not None else 0.0
@@ -151,6 +158,19 @@ def evaluate_decision(
     gross = 0.0
     cost = 0.0
     if name is not None:
+        # Never treat a delisting/terminal missing price as 0% return
+        # or silently switch the researched position into cash. Verified
+        # settlement proceeds are a future, separate data requirement.
+        if (
+            p[name][t + 1] is None
+            or p[name][t + 2] is None
+            or panel.spread_bps[name][t + 1] is None
+            or panel.spread_bps[name][t + 2] is None
+        ):
+            raise ValueError(
+                "Missing hypothetical exit/entry price or spread; "
+                "delisting/exit settlement evidence required"
+            )
         gross = p[name][t + 2] / p[name][t + 1] - 1.0
         quoted = panel.spread_bps[name]
         round_trip_bps = (
