@@ -284,3 +284,132 @@ def test_real_repository_inventory_is_measurable_not_silently_approved():
             for msg in report.problems
         )
         assert flagged == (group != ACCOUNT_WRITER_MUTEX)
+
+def test_step_with_action_input_cannot_receive_live_secret():
+    files = minimal_valid()
+    cfg = fixture(READONLY)
+    cfg["jobs"]["test"]["steps"].append({
+        "name": "unreviewed action",
+        "uses": "some-action/step@v1",
+        "with": {"token": "${{ secrets.ALPACA_LIVE_KEY }}"},
+    })
+    files[READONLY] = source(cfg)
+    assert any(
+        "outside exact step-local env" in item and ".with.token" in item
+        for item in _report(files).problems
+    )
+
+
+def test_unrecognised_secret_using_action_without_env_is_detected():
+    files = minimal_valid()
+    files["new-third-party-action.yml"] = source({
+        "jobs": {
+            "run": {"runs-on": "ubuntu-latest", "steps": [{
+                "uses": "unknown/third-party@v1",
+                "with": {"auth": "${{ secrets.ALPACA_LIVE_SECRET }}"},
+            }]},
+        },
+    })
+    problems = _report(files).problems
+    assert any("new-third-party-action.yml" in item for item in problems)
+    assert any("outside exact step-local env" in item for item in problems)
+
+
+def test_reusable_workflow_secret_inheritance_rejected_without_living_keys():
+    files = minimal_valid()
+    files["reusable.yml"] = source({
+        "jobs": {
+            "forward": {
+                "uses": "external/repo/.github/workflows/run.yml@main",
+                "secrets": "inherit",
+            }
+        }
+    })
+    assert any(
+        "reusable job secrets exposure" in item
+        for item in _report(files).problems
+    )
+
+
+@pytest.mark.parametrize("extra_expr", [
+    "${{ secrets['ALPACA_LIVE_KEY'] }}",
+    "${{ toJSON(secrets) }}",
+    "${{ secrets[format('ALPACA_LIVE_{0}', 'KEY')] }}",
+])
+def test_dynamic_secret_expressions_are_fail_closed(extra_expr):
+    files = minimal_valid()
+    files["new-dynamic.yml"] = source({
+        "jobs": {
+            "run": {"runs-on": "ubuntu-latest", "steps": [{
+                "run": "echo x",
+                "env": {"CREDENTIAL": extra_expr},
+            }]},
+        },
+    })
+    assert any(
+        "new-dynamic.yml" in item
+        and "outside exact step-local env" in item
+        for item in _report(files).problems
+    )
+
+
+def test_known_reader_cannot_smuggle_live_key_through_condition():
+    files = minimal_valid()
+    cfg = fixture(READONLY)
+    cfg["jobs"]["test"]["steps"][0]["if"] = (
+        "${{ secrets.ALPACA_LIVE_KEY != '' }}"
+    )
+    files[READONLY] = source(cfg)
+    assert any(
+        "outside exact step-local env" in item and ".if" in item
+        for item in _report(files).problems
+    )
+
+
+def test_known_reader_cannot_reference_live_secret_in_outputs():
+    files = minimal_valid()
+    cfg = fixture(READONLY)
+    cfg["jobs"]["test"]["outputs"] = {
+        "credential": "${{ secrets.ALPACA_LIVE_SECRET }}"
+    }
+    files[READONLY] = source(cfg)
+    assert any(
+        "outside exact step-local env" in item and "outputs" in item
+        for item in _report(files).problems
+    )
+
+
+def test_duplicate_yaml_env_keys_cannot_bypass_audit():
+    files = minimal_valid()
+    files[READONLY] += "\njobs:\n  injected: {runs-on: ubuntu-latest}\n"
+    assert any(
+        "malformed or duplicate YAML" in item
+        for item in _report(files).problems
+    )
+
+
+def test_unknown_workflow_using_secret_only_at_workflow_scope_is_rejected():
+    files = minimal_valid()
+    files["new-root-secret.yml"] = source({
+        "env": {"API_KEY": "${{ secrets.ALPACA_LIVE_KEY }}"},
+        "jobs": {"example": {"runs-on": "ubuntu-latest", "steps": [{
+            "run": "echo safe",
+        }]}},
+    })
+    assert any(
+        "outside exact step-local env" in item
+        for item in _report(files).problems
+    )
+
+
+def test_secret_references_in_extra_shell_step_rejected():
+    files = minimal_valid()
+    cfg = fixture(READONLY)
+    cfg["jobs"]["test"]["steps"].append({
+        "run": "echo '${{ secrets.ALPACA_LIVE_KEY }}'"
+    })
+    files[READONLY] = source(cfg)
+    assert any(
+        "outside exact step-local env" in item
+        for item in _report(files).problems
+    )
