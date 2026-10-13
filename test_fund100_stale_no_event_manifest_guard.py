@@ -10,6 +10,8 @@ import fund100_alpaca_live_scheduled_compiler_v1_1 as compiler
 
 def historical_manifest():
     return {
+        "schema": compiler.manifest_v11.MANIFEST_SCHEMA,
+        "strategy": "V5-002_SHADOW",
         "strategy_state_date": "2026-10-02",
         "strategy_state_sha256": "historical-digest",
         "manifest_type": "NO_EVENT_SNAPSHOT",
