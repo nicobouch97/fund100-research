@@ -111,7 +111,7 @@ jobs:
           # This is informational, never an arm/permit.
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               flag = report["status"] == "PAPER_EVENT_FILLED_AND_RECONCILED"
-              output.write("genuine_fill=" + str(flag).lower() + "\\n")
+              output.write("genuine_fill=" + str(flag).lower() + "\n")
           PY
 
       - name: Generate sanitized genuine PAPER execution record
