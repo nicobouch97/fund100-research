@@ -100,8 +100,8 @@ jobs:
           assert result["source"] == "FROZEN_V5_BOOTSTRAP_TARGETS_NOT_GENUINE_EVENT"
           assert result["buy_order_filled"] is True
           assert result["sell_order_filled"] is True
-          assert result["position_flat_after_exit"] is True
+          assert result["original_position_restored"] is True
           assert result["live_orders_submitted"] == 0
-          print("PAPER filled BUY / SELL / position flat: PASS")
+          print("PAPER filled BUY / SELL / original shares restored: PASS")
           print("LIVE orders: ZERO")
           PY
