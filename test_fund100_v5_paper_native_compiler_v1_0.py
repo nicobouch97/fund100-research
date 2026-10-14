@@ -180,3 +180,41 @@ def test_missing_or_malformed_scheduled_state_cannot_create_event():
     invalid["pending_target"] = None
     with pytest.raises(c.PaperCompilerStop, match="genuine scheduled"):
         compile_signal(source=invalid)
+
+
+def test_real_model_native_compiler_reaches_full_broker_emulator():
+    """Genuine shadow target -> actual frozen threshold -> paper fills."""
+    from test_fund100_v5_paper_execution_bridge_v1_0 import FakePaper
+    import fund100_v5_paper_execution_bridge_v1_0 as bridge
+    from test_fund100_v5_genuine_paper_parity_v1_0 import UNIVERSE
+
+    broker = FakePaper()
+    original = state()
+    pkg, manifest = c.build_paper_compiler(
+        state=original,
+        paper_snapshot=broker.snapshot(),
+        paper_clock=observation()["paper_clock"],
+        paper_calendar=observation()["paper_calendar"],
+        signal_closes=observation()["signal_closes"],
+        latest_bars=observation()["latest_bars"],
+    )
+    timestamp = time_ns()
+    outcome = bridge.execute_attested_paper_event(
+        compiler_package=pkg,
+        manifest_package=manifest,
+        shadow_state=original,
+        compiler_written_ns=timestamp,
+        now_ns=timestamp,
+        broker=broker,
+        execution_universe=UNIVERSE,
+        capital_ceiling="130.30",
+        risk_level="HIGH",
+    )
+    assert outcome["live_post_count"] == 0
+    assert outcome["status"] == "PAPER_EVENT_FILLED_AND_RECONCILED"
+    assert outcome["reconciled"] is True
+    assert outcome["paper_post_count"] > 0
+    assert all(o["client_order_id"].startswith("f100paper-")
+               for o in broker.posts)
+    assert not any(o["client_order_id"].startswith("f100live-")
+                   for o in broker.posts)
