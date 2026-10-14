@@ -23,6 +23,7 @@ import fund100_live_production_controller_v1_0 as production
 import fund100_live_portfolio_risk_v1_0 as portfolio
 import fund100_live_risk_controls_v1_0 as event_risk
 import fund100_live_risk_sizing_v1_0 as sizing
+import fund100_v5_compiler_attestation_v1_0 as attestation
 
 
 class PaperParityStop(RuntimeError):
@@ -248,4 +249,51 @@ def plan_genuine_paper_event(
             sum((Decimal(o["notional_usd"]) for o in orders), Decimal("0"))
         ),
         "paper_target_weights": sized.weights,
+    }
+
+
+def plan_attested_paper_event(
+    *, compiler_package: dict, manifest_package: dict,
+    shadow_state: dict, compiler_written_ns: int, now_ns: int,
+    paper_snapshot: dict | None, paper_history: dict | None,
+    execution_universe: set[str], capital_ceiling: object, risk_level: str,
+) -> dict:
+    """Production-oriented read-only entrypoint: never trust a bare event.
+
+    The caller must independently tie compiler_written_ns to an actual
+    compiler invocation in this workflow (see attest_current_files).
+    """
+    try:
+        proof = attestation.attest_compiler_event(
+            compiler_package=compiler_package,
+            manifest_package=manifest_package,
+            shadow_state=shadow_state,
+            compiler_written_ns=compiler_written_ns,
+            now_ns=now_ns,
+        )
+    except attestation.CompilerAttestationStop as exc:
+        raise PaperParityStop("Fresh compiler source attestation failed.") from exc
+
+    if not proof["genuine_event"]:
+        return {
+            "status": "NO_GENUINE_EVENT",
+            "executable": False,
+            "paper_orders": [],
+            "attested_compiler_sha256": proof["compiler_sha256"],
+        }
+
+    result = plan_genuine_paper_event(
+        compiler_body=compiler_package["compiler"],
+        paper_snapshot=paper_snapshot,
+        paper_history=paper_history,
+        execution_universe=execution_universe,
+        capital_ceiling=capital_ceiling,
+        risk_level=risk_level,
+    )
+    if result["source_compiler_sha256"] != proof["compiler_sha256"]:
+        raise PaperParityStop("Attested compiler hash changed after verification.")
+    return {
+        **result,
+        "attested_compiler_sha256": proof["compiler_sha256"],
+        "attested_event_sha256": proof["event_sha256"],
     }
