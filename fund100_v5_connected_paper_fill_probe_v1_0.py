@@ -104,25 +104,41 @@ def frozen_v5_selection() -> tuple[list[str], dict]:
     return symbols, {s: str(w) for s, w in plan.weights.items()}
 
 
-def select_empty_approved_asset(
+QTY_TOLERANCE = Decimal("0.00000001")
+
+
+def select_approved_test_asset(
     *, owned_positions: object, open_orders: object,
     approved_symbols: list[str],
-) -> str:
+) -> tuple[str, Decimal]:
+    """Prefer an empty V5 asset; preserve baseline shares if all are held."""
     if not isinstance(owned_positions, list) or not isinstance(open_orders, list):
         raise PaperFillStop("Invalid paper broker portfolio response.")
     if len(open_orders) >= 500:
         raise PaperFillStop("Broker open order listing might be truncated.")
     if open_orders:
         raise PaperFillStop("Existing paper open orders: refusing to interfere.")
-    existing = set()
+    if not approved_symbols or len(set(approved_symbols)) != len(approved_symbols):
+        raise PaperFillStop("Approved PAPER ETF list invalid.")
+    existing = {}
     for item in owned_positions:
         if not isinstance(item, dict) or not isinstance(item.get("symbol"), str):
             raise PaperFillStop("Malformed existing paper position.")
-        existing.add(item["symbol"])
+        symbol = item["symbol"]
+        if symbol not in approved_symbols or symbol in existing:
+            raise PaperFillStop("Unmanaged or duplicate PAPER holdings present.")
+        try:
+            qty = Decimal(str(item["qty"]))
+        except (KeyError, ValueError, TypeError) as exc:
+            raise PaperFillStop("Malformed pre-existing share quantity.") from exc
+        if not qty.is_finite() or qty <= 0:
+            raise PaperFillStop("Non-positive or short PAPER position.")
+        existing[symbol] = qty
     for symbol in approved_symbols:
         if symbol not in existing:
-            return symbol
-    raise PaperFillStop("All approved ETF symbols already have paper holdings.")
+            return symbol, Decimal("0")
+    # The account holds all frozen V5 ETFs. Never liquidate them.
+    return approved_symbols[0], existing[approved_symbols[0]]
 
 
 def client_id(side: str) -> str:
@@ -225,7 +241,7 @@ def run_probe() -> dict:
     if Decimal(str(account.get("cash", "0"))) < TEST_NOTIONAL * 2:
         raise PaperFillStop("Insufficient uncommitted PAPER cash.")
 
-    symbol = select_empty_approved_asset(
+    symbol, baseline_qty = select_approved_test_asset(
         owned_positions=paper.get_positions(),
         open_orders=paper.get_open_orders(),
         approved_symbols=symbols,
@@ -257,22 +273,27 @@ def run_probe() -> dict:
         if acquired <= 0:
             raise PaperFillStop("PAPER buy received no fill.")
         held = owned_position_qty(symbol)
-        if held <= 0 or held > acquired:
-            raise PaperFillStop("PAPER position does not match owned buy fill.")
+        # Never sell existing PAPER holdings. The order's filled quantity
+        # and the account's share increase must agree before an exit.
+        delta = held - baseline_qty
+        if acquired <= 0 or abs(delta - acquired) > QTY_TOLERANCE:
+            raise PaperFillStop("PAPER buy fill did not reconcile with baseline.")
+        if delta <= 0:
+            raise PaperFillStop("PAPER buy added no reconciled shares.")
 
-        sell = submit_unique(symbol=symbol, side="sell", qty=held)
+        sell = submit_unique(symbol=symbol, side="sell", qty=acquired)
         sell_id = sell["id"]
         sell_order = poll_terminal(sell_id)
         if str(sell_order.get("status", "")).lower() != "filled":
             raise PaperFillStop("PAPER clean-up sell did not fully fill.")
-        if validated_qty(sell_order) != held:
+        if abs(validated_qty(sell_order) - acquired) > QTY_TOLERANCE:
             raise PaperFillStop("Paper sell quantity mismatch.")
         for _ in range(20):
-            if owned_position_qty(symbol) == 0:
+            if abs(owned_position_qty(symbol) - baseline_qty) <= QTY_TOLERANCE:
                 break
             time.sleep(POLL_SECONDS)
-        if owned_position_qty(symbol) != 0:
-            raise PaperFillStop("Residual paper position remains after exit.")
+        if abs(owned_position_qty(symbol) - baseline_qty) > QTY_TOLERANCE:
+            raise PaperFillStop("PAPER baseline shares not restored after exit.")
 
         return {
             "mode": "REAL_ALPACA_PAPER_ONLY",
@@ -284,7 +305,8 @@ def run_probe() -> dict:
             "sell_order_filled": True,
             "simulated_order_count": 2,
             "paper_entry_notional_usd": str(TEST_NOTIONAL),
-            "position_flat_after_exit": True,
+            "original_position_restored": True,
+            "position_flat_after_exit": baseline_qty == 0,
             "live_orders_submitted": 0,
             "live_credentials_supplied": False,
         }
@@ -305,11 +327,11 @@ def run_probe() -> dict:
                         paper.cancel_order(owned_id)
             except Exception:
                 print("WARNING: PAPER owned-order cancellation unconfirmed.")
-        # Even if Alpaca accepted BUY but lost the HTTP response, the
-        # symbol was independently verified to be FLAT before entry.
+        # Verify the exact original share count, NOT a zero baseline:
+        # user/PAPER positions must remain untouched by the probe.
         try:
-            if owned_position_qty(symbol) > 0:
-                print("WARNING: PAPER position remains. Cleanup required.")
+            if abs(owned_position_qty(symbol) - baseline_qty) > QTY_TOLERANCE:
+                print("WARNING: PAPER baseline not restored. Cleanup required.")
         except Exception:
             print("WARNING: PAPER position reconciliation unavailable.")
 
