@@ -140,3 +140,54 @@ def test_adapter_rejects_unapproved_paper_order(monkeypatch, order):
 def test_adapter_cannot_whitelist_unreviewed_asset_class():
     with pytest.raises(a.PaperAdapterStop, match="non-V5"):
         a.AlpacaPaperOnlyAdapter(approved_symbols={"ACWI", "BTCUSD"})
+
+
+def test_paper_strategy_order_history_allows_first_event(monkeypatch):
+    broker = configured(monkeypatch)
+    queried = []
+    def get(*, method, path):
+        queried.append((method, path))
+        assert method == "GET" and "/v2/orders?" in path
+        assert "status=all" in path and "limit=500" in path
+        assert "2026-10-13" in path
+        return [
+            {"client_order_id": "f100-v5-paper-fill-earlier-b"},
+            {"client_order_id": "other-bot-123"},
+        ]
+    monkeypatch.setattr(a.paper, "paper_request", get)
+    broker.require_no_prior_strategy_orders("2026-10-13")
+    assert len(queried) == 1
+
+
+def test_any_accepted_strategy_paper_order_blocks_recompilation(monkeypatch):
+    broker = configured(monkeypatch)
+    for status in ("filled", "canceled", "rejected", "partially_filled"):
+        monkeypatch.setattr(
+            a.paper, "paper_request",
+            lambda **_: [{
+                "client_order_id": "f100paper-earlier-s-eem",
+                "status": status,
+            }],
+        )
+        with pytest.raises(a.PaperAdapterStop, match="Earlier strategy"):
+            broker.require_no_prior_strategy_orders("2026-10-13")
+
+
+def test_ambiguous_or_truncated_strategy_order_history_fails_closed(monkeypatch):
+    broker = configured(monkeypatch)
+    for history in (None, {}, [None], [{"id": "missing-cid"}],
+                    [{"client_order_id": "another"}] * 500):
+        monkeypatch.setattr(a.paper, "paper_request", lambda **_: history)
+        with pytest.raises(a.PaperAdapterStop):
+            broker.require_no_prior_strategy_orders("2026-10-13")
+
+
+def test_paper_order_history_lookup_never_reaches_broker_when_unarmed(monkeypatch):
+    broker = configured(monkeypatch)
+    monkeypatch.delenv("FUND100_GENUINE_PAPER_ARM")
+    monkeypatch.setattr(
+        a.paper, "paper_request",
+        lambda **_: pytest.fail("Unarmed order-history lookup"),
+    )
+    with pytest.raises(a.PaperAdapterStop, match="not armed"):
+        broker.require_no_prior_strategy_orders("2026-10-13")
