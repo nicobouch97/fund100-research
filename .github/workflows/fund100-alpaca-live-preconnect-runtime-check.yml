@@ -14,6 +14,7 @@ jobs:
   preconnect:
     name: Verify Real LIVE State Before Writer Release
 
+    environment: fund100-live-broker
     runs-on: ubuntu-latest
 
     timeout-minutes: 20
