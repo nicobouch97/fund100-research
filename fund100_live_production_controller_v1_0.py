@@ -1182,12 +1182,10 @@ def extract_compiler_view(
 
         genuine = False
 
-    elif (
-        "GENUINE" in status
-        and "EVENT" in status
-    ):
-
-        genuine = True
+    elif status == "GENUINE_SCHEDULED_EVENT":
+        raise ProductionStop(
+            "LIVE PRODUCTION STOP: genuine event missing explicit flag."
+        )
 
     else:
 
