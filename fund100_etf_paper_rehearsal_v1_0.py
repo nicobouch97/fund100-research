@@ -36,11 +36,19 @@ def synthetic_compiler(*, candidates=None) -> dict:
     return {
         "schema": production.EXPECTED_COMPILER_SCHEMA,
         "strategy": "V5-002_SHADOW",
-        "mode": "current",
+        "compiler_mode": "current",
         "status": "GENUINE_SCHEDULED_EVENT",
-        "genuine_strategy_event": True,
+        "genuine_scheduled_event": True,
         "event_id": "offline-etf-rebalance-001",
-        "final_target_weights": dict(SYNTHETIC_STRATEGY),
+        # Match the LOCKED compiler v1.1 output, which contains
+        # only satellite weights, not final_target_weights.
+        "executed_satellite_weights": {
+            symbol: SYNTHETIC_STRATEGY.get(symbol, "0")
+            for symbol in (
+                "SPY", "IWM", "EFA", "EEM", "VNQ", "XLK", "XLF",
+                "XLI", "XLV", "XLP", "XLY", "XLE", "XLU",
+            )
+        },
         "candidate_intents": list(
             SIGNAL_ORDERS if candidates is None else candidates
         ),
