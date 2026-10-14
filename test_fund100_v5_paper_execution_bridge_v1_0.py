@@ -174,7 +174,7 @@ def test_sell_fills_but_buy_rejected_when_fresh_cash_insufficient():
     def evil_cash():
         result = source()
         count["n"] += 1
-        if count["n"] >= 4:
+        if count["n"] >= 3:
             # PAPER broker cash unexpectedly moved away after SELL fills
             result["account"]["cash"] = "0"
         return result
@@ -202,7 +202,7 @@ def test_any_foreign_open_order_aborts_execution():
         data["open_orders"] = [{"client_order_id": "not-ours"}]
         return data
     broker.snapshot = dangerous
-    with pytest.raises(bridge.PaperParityStop):
+    with pytest.raises(bridge.parity.PaperParityStop):
         execute(broker)
     assert broker.posts == []
 
