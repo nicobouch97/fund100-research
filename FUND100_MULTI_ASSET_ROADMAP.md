@@ -193,3 +193,23 @@ An asset class may remain paper-only indefinitely if no durable edge appears.
   Offline GitHub Actions **38597658271**: 7 tests PASS, no credentials
   or broker requests. Most recently inspected V5 shadow state
   (2026-10-13) contains no pending scheduled target.
+
+- **14 October 2026:** completed the scheduled native V5-002
+  **genuine-strategy → Alpaca PAPER execution runner**
+  `fund100_v5_paper_native_runner_v1_0.py`, paired with
+  `.github/workflows/fund100-v5-paper-native-execution.yml`.
+  Once each US trading weekday at **15:22 America/New_York**, the
+  workflow loads the *actual* checked-out main shadow state. With no
+  scheduled pending event it exits before broker credentials or market
+  data are used; if one is due it checks a fresh PAPER market clock,
+  the immediately following trading session, frozen IEX market-data
+  observations, compiler provenance, risk profile and pilot ceiling,
+  then delegates SELL-before-BUY orders to the PAPER-only adapter and
+  broker reconciliation bridge. No LIVE credentials or LIVE environment.
+  **First real workflow run 38600412587:** 40 offline acceptance
+  tests passed, `NO GENUINE EVENT`, **zero PAPER and LIVE orders**.
+  Follow-up no-delta genuine-event handling also passed; full
+  regression **38600713058:** 622 tests, static boundary PASS.
+  This is operational forward PAPER automation, but NOT evidence that
+  a genuine scheduled multi-order event has filled at Alpaca yet.
+  The separate USD 2 PAPER buy/sell probe did fill earlier today.
