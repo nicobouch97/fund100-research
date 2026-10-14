@@ -135,3 +135,8 @@ def test_adapter_rejects_unapproved_paper_order(monkeypatch, order):
     )
     with pytest.raises((a.PaperAdapterStop, a.risk.PortfolioRiskStop)):
         broker.post_notional(order)
+
+
+def test_adapter_cannot_whitelist_unreviewed_asset_class():
+    with pytest.raises(a.PaperAdapterStop, match="non-V5"):
+        a.AlpacaPaperOnlyAdapter(approved_symbols={"ACWI", "BTCUSD"})
