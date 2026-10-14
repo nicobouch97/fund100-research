@@ -1,10 +1,13 @@
 name: Fund-100 V5 ETF PAPER Fill Probe — One-Time
 
 on:
-  # One date only: Wednesday 2026-10-14 at 13:35 UTC
-  # (09:35 New York EDT / 14:35 London BST). Reject any other date.
-  schedule:
-    - cron: "35 13 14 10 *"
+  # Explicit single-commit PAPER launch because GitHub schedule
+  # did not start at the requested 09:35 ET target.
+  # Only edits to this file initiate another push run.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v5-paper-fill-probe-once.yml"
   workflow_dispatch:
 
 permissions:
