@@ -182,3 +182,14 @@ An asset class may remain paper-only indefinitely if no durable edge appears.
   Sanitized evidence:
   `live_activation_outputs/v5_002/paper_readiness_evidence_v1_0.json`.
   This is a readiness assessment, NOT evidence of a strategy-driven fill.
+
+- On **14 October 2026**, implemented the separate `fund100_v5_paper_launch_decision_v1_0.py`
+  contract. Historical real PAPER fill success and account readiness
+  are treated as prerequisites, never order authority. With no fresh
+  same-invocation compiler package, result is explicitly
+  `WAITING_FOR_GENUINE_V5_EVENT`, with PAPER and LIVE order
+  authorisations both false. Attested genuine events advance only to
+  fresh PAPER broker preflight; they cannot directly authorize POST.
+  Offline GitHub Actions **38597658271**: 7 tests PASS, no credentials
+  or broker requests. Most recently inspected V5 shadow state
+  (2026-10-13) contains no pending scheduled target.
