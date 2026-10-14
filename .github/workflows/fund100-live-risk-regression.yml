@@ -6,6 +6,10 @@ on:
     paths:
       - "fund100_live_risk_controls_v1_0.py"
       - "fund100_live_portfolio_risk_v1_0.py"
+      - "fund100_live_risk_sizing_v1_0.py"
+      - "test_fund100_live_risk_sizing_v1_0.py"
+      - "fund100_live_risk_monitor_v1_0.py"
+      - "test_fund100_live_risk_monitor_v1_0.py"
       - "test_fund100_live_portfolio_risk_v1_0.py"
       - "test_fund100_live_risk_controls_v1_0.py"
       - "fund100_live_production_controller_v1_0.py"
@@ -49,6 +53,10 @@ jobs:
           python -m py_compile \
             fund100_live_risk_controls_v1_0.py \
             fund100_live_portfolio_risk_v1_0.py \
+            fund100_live_risk_sizing_v1_0.py \
+            test_fund100_live_risk_sizing_v1_0.py \
+            fund100_live_risk_monitor_v1_0.py \
+            test_fund100_live_risk_monitor_v1_0.py \
             test_fund100_live_portfolio_risk_v1_0.py \
             test_fund100_live_risk_controls_v1_0.py \
             fund100_live_production_controller_v1_0.py \
@@ -63,6 +71,8 @@ jobs:
           FUND100_RISK_LEVEL: LOW
         run: |
           python -m pytest -q \
+            test_fund100_live_risk_sizing_v1_0.py \
+            test_fund100_live_risk_monitor_v1_0.py \
             test_fund100_live_risk_controls_v1_0.py \
             test_fund100_live_portfolio_risk_v1_0.py \
             test_fund100_live_production_controller_v1_0.py \
