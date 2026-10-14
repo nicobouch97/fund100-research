@@ -81,3 +81,16 @@ An asset class may remain paper-only indefinitely if no durable edge appears.
   during market hours remains the last pre-launch execution-parity test.
 - Until explicit launch authorization, operator control stays STOPPED
   and broker kill switch remains ENGAGED.
+
+- On **14 October 2026**, corrected the V5-002 compiler v1.1 →
+  production-controller contract: genuine-event eligibility now comes
+  from the explicit compiler `genuine_scheduled_event` boolean, and
+  final full-portfolio weights are reconstructed from
+  `executed_satellite_weights` plus the ACWI core. Synthetic PAPER
+  rehearsal fixtures now use the real compiler field names. A new
+  offline regression invokes the actual v1.1 position-aware intent
+  generator (without broker credentials). Tests and full static audit
+  passed: GitHub Actions **38564627571** (106 regression tests) and
+  **38564627586** (529 suite tests, static boundary PASS).
+- No naturally occurring V5 scheduled execution event has yet been
+  submitted through Alpaca PAPER as a full strategy-driven rebalance.
