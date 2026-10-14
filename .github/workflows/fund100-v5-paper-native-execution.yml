@@ -71,9 +71,11 @@ jobs:
             test_fund100_v5_paper_native_compiler_v1_0.py \
             test_fund100_v5_paper_native_runner_v1_0.py \
             test_fund100_v5_paper_execution_bridge_v1_0.py \
-            test_fund100_v5_paper_broker_adapter_v1_0.py
+            test_fund100_v5_paper_broker_adapter_v1_0.py \
+            test_fund100_v5_paper_execution_evidence_v1_0.py
 
       - name: Execute genuine V5 signal in Alpaca PAPER if due
+        id: execute
         env:
           ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
           ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
@@ -83,6 +85,7 @@ jobs:
             > /tmp/fund100-v5-paper-genuine-report.json
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
           report = json.loads(
               Path("/tmp/fund100-v5-paper-genuine-report.json").read_text()
@@ -105,4 +108,25 @@ jobs:
           else:
               raise SystemExit("Unknown genuine-PAPER runner result")
           print("LIVE orders: ZERO")
+          # This is informational, never an arm/permit.
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              flag = report["status"] == "PAPER_EVENT_FILLED_AND_RECONCILED"
+              output.write("genuine_fill=" + str(flag).lower() + "\\n")
           PY
+
+      - name: Generate sanitized genuine PAPER execution record
+        if: steps.execute.outputs.genuine_fill == 'true'
+        run: |
+          set -euo pipefail
+          python fund100_v5_paper_execution_evidence_v1_0.py
+          echo "A genuine strategy PAPER fill was verified by the runner."
+          echo "Evidence is audit-only: no LIVE authorization."
+
+      - name: Retain genuine PAPER fill report as GitHub artifact
+        if: steps.execute.outputs.genuine_fill == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-genuine-v5-paper-fill-${{ github.run_id }}
+          path: /tmp/fund100-v5-paper-execution-evidence.json
+          if-no-files-found: error
+          retention-days: 90
