@@ -161,7 +161,7 @@ def test_real_compiler_generates_directional_paper_intents():
     import pandas as pd
     import fund100_alpaca_live_scheduled_compiler_v1_1 as compiler
     import fund100_alpaca_live_scheduled_compiler as v10
-    import v4_dispersion_overlay as base
+    import fund100_experiment_runner as base
 
     current = {
         "ACWI": 0.75,
