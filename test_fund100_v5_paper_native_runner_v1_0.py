@@ -33,7 +33,10 @@ def paper_run(monkeypatch, *, shadow=None, modify=None, paper=None, **kw):
     b.cash = Decimal("10")
     b.equity = Decimal("110")
     b.history = lambda: paper_history([110] * 7)
-    now = datetime(2026, 10, 14, 19, 35, tzinfo=timezone.utc)
+    now = kw.pop(
+        "clock_reference_utc",
+        datetime(2026, 10, 14, 19, 35, tzinfo=timezone.utc),
+    )
     api = SimpleNamespace(
         get_clock=lambda: inputs["paper_clock"],
         paper_request=lambda *, method, path: (
