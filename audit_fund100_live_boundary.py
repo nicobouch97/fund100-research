@@ -223,7 +223,7 @@ PINNED_PRODUCTION_RISK_MODULE = (
 
 def git_blob_digest(path: Path) -> str:
     content = path.read_bytes()
-    header = b"blob " + str(len(content)).encode("ascii") + b"\\x00"
+    header = b"blob " + str(len(content)).encode("ascii") + b"\x00"
     return hashlib.sha1(header + content).hexdigest()
 
 
