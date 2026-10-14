@@ -213,7 +213,7 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
     (
         ".github/workflows/fund100-v5-live-production.yml",
         "fund100_live_production_controller_v1_0.py",
-    ): "7ab1906b8baac1620f199f6bc200a6d9c42b6d3e",
+    ): "c6710652ef68225c7d5bf21b468052da8462299b",
     (
         ".github/workflows/fund100-live-emergency-stop.yml",
         "fund100_live_operator_control_v1_0.py",
@@ -229,6 +229,9 @@ PINNED_PRODUCTION_RISK_MODULE = (
 )
 PINNED_PRODUCTION_OPERATOR_MODULE = (
     "953c015d2c38c84212f31c290f325504754ad425"
+)
+PINNED_PRODUCTION_PORTFOLIO_MODULE = (
+    "748ce9d9d9e8519dcce792921e310af5f5275e39"
 )
 
 
@@ -285,6 +288,12 @@ def approved_scoped_live_script(
         ):
             return False
         if "GITHUB_REPOSITORY: ${{ github.repository }}" not in source:
+            return False
+        portfolio_path = ROOT / "fund100_live_portfolio_risk_v1_0.py"
+        if (
+            not portfolio_path.is_file()
+            or git_blob_digest(portfolio_path) != PINNED_PRODUCTION_PORTFOLIO_MODULE
+        ):
             return False
 
     return True
