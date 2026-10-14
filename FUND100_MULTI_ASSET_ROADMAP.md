@@ -94,3 +94,15 @@ An asset class may remain paper-only indefinitely if no durable edge appears.
   **38564627586** (529 suite tests, static boundary PASS).
 - No naturally occurring V5 scheduled execution event has yet been
   submitted through Alpaca PAPER as a full strategy-driven rebalance.
+
+- On **14 October 2026**, added `fund100_v5_genuine_paper_parity_v1_0.py`:
+  a **read-only, non-executable** genuine-event → PAPER plan gate. It
+  consumes a v1.1 compiler event, rejects NO_EVENT, re-computes PAPER
+  directions against separately supplied PAPER holdings, applies the
+  selected risk profile and uses production order materialization to
+  verify a two-phase plan entirely in memory. It never replays LIVE
+  client IDs to PAPER. Broker POST/DELETE and certificate generation
+  are deliberately absent. The caller must later prove compiler event
+  freshness and origin before any real PAPER execution is permitted.
+  CI **38567506077**: 32 parity + compiler + rehearsal tests passed;
+  full suite **38567506040**: 542 passed, static audit PASS.
