@@ -1,0 +1,53 @@
+name: Fund-100 V5 stale-manifest repair checks
+
+on:
+  push:
+    branches:
+      - "repair/v5-no-event-stale-manifest-*"
+  pull_request:
+    paths:
+      - "fund100_alpaca_live_scheduled_compiler_v1_1.py"
+      - "test_fund100_stale_no_event_manifest_guard.py"
+      - ".github/workflows/fund100-v5-stale-manifest-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v5-stale-repair-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-tests:
+    name: Offline full regression suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+      - name: Syntax compilation
+        run: |
+          set -euo pipefail
+          python -m py_compile fund100_alpaca_live_scheduled_compiler_v1_1.py test_fund100_stale_no_event_manifest_guard.py
+      - name: No live API credentials permitted
+        run: |
+          set -euo pipefail
+          test -z "${ALPACA_LIVE_KEY:-}"
+          test -z "${ALPACA_LIVE_SECRET:-}"
+          test "${FUND100_BROKER_KILL_SWITCH}" = ENGAGED
+      - name: Full offline regression suite
+        run: |
+          set -euo pipefail
+          python -m pytest -q
