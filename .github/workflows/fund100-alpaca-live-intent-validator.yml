@@ -14,6 +14,7 @@ jobs:
   intent-validator:
     name: Validate Position-Aware LIVE Order Intents
 
+    environment: fund100-live-broker
     runs-on: ubuntu-latest
 
     timeout-minutes: 15
