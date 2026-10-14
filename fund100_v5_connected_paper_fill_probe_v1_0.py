@@ -31,8 +31,8 @@ TARGET_PATH = Path(
     "live_activation_outputs/v5_002/live_bootstrap_v1_0.json"
 )
 TERMINAL = {"filled", "canceled", "cancelled", "expired", "rejected"}
-MINUTES_BETWEEN_POLLS = 0.025
-POLL_ATTEMPTS = 80
+POLL_SECONDS = 1.0
+POLL_ATTEMPTS = 90
 
 
 class PaperFillStop(RuntimeError):
@@ -156,7 +156,7 @@ def poll_terminal(order_id: str) -> dict:
             raise PaperFillStop("Malformed paper order status.")
         if str(order.get("status", "")).lower() in TERMINAL:
             return order
-        time.sleep(MINUTES_BETWEEN_POLLS)
+        time.sleep(POLL_SECONDS)
     raise PaperFillStop("Paper order did not become terminal before timeout.")
 
 
@@ -268,7 +268,7 @@ def run_probe() -> dict:
         for _ in range(20):
             if owned_position_qty(symbol) == 0:
                 break
-            time.sleep(MINUTES_BETWEEN_POLLS)
+            time.sleep(POLL_SECONDS)
         if owned_position_qty(symbol) != 0:
             raise PaperFillStop("Residual paper position remains after exit.")
 
