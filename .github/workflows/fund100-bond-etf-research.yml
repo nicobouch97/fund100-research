@@ -11,6 +11,14 @@ on:
         options:
           - offline_tests
           - fetch_and_analyze
+  # One initial real-data research run after merge to main, not a
+  # recurring production price feed or automatic promotion.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-bond-etf-research.yml"
+      - "fund100_bond_*.py"
+      - "test_fund100_bond_*.py"
   pull_request:
     paths:
       - ".github/workflows/fund100-bond-etf-research.yml"
@@ -40,12 +48,12 @@ jobs:
       - name: Test chronological event, cost and signal isolation
         run: python -m pytest -q test_fund100_bond_etf_research_v1_0.py
       - name: Fetch public adjusted closes (research only)
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'fetch_and_analyze'
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'fetch_and_analyze')
         run: |
           set -euo pipefail
           python fund100_bond_price_source_v1_0.py --output-csv /tmp/fund100-bond-prices.csv
       - name: Train on past data; assess untouched holdout (research only)
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'fetch_and_analyze'
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'fetch_and_analyze')
         run: |
           set -euo pipefail
           python fund100_bond_etf_research_v1_0.py \
@@ -62,7 +70,7 @@ jobs:
           print("Study evaluated; no trading promotion or broker access.")
           PY
       - name: Preserve reproducible research inputs and report as artifacts
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'fetch_and_analyze'
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'fetch_and_analyze')
         uses: actions/upload-artifact@v4
         with:
           name: fund100-bond-etf-phase2-research
