@@ -232,3 +232,19 @@ An asset class may remain paper-only indefinitely if no durable edge appears.
   reference (maximum 500, status `all`, supported `after` filter).
   First genuine strategy-driven PAPER fill remains pending a natural
   scheduled model signal; no LIVE trading was enabled.
+
+- **14 October 2026:** Ran a new **GET-only LIVE account preflight**
+  via `.github/workflows/fund100-live-account-readiness-getonly.yml`
+  in the existing protected `fund100-live-broker` environment.
+  Account ACTIVE, binding matched frozen policy, holdings entirely in
+  approved ETF universe, no open orders, HIGH exposure and history
+  checks passed. Real LIVE account equity is **below** the maximum
+  USD 130.30 pilot ceiling and currently available cash is **below
+  USD 1**. No account numbers, cash amounts or positions were stored.
+  A future SELL-before-BUY event may free cash, but there is not
+  enough idle cash to fund a new USD 1 BUY alone.
+  GitHub Actions **38603864104**: 4 approved LIVE GET requests and
+  0 POST, operator STOPPED. Full static audit **38603864590**:
+  628 passed, static boundary PASS. Sanitized release evidence:
+  `live_activation_outputs/v5_002/live_getonly_account_readiness_evidence_v1_0.json`.
+  Do not confuse a capital ceiling with an actual funding balance.
