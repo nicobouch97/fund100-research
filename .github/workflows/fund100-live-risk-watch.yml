@@ -1,0 +1,40 @@
+name: Fund-100 LIVE Risk Watch (autonomous)
+
+on:
+  schedule:
+    # Every 15 minutes on US trading weekdays, spanning ET market hours
+    # in both daylight-saving and standard-time periods.
+    - cron: "*/15 13-22 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-live-risk-watch
+  cancel-in-progress: false
+
+jobs:
+  risk-watch:
+    name: Independent LIVE account risk watch
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    env:
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      GITHUB_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check risk or trigger persistent STOP
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_live_risk_monitor_v1_0.py
