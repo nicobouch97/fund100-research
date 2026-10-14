@@ -16,6 +16,7 @@ concurrency:
 
 env:
   FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+  FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
 
 jobs:
   production:
@@ -51,6 +52,10 @@ jobs:
 
           python -m py_compile \
             test_fund100_live_production_controller_v1_0.py
+
+          python -m py_compile \
+            fund100_live_risk_controls_v1_0.py \
+            test_fund100_live_risk_controls_v1_0.py
 
           echo "Production controller syntax: PASS"
 
