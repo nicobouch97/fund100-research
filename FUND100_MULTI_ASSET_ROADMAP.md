@@ -106,3 +106,24 @@ An asset class may remain paper-only indefinitely if no durable edge appears.
   freshness and origin before any real PAPER execution is permitted.
   CI **38567506077**: 32 parity + compiler + rehearsal tests passed;
   full suite **38567506040**: 542 passed, static audit PASS.
+
+- On **14 October 2026**, added a read-only V5 event provenance
+  module `fund100_v5_compiler_attestation_v1_0.py`. The
+  `plan_attested_paper_event` entrypoint rejects stale compiler
+  packages, modified content digests, manifest/state divergence,
+  inconsistent market-snapshot evidence, missing genuine-event flags
+  and executable compiler claims. For a real GitHub invocation,
+  `attest_current_files` requires the exact compiler output to
+  have been produced after the current compiler invocation began.
+  This internally verifies file consistency and recentness; it does
+  NOT authenticate a hostile external producer. It makes no broker
+  calls and cannot place orders.
+  Test evidence: genuine V5 PAPER parity run **38569026258**
+  (52 passed), full safety audit **38569026228** (562 passed,
+  static boundary PASS).
+- Remaining work: a real strategy event produced by the
+  compiler and submitted/fill-reconciled via the PAPER-only
+  broker path, with release evidence bound to the exact compiler
+  invocation. Do NOT re-use the LIVE compiler's account-relative
+  directions for the PAPER portfolio. Separate user approval
+  remains required before LIVE activation.
