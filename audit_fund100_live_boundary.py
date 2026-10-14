@@ -197,6 +197,74 @@ ALLOWED_LIVE_CREDENTIAL_SCRIPTS = {
     "fund100_alpaca_live_scheduled_compiler.py",
 }
 
+# Narrow exception for the EXISTING connected micro-pilot jobs. This is
+# deliberately separate from the read-only script allowlist above. The
+# Git-blob digest pins each reviewed implementation; any code change
+# removes credential eligibility until independently re-reviewed.
+PINNED_LIVE_CREDENTIAL_JOBS = {
+    (
+        ".github/workflows/fund100-live-bootstrap.yml",
+        "fund100_live_bootstrap_v1_0.py",
+    ): "2df0e9b216366b7659386d9cc541041b5365a2ab",
+    (
+        ".github/workflows/fund100-live-micro-pilot-prepare.yml",
+        "fund100_live_pilot_prepare_v1_0.py",
+    ): "dfebc7cedcd9820b1141c74a69d85e500c287748",
+    (
+        ".github/workflows/fund100-v5-live-production.yml",
+        "fund100_live_production_controller_v1_0.py",
+    ): "16c2854e8342747e9043db6e71c0b97f4e43afba",
+}
+
+PINNED_PRODUCTION_RISK_MODULE = (
+    "80773e042f4c14a270d9ce0dae330716a415badc"
+)
+
+
+def git_blob_digest(path: Path) -> str:
+    content = path.read_bytes()
+    header = b"blob " + str(len(content)).encode("ascii") + b"\\x00"
+    return hashlib.sha1(header + content).hexdigest()
+
+
+def approved_scoped_live_script(
+    workflow: str,
+    script: str,
+    source: str,
+) -> bool:
+    expected = PINNED_LIVE_CREDENTIAL_JOBS.get((workflow, script))
+    if expected is None:
+        return False
+
+    # Credentials must come only from the isolated main-only environment.
+    if "environment: fund100-live-broker" not in source:
+        return False
+    if (
+        "FUND100_BROKER_KILL_SWITCH: "
+        + "${{ vars.FUND100_BROKER_KILL_SWITCH }}"
+    ) not in source:
+        return False
+
+    path = ROOT / script
+    if not path.is_file() or git_blob_digest(path) != expected:
+        return False
+
+    if script == "fund100_live_production_controller_v1_0.py":
+        if (
+            "FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}"
+            not in source
+        ):
+            return False
+        risk_path = ROOT / "fund100_live_risk_controls_v1_0.py"
+        if (
+            not risk_path.is_file()
+            or git_blob_digest(risk_path) != PINNED_PRODUCTION_RISK_MODULE
+        ):
+            return False
+
+    return True
+
+
 PYTHON_SCRIPT_PATTERN = re.compile(
     r"""(?:^|\s)python(?:3)?\s+([A-Za-z0-9_./-]+\.py)(?:\s|$)""",
     re.IGNORECASE,
@@ -856,9 +924,10 @@ def audit_workflows(
                 ).name
 
                 if (
-                    script
-                    not in
-                    ALLOWED_LIVE_CREDENTIAL_SCRIPTS
+                    script not in ALLOWED_LIVE_CREDENTIAL_SCRIPTS
+                    and not approved_scoped_live_script(
+                        relative, script, source
+                    )
                 ):
 
                     unauthorized_credential_commands.append(
