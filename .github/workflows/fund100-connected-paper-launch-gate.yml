@@ -1,0 +1,133 @@
+name: Fund-100 Connected PAPER Launch Gate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-connected-paper-launch-gate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-connected-paper-launch-gate
+  cancel-in-progress: false
+
+jobs:
+  connected-paper-gate:
+    name: Alpaca PAPER-only order, cancel, restart and ETF offline rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_PAPER_ORCHESTRATOR_TEST_ARM: "YES"
+      FUND100_RISK_LEVEL: HIGH
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify paper-only locked integration files
+        run: |
+          set -euo pipefail
+          test -f fund100_alpaca_paper_orchestrator_connected_v1_0.py
+          test -f fund100_alpaca_live_execution_orchestrator_v1_0.py
+          test -f fund100_etf_paper_rehearsal_v1_0.py
+          test -f live_activation_outputs/v5_002/pre_live_release_lock_v1_9.json
+          test "$FUND100_BROKER_KILL_SWITCH" = ENGAGED
+          test "$FUND100_PAPER_ORCHESTRATOR_TEST_ARM" = YES
+
+      - name: Install offline dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify current ETF paper model with no broker connectivity
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_etf_paper_rehearsal_v1_0.py
+          python fund100_etf_paper_rehearsal_v1_0.py > /tmp/fund100-paper-synthetic.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("/tmp/fund100-paper-synthetic.json").read_text())
+          assert data["status"] == "SUCCESS"
+          assert data["unmocked_broker_requests"] == 0
+          assert data["order_count"] == 2
+          assert data["replay_duplicate_orders"] == 0
+          print("Current ETF model: offline event, two synthetic orders, replay PASS")
+          PY
+
+      - name: Connect to Alpaca PAPER with bounded $1 order/cancel probe
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_alpaca_paper_orchestrator_connected_v1_0.py
+
+      - name: Validate broker proof without exporting account or order IDs
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path(
+              "live_activation_outputs/v5_002/"
+              "connected_paper_orchestrator_v1_0.json"
+          )
+          proof = json.loads(path.read_text(encoding="utf-8"))
+          expected = {
+              "broker_environment": "ALPACA_PAPER_ONLY",
+              "live_endpoint_contacted": False,
+              "live_credentials_supplied": False,
+              "broker_kill_switch": "ENGAGED",
+              "market_open_during_test": False,
+              "synthetic_notional_usd": "1.00",
+              "single_paper_ceiling_usd": "1.00",
+              "initial_paper_post_count": 1,
+              "total_paper_post_count_after_restart": 1,
+              "duplicate_paper_posts": 0,
+              "restart_existing_order_recovered": True,
+              "restart_duplicate_suppression": True,
+              "cleanup_zero_fill": True,
+              "open_order_index_converged": True,
+              "genuinely_open_test_orders_after_cleanup": 0,
+              "connected_paper_orchestrator_integration": "PASS",
+              "live_execution_authorized": False,
+              "live_orders_submitted": 0,
+          }
+          for key, value in expected.items():
+              if proof.get(key) != value:
+                  raise SystemExit("PAPER validation failed at: " + key)
+          print("Connected Alpaca PAPER validation: PASS")
+          print("Exactly one $1 PAPER POST, followed by cleanup: PASS")
+          print("PAPER duplicate orders after restart: ZERO")
+          print("No LIVE endpoint or credentials used: PASS")
+          PY
+
+      - name: Final proof of unchanged trading activation
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          operator = json.loads(
+              Path("fund100_live_operator_control.json").read_text()
+          )
+          policy = json.loads(
+              Path(
+                  "live_activation_outputs/v5_002/"
+                  "live_micro_pilot_policy_v1_0.json"
+              ).read_text()
+          )
+          assert operator["trading_enabled"] is False
+          assert policy["live_order_authorization_present"] is False
+          assert policy["capital_ceiling_usd"] == "130.30"
+          print("Repository LIVE operator state remains STOPPED")
+          print("Repository LIVE pilot remains unauthorized")
+          PY
