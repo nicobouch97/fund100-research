@@ -38,16 +38,18 @@ def test_operator_stop_between_phases_blocks_next_trade():
 
 
 def test_low_risk_does_not_force_unauthorized_trades():
-    with pytest.raises(portfolio.PortfolioRiskStop, match="unsigned"):
+    with pytest.raises(paper.production.ProductionStop, match="risk-adjusted sizing") as exc:
         paper.rehearse(level="LOW")
+    assert isinstance(exc.value.__cause__, portfolio.PortfolioRiskStop)
 
 
 def test_without_compiler_buy_authority_no_order_is_sent():
     only_sell = [
         x for x in paper.SIGNAL_ORDERS if x["side"] == "sell"
     ]
-    with pytest.raises(portfolio.PortfolioRiskStop, match="unsigned"):
+    with pytest.raises(paper.production.ProductionStop, match="risk-adjusted sizing") as exc:
         paper.rehearse(candidates=only_sell)
+    assert isinstance(exc.value.__cause__, portfolio.PortfolioRiskStop)
 
 
 def test_preview_funded_buy_does_not_bypass_real_cash_check():
