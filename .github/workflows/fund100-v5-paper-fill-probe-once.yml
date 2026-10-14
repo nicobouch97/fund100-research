@@ -1,13 +1,9 @@
 name: Fund-100 V5 ETF PAPER Fill Probe — One-Time
 
 on:
-  # Explicit single-commit PAPER launch because GitHub schedule
-  # did not start at the requested 09:35 ET target.
-  # Only edits to this file initiate another push run.
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/fund100-v5-paper-fill-probe-once.yml"
+  # ONE-TIME PAPER execution completed successfully on 2026-10-14.
+  # Automatic triggers retired after confirmed buy/sell reconciliation.
+  # Original date and operator STOP guards remain in the Python probe.
   workflow_dispatch:
 
 permissions:
