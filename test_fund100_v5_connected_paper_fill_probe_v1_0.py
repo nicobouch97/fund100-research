@@ -25,6 +25,14 @@ def test_only_regular_us_mid_session_window_eligible():
     assert not probe.allowed_session(
         {"is_open": True}, datetime(2026, 10, 14, 12, 15, tzinfo=timezone.utc)
     )
+    # NY 09:30 EDT = 13:30 UTC; wait just five minutes
+    # for the open before admitting a bounded PAPER test.
+    assert not probe.allowed_session(
+        {"is_open": True}, datetime(2026, 10, 14, 13, 34, tzinfo=timezone.utc)
+    )
+    assert probe.allowed_session(
+        {"is_open": True}, datetime(2026, 10, 14, 13, 35, tzinfo=timezone.utc)
+    )
 
 
 def test_asset_selection_never_interferes_with_existing_positions_orders():
