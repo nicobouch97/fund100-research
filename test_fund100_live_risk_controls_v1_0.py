@@ -4,6 +4,8 @@ from decimal import Decimal
 
 import pytest
 
+import fund100_live_production_controller_v1_0 as production
+
 from fund100_live_risk_controls_v1_0 import (
     RiskControlStop,
     enforce_event_budget,
@@ -86,3 +88,47 @@ def test_empty_event_is_safe_and_no_order():
     assert enforce_event_budget(
         orders=[], risk_budget=Decimal("32.57")
     ) == Decimal("0")
+
+
+def test_controller_enforces_selected_budget_before_order_writer():
+    # The same cap must be checked inside the production dependency
+    # during every execution phase, not only in the initial preflight.
+    context = {
+        "risk_budget": Decimal("32.57"),
+        "capital_ceiling": Decimal("130.30"),
+    }
+    candidates = {
+        "SPY": {
+            "side": "buy",
+            "client_order_id": "f100-test-risk-guard",
+        }
+    }
+    deps, _, allowed_ids = production.build_dependencies(
+        policy_context=context,
+        target_weights={"SPY": Decimal("1")},
+        candidates=candidates,
+    )
+    assert allowed_ids == {"f100-test-risk-guard"}
+
+    with pytest.raises(production.ProductionStop):
+        deps.enforce_cumulative_cap(
+            authorized_order_history={"f100-test-risk-guard": None},
+            new_orders=[{
+                "side": "buy",
+                "symbol": "SPY",
+                "notional_usd": "40.00",
+                "client_order_id": "f100-test-risk-guard",
+            }],
+        )
+
+    accepted = deps.enforce_cumulative_cap(
+        authorized_order_history={"f100-test-risk-guard": None},
+        new_orders=[{
+            "side": "buy",
+            "symbol": "SPY",
+            "notional_usd": "20.00",
+            "client_order_id": "f100-test-risk-guard",
+        }],
+    )
+    assert accepted["approved"] is True
+    assert accepted["capital_ceiling_usd"] == "32.57"
