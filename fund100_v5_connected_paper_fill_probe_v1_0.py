@@ -65,7 +65,7 @@ def allowed_session(clock: object, when: datetime) -> bool:
     if not isinstance(clock, dict) or clock.get("is_open") is not True:
         return False
     et = when.astimezone(ZoneInfo("America/New_York"))
-    return et.weekday() < 5 and (10, 0) <= (et.hour, et.minute) <= (14, 0)
+    return et.weekday() < 5 and (9, 35) <= (et.hour, et.minute) <= (14, 0)
 
 
 def frozen_v5_selection() -> tuple[list[str], dict]:
