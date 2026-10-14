@@ -34,6 +34,12 @@ class FakePaper:
         if not self.armed:
             raise bridge.PaperBridgeStop("PAPER-only arm missing")
 
+    def require_no_prior_strategy_orders(self, signal_date):
+        if any(cid.startswith("f100paper-") for cid in self.orders):
+            raise bridge.PaperBridgeStop(
+                "Prior strategy PAPER order for signal period"
+            )
+
     def market_open(self):
         return self.open
 
