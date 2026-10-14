@@ -1,0 +1,57 @@
+name: Fund-100 LIVE Launch Status (offline, non-executable)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "fund100_launch_readiness_snapshot_v1_0.py"
+      - "test_fund100_launch_readiness_snapshot_v1_0.py"
+      - ".github/workflows/fund100-live-launch-status-offline.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_launch_readiness_snapshot_v1_0.py"
+      - "test_fund100_launch_readiness_snapshot_v1_0.py"
+      - ".github/workflows/fund100-live-launch-status-offline.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  summary:
+    name: Evidence-based status, zero broker access
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test fail-closed readiness assessment
+        run: python -m pytest -q test_fund100_launch_readiness_snapshot_v1_0.py
+      - name: Produce advisory report, no broker credentials
+        run: |
+          set -euo pipefail
+          python fund100_launch_readiness_snapshot_v1_0.py > launch_readiness_snapshot.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          report = json.loads(Path("launch_readiness_snapshot.json").read_text())
+          assert report["schema"] == "FUND100_NON_EXECUTABLE_LAUNCH_SNAPSHOT_V1"
+          assert report["live_order_authorized"] is False
+          assert report["paper_order_authorized"] is False
+          assert report["broker_network_access"] == "NONE"
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as file:
+              file.write("### Fund-100 launch readiness (informational only)\n")
+              file.write("Status: **" + report["status"] + "**\n\n")
+              file.write("No broker connection or order authority in this workflow.\n")
+              file.write("Outstanding items: " + ", ".join(report["blockers"]) + "\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fund100-non-executable-launch-snapshot
+          path: launch_readiness_snapshot.json
+          retention-days: 14
