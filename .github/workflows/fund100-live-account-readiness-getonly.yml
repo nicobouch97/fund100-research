@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/fund100-live-account-readiness-getonly.yml"
+      - "fund100_live_funding_preview_v1_0.py"
+      - "test_fund100_live_funding_preview_v1_0.py"
   workflow_dispatch:
 
 permissions:
@@ -30,6 +32,8 @@ jobs:
       - name: Install frozen dependencies
         run: |
           python -m pip install -r requirements.txt
+      - name: Test funding reference logic without broker credentials
+        run: python -m pytest -q test_fund100_live_funding_preview_v1_0.py
       - name: Read LIVE account without modifying its state
         env:
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
@@ -147,4 +151,34 @@ jobs:
           print("LIVE broker requests:", len(calls), "GET only")
           print("LIVE orders submitted:", 0)
           print("LIVE activation remains DISABLED")
+          # Use the ALREADY-APPROVED GET-only inspection response to
+          # evaluate a pure funding reference. No new credential-bearing
+          # workflow, HTTP requests or order candidates are introduced.
+          if all((account_ok, binding_ok, universe_ok, no_orders,
+                  exposure_ok, history_ok)):
+              shadow = json.loads(Path(
+                  "shadow_outputs/v5_002/shadow_state.json"
+              ).read_text(encoding="utf-8"))
+              if (shadow.get("pending_source") is None and
+                      shadow.get("pending_target") is None):
+                  import fund100_live_funding_preview_v1_0 as funding
+                  result = funding.preview(
+                      account=account, positions=positions,
+                      open_orders=open_orders, history=history,
+                      shadow=shadow, policy=policy,
+                      binding=live.account_binding(account),
+                      risk_level=level,
+                  )
+                  assert result["live_execution_authorized"] is False
+                  assert result["broker_mutations"] == 0
+                  print("Funding reference preview:",
+                        result["funding_classification"])
+                  print("Reference BUY count:", result["reference_buy_count"])
+                  print("Reference SELL count:", result["reference_sell_count"])
+                  print("Potential sell proceeds confirmed spendable: NO")
+                  print("LIVE order authorization: NO")
+              else:
+                  print("Reference funding preview skipped: shadow event pending.")
+          else:
+              print("Reference funding preview skipped: LIVE preflight not clean.")
           PY
