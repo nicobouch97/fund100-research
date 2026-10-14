@@ -1,0 +1,44 @@
+name: Fund-100 STOP TRADING (operator emergency)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: fund100-operator-emergency-stop
+  cancel-in-progress: false
+
+jobs:
+  stop-signal:
+    name: Immediately set the persistent STOP latch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Commit STOPPED to GitHub main
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python fund100_live_operator_control_v1_0.py
+
+  cancel-fund100-orders:
+    name: Cancel only outstanding Fund-100 Alpaca orders
+    needs: stop-signal
+    if: always()
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cancel and verify only Fund-100 orders
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_live_emergency_stop_v1_0.py
