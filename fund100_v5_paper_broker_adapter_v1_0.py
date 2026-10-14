@@ -25,6 +25,12 @@ class PaperAdapterStop(RuntimeError):
     """A broker state or PAPER-only credential boundary failed."""
 
 
+FROZEN_V5_ETFS = frozenset({
+    "ACWI", "SPY", "IWM", "EFA", "EEM", "VNQ", "XLK", "XLF",
+    "XLI", "XLV", "XLP", "XLY", "XLE", "XLU",
+})
+
+
 class AlpacaPaperOnlyAdapter:
     PAPER_ENDPOINT = "https://paper-api.alpaca.markets"
     ARM_VALUE = "YES_ATTESTED_V5_PAPER_ONLY"
@@ -35,6 +41,8 @@ class AlpacaPaperOnlyAdapter:
         if any(not isinstance(s, str) or not s.isupper()
                for s in approved_symbols):
             raise PaperAdapterStop("Invalid approved PAPER ETF.")
+        if not approved_symbols.issubset(FROZEN_V5_ETFS):
+            raise PaperAdapterStop("Unapproved non-V5 PAPER ETF symbol.")
         self.approved_symbols = frozenset(approved_symbols)
 
     def require_paper_only_arm(self):
