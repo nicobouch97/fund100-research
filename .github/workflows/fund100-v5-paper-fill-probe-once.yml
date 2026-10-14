@@ -1,10 +1,10 @@
 name: Fund-100 V5 ETF PAPER Fill Probe — One-Time
 
 on:
-  # One date only: Wednesday 2026-10-14 at 15:17 UTC
-  # (11:17 New York EDT). The runner script rejects any other date.
+  # One date only: Wednesday 2026-10-14 at 13:35 UTC
+  # (09:35 New York EDT / 14:35 London BST). Reject any other date.
   schedule:
-    - cron: "17 15 14 10 *"
+    - cron: "35 13 14 10 *"
   workflow_dispatch:
 
 permissions:
