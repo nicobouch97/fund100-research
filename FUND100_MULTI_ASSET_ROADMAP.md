@@ -166,3 +166,19 @@ An asset class may remain paper-only indefinitely if no durable edge appears.
   event** can enter the PAPER broker execution bridge and reconcile
   under the HIGH profile. The BUY/SELL fill probe verifies broker
   mechanics, **not** a full strategy-driven PAPER rebalance.
+
+- On **14 October 2026**, implemented a scheduled, **GET-only**
+  V5 PAPER account-and-signal readiness watcher:
+  `fund100_v5_paper_readiness_v1_0.py` and
+  `.github/workflows/fund100-v5-paper-readiness.yml`.
+  The workflow validates the current shadow pending-signal state
+  separately from broker account micro-pilot compatibility and cannot
+  submit any order. Real Alpaca PAPER check **38576238357** passed:
+  four existing approved ETF holdings, zero open PAPER orders,
+  HIGH risk exposure and recent account history within current gates,
+  overall PAPER account preflight compatible. The latest saved
+  shadow state has NO pending genuine rebalance. Full safety audit
+  **38576238362**: 596 tests passed and static audit PASS.
+  Sanitized evidence:
+  `live_activation_outputs/v5_002/paper_readiness_evidence_v1_0.json`.
+  This is a readiness assessment, NOT evidence of a strategy-driven fill.
