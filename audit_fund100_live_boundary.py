@@ -213,11 +213,22 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
     (
         ".github/workflows/fund100-v5-live-production.yml",
         "fund100_live_production_controller_v1_0.py",
-    ): "16c2854e8342747e9043db6e71c0b97f4e43afba",
+    ): "7ab1906b8baac1620f199f6bc200a6d9c42b6d3e",
+    (
+        ".github/workflows/fund100-live-emergency-stop.yml",
+        "fund100_live_operator_control_v1_0.py",
+    ): "953c015d2c38c84212f31c290f325504754ad425",
+    (
+        ".github/workflows/fund100-live-emergency-stop.yml",
+        "fund100_live_emergency_stop_v1_0.py",
+    ): "5ef6fb7c8e01a8f002b6167aca28c89590931767",
 }
 
 PINNED_PRODUCTION_RISK_MODULE = (
     "80773e042f4c14a270d9ce0dae330716a415badc"
+)
+PINNED_PRODUCTION_OPERATOR_MODULE = (
+    "953c015d2c38c84212f31c290f325504754ad425"
 )
 
 
@@ -239,7 +250,13 @@ def approved_scoped_live_script(
     # Credentials must come only from the isolated main-only environment.
     if "environment: fund100-live-broker" not in source:
         return False
-    if (
+    if workflow == ".github/workflows/fund100-live-emergency-stop.yml":
+        # STOP must work regardless of the broker kill-switch value.
+        if "workflow_dispatch:" not in source or "schedule:" in source:
+            return False
+        if "GITHUB_REPOSITORY: ${{ github.repository }}" not in source:
+            return False
+    elif (
         "FUND100_BROKER_KILL_SWITCH: "
         + "${{ vars.FUND100_BROKER_KILL_SWITCH }}"
     ) not in source:
@@ -260,6 +277,14 @@ def approved_scoped_live_script(
             not risk_path.is_file()
             or git_blob_digest(risk_path) != PINNED_PRODUCTION_RISK_MODULE
         ):
+            return False
+        operator_path = ROOT / "fund100_live_operator_control_v1_0.py"
+        if (
+            not operator_path.is_file()
+            or git_blob_digest(operator_path) != PINNED_PRODUCTION_OPERATOR_MODULE
+        ):
+            return False
+        if "GITHUB_REPOSITORY: ${{ github.repository }}" not in source:
             return False
 
     return True
