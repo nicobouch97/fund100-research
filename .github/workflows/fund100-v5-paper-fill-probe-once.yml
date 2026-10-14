@@ -1,0 +1,106 @@
+name: Fund-100 V5 ETF PAPER Fill Probe — One-Time
+
+on:
+  # One date only: Wednesday 2026-10-14 at 15:17 UTC
+  # (11:17 New York EDT). The runner script rejects any other date.
+  schedule:
+    - cron: "17 15 14 10 *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v5-etf-paper-fill-probe
+  cancel-in-progress: false
+
+jobs:
+  fill-and-reconcile:
+    name: Market-hours $2 Alpaca PAPER-only ETF buy and flatten
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_PAPER_FILL_ARM: PAPER_ONLY_2USD
+      FUND100_PAPER_FILL_TEST_DATE: "2026-10-14"
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GITHUB_RUN_ID: ${{ github.run_id }}
+      GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+
+    steps:
+      - name: Skip after one-time test date
+        id: date
+        run: |
+          if [ "$(date -u +%F)" = "2026-10-14" ]; then
+            echo "eligible=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            echo "PAPER run date expired; no broker activity."
+          fi
+
+      - name: Checkout reviewed repository
+        if: steps.date.outputs.eligible == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: steps.date.outputs.eligible == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run offline safety acceptance before any PAPER order
+        if: steps.date.outputs.eligible == 'true'
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m pytest -q \
+            test_fund100_v5_connected_paper_fill_probe_v1_0.py \
+            test_fund100_etf_paper_rehearsal_v1_0.py
+
+      - name: Verify paper-only endpoint and broker credentials
+        if: steps.date.outputs.eligible == 'true'
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import fund100_alpaca_paper_orchestrator_connected_v1_0 as p
+          assert p.PAPER_BASE_URL == "https://paper-api.alpaca.markets"
+          assert os.getenv("FUND100_BROKER_KILL_SWITCH") == "ENGAGED"
+          assert os.getenv("FUND100_RISK_LEVEL") == "HIGH"
+          assert os.getenv("ALPACA_PAPER_KEY")
+          assert os.getenv("ALPACA_PAPER_SECRET")
+          assert not os.getenv("ALPACA_LIVE_KEY")
+          assert not os.getenv("ALPACA_LIVE_SECRET")
+          print("Paper endpoint only; LIVE disabled.")
+          PY
+
+      - name: Execute tiny V5 ETF buy and return to flat PAPER position
+        if: steps.date.outputs.eligible == 'true'
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_v5_connected_paper_fill_probe_v1_0.py \
+            > /tmp/fund100-v5-paper-fill-proof.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(
+              Path("/tmp/fund100-v5-paper-fill-proof.json").read_text()
+          )
+          assert result["status"] == "PASS"
+          assert result["mode"] == "REAL_ALPACA_PAPER_ONLY"
+          assert result["source"] == "FROZEN_V5_BOOTSTRAP_TARGETS_NOT_GENUINE_EVENT"
+          assert result["buy_order_filled"] is True
+          assert result["sell_order_filled"] is True
+          assert result["position_flat_after_exit"] is True
+          assert result["live_orders_submitted"] == 0
+          print("PAPER filled BUY / SELL / position flat: PASS")
+          print("LIVE orders: ZERO")
+          PY
