@@ -147,3 +147,22 @@ An asset class may remain paper-only indefinitely if no durable edge appears.
   real strategy-driven multi-order PAPER fill during market hours, and
   verify its reconciliation before considering LIVE activation. The
   independent $2 micro-fill check remains separately scheduled.
+
+- On **14 October 2026 at 13:44 UTC**, confirmed **actual Alpaca
+  PAPER filled BUY and SELL** via GitHub Actions **38574171335**.
+  The entry used **USD 2 imaginary PAPER notional**, selecting an
+  approved ETF. A first attempt (**38573526176**) safely stopped
+  without any order because all four frozen V5 ETFs were already
+  present in the PAPER account. The corrected probe snapshots
+  existing shares, buys USD 2 PAPER, sells only newly acquired
+  shares, and verifies the ORIGINAL share quantity is restored.
+  Workflow logs confirm 16 offline acceptance tests passed, both
+  PAPER legs filled, and no LIVE orders. Full static audit
+  **38574171329**: 586 suite tests and audit PASS.
+  Sanitized release evidence is in
+  `live_activation_outputs/v5_002/paper_etf_fill_evidence_v1_0.json`.
+  The automatic test trigger was retired after success.
+- Remaining: prove a **naturally occurring fresh scheduled V5-002
+  event** can enter the PAPER broker execution bridge and reconcile
+  under the HIGH profile. The BUY/SELL fill probe verifies broker
+  mechanics, **not** a full strategy-driven PAPER rebalance.
