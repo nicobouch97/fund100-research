@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_DOWN
+from math import sqrt
+from statistics import stdev
 
 from fund100_live_portfolio_risk_v1_0 import (
     PortfolioRiskStop,
@@ -17,6 +19,7 @@ from fund100_live_portfolio_risk_v1_0 import (
     check_projected_allocation,
     finite_decimal,
     get_profile,
+    validated_equity_history,
 )
 
 # Tentative sizing objectives, strictly BELOW the hard rejection ceilings.
@@ -35,6 +38,31 @@ class SizingPlan:
     uninvested_weight: Decimal
     scale_factor: Decimal
     volatility_target: Decimal
+
+
+
+def estimate_observed_volatility(*, history: object, equity: object) -> Decimal:
+    """Measure equity-return volatility from validated recent broker data.
+
+    Missing/stale history, potential deposits or unbounded daily returns
+    DENY sizing rather than silently select maximum leverage.
+    """
+    values = validated_equity_history(history)
+    current = finite_decimal(equity, "current equity")
+    if current <= 0:
+        raise PortfolioRiskStop("Invalid current equity.")
+    if abs(values[-1] / current - Decimal("1")) > Decimal("0.25"):
+        raise PortfolioRiskStop("Equity and portfolio history diverge.")
+
+    samples = values + [current]
+    returns = []
+    for previous, latest in zip(samples, samples[1:]):
+        change = latest / previous - Decimal("1")
+        if abs(change) > Decimal("0.25"):
+            raise PortfolioRiskStop("Ambiguous portfolio cashflow in volatility.")
+        returns.append(float(change))
+
+    return Decimal(str(stdev(returns) * sqrt(252)))
 
 
 def size_strategy_targets(
