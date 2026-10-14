@@ -23,6 +23,7 @@ jobs:
   scheduled-compiler:
     name: Compile Position-Aware Scheduled Intents
 
+    environment: fund100-live-broker
     runs-on: ubuntu-latest
 
     timeout-minutes: 20
