@@ -14,6 +14,7 @@ jobs:
   live-preflight:
     name: Validate LIVE Environment Read Only
 
+    environment: fund100-live-broker
     runs-on: ubuntu-latest
 
     timeout-minutes: 15
