@@ -213,3 +213,22 @@ An asset class may remain paper-only indefinitely if no durable edge appears.
   This is operational forward PAPER automation, but NOT evidence that
   a genuine scheduled multi-order event has filled at Alpaca yet.
   The separate USD 2 PAPER buy/sell probe did fill earlier today.
+
+- **14 October 2026:** Hardened genuine V5 PAPER event replay control.
+  Before loading market data or recomputing any pending signal,
+  the runner now GETs Alpaca PAPER's accepted/closed/open order history
+  from the signal date, using `status=all`, `after` and a maximum
+  500-entry response. It refuses further submissions if any
+  `f100paper-` strategy order exists (even canceled or filled),
+  or history is invalid/truncated. This prevents a failed SELL/BUY
+  run from rebuilding new client IDs from changed market prices and
+  unknowingly repeating an event. It deliberately requires human
+  review before resuming an interrupted PAPER event, rather than
+  liquidating any positions automatically. Standalone $2 PAPER
+  fill-probe IDs use a different namespace.
+  Offline [GitHub Actions 38601914449]: 47 targeted tests passed.
+  [Full static boundary 38601914406]: 628 tests passed, audit PASS.
+  Broker API query constraints checked against Alpaca's Get All Orders
+  reference (maximum 500, status `all`, supported `after` filter).
+  First genuine strategy-driven PAPER fill remains pending a natural
+  scheduled model signal; no LIVE trading was enabled.
