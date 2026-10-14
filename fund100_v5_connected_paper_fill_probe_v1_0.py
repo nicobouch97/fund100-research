@@ -305,12 +305,13 @@ def run_probe() -> dict:
                         paper.cancel_order(owned_id)
             except Exception:
                 print("WARNING: PAPER owned-order cancellation unconfirmed.")
-        if buy_id:
-            try:
-                if owned_position_qty(symbol) > 0:
-                    print("WARNING: PAPER position remains. Cleanup required.")
-            except Exception:
-                print("WARNING: PAPER position reconciliation unavailable.")
+        # Even if Alpaca accepted BUY but lost the HTTP response, the
+        # symbol was independently verified to be FLAT before entry.
+        try:
+            if owned_position_qty(symbol) > 0:
+                print("WARNING: PAPER position remains. Cleanup required.")
+        except Exception:
+            print("WARNING: PAPER position reconciliation unavailable.")
 
 
 if __name__ == "__main__":
