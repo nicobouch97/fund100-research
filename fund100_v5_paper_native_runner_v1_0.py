@@ -165,6 +165,13 @@ def run_once(*, state: dict, policy: dict, risk_level: str,
     )
     if result.get("live_post_count") != 0:
         raise PaperRunnerStop("Unexpected LIVE execution outcome.")
+    # A future evidence artifact must bind to the EXACT same-run attestation
+    # that the PAPER bridge used. No broker identifiers or balances are logged.
+    if result.get("status") == "PAPER_EVENT_FILLED_AND_RECONCILED" and (
+        result.get("attested_event_sha256") != proof["event_sha256"]
+        or result.get("reconciled") is not True
+    ):
+        raise PaperRunnerStop("PAPER result does not match genuine event proof.")
     # Only sanitized information leaves the broker runner.
     return {
         "status": result["status"],
@@ -173,6 +180,8 @@ def run_once(*, state: dict, policy: dict, risk_level: str,
         "paper_execution_attempted": True,
         "risk_level": risk_level,
         "reconciled": result.get("reconciled", False),
+        "attested_compiler_sha256": proof["compiler_sha256"],
+        "attested_event_sha256": proof["event_sha256"],
     }
 
 
