@@ -154,3 +154,61 @@ def test_synthetic_compiler_mode_is_not_genuine_event():
         production.extract_compiler_view(
             body, compiler_sha256=production.canonical_sha256(body)
         )
+
+
+def test_real_compiler_generates_directional_paper_intents():
+    """End-to-end adapter from the ACTUAL v1.1 position-aware compiler."""
+    import pandas as pd
+    import fund100_alpaca_live_scheduled_compiler_v1_1 as compiler
+    import fund100_alpaca_live_scheduled_compiler as v10
+    import v4_dispersion_overlay as base
+
+    current = {
+        "ACWI": 0.75,
+        "EEM": 0.15,
+        "XLE": 0.10,
+    }
+    rows = [
+        {"symbol": symbol, "current_weight": weight}
+        for symbol, weight in current.items()
+    ]
+    satellites = pd.Series(
+        {
+            symbol: (
+                0.10 if symbol in ("EEM", "XLE")
+                else 0.05 if symbol == "XLV"
+                else 0.0
+            )
+            for symbol in base.EQUITY_UNIVERSE
+        }
+    )
+    seed = "a" * 64
+    true_compiler_candidates = compiler.compile_position_aware_intents(
+        reconciliation_body={"reconciliation_rows": rows},
+        executed_satellites=satellites,
+        seed=seed,
+    )
+    assert {
+        (entry["symbol"], entry["side"])
+        for entry in true_compiler_candidates
+    } == {("EEM", "sell"), ("XLV", "buy")}
+    assert all(entry["executable"] is False for entry in true_compiler_candidates)
+
+    body = compiler_output()
+    body["candidate_intents"] = true_compiler_candidates
+    body["executed_satellite_weights"] = {
+        symbol: float(satellites[symbol])
+        for symbol in base.EQUITY_UNIVERSE
+    }
+    view = production.extract_compiler_view(
+        body, compiler_sha256=production.canonical_sha256(body)
+    )
+    weights = production.extract_target_weights(body)
+    assert view["genuine"] is True
+    assert weights["ACWI"] == Decimal("0.75")
+    assert view["candidates"]["EEM"]["client_order_id"] == (
+        v10.build_client_id(seed=seed, side="sell", symbol="EEM")
+    )
+    assert view["candidates"]["XLV"]["client_order_id"] == (
+        v10.build_client_id(seed=seed, side="buy", symbol="XLV")
+    )
