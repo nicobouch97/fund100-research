@@ -213,7 +213,7 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
     (
         ".github/workflows/fund100-v5-live-production.yml",
         "fund100_live_production_controller_v1_0.py",
-    ): "c6710652ef68225c7d5bf21b468052da8462299b",
+    ): "46045ea1ef8f5f472df52150d659ad798ad3c2e9",
     (
         ".github/workflows/fund100-live-emergency-stop.yml",
         "fund100_live_operator_control_v1_0.py",
@@ -222,6 +222,10 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-live-emergency-stop.yml",
         "fund100_live_emergency_stop_v1_0.py",
     ): "5ef6fb7c8e01a8f002b6167aca28c89590931767",
+    (
+        ".github/workflows/fund100-live-risk-watch.yml",
+        "fund100_live_risk_monitor_v1_0.py",
+    ): "f57daa1419186d55372444c6dc0bf2893a52dd31",
 }
 
 PINNED_PRODUCTION_RISK_MODULE = (
@@ -232,6 +236,9 @@ PINNED_PRODUCTION_OPERATOR_MODULE = (
 )
 PINNED_PRODUCTION_PORTFOLIO_MODULE = (
     "314ef3332d16867815e94264db09eb48d96937a0"
+)
+PINNED_PRODUCTION_SIZING_MODULE = (
+    "cf30d38ad36e048ee74eb597fc2445b9317ab500"
 )
 
 
@@ -258,6 +265,13 @@ def approved_scoped_live_script(
         if "workflow_dispatch:" not in source or "schedule:" in source:
             return False
         if "GITHUB_REPOSITORY: ${{ github.repository }}" not in source:
+            return False
+    elif workflow == ".github/workflows/fund100-live-risk-watch.yml":
+        if "schedule:" not in source or "workflow_dispatch:" not in source:
+            return False
+        if "GITHUB_REPOSITORY: ${{ github.repository }}" not in source:
+            return False
+        if "FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}" not in source:
             return False
     elif (
         "FUND100_BROKER_KILL_SWITCH: "
@@ -288,6 +302,12 @@ def approved_scoped_live_script(
         ):
             return False
         if "GITHUB_REPOSITORY: ${{ github.repository }}" not in source:
+            return False
+        sizing_path = ROOT / "fund100_live_risk_sizing_v1_0.py"
+        if (
+            not sizing_path.is_file()
+            or git_blob_digest(sizing_path) != PINNED_PRODUCTION_SIZING_MODULE
+        ):
             return False
         portfolio_path = ROOT / "fund100_live_portfolio_risk_v1_0.py"
         if (
