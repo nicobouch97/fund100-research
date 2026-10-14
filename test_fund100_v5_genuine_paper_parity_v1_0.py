@@ -187,3 +187,42 @@ def test_compiler_original_order_ids_cannot_be_replayed_to_paper():
     plan_report = plan(compiler_body=original)
     paper_ids = {o["client_order_id"] for o in plan_report["paper_orders"]}
     assert not paper_ids.intersection(original_ids)
+
+
+def test_attested_genuine_event_yields_verified_read_only_paper_plan():
+    from test_fund100_v5_compiler_attestation_v1_0 import scenario
+    package, manifest, state, now = scenario()
+    with patch.object(
+        parity.production.live, "live_request",
+        side_effect=AssertionError("An authenticated compiler plan must be offline"),
+    ):
+        result = parity.plan_attested_paper_event(
+            compiler_package=package, manifest_package=manifest,
+            shadow_state=state, compiler_written_ns=now,
+            now_ns=now, paper_snapshot=paper_snapshot(),
+            paper_history=paper_history(), execution_universe=UNIVERSE,
+            capital_ceiling="130.30", risk_level="HIGH",
+        )
+    assert result["status"] == "GENUINE_EVENT_PREFLIGHT_ONLY"
+    assert result["executable"] is False
+    assert result["paper_order_count"] == 3
+    assert result["attested_compiler_sha256"] == package["compiler_sha256"]
+
+
+def test_attested_planner_denies_stale_or_tampered_signal():
+    from test_fund100_v5_compiler_attestation_v1_0 import scenario
+    package, manifest, state, now = scenario()
+    kwargs = {
+        "compiler_package": package, "manifest_package": manifest,
+        "shadow_state": state, "compiler_written_ns": now,
+        "now_ns": now, "paper_snapshot": paper_snapshot(),
+        "paper_history": paper_history(), "execution_universe": UNIVERSE,
+        "capital_ceiling": "130.30", "risk_level": "HIGH",
+    }
+    with pytest.raises(parity.PaperParityStop, match="attestation"):
+        parity.plan_attested_paper_event(
+            **{**kwargs, "compiler_written_ns": now - 1000 * 10**9}
+        )
+    package["compiler"]["minutes_to_close"] = 60
+    with pytest.raises(parity.PaperParityStop, match="attestation"):
+        parity.plan_attested_paper_event(**kwargs)
