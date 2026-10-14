@@ -7,6 +7,10 @@ on:
       - "fund100_live_risk_controls_v1_0.py"
       - "test_fund100_live_risk_controls_v1_0.py"
       - "fund100_live_production_controller_v1_0.py"
+      - "fund100_live_operator_control_v1_0.py"
+      - "fund100_live_operator_control.json"
+      - "fund100_live_emergency_stop_v1_0.py"
+      - "test_fund100_live_emergency_stop_v1_0.py"
       - "test_fund100_live_production_controller_v1_0.py"
       - ".github/workflows/fund100-live-risk-regression.yml"
   workflow_dispatch:
@@ -44,7 +48,10 @@ jobs:
             fund100_live_risk_controls_v1_0.py \
             test_fund100_live_risk_controls_v1_0.py \
             fund100_live_production_controller_v1_0.py \
-            test_fund100_live_production_controller_v1_0.py
+            test_fund100_live_production_controller_v1_0.py \
+            fund100_live_operator_control_v1_0.py \
+            fund100_live_emergency_stop_v1_0.py \
+            test_fund100_live_emergency_stop_v1_0.py
 
       - name: Run isolated offline regression
         env:
@@ -53,4 +60,5 @@ jobs:
         run: |
           python -m pytest -q \
             test_fund100_live_risk_controls_v1_0.py \
-            test_fund100_live_production_controller_v1_0.py
+            test_fund100_live_production_controller_v1_0.py \
+            test_fund100_live_emergency_stop_v1_0.py
