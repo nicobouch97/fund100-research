@@ -1,6 +1,9 @@
 """Pure offline risk-profile tests; no broker or GitHub credentials."""
 
 from decimal import Decimal
+from time import time
+
+import fund100_live_production_controller_v1_0 as production
 
 import pytest
 
@@ -12,7 +15,7 @@ def history(values=None):
         values = [100, 101, 100.5, 101.5, 102, 101.5, 102]
     return {
         "timeframe": "1D",
-        "timestamp": [1700000000 + 86400 * i for i in range(len(values))],
+        "timestamp": [int(time()) - 86400 * (len(values) - i) for i in range(len(values))],
         "equity": values,
     }
 
@@ -143,3 +146,43 @@ def test_broker_history_shape_and_order_checked():
 def test_no_persisted_account_values_in_portfolio_risk_contract():
     assert r.get_profile("HIGH").max_rolling_drawdown == Decimal(".200")
     assert r.get_profile("HIGH").max_realized_volatility == Decimal(".35")
+
+
+def test_stale_broker_history_denied():
+    old = history()
+    old["timestamp"] = [1600000000 + 86400 * i for i in range(7)]
+    with pytest.raises(r.PortfolioRiskStop, match="stale"):
+        r.validated_equity_history(old)
+
+
+def test_production_guard_uses_live_get_only(monkeypatch):
+    monkeypatch.setenv("FUND100_RISK_LEVEL", "HIGH")
+    seen = []
+
+    def history_get(*, method, path):
+        seen.append((method, path))
+        return history()
+
+    monkeypatch.setattr(production.live, "live_request", history_get)
+    production.verify_live_portfolio_risk(
+        snapshot=sample_snapshot(),
+        target_weights=sample_targets(),
+        policy_context={"capital_ceiling": Decimal("130.30")},
+    )
+    assert seen == [(
+        "GET", "/v2/account/portfolio/history?period=1M&timeframe=1D"
+    )]
+
+
+def test_production_guard_fails_closed_on_history_outage(monkeypatch):
+    monkeypatch.setenv("FUND100_RISK_LEVEL", "HIGH")
+    monkeypatch.setattr(
+        production.live, "live_request",
+        lambda **kwargs: {},
+    )
+    with pytest.raises(production.ProductionStop):
+        production.verify_live_portfolio_risk(
+            snapshot=sample_snapshot(),
+            target_weights=sample_targets(),
+            policy_context={"capital_ceiling": Decimal("130.30")},
+        )
