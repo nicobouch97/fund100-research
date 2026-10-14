@@ -15,6 +15,7 @@ from pathlib import Path
 import fund100_alpaca_live_execution_orchestrator_v1_0 as orchestrator
 import fund100_live_bootstrap_v1_0 as live
 import fund100_live_risk_controls_v1_0 as risk_controls
+import fund100_live_operator_control_v1_0 as operator_control
 
 
 # ============================================================
@@ -2263,6 +2264,10 @@ def submit_order_batch(
                 cid,
         }
 
+        # A fresh GitHub MAIN lookup is mandatory immediately before
+        # EVERY POST (not the checkout copy or the runner's old env).
+        operator_control.require_operator_running()
+
         created = (
             live.live_request(
                 method="POST",
@@ -2893,6 +2898,20 @@ def main():
     policy_context = (
         load_production_policy()
     )
+
+    # Read the CURRENT main-branch operator switch on EVERY run.
+    # STOP takes precedence over all signals, even if a run started
+    # before the operator pressed the emergency-stop button.
+    try:
+        operator_control.require_operator_running()
+    except operator_control.OperatorControlStop:
+        write_status(
+            status="TRADING_STOPPED_BY_OPERATOR",
+            genuine_event=False,
+            orders_submitted=0,
+        )
+        print("Operator STOP is active/unavailable: no LIVE orders.")
+        return
 
     print(
         "Successful LIVE bootstrap: VERIFIED"
