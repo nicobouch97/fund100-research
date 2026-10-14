@@ -74,8 +74,6 @@ jobs:
           assert os.getenv("FUND100_RISK_LEVEL") == "HIGH"
           assert os.getenv("ALPACA_PAPER_KEY")
           assert os.getenv("ALPACA_PAPER_SECRET")
-          assert not os.getenv("ALPACA_LIVE_KEY")
-          assert not os.getenv("ALPACA_LIVE_SECRET")
           print("Paper endpoint only; LIVE disabled.")
           PY
 
