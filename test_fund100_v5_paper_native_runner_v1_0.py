@@ -180,3 +180,25 @@ def test_attested_genuine_event_with_zero_broker_delta_is_safe_noop(monkeypatch)
     assert report["paper_execution_attempted"] is False
     assert report["paper_post_count"] == 0
     assert used_broker.posts == []
+
+
+def test_replay_after_real_paper_sell_buy_is_blocked_before_recompilation(monkeypatch):
+    report, broker = paper_run(monkeypatch)
+    assert report["paper_post_count"] > 0
+    original_posts = len(broker.posts)
+    with pytest.raises(runner.bridge.PaperBridgeStop, match="Prior strategy"):
+        paper_run(monkeypatch, paper=broker)
+    assert len(broker.posts) == original_posts
+
+
+def test_partial_paper_sell_interrupt_cannot_create_new_client_ids(monkeypatch):
+    broker = FakePaper()
+    # The first partial phase may have completed on a previous runner.
+    broker.orders["f100paper-old-s-eem"] = {
+        "client_order_id": "f100paper-old-s-eem",
+        "status": "filled", "notional": "3.00",
+        "symbol": "EEM", "side": "sell",
+    }
+    with pytest.raises(runner.bridge.PaperBridgeStop, match="Prior strategy"):
+        paper_run(monkeypatch, paper=broker)
+    assert broker.posts == []
