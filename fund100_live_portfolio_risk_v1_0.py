@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from math import sqrt
 from statistics import stdev
+from time import time
 
 
 class PortfolioRiskStop(RuntimeError):
@@ -165,6 +166,12 @@ def validated_equity_history(response: object) -> list[Decimal]:
 
     if len(funded) < MIN_OBSERVATIONS:
         raise PortfolioRiskStop("Insufficient funded daily portfolio history.")
+    # Don't accept a disconnected/stale broker history as live risk evidence.
+    current_timestamp = int(time())
+    if last_timestamp is None or not (
+        current_timestamp - 10 * 86400 <= last_timestamp <= current_timestamp + 3600
+    ):
+        raise PortfolioRiskStop("Portfolio history is stale or future-dated.")
     return funded
 
 
