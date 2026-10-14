@@ -6,6 +6,13 @@ on:
     paths:
       - ".github/workflows/fund100-v5-paper-readiness.yml"
   workflow_dispatch:
+  # Refresh read-only broker readiness as soon as the real shadow
+  # strategy job finishes, instead of waiting for a delayed cron.
+  workflow_run:
+    workflows:
+      - "Fund-100 V5-002 Shadow Forward"
+    types:
+      - completed
   # Read-only diagnostics around US close (DST and winter).
   schedule:
     - cron: "15 19,20 * * 1-5"
@@ -20,6 +27,8 @@ concurrency:
 jobs:
   signal-and-account:
     name: Read-only PAPER account and genuine V5 signal assessment
+    # Do not inspect/suggest execution from a failed shadow refresh.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
