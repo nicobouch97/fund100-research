@@ -1,0 +1,17 @@
+# Phase 2 — Bond ETF research (v1; no broker connectivity)
+
+**Universe:** TLT (long Treasury), IEF (intermediate Treasury), SHY (short Treasury control), TIP (inflation-linked Treasury), LQD (investment-grade corporate credit).
+
+**Hypothesis (price-only first experiment):** Intermediate/long duration, inflation-linked bonds and investment-grade credit occasionally show positive momentum relative to short-term Treasuries. A defensive strategy can conditionally allocate to at most two of those sleeves, with a smaller cap on long-duration TLT; otherwise it stays in SHY. This tests a *risk-managed relative-price trend*, **not** a full curve, inflation-surprise or credit-spread valuation strategy.
+
+**Execution assumptions:** End-of-day adjusted-close total-return proxies from a public vendor, lagged 63/126-session momentum, first trading session of each calendar month only. Signals use data through **previous** trading session, holdings are changed **after** the current session's return, and take effect on the next session. Buy and sell turnover costs are both charged, using separately reported 5/15/35 bp one-way cases. Historical adjusted data can be retrospectively revised and is not sufficient for live market liquidity, tracking or capacity. SHY is an ETF and is not cash or insured principal.
+
+**Research split:** 70% chronological training, 30% untouched holdout. Train chooses exactly one candidate across lookback {63,126} sessions and each satellite cap {15%,25%}, using training-only SHY-relative net returns at 15 bp per side, with drawdown/turnover as tie breakers. Once selected, evaluate that frozen candidate at all three costs on holdout. Performance metrics are net return, SHY-relative net excess, CAGR, annualized volatility, max drawdown and turnover. A positive holdout alone **never** approves promotion.
+
+**Risk:** Initial research-only max total non-SHY satellites = 50%, at most 2 names, TLT target cap = 15%. These are **not** the user’s aggregate LOW/MEDIUM/HIGH portfolio risk limits. Rebalance-target caps are not guaranteed to hold during market drift. Bond rate, inflation, spread and equity crash correlations require additional point-in-time macro data and prospectively observed prices before any promotion.
+
+**Hard separation:** All Phase 2 code has **no** Alpaca imports, no API keys, no order capabilities, and no LIVE environment. Existing V5 US-equity ETF whitelist (14 symbols), USD 130.30 ceiling, HIGH risk setting and STOP controls remain unchanged. Assets in this study cannot be automatically allowlisted or allocated capital.
+
+**To run:** In GitHub Actions, run `Fund-100 Phase 2 BOND ETF Research (offline or public data)` with `fetch_and_analyze`. The job will download public, retrospectively adjusted daily close history, run train/holdout analysis, and retain a temporary CSV/report artifact with its SHA256. It does not commit data to `main`. Public price retrieval can fail or have vendor revisions; run failures are not evidence that a strategy is good or bad. Default workflow mode is synthetic test validation without external data.
+
+**Future gate:** Extend the model with separately timestamped Treasury yields/curve levels, TIPS break-even inflation and corporate spreads (not guessed from ETF prices alone); verify no data leakage, benchmark to SHY and sensible Treasury mixes, track market costs and out-of-sample regimes; then begin prospectively logged BOND PAPER research with a separate approval before any broker execution. Historical selection is not predictive proof.
