@@ -3,6 +3,13 @@ name: Fund-100 V5-002 Shadow Forward
 on:
   workflow_dispatch:
 
+  # Allow an explicitly reviewed workflow edit to request one
+  # immediate data-only shadow refresh without dispatch tooling.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v5-shadow.yml"
+
   schedule:
     - cron: "7 11 * * 2-6"
     - cron: "7 14 * * 2-6"
