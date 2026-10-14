@@ -36,18 +36,25 @@ def test_only_regular_us_mid_session_window_eligible():
 
 
 def test_asset_selection_never_interferes_with_existing_positions_orders():
-    assert probe.select_empty_approved_asset(
+    assert probe.select_approved_test_asset(
         owned_positions=[{"symbol": "ACWI", "qty": "1"}],
         open_orders=[], approved_symbols=["ACWI", "EEM"],
-    ) == "EEM"
+    )== ("EEM", Decimal("0"))
     with pytest.raises(probe.PaperFillStop, match="open orders"):
-        probe.select_empty_approved_asset(
+        probe.select_approved_test_asset(
             owned_positions=[], open_orders=[{"id": "unrelated"}],
             approved_symbols=["ACWI", "EEM"],
         )
-    with pytest.raises(probe.PaperFillStop, match="already have"):
-        probe.select_empty_approved_asset(
-            owned_positions=[{"symbol": "ACWI"}, {"symbol": "EEM"}],
+    assert probe.select_approved_test_asset(
+        owned_positions=[
+            {"symbol": "ACWI", "qty": "2.125"},
+            {"symbol": "EEM", "qty": "0.5"},
+        ],
+        open_orders=[], approved_symbols=["ACWI", "EEM"],
+    ) == ("ACWI", Decimal("2.125"))
+    with pytest.raises(probe.PaperFillStop, match="Unmanaged"):
+        probe.select_approved_test_asset(
+            owned_positions=[{"symbol": "BTCUSD", "qty": "1"}],
             open_orders=[], approved_symbols=["ACWI", "EEM"],
         )
 
@@ -128,6 +135,7 @@ def test_filled_paper_buy_and_exact_sell_reconciles(monkeypatch):
     output = probe.run_probe()
     assert output["status"] == "PASS"
     assert output["position_flat_after_exit"] is True
+    assert output["original_position_restored"] is True
     assert output["live_orders_submitted"] == 0
     assert len(state["calls"]) == 2
     assert state["position"] == 0
@@ -188,3 +196,72 @@ def test_sell_failure_does_not_claim_paper_flat(monkeypatch):
     with pytest.raises(probe.PaperFillStop, match="sell rejected"):
         probe.run_probe()
     assert state["position"] > 0
+
+
+def test_existing_four_etf_positions_restore_exact_original_shares(monkeypatch):
+    monkeypatch.setattr(probe, "validate_arm", lambda: None)
+    monkeypatch.setattr(probe, "allowed_session", lambda *args: True)
+    monkeypatch.setenv("GITHUB_RUN_ID", "989898")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "1")
+    original = Decimal("2.125000000")
+    state = {
+        "acwi_qty": original,
+        "orders": {},
+        "submitted": [],
+    }
+    monkeypatch.setattr(probe.paper, "get_clock", lambda: {"is_open": True})
+    monkeypatch.setattr(probe.paper, "get_account", lambda: {
+        "status": "ACTIVE", "trading_blocked": False, "cash": "1000"
+    })
+    monkeypatch.setattr(probe.paper, "get_asset", lambda _: {
+        "tradable": True, "fractionable": True
+    })
+    monkeypatch.setattr(probe.paper, "get_open_orders", lambda: [])
+
+    def positions():
+        return [
+            {"symbol": "ACWI", "qty": str(state["acwi_qty"])},
+            {"symbol": "EEM", "qty": "1"},
+            {"symbol": "XLE", "qty": "1"},
+            {"symbol": "XLV", "qty": "1"},
+        ]
+    monkeypatch.setattr(probe.paper, "get_positions", positions)
+    monkeypatch.setattr(
+        probe.paper, "get_order_by_client_id",
+        lambda cid: next(
+            (o for o in state["orders"].values()
+             if o["client_order_id"] == cid), None
+        ),
+    )
+    monkeypatch.setattr(
+        probe.paper, "get_order_by_id",
+        lambda order_id: state["orders"][order_id],
+    )
+
+    def post(*, method, path, body):
+        assert method == "POST" and path == "/v2/orders"
+        assert body["symbol"] == "ACWI"
+        size = Decimal("0.012345678")
+        if body["side"] == "buy":
+            state["acwi_qty"] += size
+            assert body["notional"] == "2.00"
+        else:
+            assert Decimal(body["qty"]) == size
+            assert state["acwi_qty"] == original + size
+            state["acwi_qty"] -= size
+        oid = "order-" + body["side"]
+        result = {
+            "id": oid, "client_order_id": body["client_order_id"],
+            "status": "filled", "filled_qty": str(size),
+        }
+        state["orders"][oid] = result
+        state["submitted"].append(dict(body))
+        return result
+
+    monkeypatch.setattr(probe.paper, "paper_request", post)
+    result = probe.run_probe()
+    assert result["status"] == "PASS"
+    assert result["original_position_restored"] is True
+    assert result["position_flat_after_exit"] is False
+    assert state["acwi_qty"] == original
+    assert len(state["submitted"]) == 2
