@@ -3455,10 +3455,28 @@ def main():
         )
     )
 
+    # Preflight ONLY: SELL proceeds may fund the subsequent BUY phase.
+    # The real BUY phase still reconstructs confirmed broker cash after
+    # the SELL fills; speculative proceeds never reach the actual writer.
+    preview_sell_proceeds = sum(
+        (
+            decimal_value(
+                order["notional_usd"],
+                field_name="preflight SELL proceeds",
+            )
+            for order in initial_sell_orders
+        ),
+        Decimal("0"),
+    )
+    buy_preflight_snapshot = dict(initial_snapshot)
+    buy_preflight_snapshot["cash"] = (
+        initial_snapshot["cash"] + preview_sell_proceeds
+    )
+
     initial_buy_orders = (
         materialize_orders(
             snapshot=(
-                initial_snapshot
+                buy_preflight_snapshot
             ),
 
             target_weights=(
