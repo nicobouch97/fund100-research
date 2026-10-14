@@ -14,7 +14,7 @@ import json
 import os
 import subprocess
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import fund100_alpaca_paper_orchestrator_connected_v1_0 as paper_api
@@ -57,7 +57,8 @@ def validated_configuration(policy: object, *, risk_level: str) -> tuple[set[str
 
 def run_once(*, state: dict, policy: dict, risk_level: str,
              broker=None, paper_api_client=None, data_source=None,
-             written_ns: int | None = None) -> dict:
+             written_ns: int | None = None,
+             clock_reference_utc: datetime | None = None) -> dict:
     """Execute only if native compiler produces a genuine strategy signal.
 
     Optional injected dependencies support tests without any API calls.
@@ -98,6 +99,11 @@ def run_once(*, state: dict, policy: dict, risk_level: str,
     current_time = native.frozen.parse_timestamp(clock.get("timestamp", ""))
     if current_time.tzinfo is None:
         raise PaperRunnerStop("Broker PAPER clock must be timezone aware.")
+    wall_time = clock_reference_utc or datetime.now(timezone.utc)
+    if wall_time.tzinfo is None or abs(
+        (wall_time - current_time).total_seconds()
+    ) > 120:
+        raise PaperRunnerStop("PAPER exchange clock is stale or in the future.")
     day = current_time.date()
     start = date.fromisoformat(state["last_date"])
     calendar = paper_api_client.paper_request(
