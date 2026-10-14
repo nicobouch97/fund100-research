@@ -1,0 +1,108 @@
+name: Fund-100 V5 Genuine Strategy → Alpaca PAPER
+
+on:
+  # One near-close opportunity per US equity trading weekday.
+  # Execution stays NO-OP unless the frozen shadow state carries a
+  # genuine SCHEDULED target from the immediately previous session.
+  schedule:
+    - cron: "22 15 * * 1-5"
+      timezone: "America/New_York"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v5-paper-native-execution.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v5-genuine-paper-execution
+  cancel-in-progress: false
+
+jobs:
+  genuine-strategy-paper:
+    name: V5-002 actual signal, fresh PAPER state, fills and reconciliation
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+
+    env:
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GITHUB_REF: ${{ github.ref }}
+      GITHUB_SHA: ${{ github.sha }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_GENUINE_PAPER_ARM: "YES_ATTESTED_V5_PAPER_ONLY"
+
+    steps:
+      - name: Checkout exactly reviewed main SHA
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install frozen research and test dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Confirm PAPER is the ONLY permitted execution context
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test "${FUND100_BROKER_KILL_SWITCH}" = "ENGAGED"
+          test "${FUND100_RISK_LEVEL}" = "HIGH" -o \
+               "${FUND100_RISK_LEVEL}" = "MEDIUM" -o \
+               "${FUND100_RISK_LEVEL}" = "LOW"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          python - <<'PY'
+          import fund100_alpaca_paper_orchestrator_connected_v1_0 as p
+          assert p.PAPER_BASE_URL == "https://paper-api.alpaca.markets"
+          print("Alpaca PAPER endpoint verified; no LIVE environment or secrets.")
+          PY
+
+      - name: Run entire native signal/broker bridge offline acceptance
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_v5_paper_native_compiler_v1_0.py \
+            test_fund100_v5_paper_native_runner_v1_0.py \
+            test_fund100_v5_paper_execution_bridge_v1_0.py \
+            test_fund100_v5_paper_broker_adapter_v1_0.py
+
+      - name: Execute genuine V5 signal in Alpaca PAPER if due
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_v5_paper_native_runner_v1_0.py \
+            > /tmp/fund100-v5-paper-genuine-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(
+              Path("/tmp/fund100-v5-paper-genuine-report.json").read_text()
+          )
+          assert report.get("live_post_count") == 0
+          if report["status"] == "NO_GENUINE_STRATEGY_EVENT":
+              assert report["paper_post_count"] == 0
+              assert report["paper_execution_attempted"] is False
+              print("V5 signal: NO GENUINE EVENT; zero PAPER orders.")
+          elif report["status"] == "PAPER_EVENT_FILLED_AND_RECONCILED":
+              assert report["paper_post_count"] > 0
+              assert report["reconciled"] is True
+              print("V5 signal: GENUINE; PAPER fills reconciled.")
+              print("PAPER order submissions:", report["paper_post_count"])
+          elif report["status"] in {
+              "NO_COMPILER_INTENTS", "NO_PAPER_REBALANCE_NEEDED",
+          }:
+              assert report["paper_post_count"] == 0
+              print("V5 signal: ", report["status"], "; no orders.")
+          else:
+              raise SystemExit("Unknown genuine-PAPER runner result")
+          print("LIVE orders: ZERO")
+          PY
