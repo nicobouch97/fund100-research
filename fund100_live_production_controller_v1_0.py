@@ -16,6 +16,7 @@ import fund100_alpaca_live_execution_orchestrator_v1_0 as orchestrator
 import fund100_live_bootstrap_v1_0 as live
 import fund100_live_risk_controls_v1_0 as risk_controls
 import fund100_live_operator_control_v1_0 as operator_control
+import fund100_live_portfolio_risk_v1_0 as portfolio_risk
 
 
 # ============================================================
@@ -1688,6 +1689,31 @@ def fresh_snapshot(
 # ============================================================
 
 
+def verify_live_portfolio_risk(
+    *,
+    snapshot: dict,
+    target_weights: dict,
+    policy_context: dict,
+) -> None:
+    """Recheck broker risk in memory; fail closed on missing history."""
+    history = live.live_request(
+        method="GET",
+        path="/v2/account/portfolio/history?period=1M&timeframe=1D",
+    )
+    try:
+        portfolio_risk.check_portfolio_risk(
+            snapshot=snapshot,
+            target_weights=target_weights,
+            capital_ceiling=policy_context["capital_ceiling"],
+            history=history,
+            level=os.environ.get("FUND100_RISK_LEVEL", ""),
+        )
+    except portfolio_risk.PortfolioRiskStop as exc:
+        raise ProductionStop(
+            "LIVE PRODUCTION STOP: portfolio-level risk guard triggered."
+        ) from exc
+
+
 def materialize_orders(
     *,
     snapshot: dict,
@@ -2453,6 +2479,14 @@ def build_dependencies(
         phase,
         **kwargs,
     ):
+
+        # Recheck exposure, daily loss, drawdown and volatility
+        # against a FRESH broker snapshot before EACH execution phase.
+        verify_live_portfolio_risk(
+            snapshot=broker_snapshot,
+            target_weights=target_weights,
+            policy_context=policy_context,
+        )
 
         orders = (
             materialize_orders(
@@ -3342,6 +3376,13 @@ def main():
                 ]
             ),
         )
+    )
+
+    # Whole-event preflight before SELL or BUY can submit a LIVE order.
+    verify_live_portfolio_risk(
+        snapshot=initial_snapshot,
+        target_weights=target_weights,
+        policy_context=policy_context,
     )
 
     initial_sell_orders = (
