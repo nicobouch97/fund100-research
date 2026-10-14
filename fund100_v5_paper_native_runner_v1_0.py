@@ -106,6 +106,10 @@ def run_once(*, state: dict, policy: dict, risk_level: str,
         raise PaperRunnerStop("PAPER exchange clock is stale or in the future.")
     day = current_time.date()
     start = date.fromisoformat(state["last_date"])
+    # A prior accepted strategy order can be incomplete even if the
+    # current open-order index is empty. Freeze the event until reviewed;
+    # never generate fresh IDs and re-trade after a partial run.
+    broker.require_no_prior_strategy_orders(start.isoformat())
     calendar = paper_api_client.paper_request(
         method="GET",
         path=(
