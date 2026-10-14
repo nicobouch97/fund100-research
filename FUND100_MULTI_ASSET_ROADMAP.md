@@ -68,7 +68,7 @@ An asset class may remain paper-only indefinitely if no durable edge appears.
   V5 current risk-sized ETF rehearsal; an actual V5 strategy-driven
   rebalance through Alpaca PAPER remains the next acceptance gate.
 - The **one-time** market-hours PAPER fill probe scheduled for
-  **14 October 2026 at 15:17 UTC** is an additional bridge test.
+  **14 October 2026 at 13:35 UTC (14:35 London BST)** is an additional bridge test.
   `fund100_v5_connected_paper_fill_probe_v1_0.py` selects an eligible
   symbol from the frozen V5 ETF weights, rejects conflicting paper
   holdings/open orders, purchases only **$2 imaginary PAPER notional**,
