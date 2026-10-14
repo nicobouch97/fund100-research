@@ -67,5 +67,17 @@ An asset class may remain paper-only indefinitely if no durable edge appears.
 - This validates connected broker mechanics **separately** from the
   V5 current risk-sized ETF rehearsal; an actual V5 strategy-driven
   rebalance through Alpaca PAPER remains the next acceptance gate.
+- The **one-time** market-hours PAPER fill probe scheduled for
+  **14 October 2026 at 15:17 UTC** is an additional bridge test.
+  `fund100_v5_connected_paper_fill_probe_v1_0.py` selects an eligible
+  symbol from the frozen V5 ETF weights, rejects conflicting paper
+  holdings/open orders, purchases only **$2 imaginary PAPER notional**,
+  then attempts to sell exactly the newly acquired shares and verifies
+  the test position is flat. It requires operator STOPPED, kill switch
+  ENGAGED and risk HIGH, with no LIVE credentials. It is **not** a
+  genuine compiler-triggered V5 event. GitHub workflow:
+  `.github/workflows/fund100-v5-paper-fill-probe-once.yml`.
+- A genuine dynamic V5 event processed end-to-end through Alpaca PAPER
+  during market hours remains the last pre-launch execution-parity test.
 - Until explicit launch authorization, operator control stays STOPPED
   and broker kill switch remains ENGAGED.
