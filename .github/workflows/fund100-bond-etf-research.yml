@@ -1,0 +1,81 @@
+name: Fund-100 Phase 2 BOND ETF Research (offline or public data)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run offline fixture tests, or download public bond histories and analyze"
+        type: choice
+        required: true
+        default: "offline_tests"
+        options:
+          - offline_tests
+          - fetch_and_analyze
+  # One initial real-data research run after merge to main, not a
+  # recurring production price feed or automatic promotion.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-bond-etf-research.yml"
+      - "fund100_bond_*.py"
+      - "test_fund100_bond_*.py"
+  pull_request:
+    paths:
+      - ".github/workflows/fund100-bond-etf-research.yml"
+      - "fund100_bond_*.py"
+      - "test_fund100_bond_*.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-phase2-bond-research
+  cancel-in-progress: false
+
+jobs:
+  bond-research:
+    name: Research-only historical ETF study
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # No LIVE/PAPER environment, API keys, brokers, or repository writes.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install frozen requirements
+        run: python -m pip install -r requirements.txt
+      - name: Test chronological event, cost and signal isolation
+        run: python -m pytest -q test_fund100_bond_etf_research_v1_0.py
+      - name: Fetch public adjusted closes (research only)
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'fetch_and_analyze')
+        run: |
+          set -euo pipefail
+          python fund100_bond_price_source_v1_0.py --output-csv /tmp/fund100-bond-prices.csv
+      - name: Train on past data; assess untouched holdout (research only)
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'fetch_and_analyze')
+        run: |
+          set -euo pipefail
+          python fund100_bond_etf_research_v1_0.py \
+            --prices-csv /tmp/fund100-bond-prices.csv \
+            --output-json /tmp/fund100-bond-research-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("/tmp/fund100-bond-research-report.json").read_text())
+          assert report["phase"] == "PHASE_2_RESEARCH_ONLY"
+          assert report["strategy_promoted_to_live"] is False
+          assert report["strategy_promoted_to_paper"] is False
+          assert report["live_orders_authorized"] is False
+          print("Study evaluated; no trading promotion or broker access.")
+          PY
+      - name: Preserve reproducible research inputs and report as artifacts
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'fetch_and_analyze')
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-bond-etf-phase2-research
+          path: |
+            /tmp/fund100-bond-prices.csv
+            /tmp/fund100-bond-research-report.json
+          if-no-files-found: error
+          retention-days: 90
