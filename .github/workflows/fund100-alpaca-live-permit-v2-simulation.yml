@@ -23,6 +23,7 @@ jobs:
   permit-v2-simulation:
     name: Simulate Future LIVE Permit Contract
 
+    environment: fund100-live-broker
     runs-on: ubuntu-latest
 
     timeout-minutes: 15
