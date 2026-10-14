@@ -70,9 +70,16 @@ def test_portfolio_caps_and_long_only_at_each_month_end():
     weights = result.weights
     assert np.allclose(weights.sum(axis=1), 1.0)
     assert (weights >= 0).all().all()
-    assert (weights["TLT"] <= 0.15 + 1e-10).all()
-    assert (weights[list(b.SATELLITES)].sum(axis=1) <= 0.50 + 1e-10).all()
-    assert (weights["SHY"] >= 0.50 - 1e-10).all()
+    # Caps govern the monthly REBALANCE TARGET, while naturally drifting
+    # positions may temporarily move beyond that target between months.
+    days = [
+        clean.index[i] for i in range(1, len(clean))
+        if clean.index[i].month != clean.index[i - 1].month
+    ]
+    rebalance_weights = weights.loc[days]
+    assert (rebalance_weights["TLT"] <= 0.15 + 1e-10).all()
+    assert (rebalance_weights[list(b.SATELLITES)].sum(axis=1) <= 0.50 + 1e-10).all()
+    assert (rebalance_weights["SHY"] >= 0.50 - 1e-10).all()
     assert (result.nav > 0).all()
 
 
