@@ -46,6 +46,8 @@ def validate_arm() -> None:
         raise PaperFillStop("Broker kill switch must remain ENGAGED.")
     if os.getenv("ALPACA_LIVE_KEY") or os.getenv("ALPACA_LIVE_SECRET"):
         raise PaperFillStop("LIVE credentials are forbidden.")
+    if os.getenv("FUND100_RISK_LEVEL") != "HIGH":
+        raise PaperFillStop("HIGH risk profile required for this frozen one-time probe.")
     if not os.getenv("ALPACA_PAPER_KEY") or not os.getenv("ALPACA_PAPER_SECRET"):
         raise PaperFillStop("Paper credentials missing.")
     if os.getenv("GITHUB_REPOSITORY") != "nicobouch97/fund100-research":
@@ -287,17 +289,22 @@ def run_probe() -> dict:
             "live_credentials_supplied": False,
         }
     finally:
-        # Best-effort rescue of owned orders. Never cancel other orders.
-        # If any position remains, fail visibly rather than report success.
-        for order_id in (buy_id, sell_id):
-            if order_id:
-                try:
-                    final = paper.get_order_by_id(order_id)
-                    if isinstance(final, dict) and str(
-                        final.get("status", "")).lower() not in TERMINAL:
-                        paper.cancel_order(order_id)
-                except Exception:
-                    print("WARNING: PAPER owned-order cancellation unconfirmed.")
+        # Recover by deterministic client IDs, not just returned IDs:
+        # a timeout after Alpaca accepted a POST must not hide an order.
+        # Never cancel another bot's order.
+        for code in ("b", "s"):
+            try:
+                owned = paper.get_order_by_client_id(client_id(code))
+                if owned is not None:
+                    if not isinstance(owned, dict):
+                        raise PaperFillStop("Malformed owned order on recovery.")
+                    owned_id = owned.get("id")
+                    if not isinstance(owned_id, str) or not owned_id:
+                        raise PaperFillStop("Missing owned order ID on recovery.")
+                    if str(owned.get("status", "")).lower() not in TERMINAL:
+                        paper.cancel_order(owned_id)
+            except Exception:
+                print("WARNING: PAPER owned-order cancellation unconfirmed.")
         if buy_id:
             try:
                 if owned_position_qty(symbol) > 0:
