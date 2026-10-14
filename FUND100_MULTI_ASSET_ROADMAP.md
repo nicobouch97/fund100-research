@@ -127,3 +127,23 @@ An asset class may remain paper-only indefinitely if no durable edge appears.
   invocation. Do NOT re-use the LIVE compiler's account-relative
   directions for the PAPER portfolio. Separate user approval
   remains required before LIVE activation.
+
+- On **14 October 2026**, added the real strategy-to-broker
+  **PAPER execution bridge**, `fund100_v5_paper_execution_bridge_v1_0.py`,
+  plus `fund100_v5_paper_broker_adapter_v1_0.py`. They are not linked
+  to a scheduled account-writing workflow yet. Offline acceptance
+  exercises an attested V5 compiler event through SELL-before-BUY,
+  fresh cash/broker risk rechecks, deterministic PAPER-only client
+  IDs, historical cumulative ceiling, no duplicate replays, stop-on-
+  failure and post-fill position reconciliation. The restricted broker
+  adapter requires a separate explicit PAPER arm, Alpaca PAPER
+  credentials only, repository identity, engaged LIVE kill switch and
+  the remotely confirmed operator STOP. The 14 frozen ETF symbols are
+  hard-whitelisted. No LIVE orders or credentials are used.
+  GitHub Actions **38571747533**: 56 targeted tests PASSED;
+  previous full suite **38571548684**: 584 passed, audit PASS.
+- Remaining: integrate a genuine **freshly produced** strategy
+  compiler package with the dedicated PAPER broker runtime, conduct a
+  real strategy-driven multi-order PAPER fill during market hours, and
+  verify its reconciliation before considering LIVE activation. The
+  independent $2 micro-fill check remains separately scheduled.
