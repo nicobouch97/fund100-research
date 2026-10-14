@@ -1,0 +1,74 @@
+name: Fund-100 V5 PAPER Account & Signal Readiness (GET only)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v5-paper-readiness.yml"
+  workflow_dispatch:
+  # Read-only diagnostics around US close (DST and winter).
+  schedule:
+    - cron: "15 19,20 * * 1-5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v5-paper-readiness
+  cancel-in-progress: true
+
+jobs:
+  signal-and-account:
+    name: Read-only PAPER account and genuine V5 signal assessment
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      GITHUB_REPOSITORY: ${{ github.repository }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install offline-only analysis packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify fail-closed diagnostic using mocked broker data
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v5_paper_readiness_v1_0.py
+
+      - name: Inspect real Alpaca PAPER account using GET only
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_v5_paper_readiness_v1_0.py > /tmp/fund100-paper-readiness.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(
+              Path("/tmp/fund100-paper-readiness.json").read_text()
+          )
+          assert result["mode"] == "READ_ONLY_NO_ORDERS"
+          assert result["genuine_event_order_execution_approved"] is False
+          assert result["live_order_execution_approved"] is False
+          print("Fund-100 V5 PAPER diagnostic (no orders):")
+          for name in (
+              "signal_gate",
+              "paper_account_active",
+              "approved_etf_holdings_only",
+              "paper_open_orders_clear",
+              "paper_exposure_within_130_30_ceiling",
+              "paper_history_valid_under_high_profile",
+              "paper_preflight_compatible",
+              "paper_existing_position_count",
+              "paper_existing_open_order_count",
+          ):
+              print(name + ":", result[name])
+          PY
