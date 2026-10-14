@@ -226,3 +226,28 @@ def test_attested_planner_denies_stale_or_tampered_signal():
     package["compiler"]["minutes_to_close"] = 60
     with pytest.raises(parity.PaperParityStop, match="attestation"):
         parity.plan_attested_paper_event(**kwargs)
+
+
+def test_paper_client_ids_stable_across_price_snapshot_recompilations():
+    first_body = compiler_output()
+    first = plan(compiler_body=first_body)
+    newer = compiler_output()
+    newer["market_snapshot_sha256"] = "b" * 64
+    newer["market_snapshot"] = {"ACWI": {"price": 190.0}}
+    second = plan(compiler_body=newer)
+    assert first["source_compiler_sha256"] != second["source_compiler_sha256"]
+    assert first["paper_orders"] == second["paper_orders"]
+    assert {
+        x["client_order_id"] for x in first["paper_orders"]
+    } == {
+        x["client_order_id"] for x in second["paper_orders"]
+    }
+    # A genuinely different signed strategy state gets new client IDs.
+    next_state = compiler_output()
+    next_state["strategy_state_sha256"] = "c" * 64
+    different = plan(compiler_body=next_state)
+    assert {
+        x["client_order_id"] for x in first["paper_orders"]
+    }.isdisjoint({
+        x["client_order_id"] for x in different["paper_orders"]
+    })
