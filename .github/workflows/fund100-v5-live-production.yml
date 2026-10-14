@@ -20,6 +20,7 @@ env:
 jobs:
   production:
     name: V5-002 LIVE Production Controller
+    environment: fund100-live-broker
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
