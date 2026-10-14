@@ -154,8 +154,21 @@ def plan_genuine_paper_event(
             }
             for symbol, position in sorted(account_state["positions"].items())
         ]
+        # Idempotent across new price snapshots of the SAME scheduled
+        # strategy event. The shadow-state digest commits to the actual
+        # pending target; the fresh compiler's market hash must NOT be
+        # part of the broker client-order identity.
+        state_sha = compiler_body.get("strategy_state_sha256")
+        signal_day = compiler_body.get("strategy_state_date")
+        if not isinstance(state_sha, str) or len(state_sha) != 64 or any(
+            c not in "0123456789abcdef" for c in state_sha
+        ):
+            raise PaperParityStop("Missing strategy-state event identity.")
+        if not isinstance(signal_day, str) or len(signal_day) != 10:
+            raise PaperParityStop("Missing scheduled signal date.")
         paper_seed = hashlib.sha256(
-            ("F100-PAPER-GENUINE-V5|" + event["event_sha256"]).encode("ascii")
+            ("F100-PAPER-GENUINE-V5|" + state_sha + "|" + signal_day)
+            .encode("ascii")
         ).hexdigest()
         paper_intents = compiler.compile_position_aware_intents(
             reconciliation_body={"reconciliation_rows": rows},
