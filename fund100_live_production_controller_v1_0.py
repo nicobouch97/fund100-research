@@ -14,6 +14,7 @@ from pathlib import Path
 
 import fund100_alpaca_live_execution_orchestrator_v1_0 as orchestrator
 import fund100_live_bootstrap_v1_0 as live
+import fund100_live_risk_controls_v1_0 as risk_controls
 
 
 # ============================================================
@@ -2504,6 +2505,8 @@ def build_dependencies(
         **kwargs,
     ):
 
+        # Enforced again before EACH broker writer phase, including
+        # order recovery after a runner restart or partial fill.
         return enforce_cumulative_cap(
             allowed_client_ids=(
                 allowed_ids
@@ -2519,7 +2522,7 @@ def build_dependencies(
 
             capital_ceiling=(
                 policy_context[
-                    "capital_ceiling"
+                    "risk_budget"
                 ]
             ),
         )
@@ -3115,6 +3118,21 @@ def main():
 
         return
 
+    # A missing or invalid risk selection must NEVER permit a LIVE event.
+    try:
+        policy_context["risk_budget"] = (
+            risk_controls.resolve_risk_budget(
+                level=os.environ.get("FUND100_RISK_LEVEL", ""),
+                pilot_capital_ceiling=policy_context["capital_ceiling"],
+            )
+        )
+    except risk_controls.RiskControlStop as exc:
+        raise ProductionStop(
+            "LIVE PRODUCTION STOP: invalid risk-level configuration."
+        ) from exc
+
+    print("Selected event-risk budget: VERIFIED")
+
     if not (
         os.environ.get(
             "ALPACA_LIVE_KEY",
@@ -3386,6 +3404,18 @@ def main():
             "whole-event gross notional exceeds "
             "standing pilot ceiling before first order."
         )
+
+    # Evaluate the ENTIRE event before any phase is allowed to POST.
+    # Do not split or scale an unauthorized strategy event.
+    try:
+        risk_controls.enforce_event_budget(
+            orders=initial_sell_orders + initial_buy_orders,
+            risk_budget=policy_context["risk_budget"],
+        )
+    except risk_controls.RiskControlStop as exc:
+        raise ProductionStop(
+            "LIVE PRODUCTION STOP: event exceeds selected risk budget."
+        ) from exc
 
     estimated_buy = sum(
         (
