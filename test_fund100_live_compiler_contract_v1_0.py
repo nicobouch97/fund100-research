@@ -17,6 +17,8 @@ def compiler_output(*, genuine=True, status="GENUINE_SCHEDULED_EVENT"):
         "compiler_mode": "current",
         "status": status,
         "genuine_scheduled_event": genuine,
+        "strategy_state_date": "2026-10-13",
+        "strategy_state_sha256": "a" * 64,
         "executed_satellite_weights": {
             "SPY": 0.0,
             "IWM": 0.0,
