@@ -1,0 +1,150 @@
+name: Fund-100 LIVE Account Readiness (GET only)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-live-account-readiness-getonly.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-live-account-readiness-getonly
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    environment: fund100-live-broker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install frozen dependencies
+        run: |
+          python -m pip install -r requirements.txt
+      - name: Read LIVE account without modifying its state
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          import fund100_live_bootstrap_v1_0 as live
+          import fund100_live_operator_control_v1_0 as control
+          import fund100_live_portfolio_risk_v1_0 as risk
+
+          policy = json.loads(Path(
+              "live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json"
+          ).read_text(encoding="utf-8"))
+          assert os.getenv("GITHUB_REF") == "refs/heads/main"
+          assert os.getenv("FUND100_BROKER_KILL_SWITCH") == "ENGAGED"
+          assert policy["deployment_mode"] == "LIVE_MICRO_PILOT"
+          assert policy["capital_ceiling_usd"] == "130.30"
+          assert policy["live_order_authorization_present"] is False
+          assert policy["autonomous_strategy_event_execution_enabled"] is False
+          assert os.environ.get("ALPACA_LIVE_KEY")
+          assert os.environ.get("ALPACA_LIVE_SECRET")
+          assert not control.validate_control(control.read_current_control())
+
+          original = live.live_request
+          calls = []
+          def get_only(*, method, path, **kwargs):
+              if method != "GET" or kwargs.get("body") is not None:
+                  raise RuntimeError("Non-GET broker operation forbidden")
+              if path not in {
+                  "/v2/account", "/v2/positions",
+                  "/v2/orders?status=open&limit=500",
+                  "/v2/account/portfolio/history?period=1M&timeframe=1D",
+              }:
+                  # GET-only but still require explicit path approval
+                  if not (path.startswith("/v2/orders?") and
+                          "status=open" in path and "limit=500" in path):
+                      raise RuntimeError("Unexpected LIVE GET endpoint")
+              calls.append(path)
+              return original(method="GET", path=path, **kwargs)
+          live.live_request = get_only
+
+          account = live.get_account()
+          positions = live.get_positions()
+          open_orders = live.get_open_orders()
+          history = live.live_request(
+              method="GET",
+              path="/v2/account/portfolio/history?period=1M&timeframe=1D",
+          )
+          assert len(calls) == 4
+          if not isinstance(account, dict) or not isinstance(positions, list):
+              raise RuntimeError("LIVE broker response malformed")
+          if not isinstance(open_orders, list) or len(open_orders) >= 500:
+              raise RuntimeError("LIVE open order index malformed")
+          allowed = set(policy["execution_universe"])
+          present = set()
+          clean = {}
+          for p in positions:
+              symbol = p.get("symbol")
+              if not isinstance(symbol, str) or symbol in present:
+                  raise RuntimeError("Malformed LIVE position")
+              present.add(symbol)
+              clean[symbol] = {"market_value": p.get("market_value")}
+          binding_ok = (
+              live.account_binding(account) == policy["account_binding_sha256"]
+          )
+          account_ok = (
+              account.get("status") == "ACTIVE"
+              and account.get("trading_blocked") is False
+          )
+          universe_ok = present.issubset(allowed)
+          no_orders = len(open_orders) == 0
+          level = os.environ.get("FUND100_RISK_LEVEL", "")
+          profile = risk.get_profile(level)
+          exposure_ok = False
+          history_ok = False
+          if binding_ok and account_ok and universe_ok:
+              try:
+                  risk.check_actual_exposure(
+                      positions=clean, equity=account.get("equity"),
+                      capital_ceiling=policy["capital_ceiling_usd"],
+                      profile=profile,
+                  )
+                  exposure_ok = True
+              except risk.PortfolioRiskStop:
+                  pass
+              try:
+                  risk.check_account_performance(
+                      account=account, history=history, profile=profile,
+                  )
+                  history_ok = True
+              except risk.PortfolioRiskStop:
+                  pass
+          # Full ceiling remains a MAXIMUM, not a minimum deposit.
+          from decimal import Decimal
+          nav = risk.finite_decimal(account.get("equity"), "LIVE equity")
+          cash = risk.finite_decimal(account.get("cash"), "LIVE cash")
+          print("LIVE GET-only account verification:")
+          print("operator_stopped:", True)
+          print("pilot_ceiling_usd:", "130.30")
+          print("risk_profile:", level)
+          print("account_active:", account_ok)
+          print("account_binding_matches:", binding_ok)
+          print("all_holdings_approved:", universe_ok)
+          print("no_open_orders:", no_orders)
+          print("existing_exposure_within_risk_limits:", exposure_ok)
+          print("account_history_within_risk_limits:", history_ok)
+          print("positive_equity:", nav > 0)
+          print("cash_for_one_dollar_pilot_order:", cash >= Decimal("1"))
+          print("equity_at_least_full_pilot_ceiling:", nav >= Decimal("130.30"))
+          print("LIVE broker requests:", len(calls), "GET only")
+          print("LIVE orders submitted:", 0)
+          print("LIVE activation remains DISABLED")
+          PY
