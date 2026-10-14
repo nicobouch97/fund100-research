@@ -56,5 +56,16 @@ An asset class may remain paper-only indefinitely if no durable edge appears.
   strategy parser, sizing, risk guards, SELL/BUY orchestrator, cap
   proof, synthetic fills, restart idempotence and STOP response.
   It **does not** connect to Alpaca's paper trading account.
+- On **14 October 2026**, `fund100-connected-paper-launch-gate.yml`
+  successfully combined the V5 synthetic ETF acceptance suite with
+  a real **Alpaca PAPER** endpoint test via the existing connected
+  orchestrator (GitHub Actions run **38560023371**): one $1 PAPER
+  order submitted, recovery after restart, zero duplicate POSTs,
+  broker-side cancellation with zero fill and no outstanding test
+  orders. No LIVE request was made. The static LIVE audit passed
+  on the same commit (run **38560023377**, 507 tests).
+- This validates connected broker mechanics **separately** from the
+  V5 current risk-sized ETF rehearsal; an actual V5 strategy-driven
+  rebalance through Alpaca PAPER remains the next acceptance gate.
 - Until explicit launch authorization, operator control stays STOPPED
   and broker kill switch remains ENGAGED.
