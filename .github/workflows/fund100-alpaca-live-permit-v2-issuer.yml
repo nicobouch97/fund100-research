@@ -36,6 +36,7 @@ jobs:
   permit-v2:
     name: Evaluate Position-Aware LIVE V2 Permit
 
+    environment: fund100-live-broker
     runs-on: ubuntu-latest
 
     timeout-minutes: 20
