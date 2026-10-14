@@ -17,6 +17,7 @@ import fund100_live_bootstrap_v1_0 as live
 import fund100_live_risk_controls_v1_0 as risk_controls
 import fund100_live_operator_control_v1_0 as operator_control
 import fund100_live_portfolio_risk_v1_0 as portfolio_risk
+import fund100_live_risk_sizing_v1_0 as risk_sizing
 
 
 # ============================================================
@@ -1694,12 +1695,14 @@ def verify_live_portfolio_risk(
     snapshot: dict,
     target_weights: dict,
     policy_context: dict,
+    history: dict | None = None,
 ) -> None:
     """Recheck broker risk in memory; fail closed on missing history."""
-    history = live.live_request(
-        method="GET",
-        path="/v2/account/portfolio/history?period=1M&timeframe=1D",
-    )
+    if history is None:
+        history = live.live_request(
+            method="GET",
+            path="/v2/account/portfolio/history?period=1M&timeframe=1D",
+        )
     try:
         portfolio_risk.check_portfolio_risk(
             snapshot=snapshot,
@@ -1712,6 +1715,49 @@ def verify_live_portfolio_risk(
         raise ProductionStop(
             "LIVE PRODUCTION STOP: portfolio-level risk guard triggered."
         ) from exc
+
+
+def risk_size_authorized_event(
+    *,
+    snapshot: dict,
+    target_weights: dict,
+    candidates: dict,
+    policy_context: dict,
+) -> dict:
+    """Resize reviewed signals without fabricating any trading intent."""
+    history = live.live_request(
+        method="GET",
+        path="/v2/account/portfolio/history?period=1M&timeframe=1D",
+    )
+    try:
+        realized_volatility = risk_sizing.estimate_observed_volatility(
+            history=history, equity=snapshot["equity"],
+        )
+        sized = risk_sizing.size_strategy_targets(
+            strategy_targets=target_weights,
+            risk_level=os.environ.get("FUND100_RISK_LEVEL", ""),
+            observed_annualized_volatility=realized_volatility,
+        )
+        risk_sizing.verify_existing_strategy_authorizations(
+            sized_weights=sized.weights,
+            positions=snapshot["positions"],
+            deployable_nav=min(
+                snapshot["equity"], policy_context["capital_ceiling"],
+            ),
+            compiler_candidates=candidates,
+        )
+    except portfolio_risk.PortfolioRiskStop as exc:
+        raise ProductionStop(
+            "LIVE PRODUCTION STOP: risk-adjusted sizing not authorized."
+        ) from exc
+
+    verify_live_portfolio_risk(
+        snapshot=snapshot,
+        target_weights=sized.weights,
+        policy_context=policy_context,
+        history=history,
+    )
+    return sized.weights
 
 
 def materialize_orders(
@@ -3336,23 +3382,11 @@ def main():
             "outside pilot execution universe."
         )
 
-    (
-        deps,
-        last_materialized,
-        allowed_ids,
-    ) = build_dependencies(
-        policy_context=(
-            policy_context
-        ),
-
-        target_weights=(
-            target_weights
-        ),
-
-        candidates=(
-            candidates
-        ),
-    )
+    # Build the allowed order ID set before fetching broker open orders;
+    # do not bind a writer until risk-adjusted targets are validated.
+    allowed_ids = {
+        candidate["client_order_id"] for candidate in candidates.values()
+    }
 
     # --------------------------------------------------------
     # PRE-WRITE COMPLETE EVENT GROSS CHECK
@@ -3378,11 +3412,23 @@ def main():
         )
     )
 
-    # Whole-event preflight before SELL or BUY can submit a LIVE order.
-    verify_live_portfolio_risk(
+    # Freeze risk-adjusted targets for the entire SELL/BUY event.
+    # A risk overlay cannot manufacture new directions or client IDs.
+    target_weights = risk_size_authorized_event(
         snapshot=initial_snapshot,
         target_weights=target_weights,
+        candidates=candidates,
         policy_context=policy_context,
+    )
+
+    (
+        deps,
+        last_materialized,
+        allowed_ids,
+    ) = build_dependencies(
+        policy_context=policy_context,
+        target_weights=target_weights,
+        candidates=candidates,
     )
 
     initial_sell_orders = (
