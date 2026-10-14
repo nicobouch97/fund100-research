@@ -40,12 +40,14 @@ def validate_control(value: object) -> bool:
     return value["trading_enabled"]
 
 
-def _token_and_repo() -> str:
+def _token_and_repo(*, write: bool = False) -> str:
     if os.environ.get("GITHUB_REPOSITORY") != EXPECTED_REPOSITORY:
         raise OperatorControlStop("Unexpected GitHub repository.")
     token = os.environ.get("GITHUB_TOKEN", "").strip()
-    if not token:
-        raise OperatorControlStop("GitHub token missing; trading denied.")
+    # Public repository contents can be read anonymously. A missing token
+    # must NEVER grant write access. GitHub API failures deny LIVE trading.
+    if write and not token:
+        raise OperatorControlStop("GitHub write token missing.")
     return token
 
 
@@ -55,17 +57,19 @@ def _github_request(*, token: str, method: str, body: bytes | None = None):
     url = GITHUB_API + "?ref=main&nonce=" + str(time.time_ns())
     if method == "PUT":
         url = GITHUB_API
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store, no-cache",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = "Bearer " + token
     req = Request(
         url,
         data=body,
         method=method,
-        headers={
-            "Authorization": "Bearer " + token,
-            "Accept": "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "Cache-Control": "no-store, no-cache",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+        headers=headers,
     )
     try:
         with urlopen(req, timeout=12) as resp:
@@ -106,7 +110,7 @@ def require_operator_running() -> None:
 
 def commit_stop_signal() -> str:
     """Set the main-branch latch to STOP only. Never arm the system."""
-    token = _token_and_repo()
+    token = _token_and_repo(write=True)
     snapshot = _github_request(token=token, method="GET")
     current = _decode_file(snapshot)
     if current["trading_enabled"] is False:
