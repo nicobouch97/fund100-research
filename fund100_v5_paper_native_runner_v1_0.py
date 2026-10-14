@@ -142,6 +142,13 @@ def run_once(*, state: dict, policy: dict, risk_level: str,
         shadow_state=state, compiler_written_ns=created_ns,
         now_ns=now_ns,
     )
+    if proof.get("status") == "GENUINE_NO_BROKER_CANDIDATES":
+        return {
+            "status": "NO_COMPILER_INTENTS",
+            "paper_post_count": 0, "live_post_count": 0,
+            "paper_execution_attempted": False,
+            "risk_level": risk_level,
+        }
     if proof.get("status") != "FRESH_GENUINE_COMPILER_EVENT":
         raise PaperRunnerStop("PAPER source was not a fresh genuine event.")
 
