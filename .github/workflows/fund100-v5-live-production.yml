@@ -804,6 +804,7 @@ jobs:
 
       - name: Run V5-002 LIVE production controller
         env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
           ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
 
