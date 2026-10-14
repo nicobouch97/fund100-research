@@ -189,6 +189,11 @@ def test_real_model_native_compiler_reaches_full_broker_emulator():
     from test_fund100_v5_genuine_paper_parity_v1_0 import UNIVERSE
 
     broker = FakePaper()
+    # Retain a one-cent cash buffer: frozen 12-decimal satellite
+    # weights and minimum notional rounding can leave small sell
+    # residues that cannot be converted into additional broker orders.
+    broker.cash = __import__("decimal").Decimal("0.01")
+    broker.equity = __import__("decimal").Decimal("100.01")
     original = state()
     pkg, manifest = c.build_paper_compiler(
         state=original,
