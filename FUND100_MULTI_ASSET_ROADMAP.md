@@ -14,8 +14,8 @@ not number of markets, backtest return, or how often a bot trades.
 
 | Sequence | Scope | Distinct investment thesis | Progress and promotion rule |
 |---|---|---|---|
-| **1: ETF pilot** | US-listed global/sector equity ETFs (V5-002) | ACWI benchmark core plus relative momentum satellite, threshold-based rebalance, constrained exposure | **CURRENT:** synthetic end-to-end paper acceptance passes; next is broker-connected paper rehearsal, then explicit small LIVE activation only if approved |
-| **2: Bond ETFs** | TLT, IEF, SHY, TIP, LQD (research universe, not LIVE-whitelisted) | Duration / yield-curve regimes, inflation surprise and credit-spread compensation; protect capital when equities struggle | Research-specific data, duration and correlation checks; independent out-of-sample and paper performance before allowlisting |
+| **1: ETF pilot** | US-listed global/sector equity ETFs (V5-002) | ACWI benchmark core plus relative momentum satellite, threshold-based rebalance, constrained exposure | **CURRENT:** genuine V5 PAPER strategy runner operational and micro-fill broker test completed; awaiting naturally scheduled strategy rebalance and reconciliation. LIVE GET-only readiness verified, operator STOPPED; any LIVE release requires separate explicit approval |
+| **2: Bond ETFs** | TLT, IEF, SHY, TIP, LQD (research universe, not LIVE-whitelisted) | Duration / yield-curve regimes, inflation surprise and credit-spread compensation; protect capital when equities struggle | Price-only bond research engine completed; first real-data chronological holdout underperformed SHY across 5/15/35 bp costs. NOT PROMOTED; next preregistered macro-data hypothesis and prospective paper validation required |
 | **3: Commodity ETPs** | GLD, DBC (research universe, not LIVE-whitelisted) | Trend / inflation regimes / curve carry where applicable; ETF tracking, roll costs and concentration matter | Distinguish futures-backed from physically held products; ETF-specific costs, liquidity, volatility and regime validation |
 | **4: Individual US stocks** | Liquid unlevered shares | Quality and earnings revision trends plus medium-term momentum; fundamental and corporate-action filters | Point-in-time fundamentals, delisting/survivorship-safe history, realistic turnover, diversification, corporate actions |
 | **5: Crypto** | Existing **separate** BTC/GBP synthetic paper bot | Slow momentum and long-run trend in a 24/7 market with high gap/liquidity/custody risk | Continue prospective forward paper; demonstrate improvement versus simple buy-and-hold net of costs, integrate 24/7 monitoring and exchange-specific API before any LIVE enablement |
@@ -248,3 +248,31 @@ An asset class may remain paper-only indefinitely if no durable edge appears.
   628 passed, static boundary PASS. Sanitized release evidence:
   `live_activation_outputs/v5_002/live_getonly_account_readiness_evidence_v1_0.json`.
   Do not confuse a capital ceiling with an actual funding balance.
+
+
+## Phase 2 first evidence — 14 October 2026
+
+The isolated bond-ETF study, `fund100_bond_etf_research_v1_0.py`, now
+covers TLT/IEF/SHY/TIP/LQD without adding any to LIVE broker permissions.
+One-time [research run 38623102500](https://github.com/nicobouch97/fund100-research/actions/runs/38623102500)
+processed 4,725 trading sessions of vendor-adjusted closes through
+13 October 2026. Training selected 126-session lagged momentum and a 25%
+per-satellite target cap (TLT 15%). In the untouched chronological holdout,
+net cumulative excess versus the SHY ETF control was **negative** at all
+three one-way cost assumptions: -7.86688 percentage points (5 bp),
+-9.977167 percentage points (15 bp), and -14.070787 percentage points
+(35 bp). This is not annualised excess return or proof of future performance.
+
+**Decision: candidate rejected for promotion.** No bond PAPER or LIVE
+orders are authorised. The next *new* bond experiment requires externally
+timestamped yield-curve, breakeven inflation and credit-spread inputs, plus
+fresh prospective evidence instead of reoptimising to this holdout.
+Experiment provenance and the decision are in
+`research_lab/bonds/INITIAL_HOLDOUT_REVIEW_2026_10_14.md`.
+The full main-branch audit at run 38623102573 passed 691 tests.
+
+Phase 1 remains the active execution priority: the genuine V5 PAPER
+runner passed its latest no-signal run and must complete a natural scheduled
+rebalance before a separate decision to enable any small LIVE event.
+The operator remains STOPPED, LIVE kill switch ENGAGED, HIGH risk selected,
+and USD 130.30 is a hard pilot ceiling, not necessarily available cash.
