@@ -804,6 +804,46 @@ def extract_target_weights(
         preferred_keys,
     )
 
+    # The REAL v1.1 compiler emits executed satellite weights, not
+    # final_target_weights. Reconstruct the ACWI core as 1 - satellites;
+    # never confuse desired (unexecuted) weights with final decisions.
+    satellites = body.get("executed_satellite_weights")
+    if satellites is not None:
+        if raw is not None:
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: conflicting compiler target formats."
+            )
+        if not isinstance(satellites, dict) or not satellites:
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: invalid executed satellite weights."
+            )
+        if "ACWI" in satellites or "ACWI_CORE" in satellites:
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: compiler satellites contain core."
+            )
+        clean = {}
+        for symbol, value in satellites.items():
+            normalized = normalize_symbol(symbol)
+            if normalized != symbol or not normalized:
+                raise ProductionStop(
+                    "LIVE PRODUCTION STOP: malformed satellite symbol."
+                )
+            weight = decimal_value(
+                value, field_name="executed satellite weight"
+            )
+            if weight < Decimal("0") or weight > Decimal("1"):
+                raise ProductionStop(
+                    "LIVE PRODUCTION STOP: invalid satellite allocation."
+                )
+            clean[normalized] = weight
+        satellite_total = sum(clean.values(), Decimal("0"))
+        if satellite_total > Decimal("1"):
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: satellite weights exceed NAV."
+            )
+        clean["ACWI"] = Decimal("1") - satellite_total
+        return normalize_target_weights(clean)
+
     if raw is None:
 
         raise ProductionStop(
@@ -1111,6 +1151,7 @@ def extract_compiler_view(
     raw_genuine = find_first_key(
         body,
         (
+            "genuine_scheduled_event",
             "genuine_strategy_event_present",
             "genuine_strategy_event",
             "genuine_event_present",
@@ -1125,6 +1166,17 @@ def extract_compiler_view(
     ):
 
         genuine = raw_genuine
+
+        # Explicit boolean has authority over the status label.
+        # A contradictory compiler output is invalid, not tradeable.
+        if genuine and status != "GENUINE_SCHEDULED_EVENT":
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: genuine event/status contradiction."
+            )
+        if not genuine and status == "GENUINE_SCHEDULED_EVENT":
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: nongenuine event/status contradiction."
+            )
 
     elif status == "NO_SCHEDULED_EVENT":
 
