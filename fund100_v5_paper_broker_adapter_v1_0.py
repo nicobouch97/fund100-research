@@ -118,6 +118,49 @@ class AlpacaPaperOnlyAdapter:
             raise PaperAdapterStop("Unrecognised PAPER client ID.")
         return paper.get_order_by_client_id(client_order_id)
 
+    def require_no_prior_strategy_orders(self, signal_date: str) -> None:
+        """Fail closed on repeat attempts after any strategy PAPER order.
+
+        A partially executed signal must never create a second set of
+        differently seeded client IDs. Older standalone fill-probe
+        orders have a DIFFERENT prefix and are not strategy orders.
+        """
+        from datetime import date
+        from urllib.parse import urlencode
+
+        if not isinstance(signal_date, str):
+            raise PaperAdapterStop("PAPER source signal date missing.")
+        try:
+            parsed = date.fromisoformat(signal_date)
+        except ValueError as exc:
+            raise PaperAdapterStop("Malformed PAPER signal date.") from exc
+        # Recheck the operator boundary before querying broker history.
+        self.require_paper_only_arm()
+        query = urlencode({
+            "status": "all",
+            "limit": 500,
+            "direction": "desc",
+            "after": parsed.isoformat() + "T00:00:00Z",
+        })
+        orders = paper.paper_request(
+            method="GET", path="/v2/orders?" + query,
+        )
+        if not isinstance(orders, list) or len(orders) >= 500:
+            raise PaperAdapterStop(
+                "PAPER strategy order history unavailable or truncated."
+            )
+        for order in orders:
+            if not isinstance(order, dict):
+                raise PaperAdapterStop("Malformed PAPER historical order.")
+            cid = order.get("client_order_id")
+            if not isinstance(cid, str):
+                raise PaperAdapterStop("PAPER historical client ID missing.")
+            if cid.startswith("f100paper-"):
+                raise PaperAdapterStop(
+                    "Earlier strategy PAPER order for signal period: "
+                    "resume only after explicit broker reconciliation."
+                )
+
     def post_notional(self, order: dict) -> dict:
         self.require_paper_only_arm()
         if not isinstance(order, dict):
