@@ -1,0 +1,52 @@
+name: Fund-100 Genuine V5 PAPER Launch Decision (offline)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v5_paper_launch_decision_v1_0.py"
+      - "test_fund100_v5_paper_launch_decision_v1_0.py"
+      - ".github/workflows/fund100-v5-paper-launch-decision.yml"
+      - "live_activation_outputs/v5_002/paper_etf_fill_evidence_v1_0.json"
+      - "live_activation_outputs/v5_002/paper_readiness_evidence_v1_0.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-launch-decision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install offline dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Validate historical evidence cannot authorize fresh orders
+        run: |
+          python -m pytest -q test_fund100_v5_paper_launch_decision_v1_0.py
+      - name: Print current no-order decision
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from fund100_v5_paper_launch_decision_v1_0 import decide
+          base = Path("live_activation_outputs/v5_002")
+          evidence = json.loads((base/"paper_etf_fill_evidence_v1_0.json").read_text())
+          readiness = json.loads((base/"paper_readiness_evidence_v1_0.json").read_text())
+          proof = decide(
+              paper_fill_evidence=evidence, account_readiness=readiness,
+              compiler_package=None, manifest_package=None,
+              shadow_state=None, compiler_written_ns=None, now_ns=None,
+          )
+          assert proof["status"] == "WAITING_FOR_GENUINE_V5_EVENT"
+          assert proof["paper_order_authorized"] is False
+          assert proof["live_order_authorized"] is False
+          print("Genuine V5 PAPER launch decision:", proof["status"])
+          print("No broker credentials, no orders and no LIVE activation")
+          PY
