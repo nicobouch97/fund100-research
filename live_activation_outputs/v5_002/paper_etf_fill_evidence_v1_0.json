@@ -1,0 +1,22 @@
+{
+  "schema": "FUND100_ALPACA_PAPER_FILL_EVIDENCE_V1",
+  "broker_environment": "ALPACA_PAPER_ONLY",
+  "date_utc": "2026-10-14",
+  "result": "PASS",
+  "paper_run_id": 38574171335,
+  "paper_run_url": "https://github.com/nicobouch97/fund100-research/actions/runs/38574171335",
+  "compiled_synthetic_approval_tests": 16,
+  "paper_entry_notional_usd": "2.00",
+  "paper_buy_filled": true,
+  "paper_sell_filled": true,
+  "original_paper_share_quantity_restored": true,
+  "paper_only_credentials_used": true,
+  "live_orders_submitted": 0,
+  "broker_kill_switch_at_test": "ENGAGED",
+  "risk_level_at_test": "HIGH",
+  "source_event": "FROZEN_V5_BOOTSTRAP_TARGETS_NOT_GENUINE_EVENT",
+  "static_audit_run_id": 38574171329,
+  "full_repository_tests_passed": 586,
+  "full_static_audit_passed": true,
+  "notes": "Actual PAPER broker fill/unwind, not a naturally occurring V5 strategy event. No account balances, holding quantities, or broker order identifiers recorded."
+}
