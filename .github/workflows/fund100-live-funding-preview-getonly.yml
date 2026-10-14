@@ -1,0 +1,73 @@
+name: Fund-100 LIVE Funding Preview (GET-only, no orders)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-live-funding-preview-getonly.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-live-funding-preview-getonly
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    name: LIVE current holdings vs V5 reference allocation
+    environment: fund100-live-broker
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install frozen dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+      - name: Verify GET-only snapshot and funding scenarios offline
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_live_funding_preview_v1_0.py
+      - name: Compare real account and reference weights without submitting orders
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_live_funding_preview_v1_0.py > /tmp/fund100-live-funding-preview.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          result = json.loads(
+              Path("/tmp/fund100-live-funding-preview.json").read_text(encoding="utf-8")
+          )
+          assert result["schema"] == "FUND100_LIVE_FUNDING_PREVIEW_V1"
+          assert result["broker_mode"] == "LIVE_GET_ONLY"
+          assert result["live_execution_authorized"] is False
+          assert result["paper_execution_authorized"] is False
+          assert result["broker_mutations"] == 0
+          print("Fund-100 LIVE account: GET-only funding preview completed.")
+          print("Profile:", result["risk_level"])
+          print("Reference sells (count only):", result["reference_sell_count"])
+          print("Reference buys (count only):", result["reference_buy_count"])
+          print("Funding category:", result["funding_classification"])
+          print("Sell proceeds spendable: NOT ESTABLISHED")
+          print("LIVE orders submitted: ZERO")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as file:
+              file.write("### Fund-100 read-only LIVE funding preview\n")
+              file.write("**" + result["funding_classification"] + "**\n\n")
+              file.write("Reference counts only: SELL " +
+                         str(result["reference_sell_count"]) + ", BUY " +
+                         str(result["reference_buy_count"]) + "\n\n")
+              file.write("No broker writes, no LIVE permission, no approved signal. "
+                         "Potential sale proceeds are not confirmed buying power.\n")
+          PY
