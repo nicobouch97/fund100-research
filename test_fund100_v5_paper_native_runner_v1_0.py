@@ -160,3 +160,23 @@ def test_only_explicit_supported_risk_levels(monkeypatch):
         runner.run_once(
             state=state(pending=False), policy=POLICY, risk_level="UNKNOWN"
         )
+
+
+def test_attested_genuine_event_with_zero_broker_delta_is_safe_noop(monkeypatch):
+    native_build = runner.native.build_paper_compiler
+
+    def no_orders(**kwargs):
+        package, manifest = native_build(**kwargs)
+        package["compiler"]["candidate_intents"] = []
+        package["compiler_sha256"] = (
+            runner.attestation.production.canonical_sha256(package["compiler"])
+        )
+        return package, manifest
+
+    monkeypatch.setattr(runner.native, "build_paper_compiler", no_orders)
+    b = FakePaper()
+    report, used_broker = paper_run(monkeypatch, paper=b)
+    assert report["status"] == "NO_COMPILER_INTENTS"
+    assert report["paper_execution_attempted"] is False
+    assert report["paper_post_count"] == 0
+    assert used_broker.posts == []
