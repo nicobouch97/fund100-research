@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "fund100_live_risk_controls_v1_0.py"
+      - "fund100_live_portfolio_risk_v1_0.py"
+      - "test_fund100_live_portfolio_risk_v1_0.py"
       - "test_fund100_live_risk_controls_v1_0.py"
       - "fund100_live_production_controller_v1_0.py"
       - "fund100_live_operator_control_v1_0.py"
@@ -46,6 +48,8 @@ jobs:
         run: |
           python -m py_compile \
             fund100_live_risk_controls_v1_0.py \
+            fund100_live_portfolio_risk_v1_0.py \
+            test_fund100_live_portfolio_risk_v1_0.py \
             test_fund100_live_risk_controls_v1_0.py \
             fund100_live_production_controller_v1_0.py \
             test_fund100_live_production_controller_v1_0.py \
@@ -60,5 +64,6 @@ jobs:
         run: |
           python -m pytest -q \
             test_fund100_live_risk_controls_v1_0.py \
+            test_fund100_live_portfolio_risk_v1_0.py \
             test_fund100_live_production_controller_v1_0.py \
             test_fund100_live_emergency_stop_v1_0.py
