@@ -1,0 +1,56 @@
+name: Fund-100 LIVE Risk Controls (offline regression)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "fund100_live_risk_controls_v1_0.py"
+      - "test_fund100_live_risk_controls_v1_0.py"
+      - "fund100_live_production_controller_v1_0.py"
+      - "test_fund100_live_production_controller_v1_0.py"
+      - ".github/workflows/fund100-live-risk-regression.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-live-risk-regression
+  cancel-in-progress: true
+
+jobs:
+  offline-tests:
+    name: Validate risk limits with NO live credentials
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile risk control and controller
+        run: |
+          python -m py_compile \
+            fund100_live_risk_controls_v1_0.py \
+            test_fund100_live_risk_controls_v1_0.py \
+            fund100_live_production_controller_v1_0.py \
+            test_fund100_live_production_controller_v1_0.py
+
+      - name: Run isolated offline regression
+        env:
+          FUND100_BROKER_KILL_SWITCH: ENGAGED
+          FUND100_RISK_LEVEL: LOW
+        run: |
+          python -m pytest -q \
+            test_fund100_live_risk_controls_v1_0.py \
+            test_fund100_live_production_controller_v1_0.py
