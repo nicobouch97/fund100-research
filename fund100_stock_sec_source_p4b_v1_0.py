@@ -110,8 +110,7 @@ def decode_source(raw: bytes, *, expected_cik: str) -> dict:
     except (UnicodeError, ValueError) as exc:
         raise SecIntakeStop("SEC endpoint did not deliver valid UTF-8 JSON.") from exc
     if (not isinstance(obj, dict)
-        or isinstance(obj.get("cik"), bool)
-        or obj.get("cik") != int(expected_cik)):
+        or not quality.cik_matches_expected(obj.get("cik"), expected_cik)):
         raise SecIntakeStop("SEC fetched source CIK identity mismatch.")
     return obj
 
