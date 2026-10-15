@@ -25,7 +25,7 @@ SCHEMA = "FUND100_P4F_ANALYST_EPS_REVISION_SOURCE_V1"
 MANIFEST_SCHEMA = "FUND100_P4F_ORIGINAL_ESTIMATE_SOURCE_MANIFEST_V1"
 PERMITTED_PROVIDERS = {
     "SYNTHETIC_FIXTURE": "SYNTHETIC_FIXTURE",
-    "FACTSET_PIT_CONSENSUS": "UNVERIFIED_LICENSED_EXPORT",
+    "FACTSET_DETAIL": "UNVERIFIED_LICENSED_EXPORT",
     "LSEG_IBES_DETAIL": "UNVERIFIED_LICENSED_EXPORT",
 }
 MEASURE = "EPS_NORMALIZED_DILUTED"
@@ -126,6 +126,7 @@ def evaluate(raw: bytes, manifest: dict, *, ticker: str, fiscal_year_end: str,
         raise AnalystEvidenceStop("Required identical EPS basis and currency unavailable.")
     qualified = {}
     keys=set()
+    canonical_security_id = None
     rejected_noncohort = 0
     for event in obj["events"]:
         if not isinstance(event,dict):
@@ -145,6 +146,9 @@ def evaluate(raw: bytes, manifest: dict, *, ticker: str, fiscal_year_end: str,
             raise AnalystEvidenceStop("Original analyst/contributor/event identity missing.")
         if revision_id in keys:
             raise AnalystEvidenceStop("Duplicate original vendor revision ID.")
+        if canonical_security_id is not None and security_id != canonical_security_id:
+            raise AnalystEvidenceStop("Mixed security/share-class identities in analyst source.")
+        canonical_security_id = security_id
         keys.add(revision_id)
         prev=utc(event["old_published_at_utc"],"prior estimate publication")
         pub=utc(event["new_published_at_utc"],"revision publication")
@@ -166,7 +170,7 @@ def evaluate(raw: bytes, manifest: dict, *, ticker: str, fiscal_year_end: str,
             or asof < rec
             or pub - prev > timedelta(days=PREVIOUS_MAX_AGE_DAYS)):
             continue
-        key=(broker,security_id)
+        key=broker
         candidate=(pub,rec,revision_id,old,new)
         if key not in qualified or candidate[:3] > qualified[key][:3]:
             qualified[key]=candidate
