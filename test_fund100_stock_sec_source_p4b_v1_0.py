@@ -125,7 +125,7 @@ def test_different_sec_fact_filing_identity_is_rejected():
                        loader=mixed, captured_utc=UTC)
 
 
-def test_collection_never silently_discards_source_failure_in_second_company():
+def test_collection_never_silently_discards_source_failure_in_second_company():
     rows = cohort()
     rows[0]["cik_10_digit"] = CIK
     rows[1]["cik_10_digit"] = "0000000555"
