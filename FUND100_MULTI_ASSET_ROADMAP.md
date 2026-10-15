@@ -1124,3 +1124,71 @@ genuine V5 ETF PAPER workflow remain independent.
 Live operator STOPPED, engaged kill switch, HIGH
 risk selected, $130.30 pilot cap and the unchanged
 14 US ETF-only LIVE whitelist remain mandatory.
+
+## Phase 4F — independent dated analyst earnings-revision source contract (15 Oct 2026)
+
+[PR #37](https://github.com/nicobouch97/fund100-research/pull/37)
+merged Fund-100's first completely separate **analyst EPS
+estimate-revision research source**. It specifically avoids
+conflating SEC-reported accounting quality with *sell-side
+forecast revision alpha*. Its analyst estimate source is
+NOT yet obtained/licensed/connected, and the engine's
+honest GitHub readiness report has **0 genuine estimate
+observations, 0 real revision scores and 0 broker orders**.
+
+The frozen research hypothesis in
+`fund100_stock_analyst_revisions_p4f_v1_0.py`
+requires the original vendor detail/estimate-change JSON
+bytes and matching SHA256, declared rights, source
+acquisition/publication timestamps, ten-digit company
+CIK/ticker and stable share-class identity, individual
+broker IDs and unique forecast revision identifiers,
+exact same normalized diluted EPS USD per share and
+future fiscal year. Only revisions published in the
+trailing 30 days and known after a conservative
+24-hour vendor receipt lag qualify. Previous estimates
+must be <=180 days old, with revisions >= the greater
+of 2¢ EPS or 1% of max(abs(old EPS), $0.50).
+It uses each broker's last qualifying observation and
+requires >=3 material directional revisions before
+showing a **descriptive** (ups - downs)/(ups + downs)
+pressure reading. No signal is trade-authorized.
+
+Official source candidates:
+[LSEG I/B/E/S broker detail](https://www.lseg.com/en/data-catalogue/company-data/ibes-estimates/broker-estimates)
+and
+[FactSet historical analyst detail](https://insight.factset.com/resources/factset-consensus-estimates-datafeed).
+FactSet's [separate PIT consensus snapshot
+product](https://insight.factset.com/resources/at-a-glance-factset-estimates-point-in-time-consensus)
+is NOT the same as genuine individual broker changes,
+and would require a different feed adapter. Neither
+commercial vendor service is currently connected or
+priced for Fund-100. Do not impersonate a licensed
+client, fabricate original estimates or charge
+the operator without asking.
+
+The independent
+`research_lab/stocks/P4F_ORIGINAL_ESTIMATE_REVISION_PROTOCOL_2026_10_15.md`
+freezes source requirements and the non-trading threshold
+before real data. Dedicated **18 synthetic fixture tests**
+passed, plus premerge full **925**-test repository audit
+and **36** LIVE safety boundary checks. CI generates
+a documented source-unavailable state, not simulated
+alpha or trade forecasts.
+
+**Next research tasks:** obtain a legitimately licensed
+PIT individual broker estimate export if cost and
+available rights make sense; independently verify
+publication/collection timestamps and security IDs.
+In parallel build a **delisting-inclusive historical
+security master and corporate-action/total-return
+price source**. SEC's current ticker/CIK lookup is
+NOT a survivorship-safe historic listing. The current
+eight-company 2026 cohort is still prospective and
+stock PAPER/LIVE permissions remain ABSENT.
+No automatic signal promotion from fixtures or
+source-completeness to real capital. The US ETF V5
+PAPER pilot and commodity C1/C2/static forward ledger
+continue without modification. Operator STOPPED,
+engaged kill switch, HIGH selected risk, $130.30
+pilot ceiling and frozen 14 US-ETF LIVE allowlist remain.
