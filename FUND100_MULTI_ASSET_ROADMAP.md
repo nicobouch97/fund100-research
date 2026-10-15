@@ -15,7 +15,7 @@ not number of markets, backtest return, or how often a bot trades.
 | Sequence | Scope | Distinct investment thesis | Progress and promotion rule |
 |---|---|---|---|
 | **1: ETF pilot** | US-listed global/sector equity ETFs (V5-002) | ACWI benchmark core plus relative momentum satellite, threshold-based rebalance, constrained exposure | **CURRENT:** genuine V5 PAPER strategy runner operational and micro-fill broker test completed; awaiting naturally scheduled strategy rebalance and reconciliation. LIVE GET-only readiness verified, operator STOPPED; any LIVE release requires separate explicit approval |
-| **2: Bond ETFs** | TLT, IEF, SHY, TIP, LQD (research universe, not LIVE-whitelisted) | Duration / yield-curve regimes, inflation surprise and credit-spread compensation; protect capital when equities struggle | Price-only bond research engine completed; first real-data chronological holdout underperformed SHY across 5/15/35 bp costs. NOT PROMOTED; next preregistered macro-data hypothesis and prospective paper validation required |
+| **2: Bond ETFs** | TLT, IEF, SHY, TIP, LQD (research universe, not LIVE-whitelisted) | Duration / yield-curve regimes, inflation surprise and credit-spread compensation; protect capital when equities struggle | Price-only and predeclared macro-regime bond research completed; both underperformed SHY in reviewed historical late periods across 5/15/35 bp costs. NO PROMOTION. Real vintage/release-time proof and prospective paper evaluation remain necessary |
 | **3: Commodity ETPs** | GLD, DBC (research universe, not LIVE-whitelisted) | Trend / inflation regimes / curve carry where applicable; ETF tracking, roll costs and concentration matter | Distinguish futures-backed from physically held products; ETF-specific costs, liquidity, volatility and regime validation |
 | **4: Individual US stocks** | Liquid unlevered shares | Quality and earnings revision trends plus medium-term momentum; fundamental and corporate-action filters | Point-in-time fundamentals, delisting/survivorship-safe history, realistic turnover, diversification, corporate actions |
 | **5: Crypto** | Existing **separate** BTC/GBP synthetic paper bot | Slow momentum and long-run trend in a 24/7 market with high gap/liquidity/custody risk | Continue prospective forward paper; demonstrate improvement versus simple buy-and-hold net of costs, integrate 24/7 monitoring and exchange-specific API before any LIVE enablement |
@@ -276,3 +276,29 @@ runner passed its latest no-signal run and must complete a natural scheduled
 rebalance before a separate decision to enable any small LIVE event.
 The operator remains STOPPED, LIVE kill switch ENGAGED, HIGH risk selected,
 and USD 130.30 is a hard pilot ceiling, not necessarily available cash.
+
+## Phase 2 macro challenger update — 15 October 2026
+
+A second bond-only macro regime challenger was implemented and passed its
+full research and LIVE safety checks in PR #17. Four FRED public historical
+rates/breakeven/credit series (DGS2, DGS10, T10YIE, BAA10Y) are explicitly
+lagged by an *assumed* two business days; this is NOT archived release-time
+or vintage authentication. The first real research run used 4,726 bond ETF
+sessions through 14 October 2026 and 5,943 complete available macro dates.
+
+In the most recent previously inspected historic segment, cumulative net
+SHY-relative excess (not annualised) was **-8.0748, -10.3948 and -14.8805
+percentage points** at 5, 15 and 35 bp per traded side. At all costs it
+was slightly worse than the prior price-only bond challenger on the same
+segment. THIS IS EXPLORATORY, NOT A CLEAN NEW HOLDOUT.
+
+**Decision: macro bond regime research-only, NOT PROMOTED.** No more
+holdout-driven threshold tuning. Full detail in
+`research_lab/bonds/MACRO_EXPLORATORY_REVIEW_2026_10_15.md`;
+[real-data study run 38702666336](https://github.com/nicobouch97/fund100-research/actions/runs/38702666336).
+Full main-branch audit: 702 tests, LIVE boundary PASS
+([run 38702666394](https://github.com/nicobouch97/fund100-research/actions/runs/38702666394)).
+Phase 1 remains the only LIVE-whitelisted asset group, with no verified
+genuine strategy-driven PAPER fill yet. Phase 3 commodities may progress
+as isolated research next while Phase 2 awaits point-in-time vintages and
+prospective data.
