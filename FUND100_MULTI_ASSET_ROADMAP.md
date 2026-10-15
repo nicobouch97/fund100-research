@@ -16,7 +16,7 @@ not number of markets, backtest return, or how often a bot trades.
 |---|---|---|---|
 | **1: ETF pilot** | US-listed global/sector equity ETFs (V5-002) | ACWI benchmark core plus relative momentum satellite, threshold-based rebalance, constrained exposure | **CURRENT:** genuine V5 PAPER strategy runner operational and micro-fill broker test completed; awaiting naturally scheduled strategy rebalance and reconciliation. LIVE GET-only readiness verified, operator STOPPED; any LIVE release requires separate explicit approval |
 | **2: Bond ETFs** | TLT, IEF, SHY, TIP, LQD (research universe, not LIVE-whitelisted) | Duration / yield-curve regimes, inflation surprise and credit-spread compensation; protect capital when equities struggle | Price-only and predeclared macro-regime bond research completed; both underperformed SHY in reviewed historical late periods across 5/15/35 bp costs. NO PROMOTION. Real vintage/release-time proof and prospective paper evaluation remain necessary |
-| **3: Commodity ETPs** | GLD, DBC (research universe, not LIVE-whitelisted) | Trend / inflation regimes / curve carry where applicable; ETF tracking, roll costs and concentration matter | Distinguish futures-backed from physically held products; ETF-specific costs, liquidity, volatility and regime validation |
+| **3: Commodity ETPs** | GLD, DBC (research universe, not LIVE-whitelisted) | Trend / inflation regimes / curve carry where applicable; ETF tracking, roll costs and concentration matter | Initial isolated GLD/DBC fixed-trend study completed; positive SHY-relative late-period returns but below simple capped static commodity basket across all costs. RESEARCH ONLY, not promoted; next: genuine futures-curve/liquidity work and prospective evidence |
 | **4: Individual US stocks** | Liquid unlevered shares | Quality and earnings revision trends plus medium-term momentum; fundamental and corporate-action filters | Point-in-time fundamentals, delisting/survivorship-safe history, realistic turnover, diversification, corporate actions |
 | **5: Crypto** | Existing **separate** BTC/GBP synthetic paper bot | Slow momentum and long-run trend in a 24/7 market with high gap/liquidity/custody risk | Continue prospective forward paper; demonstrate improvement versus simple buy-and-hold net of costs, integrate 24/7 monitoring and exchange-specific API before any LIVE enablement |
 | **6: Direct FX** | Major liquid pairs, contingent on brokerage access | Rate differential/carry conditioned on economic regime and trend; account for overnight financing | Dedicated broker/API, realistic spreads/slippage, timezone/event calendar and leverage/margin prohibition or explicit risk model |
@@ -302,3 +302,39 @@ Phase 1 remains the only LIVE-whitelisted asset group, with no verified
 genuine strategy-driven PAPER fill yet. Phase 3 commodities may progress
 as isolated research next while Phase 2 awaits point-in-time vintages and
 prospective data.
+
+## Phase 3 commodities baseline — 15 October 2026
+
+The isolated GLD / DBC commodity research engine has completed its first
+public-data historical study at
+[GitHub Actions 38708680599](https://github.com/nicobouch97/fund100-research/actions/runs/38708680599).
+Physically backed GLD and futures-based diversified DBC were modelled
+separately. SHY was a short-duration ETF reference, SPY an equity stress
+diagnostic only. The preregistered strategy checked prior-session
+six-month absolute and SHY-relative trends, set fixed GLD/DBC target caps
+of 20%/15%, volatility-reduced candidate positions, and charged turnover
+5, 15 and 35 basis points per traded side. DBC's fund price already
+includes historic embedded roll/tracking and fund expenses, so no
+unsupported second roll-cost deduction was applied.
+
+Historical series: **4,977 sessions** through 2026-10-14; later evaluation
+started 2020-11-02. The trend strategy's cumulative excess return over
+SHY was +29.19, +27.92 and +25.40 **percentage points** across the three
+cost cases, but a capped, monthly-rebalanced static 20% GLD / 15% DBC /
+65% SHY comparator performed better, exceeding SHY by +39.68, +39.50
+and +39.13 percentage points respectively. **These are historical-period
+return differences, NOT annualised returns or proved predictive edge.**
+The trend strategy's daily equity-return correlation to SPY was about
+0.15 over that period; this is not a verified crash hedge.
+
+**Decision: do not promote the commodity candidate to PAPER or LIVE.**
+Require a new preregistered futures-carry/roll/physical-gold regime
+hypothesis using point-in-time and liquidity evidence, followed by
+prospective PAPER research before any separate human authorization
+to expand the trading universe. Detailed negative decision recorded in
+`research_lab/commodities/INITIAL_HOLDOUT_REVIEW_2026_10_15.md`.
+The full static boundary audit
+[run 38708680785](https://github.com/nicobouch97/fund100-research/actions/runs/38708680785)
+passed **714 tests**. LIVE remains limited to the original 14 equity ETFs,
+operator STOPPED, HIGH risk tier, $130.30 hard pilot ceiling, no new LIVE
+orders approved.
