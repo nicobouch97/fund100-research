@@ -126,7 +126,13 @@ def validate_contracts(raw: pd.DataFrame) -> pd.DataFrame:
         expected_unit = PRODUCTS.get((row.exchange_mic, row.product_code))
         if expected_unit is None or row.quote_unit != expected_unit:
             raise ContractDataStop("Unsupported exchange/commodity or inconsistent quote unit.")
-    # Preserve string times exactly as supplied; normalized dates for features.
+    # Expiry and delivery identity must stay consistent across daily observations.
+    for _, group in data.groupby(["exchange_mic", "product_code", "contract_id"]):
+        if (group["expiry_date"].nunique() != 1 or
+            group["delivery_month"].nunique() != 1 or
+            group["quote_unit"].nunique() != 1):
+            raise ContractDataStop("Contract identity/expiry revised without source resolution.")
+    # Preserve string release times; normalized dates for curve features.
     return data
 
 
@@ -177,7 +183,16 @@ def read_snapshot(csv_bytes: bytes, manifest: object) -> pd.DataFrame:
         })
     except (ValueError, pd.errors.ParserError) as exc:
         raise ContractDataStop("Malformed input futures contract CSV.") from exc
-    return validate_contracts(parsed)
+    validated = validate_contracts(parsed)
+    acquired = _parse_utc_timestamp(
+        pd.Series([manifest["acquired_at_utc"]]), "acquired_at_utc"
+    ).iloc[0]
+    latest_captured = _parse_utc_timestamp(
+        validated["captured_at_utc"], "captured_at_utc"
+    ).max()
+    if latest_captured > acquired:
+        raise ContractDataStop("Source captured after manifest acquisition timestamp.")
+    return validated
 
 
 def curve_pairs(data: pd.DataFrame) -> pd.DataFrame:
