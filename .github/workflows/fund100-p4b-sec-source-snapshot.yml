@@ -1,0 +1,121 @@
+name: Fund-100 Phase 4B SEC Prospective Stock Snapshot (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_stock_sec_source_p4b_v1_0.py"
+      - "test_fund100_stock_sec_source_p4b_v1_0.py"
+      - ".github/workflows/fund100-p4b-sec-source-snapshot.yml"
+      - "research_lab/stocks/**"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_stock_sec_source_p4b_v1_0.py"
+      - "test_fund100_stock_sec_source_p4b_v1_0.py"
+      - ".github/workflows/fund100-p4b-sec-source-snapshot.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        required: true
+        default: offline_tests
+        options:
+          - offline_tests
+          - capture_prospective_sec
+        description: "Offline CI or one explicit current SEC source acquisition"
+      limit:
+        type: choice
+        required: true
+        default: "2"
+        options:
+          - "1"
+          - "2"
+          - "4"
+          - "8"
+        description: "Maximum companies from frozen 15 October 2026 research cohort"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-phase4b-sec-prospective-source
+  cancel-in-progress: false
+
+jobs:
+  offline-quality-source:
+    name: Offline SEC official-only source guard + original 10-K as-of tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # No broker, Alpaca or account secrets permitted in this job.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test SEC prospective ingestion and earlier annual quality sources
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_stock_sec_source_p4b_v1_0.py test_fund100_stock_sec_quality_p4a_v1_0.py
+      - name: Confirm SEC live network access is not part of normal CI
+        run: |
+          echo "OFFLINE SEC source fixture tests only: no authenticated real company data claim."
+          echo "Historical survivor-safe alpha, analyst revisions, PAPER/LIVE: NOT AUTHORIZED."
+
+  manual-capture:
+    name: Explicit source capture using actual declared SEC contact (research only)
+    needs: offline-quality-source
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'capture_prospective_sec'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Only explicit workflow_dispatch can resolve SEC identification secret.
+    # Does NOT reference ANY broker or live environment secret.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install public research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Capture real current SEC source with exact UTC SHA provenance
+        env:
+          SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+          RESEARCH_LIMIT: ${{ inputs.limit }}
+        run: |
+          set -euo pipefail
+          # No SEC contact configured => FAIL CLOSED. Do not impersonate a
+          # user, spoof a GitHub admin, use anonymous curl, or fall back to
+          # third-party fabricated companyfacts.
+          test -n "${SEC_USER_AGENT}" || (echo "Missing FUND100_SEC_USER_AGENT; user contact required for legal SEC access." && exit 1)
+          python fund100_stock_sec_source_p4b_v1_0.py \
+            --limit "${RESEARCH_LIMIT}" \
+            --output-dir /tmp/fund100-stock-p4b-sec-capture
+      - name: Verify immutable source hash manifest and no stock orders
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          root=Path("/tmp/fund100-stock-p4b-sec-capture")
+          obj=json.loads((root/"manifest-and-quality.json").read_text())
+          assert obj["status"]=="PROSPECTIVE_SEC_SOURCE_CAPTURE_RESEARCH_ONLY"
+          assert obj["broker_orders"] == 0
+          assert not obj["live_authorized"] and not obj["paper_authorized"]
+          assert obj["source_count"] == 2*obj["companies_attempted"]
+          assert obj["raw_current_sec_download_is_not_historical_archived_source_vintage"]
+          for row in obj["companies"]:
+              assert row["analyst_earnings_revision_signal"] is None
+              assert not row["survivorship_safe_historical_backtest_eligible"]
+              for item in row["report_data_provenance"].values():
+                  raw=(root/item["source_file"]).read_bytes()
+                  assert hashlib.sha256(raw).hexdigest()==item["raw_sha256"]
+          print("Real SEC source capture verified. Research-only, no original history or broker orders.")
+          PY
+      - name: Preserve exact acquired official SEC JSON and read-only quality report
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-phase4b-real-sec-snapshot-${{ github.run_id }}
+          path: /tmp/fund100-stock-p4b-sec-capture/
+          retention-days: 90
+          if-no-files-found: error
