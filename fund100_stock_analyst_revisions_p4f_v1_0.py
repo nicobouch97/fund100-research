@@ -221,22 +221,50 @@ def evaluate(raw: bytes, manifest: dict, *, ticker: str, fiscal_year_end: str,
     }
 
 
+def readiness_report() -> dict:
+    """Auditable absence-of-data state: never make up historic revisions."""
+    cohort = sec.read_cohort()
+    return {
+        "schema": SCHEMA,
+        "status": "PREDECLARED_SOURCE_CONTRACT_NO_REAL_ANALYST_DATA",
+        "frozen_contemporary_stock_issuer_count": len(cohort),
+        "frozen_contemporary_stock_tickers": [r["ticker"] for r in cohort],
+        "contemporary_cohort_not_historical_survivorship_safe": True,
+        "licensed_original_analyst_events_retrieved": 0,
+        "original_provider_feed_connected": False,
+        "broker_level_vendor_entitlement_verified": False,
+        "provider_publication_timestamps_verified": False,
+        "analyst_earnings_revision_scores_computed_from_real_data": 0,
+        "historical_stock_return_alpha_validated": False,
+        "historical_delisting_inclusive_universe_verified": False,
+        "next_provider_dependency":
+            "Original timestamped broker EPS detail from LSEG I/B/E/S or FactSet Detail, rights and security mapping",
+        "broker_orders": 0, "paper_authorized": False, "live_authorized": False,
+    }
+
+
 def main() -> None:
     import argparse
     p=argparse.ArgumentParser()
-    p.add_argument("--raw-events-json",required=True)
-    p.add_argument("--manifest-json",required=True)
-    p.add_argument("--ticker",required=True)
-    p.add_argument("--fiscal-year-end",required=True)
-    p.add_argument("--decision-at-utc",required=True)
+    p.add_argument("--readiness-only",action="store_true")
+    p.add_argument("--raw-events-json")
+    p.add_argument("--manifest-json")
+    p.add_argument("--ticker")
+    p.add_argument("--fiscal-year-end")
+    p.add_argument("--decision-at-utc")
     p.add_argument("--output-json",required=True)
     a=p.parse_args()
-    report=evaluate(
-        Path(a.raw_events_json).read_bytes(),
-        json.loads(Path(a.manifest_json).read_text()),
-        ticker=a.ticker, fiscal_year_end=a.fiscal_year_end,
-        decision_at_utc=a.decision_at_utc,
-    )
+    if a.readiness_only:
+        report=readiness_report()
+    else:
+        if not all((a.raw_events_json,a.manifest_json,a.ticker,a.fiscal_year_end,a.decision_at_utc)):
+            p.error("Non-readiness evaluation requires original vendor source, manifest and target.")
+        report=evaluate(
+            Path(a.raw_events_json).read_bytes(),
+            json.loads(Path(a.manifest_json).read_text()),
+            ticker=a.ticker, fiscal_year_end=a.fiscal_year_end,
+            decision_at_utc=a.decision_at_utc,
+        )
     Path(a.output_json).write_text(json.dumps(report,indent=2,sort_keys=True)+"\n")
     print("P4F analyst revisions:",report["signal_state"])
     print("No licensed analyst feed attached; no stock PAPER/LIVE or historical alpha.")
