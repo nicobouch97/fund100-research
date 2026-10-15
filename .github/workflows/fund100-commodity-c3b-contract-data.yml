@@ -1,0 +1,48 @@
+name: Fund-100 C3B Verified Contract-Expiry Research (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_commodity_contract_curves_c3b_*.py"
+      - "test_fund100_commodity_contract_curves_c3b_*.py"
+      - ".github/workflows/fund100-commodity-c3b-contract-data.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-commodity-c3b-contract-data.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-c3b-contract-data-schema
+  cancel-in-progress: false
+
+jobs:
+  contract-data:
+    name: Expiry-identified curve schema and anti-fabrication tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # No broker, no market-data licences, no network downloads, no EIA retry.
+    # Never commit or publish licensed settlement data via GitHub.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check source identity, contract expiry, source SHA and no promotions
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_commodity_contract_curves_c3b_v1_0.py
+      - name: Assert no real licensed data or live outputs were fabricated
+        run: |
+          set -euo pipefail
+          test ! -e research_lab/commodities/C3B_REAL_FUTURES_PERFORMANCE.json
+          echo "C3B contract-level importer validated with synthetic fixtures only."
+          echo "Actual exchange contract dataset: NOT PROVIDED."
+          echo "Verified point-in-time vintage: NOT PROVIDED."
+          echo "DBC actual positions/roll selection: NOT PROVIDED."
+          echo "LIVE and PAPER broker orders: ZERO."
