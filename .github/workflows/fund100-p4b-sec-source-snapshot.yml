@@ -73,7 +73,12 @@ jobs:
     needs: offline-quality-source
     # Real SEC acquisitions require an explicit operator dispatch.
     # No scheduled or automatic source capture on branch pushes.
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'capture_prospective_sec'
+    # One-time, fixed eight-company research continuation requested by operator.
+    # Only the tagged merge commit on MAIN may take this read-only branch;
+    # immediately remove this branch condition after completed capture.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'capture_prospective_sec')
+      || (github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'fund100-p4c-SEC-8COHORT-20261015-one-time'))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Only explicit workflow_dispatch can resolve SEC identification secret.
@@ -88,7 +93,7 @@ jobs:
       - name: Capture real current SEC source with exact UTC SHA provenance
         env:
           SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
-          RESEARCH_LIMIT: ${{ inputs.limit }}
+          RESEARCH_LIMIT: ${{ github.event_name == 'push' && '8' || inputs.limit }}
         run: |
           set -euo pipefail
           # No SEC contact configured => FAIL CLOSED. Do not impersonate a
