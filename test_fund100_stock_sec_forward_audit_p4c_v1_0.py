@@ -190,7 +190,7 @@ def test_ledger_prevents_backdating_duplicate_sources_and_modification():
     with pytest.raises(p4c.CohortAuditStop):
         p4c.ledger_record(r, [first])
     changed = deepcopy(first)
-    changed["quality_available"] = 0
+    changed["source_manifest_sha256"] = "0" * 64
     with pytest.raises(p4c.CohortAuditStop, match="SHA256"):
         p4c.validate_ledger([changed])
     changed = deepcopy(first)
