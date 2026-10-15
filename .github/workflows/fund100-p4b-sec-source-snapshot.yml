@@ -6,6 +6,8 @@ on:
       - "fund100_stock_sec_source_p4b_v1_0.py"
       - "test_fund100_stock_sec_source_p4b_v1_0.py"
       - "test_fund100_stock_sec_capture_review_p4b_v1_0.py"
+      - "fund100_stock_sec_forward_audit_p4c_v1_0.py"
+      - "test_fund100_stock_sec_forward_audit_p4c_v1_0.py"
       - ".github/workflows/fund100-p4b-sec-source-snapshot.yml"
       - "research_lab/stocks/**"
   push:
@@ -13,6 +15,8 @@ on:
     paths:
       - "fund100_stock_sec_source_p4b_v1_0.py"
       - "test_fund100_stock_sec_source_p4b_v1_0.py"
+      - "fund100_stock_sec_forward_audit_p4c_v1_0.py"
+      - "test_fund100_stock_sec_forward_audit_p4c_v1_0.py"
       - ".github/workflows/fund100-p4b-sec-source-snapshot.yml"
   workflow_dispatch:
     inputs:
@@ -58,7 +62,7 @@ jobs:
       - name: Test real SEC text/numeric CIK parsing, capture, and annual quality
         run: |
           set -euo pipefail
-          python -m pytest -q test_fund100_stock_sec_source_p4b_v1_0.py test_fund100_stock_sec_quality_p4a_v1_0.py test_fund100_stock_sec_capture_review_p4b_v1_0.py
+          python -m pytest -q test_fund100_stock_sec_source_p4b_v1_0.py test_fund100_stock_sec_quality_p4a_v1_0.py test_fund100_stock_sec_capture_review_p4b_v1_0.py test_fund100_stock_sec_forward_audit_p4c_v1_0.py
       - name: Confirm SEC live network access is not part of normal CI
         run: |
           echo "OFFLINE SEC source fixture tests only: no authenticated real company data claim."
@@ -115,6 +119,34 @@ jobs:
                   assert hashlib.sha256(raw).hexdigest()==item["raw_sha256"]
           print("Real SEC source capture verified. Research-only, no original history or broker orders.")
           PY
+      - name: Independently revalidate EVERY original SEC byte and source-quality score
+        run: |
+          set -euo pipefail
+          python fund100_stock_sec_forward_audit_p4c_v1_0.py \
+            --source-artifact /tmp/fund100-stock-p4b-sec-capture \
+            --report-json /tmp/fund100-p4c-cohort-quality-audit.json \
+            --record-json /tmp/fund100-p4c-next-ledger-record.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path("/tmp/fund100-p4c-cohort-quality-audit.json").read_text())
+          assert p["status"] == "VERIFIED_GENUINE_SEC_SOURCE_COHORT_RESEARCH_ONLY"
+          assert p["source_companies"] in (1,2,4,8)
+          assert len(p["observations"]) == p["source_companies"]
+          assert p["broker_orders"] == 0 and not p["paper_authorized"] and not p["live_authorized"]
+          assert not p["historical_stock_return_backtest_eligible"]
+          assert not p["analyst_revision_signals_available"]
+          print("Actual SEC source and quality coverage verified for",p["source_companies"],"issuers.")
+          PY
+      - name: Preserve validated stock quality coverage and ledger candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-phase4c-sec-coverage-validated-${{ github.run_id }}
+          path: |
+            /tmp/fund100-p4c-cohort-quality-audit.json
+            /tmp/fund100-p4c-next-ledger-record.json
+          retention-days: 90
+          if-no-files-found: error
       - name: Preserve exact acquired official SEC JSON and read-only quality report
         uses: actions/upload-artifact@v4
         with:
