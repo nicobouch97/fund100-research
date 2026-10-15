@@ -472,3 +472,55 @@ GLD/DBC, C1/C2 and SHY before any PAPER proposal.
 The existing daily C1/C2/static forward scorecard remains active
 without any change to the V5 US ETF pilot, operator STOP, engaged
 LIVE kill switch, HIGH risk or $130.30 LIVE ceiling.
+
+## Commodity C3C — actual SEC-reported DBC positions (15 October 2026)
+
+We have crossed a substantive data milestone without buying exchange
+contracts or inventing market data: PR #24
+([merged filing-dated holdings study](https://github.com/nicobouch97/fund100-research/pull/24))
+transcribed **all 28 open futures positions** from each of DBC's
+March 31 and June 30, 2026 official SEC Form 10-Q schedules,
+including delivery months, contracts, USD notional, accession number
+and source URL. The transcribed file is auditable at
+`research_lab/commodities/dbc_sec_futures_holdings_2026_q1_q2.csv`.
+
+The March statement was publicly filed on **7 May 2026** and the
+June statement on **7 August 2026**. Historical strategy information
+becomes eligible conservatively the NEXT business day (8 May and
+10 August respectively): a June 30 decision must NOT know the
+June quarter-end holdings until after the filing.
+The historical notional-weight sector mixes (not official DBIQ index
+weights) were:
+
+| Futures sector | March 31 | June 30 |
+|---|---:|---:|
+| Energy | 48.8% | 47.0% |
+| Agriculture | 17.3% | 18.5% |
+| Precious metals | 14.4% | 13.2% |
+| Industrial metals | 11.4% | 12.8% |
+| Livestock | 8.1% | 8.5% |
+
+The fund disclosed different delivery months for **10 of the 28**
+futures descriptions between March and June. These are TWO disclosed
+holdings snapshots and DO NOT establish the actual dates, prices
+or gains of rolls between those reports. March and June aggregate
+futures reported notionals were $1,689,474,972 and $1,576,215,941,
+approximately reconciled to the SEC statements of shareholders'
+equity; NOT trading P&L. Full research protocol and limitations:
+`research_lab/commodities/C3C_SEC_DBC_ACTUAL_HOLDINGS_PROTOCOL_2026_10_15.md`.
+
+The official September 2025 filing describes the former
+**14-commodity index** before the **10 November 2025**
+rules expansion. The March/June 2026 schedules contain 28 reported
+position descriptions, confirming much broader market exposure, but
+we still cannot reconstruct a daily DBIQ optimum-yield weight/roll
+schedule or a valid C3 carry-return backtest.
+
+**Next:** supplement the dataset with actual verified 2025 pre-change
+SEC holdings on their filing dates, acquire actual release-dated
+futures expiration settlement curves or public exchange disclosures,
+and then design a preregistered prospective commodity strategy.
+Our append-only C1/C2/static ETF-based shadow scoreboard remains
+operational. No DBC trades are authorized; the only LIVE-eligible
+universe is unchanged US ETF V5 with operator STOP, engaged kill
+switch, HIGH risk setting and $130.30 ceiling.
