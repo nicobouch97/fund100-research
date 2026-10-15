@@ -627,3 +627,51 @@ as such. Keep C1/C2/static prospective ETF research live
 *as research only*, the separate V5 US ETF PAPER pilot
 unchanged, original 14 equities-only LIVE whitelist,
 HIGH risk, $130.30 ceiling, operator STOPPED and kill switch ENGAGED.
+
+## Commodity C3F — official monthly DBIQ index contract-selection catalogue (15 October 2026)
+
+PR #27 ([merged issuer publication registry](https://github.com/nicobouch97/fund100-research/pull/27))
+identified an important official data source beyond sparse quarter-end
+DBC fund holdings: Deutsche Bank's
+[DBIQ Diversified Commodity Index](https://index.db.com/dbiq-web/indices/95400)
+(index Bloomberg identifier **DBLCDBCE**) lists its 2025 index
+methodology guide and annual November 2025 commodity index weights
+documents. The official
+[DBIQ issuer publications catalogue](https://dbindex.db.com/dbiq-web/publications)
+lists **12 monthly 'DBIQ Optimum Yield indices Selection Report'
+publications from November 2025 through October 2026**, with real
+issuer-posting dates and site clock text. The source site's displayed
+clock timezone remains unverified. The index provider's April 2025
+notice describes the November 2025 switch to Modified Optimum Yield
+contract selection, liquidity screening, production/liquidity-based
+weights, sector/commodity concentration caps and intra-year controls.
+
+A fully source-linked, 12-line issuer report registry is committed at
+`research_lab/commodities/dbiq_official_selection_report_registry_2025_2026.csv`.
+The code in `fund100_dbiq_publication_registry_c3f_v1_0.py`
+strictly validates source titles, chronology, conservative calendar
+as-of timing and SHA256/source/rights intake requirements for *any
+future actually obtained original PDF*. It is
+**metadata/evidence-gate code only**: the official PDF bytes or
+actual contract selections, exact contract expiry details, genuine
+monthly DBC diversified basket weights and rolling P&L have NOT
+been acquired/extracted/verified. The 2-weekday visibility delay is
+not an independently verified historical release timestamp or
+holiday-aware exchange trading calendar.
+
+CI tested **14** issuer-source constraints; full baseline was
+**810 passing tests and 36 passing LIVE static safety checks**.
+Research protocol:
+`research_lab/commodities/C3F_DBIQ_ISSUER_MONTHLY_CONTRACT_REPORT_REGISTRY_2026_10_15.md`.
+
+**Next concrete dependency:** obtain and authenticate the
+actual 2025 index guide / official November weights and monthly
+selection PDF files, respecting copyright and source usage
+permissions, verify exact report publication times, differentiate
+single-commodity subindex contract selection from DBC's actual
+index basket, then integrate only date-available futures settlement
+data. Do not backtest carry without true contract-level quotes
+and roll rules. The existing C1/C2/static public-data forward
+comparison and Phase 1 genuine ETF PAPER execution continue
+unchanged. LIVE operator STOPPED, kill switch ENGAGED, HIGH tier
+and $130.30 pilot ceiling unchanged; no commodity trading authorised.
