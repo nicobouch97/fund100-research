@@ -273,3 +273,15 @@ def test_issuer_share_class_change_cannot_double_count_one_analyst():
     raw,m=pack(d,m)
     with pytest.raises(p4f.AnalystEvidenceStop,match="security/share-class"):
         evaluate(raw,m)
+
+
+def test_live_research_readiness_truthfully_reports_no_vendor_feed():
+    r=p4f.readiness_report()
+    assert r["status"]=="PREDECLARED_SOURCE_CONTRACT_NO_REAL_ANALYST_DATA"
+    assert r["frozen_contemporary_stock_issuer_count"]==8
+    assert r["licensed_original_analyst_events_retrieved"]==0
+    assert r["original_provider_feed_connected"] is False
+    assert r["analyst_earnings_revision_scores_computed_from_real_data"]==0
+    assert r["historical_delisting_inclusive_universe_verified"] is False
+    assert r["broker_orders"]==0
+    assert not r["paper_authorized"] and not r["live_authorized"]
