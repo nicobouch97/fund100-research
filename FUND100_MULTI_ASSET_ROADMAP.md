@@ -979,3 +979,80 @@ V5 genuine US ETF PAPER execution are unchanged.
 Original 14 US ETF-only LIVE whitelist, operator STOPPED,
 engaged kill switch, HIGH risk and $130.30 pilot ceiling
 remain frozen. No equity individual-stock orders.
+
+## Phase 4C–4D — eight real SEC issuer sources, 2/8 fixed-tag coverage (15 Oct 2026)
+
+At the user's request to continue after real AAPL/MSFT research,
+Phase 4C added an original-source-audited, **append-only prospective
+SEC capture ledger** in
+[PR #34](https://github.com/nicobouch97/fund100-research/pull/34).
+Its source validator independently opens P4B ZIP/raw directories,
+verifies original SEC CompanyFacts and submissions bytes against
+the manifest SHA256 and actual SEC CIK/URL, recomputes all stored
+annual quality values, rejects malicious/partial source archives,
+and emits an optional hash-linked chronological next-capture
+record. It does not rewrite the first two-company research
+observation or place any stock orders.
+
+One tightly bounded, operator-requested **eight-company SEC
+capture** succeeded in
+[GitHub run 38756477914](https://github.com/nicobouch97/fund100-research/actions/runs/38756477914)
+at **2026-10-15T15:01:45Z**. It acquired **16 genuine SEC
+CompanyFacts/submissions JSON documents** for the frozen
+AAPL/MSFT/GOOGL/AMZN/XOM/JNJ/PG/KO research cohort.
+Source SHA256 review manifest:
+`bafc7a084a6d4deaf7c7b7a5e982d52a8b5ecd6fe1b70a0ebaf3e64a610b1e18`.
+Original SEC artifact:
+`fund100-phase4b-real-sec-snapshot-38756477914`,
+ID `11983422763`. Independent verified coverage artifact:
+`fund100-phase4c-sec-coverage-validated-38756477914`,
+ID `11983907325` (both retained 90 days).
+
+**Observed quality coverage:**
+- **8/8 genuine issuer source captures verified**, but
+  **only 2/8 complete** under P4A's fixed original four US-GAAP
+  annual concepts. AAPL and MSFT independently reproduce
+  original **3/3** scores. Missing fields never become zeros
+  or negative company judgements.
+- GOOGL latest 2025 original 10-K missing the exact
+  revenue concept annual row. AMZN lacks the exact capex
+  concept annual row. XOM lacks the fixed latest revenue
+  fact and `OperatingIncomeLoss` tag. JNJ has no matching
+  current original full-year `OperatingIncomeLoss` fact.
+  PG and KO lack the exact fixed revenue concept; other
+  non-equivalent revenue tags are visible but not used.
+- The original P4A sometimes categorised a newer incomplete
+  10-K as an older stale complete year. To address this
+  WITHOUT mutating first-capture history, the separately
+  versioned **P4D current-filing completeness overlay**
+  in [PR #35](https://github.com/nicobouch97/fund100-research/pull/35)
+  checks the latest SEC-filed original 10-K first, labels
+  missing concept availability, and suppresses stale
+  carry-forward of prior complete scores in future prospective
+  research. It does NOT change the original P4A score
+  thresholds, automatically substitute GAAP concepts or
+  approve stock orders. New P4D tests are synthetic; its
+  exact current cohort source findings are manually documented.
+- P4C–P4D complete SEC results/limitations and original
+  hashes: `research_lab/stocks/P4C_P4D_FIRST_EIGHT_REAL_SEC_QUALITY_REVIEW_2026_10_15.md`.
+
+**Security/operations:** the temporary one-shot SEC capture
+trigger has been **removed** from the official P4B workflow
+(restore commit `a8ba0c35ad6b7a0e69d2e97e9d94cbd8505d642b`).
+Future SEC contacts are MANUAL `workflow_dispatch` only
+with the prior user-supplied requester identity and no
+broker credentials. Final premerge repository audit passed
+**895 tests and 36 LIVE boundary checks** after P4D.
+
+**Next meaningful development:** preregister audited
+company/sector-specific GAAP fact alternatives only where
+they are economically comparable; keep other companies
+UNKNOWN rather than score-filling. Separately seek
+publication-timestamped analyst earnings *consensus revisions*
+and a survivorship/delisting-safe historical security master
+before any alpha claim, and a new forward-only priced
+scorecard before stock PAPER. Still NO stock PAPER/LIVE
+authorization, no changes to the original V5 ETF
+whitelist, operator STOPPED, engaged kill switch, HIGH
+risk tier or $130.30 LIVE exposure limit. Existing
+commodity C1/C2/static forward research remains separate.
