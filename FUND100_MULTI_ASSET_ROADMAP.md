@@ -16,7 +16,7 @@ not number of markets, backtest return, or how often a bot trades.
 |---|---|---|---|
 | **1: ETF pilot** | US-listed global/sector equity ETFs (V5-002) | ACWI benchmark core plus relative momentum satellite, threshold-based rebalance, constrained exposure | **CURRENT:** genuine V5 PAPER strategy runner operational and micro-fill broker test completed; awaiting naturally scheduled strategy rebalance and reconciliation. LIVE GET-only readiness verified, operator STOPPED; any LIVE release requires separate explicit approval |
 | **2: Bond ETFs** | TLT, IEF, SHY, TIP, LQD (research universe, not LIVE-whitelisted) | Duration / yield-curve regimes, inflation surprise and credit-spread compensation; protect capital when equities struggle | Price-only and predeclared macro-regime bond research completed; both underperformed SHY in reviewed historical late periods across 5/15/35 bp costs. NO PROMOTION. Real vintage/release-time proof and prospective paper evaluation remain necessary |
-| **3: Commodity ETPs** | GLD, DBC (research universe, not LIVE-whitelisted) | Trend / inflation regimes / curve carry where applicable; ETF tracking, roll costs and concentration matter | Initial isolated GLD/DBC fixed-trend study completed; positive SHY-relative late-period returns but below simple capped static commodity basket across all costs. RESEARCH ONLY, not promoted; next: genuine futures-curve/liquidity work and prospective evidence |
+| **3: Commodity ETPs** | GLD, DBC (research universe, not LIVE-whitelisted) | Trend / inflation regimes / curve carry where applicable; ETF tracking, roll costs and concentration matter | C1 trend and C2 gold real-yield/inflation challengers both lag the capped static GLD/DBC mix in known history. Prospective daily public-data shadow scorecard now operational, research only; independent futures curve data and later forward performance required before any trading promotion |
 | **4: Individual US stocks** | Liquid unlevered shares | Quality and earnings revision trends plus medium-term momentum; fundamental and corporate-action filters | Point-in-time fundamentals, delisting/survivorship-safe history, realistic turnover, diversification, corporate actions |
 | **5: Crypto** | Existing **separate** BTC/GBP synthetic paper bot | Slow momentum and long-run trend in a 24/7 market with high gap/liquidity/custody risk | Continue prospective forward paper; demonstrate improvement versus simple buy-and-hold net of costs, integrate 24/7 monitoring and exchange-specific API before any LIVE enablement |
 | **6: Direct FX** | Major liquid pairs, contingent on brokerage access | Rate differential/carry conditioned on economic regime and trend; account for overnight financing | Dedicated broker/API, realistic spreads/slippage, timezone/event calendar and leverage/margin prohibition or explicit risk model |
@@ -338,3 +338,51 @@ The full static boundary audit
 passed **714 tests**. LIVE remains limited to the original 14 equity ETFs,
 operator STOPPED, HIGH risk tier, $130.30 hard pilot ceiling, no new LIVE
 orders approved.
+
+## Commodity research continuation — 15 October 2026
+
+Commodity research stays ACTIVE rather than advancing past the asset
+class after one poorly performing bot. Physical-gold/real-yield and
+futures-linked DBC inflation hypotheses must remain distinct. The
+second preregistered active C2 model was evaluated in GitHub
+[run 38711280282](https://github.com/nicobouch97/fund100-research/actions/runs/38711280282).
+Over the *already inspected* late historical interval, its **net cumulative
+percentage-point excess vs SHY** at 5/15/35 bp costs was +12.53476,
++11.28596 and +8.82557 respectively, worse than the C1 commodity trend
+(+29.19026/+27.91679/+25.40366) and the static capped GLD/DBC/SHY
+mix (+39.68468/+39.50014/+39.13174). This is NOT annualized
+outperformance, independent validation, or evidence of forward edge.
+C2 is NOT promoted to PAPER or LIVE.
+The C2 research decision is frozen in
+`research_lab/commodities/C2_HISTORICAL_REVIEW_2026_10_15.md`.
+
+To avoid overfitting this previously examined period, PR #20 implemented
+a daily, **broker-free, append-only prospective commodity comparison**
+between the static capped GLD/DBC reference, unchanged C1 and unchanged
+C2, plus SHY and SPY passive observations. The [first completed workflow
+run 38712443715](https://github.com/nicobouch97/fund100-research/actions/runs/38712443715)
+committed the initial **14 October 2026** market snapshot to
+`research_lab/commodities/prospective/observations.jsonl`.
+All models begin at research-only NAV 100 on that date. **No future
+performance has yet been measured**; the next completed sessions must be
+observed subsequently. The ledger is hash-chained and refuses to
+backfill an intervening missed session or revise previous hypothetical
+wealth. Source ETF adjusted histories are vendor-revisable and FRED
+two-weekday availability is still only an assumption, not verified
+real-time-vintage evidence. The new forward workflow is scheduled
+weekday mornings UTC, has no Alpaca or broker secrets and cannot trade.
+Full main-branch suite and LIVE static boundary
+[run 38712443906](https://github.com/nicobouch97/fund100-research/actions/runs/38712443906)
+passed 738 tests.
+
+**Next commodity research goals:** obtain verifiable point-in-time
+futures contract term structures, roll schedules, collateral yield
+and trading-friction information to test carry and roll yield
+directly; separately assess physical gold's equity stress
+diversification using dated macro releases, without retuning C1/C2
+against their historical evaluation period. Preserve a combined
+portfolio risk budget and require new prospective evidence before
+even PAPER promotion. Existing V5 US-equity ETF pilot remains the
+only LIVE-whitelisted universe and is STILL awaiting a genuine
+strategy-driven PAPER rebalance. Operator STOPPED, LIVE kill switch
+ENGAGED, HIGH selected and $130.30 LIVE ceiling unchanged.
