@@ -248,6 +248,11 @@ def curve_pairs(data: pd.DataFrame) -> pd.DataFrame:
 def research_report(data: pd.DataFrame, manifest: dict, csv_bytes: bytes) -> dict:
     validate_manifest(manifest, csv_bytes)
     prices = validate_contracts(data)
+    # Never allow an unrelated in-memory frame to be labelled with
+    # a valid SHA256 from different CSV bytes.
+    reimported = read_snapshot(csv_bytes, manifest)
+    if not prices.equals(reimported):
+        raise ContractDataStop("Research frame does not match SHA-bound source CSV.")
     pairs = curve_pairs(prices)
     statuses = pairs["curve_state"].value_counts().to_dict() if len(pairs) else {}
     return {
