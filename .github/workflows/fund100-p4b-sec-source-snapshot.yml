@@ -5,6 +5,7 @@ on:
     paths:
       - "fund100_stock_sec_source_p4b_v1_0.py"
       - "test_fund100_stock_sec_source_p4b_v1_0.py"
+      - "test_fund100_stock_sec_capture_review_p4b_v1_0.py"
       - ".github/workflows/fund100-p4b-sec-source-snapshot.yml"
       - "research_lab/stocks/**"
   push:
@@ -57,7 +58,7 @@ jobs:
       - name: Test real SEC text/numeric CIK parsing, capture, and annual quality
         run: |
           set -euo pipefail
-          python -m pytest -q test_fund100_stock_sec_source_p4b_v1_0.py test_fund100_stock_sec_quality_p4a_v1_0.py
+          python -m pytest -q test_fund100_stock_sec_source_p4b_v1_0.py test_fund100_stock_sec_quality_p4a_v1_0.py test_fund100_stock_sec_capture_review_p4b_v1_0.py
       - name: Confirm SEC live network access is not part of normal CI
         run: |
           echo "OFFLINE SEC source fixture tests only: no authenticated real company data claim."
