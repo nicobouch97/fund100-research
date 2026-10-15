@@ -70,7 +70,10 @@ def validate_prices(raw: pd.DataFrame) -> pd.DataFrame:
 
 def signal(raw: pd.DataFrame, t: int) -> Allocation:
     """Friday end-of-session target from bars ENDING THE PRIOR SESSION."""
-    data = validate_prices(raw)
+    return _signal_validated(validate_prices(raw), t)
+
+
+def _signal_validated(data: pd.DataFrame, t: int) -> Allocation:
     if type(t) is not int or not FIRST_POSSIBLE_T <= t < len(data):
         raise V6ResearchStop("Attempt to compute signal without 200 prior sessions.")
     if data.index[t].weekday() != 4:
@@ -132,7 +135,7 @@ def backtest(raw: pd.DataFrame, *, cost_bps: int) -> pd.DataFrame:
         signaled = False
         risk_on = None
         if t >= FIRST_POSSIBLE_T and when.weekday() == 4:
-            choice = signal(data,t)
+            choice = _signal_validated(data,t)
             risk_on=choice.risk_on
             diffs = [abs(choice.weights[s]-active[s]) for s in UNIVERSE]
             # If target differs meaningfully in any slot, execute all legs.
@@ -214,10 +217,10 @@ def analyze(prices: pd.DataFrame, source_sha256: str) -> dict:
         "commissions_and_spread_not_independently_verified":True,
         "results_by_one_way_cost_bps": {
             str(cost): {
-                "full_exploratory":metrics(backtest(data,cost_bps=cost), "2014-01-01"),
-                "recent_exploratory":metrics(backtest(data,cost_bps=cost), "2020-01-01"),
+                "full_exploratory":metrics(path, "2014-01-01"),
+                "recent_exploratory":metrics(path, "2020-01-01"),
             }
-            for cost in COSTS_BPS
+            for cost,path in ((bps,backtest(data,cost_bps=bps)) for bps in COSTS_BPS)
         },
         "operator_authorised_liquidation":False,
         "operator_authorised_v6_live":False,
