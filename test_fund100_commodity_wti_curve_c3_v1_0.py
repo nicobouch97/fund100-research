@@ -146,3 +146,14 @@ def test_report_never_mutates_real_source():
     old = d.copy()
     c3.report(d)
     pd.testing.assert_frame_equal(d, old)
+
+def test_blocked_eia_http_source_cannot_produce_fake_curve_data(monkeypatch):
+    from urllib.error import HTTPError
+
+    def blocked(*args, **kwargs):
+        raise HTTPError("https://api.eia.gov/", 403, "Forbidden", {}, None)
+
+    monkeypatch.setattr(source, "urlopen", blocked)
+    with pytest.raises(c3.CurveResearchStop, match="source unavailable"):
+        source.download_history("RCLC1")
+    # No fallback to ETF spot returns or invented near-future settlements.
