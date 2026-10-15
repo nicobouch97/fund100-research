@@ -1,0 +1,64 @@
+name: Fund-100 C3D SEC DBC pre-post index redesign (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_dbc_index_break_c3d_v1_0.py"
+      - "test_fund100_dbc_index_break_c3d_v1_0.py"
+      - "research_lab/commodities/dbc_sec_futures_holdings_2025_q3_prechange.csv"
+      - ".github/workflows/fund100-dbc-c3d-index-break.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-dbc-c3d-index-break.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sec-index-change:
+    name: Actual historical pre-post change and SEC release chronology
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # SEC source already embedded as reviewed CSV; no live network or broker.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify no look-ahead and actual SEC 14-to-28 disclosure change
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_dbc_index_break_c3d_v1_0.py test_fund100_dbc_sec_holdings_c3c_v1_0.py
+      - name: Compute actual DBC pre-post positions and lagged public knowability
+        run: |
+          set -euo pipefail
+          python fund100_dbc_index_break_c3d_v1_0.py \
+            --output-json /tmp/fund100-dbc-c3d-index-change.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          x = json.loads(Path("/tmp/fund100-dbc-c3d-index-change.json").read_text())
+          assert x["status"] == "REAL_SEC_QUARTERLY_DISCLOSURES_RESEARCH_ONLY"
+          assert x["real_2025_prechange_index_descriptions"] == 14
+          assert x["real_2026_postchange_futures_descriptions"] == 28
+          assert x["added_commodity_count"] == 14
+          assert x["asof_examples"]["2025-11-07"] is None
+          assert x["asof_examples"]["2025-11-10"] == "2025-09-30"
+          assert x["prechange_filing_cannot_be_prospective_prechange_strategy_signal"] is True
+          assert x["historical_curve_or_dbc_roll_pnl_computed"] is False
+          assert x["broker_order_count"] == 0
+          assert not x["trading_authorized"] and not x["live_authorized"] and not x["paper_authorized"]
+          print("SEC source facts only, dated and no orders.")
+          PY
+      - name: Retain reproducible descriptive report (no licensed data)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-dbc-c3d-pre-post-sec-${{ github.run_id }}
+          path: /tmp/fund100-dbc-c3d-index-change.json
+          retention-days: 90
+          if-no-files-found: error
