@@ -1273,3 +1273,29 @@ explicitly chooses to migrate, read fresh LIVE broker positions and
 order history, prepare an exact staged transition, review sale proceeds
 and costs, prevent old V5 loop from repurchasing positions, verify risk
 limits and ask for specific buy/sell authorisation before any order.
+
+
+### V6-R1 empirical result (15 Oct 2026) — rejected, no live migration
+
+The first separately frozen aggressive contender was run on genuine
+immutable Fund-100 historical price observations (NOT imaginary expected
+returns) in
+[Actions 38772847954](https://github.com/nicobouch97/fund100-research/actions/runs/38772847954).
+Its 16 dedicated risk/source/no-lookahead tests passed.
+Weekly concentrated rotation of up to three sector/country ETFs
+suffered severe trading friction and underperformed passive ACWI
+in the exploratory 2014–2026 comparison: **−6.2656 percentage points
+annualised** at 5bp per traded side, **−8.3343 pp** at 15bp and
+**−12.3557 pp** at 35bp. Gross annual portfolio-weight turnover was
+**19.68715 x NAV**. These historical observations were already known;
+no claim of independent historical alpha can be made from them.
+Preserved rejection:
+\`research_lab/results/V6_R1_AGGRESSIVE_ROTATION_FIRST_REAL_RESEARCH_REJECTION_2026_10_15.md\`.
+
+**REJECT V6-R1.** Do not alter it until its reused sample fits a desired
+result. Do not trade it LIVE or replace old V5 holdings with this losing
+prototype. The operator's priority remains a better active high-risk
+strategy—not more trading for its own sake. Seek genuinely distinct
+sources and evidence (individual stock analyst revisions/catalysts,
+authentic futures carry, and other appropriately cost-aware methods)
+before a separately approved small-capital LIVE strategy reset.
