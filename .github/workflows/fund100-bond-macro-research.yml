@@ -1,0 +1,85 @@
+name: Fund-100 Phase 2 Macro Bond Regime Research (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_bond_macro_*.py"
+      - "test_fund100_bond_macro_*.py"
+      - ".github/workflows/fund100-bond-macro-research.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-bond-macro-research.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run tests only, or public exploratory retrospective study"
+        type: choice
+        default: tests_only
+        required: true
+        options:
+          - tests_only
+          - retrospective_exploratory
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-phase2-macro-bond-research
+  cancel-in-progress: false
+
+jobs:
+  bond-macro:
+    name: Availability-safe bond regime tests and optional historical study
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test macro publication chronology and risk restrictions
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_bond_macro_regime_v1_0.py
+      - name: Download public retrospectively revised bond ETF prices
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'retrospective_exploratory')
+        run: |
+          set -euo pipefail
+          python fund100_bond_price_source_v1_0.py --output-csv /tmp/fund100-phase2-bond-prices.csv
+      - name: Download four public retrospective FRED yield/spread series
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'retrospective_exploratory')
+        run: |
+          set -euo pipefail
+          python fund100_bond_macro_source_v1_0.py --output-csv /tmp/fund100-phase2-macro.csv
+      - name: Evaluate predeclared bond regime hypothesis without promotion
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'retrospective_exploratory')
+        run: |
+          set -euo pipefail
+          python fund100_bond_macro_regime_v1_0.py \
+            --prices-csv /tmp/fund100-phase2-bond-prices.csv \
+            --macro-csv /tmp/fund100-phase2-macro.csv \
+            --output-json /tmp/fund100-phase2-macro-bond-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj = json.loads(Path("/tmp/fund100-phase2-macro-bond-report.json").read_text())
+          assert obj["portfolio_status"] == "RESEARCH_ONLY_NO_PROMOTION"
+          assert obj["live_authorized"] is False
+          assert obj["paper_authorized"] is False
+          assert obj["historical_holdout_not_independent"] is True
+          print("Bond macro result: retrospective exploratory only; no broker or permits.")
+          PY
+      - name: Preserve macro/price provenance and exploratory report
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'retrospective_exploratory')
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-phase2-macro-bond-exploratory-${{ github.run_id }}
+          path: |
+            /tmp/fund100-phase2-bond-prices.csv
+            /tmp/fund100-phase2-macro.csv
+            /tmp/fund100-phase2-macro-bond-report.json
+          if-no-files-found: error
+          retention-days: 90
