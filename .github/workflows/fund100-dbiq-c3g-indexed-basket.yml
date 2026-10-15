@@ -5,6 +5,7 @@ on:
     paths:
       - "fund100_dbiq_indexed_constituents_c3g_v1_0.py"
       - "test_fund100_dbiq_indexed_constituents_c3g_v1_0.py"
+      - "fund100_dbiq_official_pdf_discovery_probe_c3g.py"
       - "research_lab/commodities/dbiq_diversified_index_web_indexed_28_constituents_2026_10_15.csv"
       - ".github/workflows/fund100-dbiq-c3g-indexed-basket.yml"
   push:
@@ -53,6 +54,15 @@ jobs:
           assert r["broker_order_count"] == 0
           print("28 index-listed futures are not a verified historical roll/price series.")
           PY
+      - name: One-off bounded public issuer JS document discovery (non-blocking)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          python -m pip install "playwright==1.56.0"
+          python -m playwright install chromium --with-deps
+          python fund100_dbiq_official_pdf_discovery_probe_c3g.py
       - name: Archive metadata-only nontradable research evidence
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
