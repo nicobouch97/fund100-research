@@ -82,7 +82,7 @@ def decision(prices: pd.DataFrame, t: int) -> Decision:
         target["DBC"] = DBC_STRESS_TARGET
     if cut_gld:
         target["GLD"] = GLD_STRESS_TARGET
-    target["SHY"] = 1.-target["DBC"]-target["GLD"]
+    target["SHY"] = round(1.-target["GLD"]-target["DBC"], 12)
     if (target["GLD"] < 0 or target["GLD"] > MODEL_MAX_GLD or
         target["DBC"] < 0 or target["DBC"] > MODEL_MAX_DBC or
         target["SHY"] < 1.-MODEL_MAX_GLD-MODEL_MAX_DBC-1e-12):
