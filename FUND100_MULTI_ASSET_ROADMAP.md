@@ -796,3 +796,69 @@ US-ETF genuine PAPER event workflow remains separate and on
 its existing schedule. User HIGH, LIVE $130.30 ceiling,
 operator STOPPED, engaged kill switch and frozen 14 US
 ETF LIVE universe remain unchanged.
+
+## Phase 4A — US individual-stock SEC filing quality source (15 Oct 2026)
+
+Phase 3 commodity C1/C2/C4 historical challengers failed to
+establish a robust advantage over capped static GLD/DBC/SHY;
+the separate C1/C2/static daily forward hash-chain continues
+with only its initial 14 Oct 2026 observation as of the latest
+review. DBIQ individual futures source PDFs / historical
+exchange settlements remain unauthenticated and blocked
+behind source-data access terms. We are continuing commodities
+prospectively while moving to the *next independent asset
+group*, rather than repeatedly tuning the same explored ETF
+history.
+
+[PR #30](https://github.com/nicobouch97/fund100-research/pull/30)
+merged `fund100_stock_sec_quality_p4a_v1_0.py`, an OFFLINE-only
+SEC annual filing-identity / conservative-as-of quality
+engine. It combines official [SEC companyfacts and submissions
+JSON](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)
+for the same 10-digit CIK and requires matching original 10-K
+accession, filed day, annual fiscal start/end and standardized
+US-GAAP USD tags. Date-gates each 10-K by **two ordinary
+weekdays after filing** (conservative proxy, not true
+exchange-holiday/release-time proof). Uses consecutive
+complete 10-K reporting periods, rejects same-year
+restatement conflicts, too-stale reports, annual-vs-YTD
+mixing and missing cash-flow tag imputation.
+
+The **research-only** stock-quality score has three fixed
+binary flags: reported annual revenue YoY growth >=0,
+annual operating-income margin >=10%, and annual
+FCF/revenue >=5% (FCF = annual operating cash flow less
+property/equipment acquisitions). This is not an
+estimated-EPS analyst revision model and not a trade signal.
+Analyst revisions remain `null` until a legitimate
+timestamped point-in-time estimates provider is available;
+current SEC API histories are NOT independent archived
+past vintages.
+
+A frozen example **2026 contemporaneous research cohort**
+(AAPL, MSFT, GOOGL, AMZN, XOM, JNJ, PG, KO) is stored in
+`research_lab/stocks/p4a_contemporary_universe_2026_10_15.csv`.
+Its CIKs are explicit but it is NOT survivorship-safe to
+backtest historically and NONE of its stock symbols are
+PAPER/LIVE allowed. Missing historic defunct stock records,
+corporate events, earnings release timestamps, analyst
+estimate revisions, execution prices, earnings gap risk,
+and diversification/correlation proofs still block stock
+strategy promotion. Source and next data gates:
+`research_lab/stocks/P4A_SEC_FILING_QUALITY_PROTOCOL_2026_10_15.md`.
+
+Offline synthetic SEC fixtures passed **14** dedicated tests.
+Full static LIVE safety audit passed **848** repository tests
+and **36** LIVE boundary checks. No actual SEC value
+download, verified fundamentals dataset, stock historical
+return or alpha measurement is claimed yet.
+
+**Next engineering milestone:** acquire permission-compliant
+actual SEC annual filings and source hashes for the frozen
+current cohort, then build a forward-only, point-in-time
+quality research scorecard and separately establish an
+analyst revision source / survivorship-safe security master
+before evaluating historical strategy performance. Do not
+auto-trade the roster; original 14 US-ETF pilot LIVE
+whitelist, operator STOP, engaged kill switch, HIGH risk
+and $130.30 LIVE pilot ceiling remain unchanged.
