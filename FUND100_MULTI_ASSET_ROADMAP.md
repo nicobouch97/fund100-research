@@ -1192,3 +1192,39 @@ PAPER pilot and commodity C1/C2/static forward ledger
 continue without modification. Operator STOPPED,
 engaged kill switch, HIGH selected risk, $130.30
 pilot ceiling and frozen 14 US-ETF LIVE allowlist remain.
+
+
+## Phase 4G — forward-only US stock quality x momentum observation (15 Oct 2026)
+
+[PR #38](https://github.com/nicobouch97/fund100-research/pull/38)
+introduces a completely broker-free, source-fingerprinted prospective
+stock momentum research observer. It keeps the six authentic original
+P4E 15 Oct 2026 issuer-accounting scores fixed: AAPL=3, MSFT=3,
+GOOGL=3, AMZN=2, PG=3, KO=3. XOM and JNJ remain UNKNOWN, not zero.
+The descriptive shortlist predeclares the 126-session adjusted-close
+absolute return >0, the 63-session adjusted-close return greater than
+SPY's own 63-session return, and P4E issuer quality >=2. Up to three
+names with the highest 63-session SPY-relative momentum are returned
+as a research watchlist, NOT a stock purchase recommendation.
+
+The isolated P4G GitHub workflow tests source and chronology fixtures
+on commits and PRs; at 03:30 UTC Tuesday-Saturday or explicit manual
+dispatch it separately fetches public vendor-adjusted share closes
+for all eight issuers and SPY/SHY, retains a canonical dated input
+CSV and its SHA256, and emits one research-only descriptive snapshot.
+The earliest source-eligible completed market session is 15 October
+2026, with capture no sooner than the next UTC date. Public Yahoo
+adjustments can be retrospectively revised. No future price outcomes
+exist yet for P4G, and no automatic historical stock return study
+has been inferred from the eight current 2026 surviving companies.
+The first real P4G public stock price acquisition is **PENDING**.
+
+Next: observe genuinely new market sessions and develop an append-only
+cost-aware forward comparison of top-three research shortlist versus
+equal-weight six covered issuers and SPY/SHY. The separate licensed
+P4F original broker EPS revision feed, historical security master,
+delisting and original corporate-action total return are STILL missing.
+The Phase 3 C1/C2/static commodity forward ledger and V5 genuine ETF
+PAPER workflow remain independent. No individual-stock PAPER/LIVE
+permissions. LIVE operator STOPPED, kill switch ENGAGED, HIGH risk,
+USD 130.30 pilot ceiling and fixed 14 equity-ETF whitelist unchanged.
