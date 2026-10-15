@@ -1,0 +1,88 @@
+name: Fund-100 C2 Commodity Regime Research (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fund100-commodity-c2-regime-research.yml"
+      - "fund100_commodity_macro_c2_*.py"
+      - "test_fund100_commodity_macro_c2_*.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-commodity-c2-regime-research.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        required: true
+        default: "tests_only"
+        options:
+          - tests_only
+          - historical_exploratory
+        description: "Offline tests or historical public-data study (not a trading test)"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-phase3-c2-commodity-research
+  cancel-in-progress: false
+
+jobs:
+  research:
+    name: C2 real yields, inflation, physical gold and futures ETP
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # No Alpaca or broker environment, no API keys, no approvals, no trade writes.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install frozen research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Validate C2 no-lookahead and no-permission invariants
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_commodity_macro_c2_v1_0.py
+      - name: Fetch GLD DBC SHY SPY public research prices
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'historical_exploratory')
+        run: |
+          set -euo pipefail
+          python fund100_commodity_price_source_v1_0.py --output-csv /tmp/c2-commodity-prices.csv
+      - name: Fetch public FRED real yield, breakeven and corporate spreads
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'historical_exploratory')
+        run: |
+          set -euo pipefail
+          python fund100_commodity_macro_c2_source_v1_0.py --output-csv /tmp/c2-commodity-macro.csv
+      - name: Compare immutable C2 hypothesis versus C1 static and SHY
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'historical_exploratory')
+        run: |
+          set -euo pipefail
+          python fund100_commodity_macro_c2_v1_0.py \
+            --price-csv /tmp/c2-commodity-prices.csv \
+            --macro-csv /tmp/c2-commodity-macro.csv \
+            --output-json /tmp/c2-commodity-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("/tmp/c2-commodity-report.json").read_text(encoding="utf-8"))
+          assert report["status"] == "EXPLORATORY_HISTORICAL_ONLY_NO_PROMOTION"
+          assert report["live_authorized"] is False
+          assert report["paper_authorized"] is False
+          assert report["broker_orders"] == 0
+          assert report["historical_vintage_authentication_established"] is False
+          assert report["holdout_is_independent"] is False
+          print("C2 research retrospective only: no trading permission.")
+          PY
+      - name: Archive immutable code-linked data and report for independent review
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'historical_exploratory')
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-commodity-c2-research-${{ github.run_id }}
+          path: |
+            /tmp/c2-commodity-prices.csv
+            /tmp/c2-commodity-macro.csv
+            /tmp/c2-commodity-report.json
+          if-no-files-found: error
+          retention-days: 90
