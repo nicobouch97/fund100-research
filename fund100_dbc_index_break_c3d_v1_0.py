@@ -82,7 +82,7 @@ def validate_prechange(raw: pd.DataFrame) -> pd.DataFrame:
             raise FilingBreakStop("Incorrect SEC source identity or public availability.")
     if not data["delivery_month"].map(
         lambda x: isinstance(x, str) and
-        bool(re.fullmatch(r"20\\d{2}-(0[1-9]|1[0-2])", x))
+        bool(re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", x))
     ).all():
         raise FilingBreakStop("Unknown expiry-month representation.")
     if (data["delivery_month"] < expected["statement_date"][:7]).any():
