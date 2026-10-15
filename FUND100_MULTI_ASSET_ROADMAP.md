@@ -426,3 +426,49 @@ strategy candidate, then face out-of-sample and forward research
 versus the static baseline. No commodity PAPER/LIVE trading or
 whitelist expansion is authorised. HIGH risk tier, $130.30 maximum
 LIVE pilot ceiling, operator STOP and kill switch stay unchanged.
+
+## Commodity Phase 3 C3B — expiry-identified data importer (15 October 2026)
+
+The blocked EIA futures API is NOT the only possible historical input.
+CME's official DataMine offers contract-level settlements and
+continuous-series settlement/expiry information, but historical
+commercial data/licensing was **not acquired**. The CME delayed
+settlement REST API requires OAuth, entitlement and a Public Website
+(Delayed) Redistribution licence; anonymous access cannot be
+assumed. CME's public website makes settlement quotes viewable
+after midnight CT, but this is not a verified, reusable historical
+data API. With Fund-100's current small LIVE pilot, no paid data
+commitment has been made.
+
+PR #23
+([C3B implementation](https://github.com/nicobouch97/fund100-research/pull/23))
+merged a **broker-free provider-neutral identified futures contract
+CSV+source manifest importer**. It requires exact exchange/commodity,
+contract ID, delivery month/expiry, observed daily settlement,
+UTC publication and capture times, quote units, volume/open interest,
+source licence and SHA256 provenance. It rejects duplicate/revised,
+expired, unverifiable timestamp, mismatched unit, cross-contract and
+unowned-source input. Near/far calculations explicitly measure
+contemporaneous expiry-normalised quoted curve slope, NOT earned
+rolling P&L or an investment signal. Source dates are self-reported
+by a provider and do not establish independently verified historical
+release vintages.
+
+Offline tests use SYNTHETIC fixtures only, including actual identified
+expiry/tenor consistency, negative settlement handling, source hash
+and no-promotion invariants. **No real futures contract dataset
+has been acquired, no C3B historical result exists, and no paper/live
+trade permission is implied.** The official data/licensing discovery
+and exact offline import procedure are in
+`research_lab/commodities/C3B_IDENTIFIED_CONTRACT_DATA_ACQUISITION_2026_10_15.md`.
+
+Next commodity tasks are (i) obtain legitimate contract-level source
+with release/expiry and true historical settlement evidence, (ii)
+obtain contemporaneous DBC constituents and methodology-specific roll
+weights across the 2025-11-10 change, (iii) freeze and prospectively
+evaluate an actual basket carry/curve candidate versus existing static
+GLD/DBC, C1/C2 and SHY before any PAPER proposal.
+
+The existing daily C1/C2/static forward scorecard remains active
+without any change to the V5 US ETF pilot, operator STOP, engaged
+LIVE kill switch, HIGH risk or $130.30 LIVE ceiling.
