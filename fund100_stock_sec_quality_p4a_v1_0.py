@@ -59,15 +59,28 @@ def availability_day(filed: str) -> str:
     return (pd.Timestamp(d) + pd.offsets.BDay(2)).date().isoformat()
 
 
+def cik_matches_expected(value: object, expected_cik: str) -> bool:
+    """SEC companyfacts often uses integer CIK and submissions uses text CIK.
+
+    Both can represent the same 10-digit padded source identifier.
+    Reject bool, floats, arbitrary text, negative numbers and mismatches.
+    """
+    if not isinstance(expected_cik, str) or not re.fullmatch(r"\d{10}", expected_cik):
+        return False
+    if type(value) is int:
+        return value > 0 and value == int(expected_cik)
+    return (
+        type(value) is str
+        and bool(re.fullmatch(r"\d{1,10}", value))
+        and int(value) == int(expected_cik)
+    )
+
+
 def validate_identity(facts: object, submissions: object, expected_cik: str) -> None:
-    if (not isinstance(expected_cik, str)
-        or not re.fullmatch(r"\d{10}", expected_cik)
-        or not isinstance(facts, dict)
-        or not isinstance(submissions, dict)
-        or isinstance(facts.get("cik"), bool)
-        or isinstance(submissions.get("cik"), bool)):
+    if not isinstance(facts, dict) or not isinstance(submissions, dict):
         raise StockSourceStop("SEC source or zero-padded CIK missing.")
-    if int(expected_cik) != facts.get("cik") or int(expected_cik) != submissions.get("cik"):
+    if (not cik_matches_expected(facts.get("cik"), expected_cik)
+        or not cik_matches_expected(submissions.get("cik"), expected_cik)):
         raise StockSourceStop("CompanyFacts and SEC submissions CIK differ.")
     if not isinstance(facts.get("facts"), dict) or not isinstance(
         facts["facts"].get("us-gaap"), dict
