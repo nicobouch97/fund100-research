@@ -1,0 +1,88 @@
+name: Fund-100 P4E Issuer-specific SEC Quality Source Review (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_stock_sec_issuer_quality_p4e_v1_0.py"
+      - "test_fund100_stock_sec_issuer_quality_p4e_v1_0.py"
+      - "research_lab/stocks/p4e_frozen_issuer_gaap_concept_contract_2026_10_15.csv"
+      - ".github/workflows/fund100-p4e-issuer-gaap-quality.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-p4e-issuer-gaap-quality.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  deterministic-issuer-quality:
+    name: Test fixed issuer-source mapping without SEC calls
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Full P4E latest-filing/GAAP provenance tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_stock_sec_issuer_quality_p4e_v1_0.py
+      - name: Historical survivor and broker boundary
+        run: |
+          echo "No SEC live network, no analyst consensus, no stock prices, no Alpaca, PAPER or LIVE."
+
+  actual-issuer-source-study:
+    name: Rerun new frozen P4E source contract on earlier actual eight SEC captures
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: deterministic-issuer-quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install offline research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Retrieve already acquired original SEC source archive via GitHub
+        uses: actions/download-artifact@v4
+        with:
+          name: fund100-phase4b-real-sec-snapshot-38756477914
+          run-id: 38756477914
+          github-token: ${{ github.token }}
+          path: /tmp/fund100-p4e-original-source
+      - name: Validate EVERY source hash and compute P4E fixed accounting observation
+        run: |
+          set -euo pipefail
+          python fund100_stock_sec_issuer_quality_p4e_v1_0.py \
+            --source-artifact /tmp/fund100-p4e-original-source \
+            --output-json /tmp/fund100-p4e-eight-stock-source-review.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("/tmp/fund100-p4e-eight-stock-source-review.json").read_text())
+          assert r["schema"]=="FUND100_PHASE4E_ISSUER_GAAP_FILING_QUALITY_V1"
+          assert r["p4e_candidates_count"]==8
+          assert r["source_original_manifest_sha256"]
+          assert not r["analyst_estimate_revision_signals_available"]
+          assert not r["historical_stock_alpha_or_returns_validated"]
+          assert not r["trading_authorized"] and not r["live_authorized"] and not r["paper_authorized"]
+          assert r["broker_orders"]==0
+          print("P4E score coverage:",r["p4e_eligible_count"],"/8")
+          for o in r["observations"]:
+              print(o["ticker"],o["state"],"score=",o["quality_score"],
+                    "missing=",",".join(o["missing_concepts"]))
+          PY
+      - name: Archive exact source-hashed descriptive P4E findings
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-p4e-frozen-eight-company-sec-issuer-quality-${{ github.run_id }}
+          path: /tmp/fund100-p4e-eight-stock-source-review.json
+          retention-days: 90
+          if-no-files-found: error
