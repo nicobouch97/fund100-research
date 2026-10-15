@@ -90,7 +90,15 @@ def test_c4_backtest_has_same_cash_flow_convention_and_higher_cost_hurts():
     assert n1["rebalance_count"] > 20
     assert n1["dbc"] > 0
     assert cheap.turnover.ge(0).all()
-    assert (cheap.close_weights["SHY"] >= .65 - 1e-9).all()
+    # Long-only positions drift naturally within the month. Targets, not
+    # intramonth weights, have a frozen 65% minimum.
+    month_open_after_start = [
+        idx for idx in range(1, len(p))
+        if p.index[idx].month != p.index[idx-1].month
+    ]
+    assert (cheap.close_weights["SHY"].iloc[month_open_after_start] >= .65 - 1e-9).all()
+    assert (cheap.close_weights.min(axis=1) >= 0).all()
+    assert (cheap.close_weights.sum(axis=1) - 1).abs().max() < 1e-9
 
 
 def test_rebalance_targets_only_change_monthly():
