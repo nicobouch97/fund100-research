@@ -516,11 +516,58 @@ position descriptions, confirming much broader market exposure, but
 we still cannot reconstruct a daily DBIQ optimum-yield weight/roll
 schedule or a valid C3 carry-return backtest.
 
-**Next:** supplement the dataset with actual verified 2025 pre-change
-SEC holdings on their filing dates, acquire actual release-dated
-futures expiration settlement curves or public exchange disclosures,
-and then design a preregistered prospective commodity strategy.
+**Next:** supplement the 2025 Q3 validated pre-change snapshot
+with the genuinely *earlier-filed* 2025 Q1/Q2 holdings, and the
+post-change 2025 Q4 filing when publicly released, then acquire
+actual dated futures contract settlements and issuer roll schedules
+before attempting any futures-carry strategy.
 Our append-only C1/C2/static ETF-based shadow scoreboard remains
 operational. No DBC trades are authorized; the only LIVE-eligible
 universe is unchanged US ETF V5 with operator STOP, engaged kill
 switch, HIGH risk setting and $130.30 ceiling.
+
+## Commodity C3D — verified pre/post index break (15 October 2026)
+
+PR #25
+([merged actual DBC SEC pre/post comparison](https://github.com/nicobouch97/fund100-research/pull/25))
+adds all **14** actual September 30, 2025 pre-change open futures
+descriptions to the **28** actual March and June 2026 post-change
+positions. The 2025 SEC schedule's open futures notionals total
+**$1,288,934,852**, consistent with separately reported
+**$1,289,445,913** shareholders' equity.
+
+**Critical date issue:** The Sep 30, 2025 SEC 10-Q was formally filed
+**7 November 2025**; its holdings are treated as knowable only
+**10 November 2025**, the very day the new index methodology became
+effective. This Q3 filing is NOT valid as a prospective pre-change
+trading signal, even though it reliably records actual pre-change
+positions at quarter-end. The post-change March/June 2026 SEC
+snapshots are similarly delayed to May 8/August 10, respectively.
+
+Verified reported futures notional sector exposure (% rounded):
+
+| Futures sector | Sept 2025 old index | Mar 2026 new index | Jun 2026 new index |
+|---|---:|---:|---:|
+| Energy | 55.0 | 48.8 | 47.0 |
+| Agriculture | 19.0 | 17.3 | 18.5 |
+| Precious metals | 13.5 | 14.4 | 13.2 |
+| Industrial metals | 12.5 | 11.4 | 12.8 |
+| Livestock | 0.0 | 8.1 | 8.5 |
+
+Fourteen previously absent commodity exposures were added under the
+issuer's Nov 10 2025 8-K/A, including coffee, cocoa, cotton,
+several livestock products, Kansas wheat, soybean products, nickel
+and lead. These are **sparse quarterly disclosed fund positions**
+and reported futures notionals, *not* official daily DBIQ index
+weights, actual futures rolls/earnings or portfolio performance.
+All checks use public filing dates rather than quarter-end
+data hindsight. The precise original sources and restrictions are
+in `research_lab/commodities/C3D_PRE_POST_2025_INDEX_DISCLOSURE_PROTOCOL.md`.
+
+**Decision remains unchanged:** C3D proves a material real-world
+commodity index structure change and advances the research dataset,
+not a viable profitable commodity bot. The daily C1/C2/static
+forward shadow scorecard continues separately; no commodity
+PAPER/LIVE activity or symbols have been authorized. Fund-100
+V5 ETF LIVE operator remains STOPPED, kill switch ENGAGED, HIGH
+risk selected, and the $130.30 pilot maximum unchanged.
