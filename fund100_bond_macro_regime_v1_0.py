@@ -97,14 +97,15 @@ def align_available_macro(price_index: pd.DatetimeIndex,
         "session": price_index[1:],
         "known_by": price_index[:-1],
     })
-    right = rows.rename(columns={"available_date": "known_by"}).sort_values(
+    right = rows.assign(source_available_date=rows["available_date"])
+    right = right.rename(columns={"available_date": "known_by"}).sort_values(
         ["known_by", "observation_date"]
     )
     available = pd.merge_asof(
         left, right, on="known_by", direction="backward",
         allow_exact_matches=True,
     ).set_index("session").reindex(price_index)
-    return available
+    return available.rename(columns={"source_available_date": "available_date"})
 
 
 def decision(macro_history: pd.DataFrame, index: int) -> dict[str, float]:
