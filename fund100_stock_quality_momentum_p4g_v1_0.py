@@ -206,8 +206,9 @@ def main() -> None:
     p.add_argument("--output-json", required=True)
     p.add_argument("--output-prices-csv", required=True)
     args = p.parse_args()
-    capture = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     data = public_prices()
+    # Timestamp *after* the source response was obtained, not before the GET.
+    capture = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     report = evaluate(
         prices=data, acquired_at_utc=capture,
         provider_reference="yfinance public daily adjusted closes, captured "+capture,
