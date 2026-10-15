@@ -181,3 +181,24 @@ def test_invalid_date_and_non_finite_values_fail_closed():
     f["facts"]["us-gaap"][p4a.ANNUAL_TAGS["revenue"]]["units"]["USD"][1]["val"] = math.inf
     with pytest.raises(p4a.StockSourceStop, match="non-finite"):
         p4a.asof_quality(f, s, CIK, "2026-12-01")
+
+
+def test_official_sec_can_use_string_submissions_cik_and_integer_companyfacts_cik():
+    f, s = sample()
+    s["cik"] = "0000320193"  # actual SEC submissions JSON shape
+    assert p4a.cik_matches_expected(f["cik"], CIK)
+    assert p4a.cik_matches_expected(s["cik"], CIK)
+    result = p4a.asof_quality(f, s, CIK, "2026-12-01")
+    assert result["score"] == 3
+    assert result["source_accession"] == ACCESSIONS[-1]
+
+
+def test_cik_identity_accepts_only_exact_numeric_or_digit_string_not_type_coercion():
+    for value in (320193, "0000320193", "320193"):
+        assert p4a.cik_matches_expected(value, CIK)
+    for value in (True, False, 320193.0, 320194, "0000320194",
+                  "-320193", "CIK0000320193", "320193.0", " 320193 ", None,
+                  "0000000000", {"cik":320193}):
+        assert not p4a.cik_matches_expected(value, CIK)
+    for invalid in ("320193", "not-a-cik", "00003201933", ""):
+        assert not p4a.cik_matches_expected(320193, invalid)
