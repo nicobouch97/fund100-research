@@ -675,3 +675,71 @@ and roll rules. The existing C1/C2/static public-data forward
 comparison and Phase 1 genuine ETF PAPER execution continue
 unchanged. LIVE operator STOPPED, kill switch ENGAGED, HIGH tier
 and $130.30 pilot ceiling unchanged; no commodity trading authorised.
+
+## Commodity C3G — issuer indexed basket contracts and real document links (15 Oct 2026)
+
+PR #28
+([merged DBIQ issuer index basket evidence](https://github.com/nicobouch97/fund100-research/pull/28))
+captured a materially more specific source than quarterly SEC
+futures notionals: the official
+[DBIQ diversified commodity index page](https://index.db.com/dbiq-web/indices/95400)
+(`DBLCDBCE`) is web-indexed with an **28-entry index constituent
+table** showing individual contract codes, displayed contract-month
+calendar dates and issuer index weights totaling **99.99%**
+due to display rounding. A reviewed, source-linked **manual
+transcription** of all 28 is now in
+`research_lab/commodities/dbiq_diversified_index_web_indexed_28_constituents_2026_10_15.csv`.
+
+The web-indexed issuer table includes Brent `LCOZ6` at 17.85%,
+WTI `CLX26` at 15.07%, gold `GCZ26` at 8.95% and
+separate COMEX/LME copper markets. Index sector weights derived
+from these 28 issuer records are: **53.27% energy, 17.14%
+agriculture, 11.29% industrial metals, 11.76% precious metals,
+6.53% livestock**. These are **issuer index displayed
+weights**, NOT historical actual DBC fund holdings or notional
+weights; do not compare them as simultaneous with the June 2026
+SEC schedule.
+
+**Vital source limitations:** the publicly indexed webpage does
+NOT carry an independently verified issuer effective/capture
+timestamp; only the **15 Oct 2026 retrieval date** is known.
+The issuer's `Contract Month` displayed calendar dates are NOT
+verified exchange last-trading/expiry dates; no C3B contract
+settlement or historical trading simulation can safely use these
+as-is. No historical constituent sequence or carry P&L is
+present. C3G thus is an index SOURCE snapshot and mapping,
+not a new profitable investment strategy or confirmed 2026
+realtime trading signal.
+
+A read-only headless browser separately rendered the real issuer
+page and confirmed **exact official PDF document download routes**:
+- Index guide `/dbiq-web/rest/docsnoticesdata/file?id=3182&documentType=SPECIFIC_INDEX_DESCRIPTION`
+- November 2025 weights `/dbiq-web/rest/docsnoticesdata/file?id=3205&documentType=SPECIFIC_REBAL_DOC`
+
+Those links are relative to `https://index.db.com` and stored in
+`research_lab/commodities/dbiq_official_methodology_document_dom_links_2026_10_15.csv`.
+The site presented a **terms-and-conditions modal**, so the runner
+did not click through or accept terms; the public document
+previewer did not support the `application/octet-stream`
+response. **Original PDF bytes/contents are not yet acquired or
+visually inspected**, and no index methodology-specific contract
+selection/P&L has been inferred from just their file names.
+Study `research_lab/commodities/C3G_DBIQ_28_CONTRACT_INDEX_WEB_EVIDENCE_2026_10_15.md`
+contains the source-time, licensing, roll and date controls.
+
+Research-only CI passed **13** C3G checks and the full
+**823-test** LIVE static safety suite with **36** boundary checks.
+No broker orders, fund risk settings, secrets or LIVE symbol
+permissions changed. The user-selected HIGH risk tier and $130.30
+pilot ceiling, original 14-ETF LIVE whitelist, operator STOP and
+engaged kill switch remain unchanged. The existing C1/C2/static
+commodity forward scoreboard and Phase 1 V5 genuine PAPER
+executor remain separate and operational.
+
+**Next:** obtain issuer documents only through a legitimately
+authorised path after reviewing any required access terms;
+independently verify original PDF bytes, page contents and
+publication timestamps. Combine authenticated contract-selection
+records with trade-date-specific exchange settlements, then
+preregister an actual carry hypothesis to test prospectively
+against static GLD/DBC and C1/C2.
