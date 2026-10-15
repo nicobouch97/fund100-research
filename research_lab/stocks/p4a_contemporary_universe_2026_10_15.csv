@@ -1,0 +1,9 @@
+ticker,cik_10_digit,company_name,illustrative_sector,current_research_cohort_start,approved_for_backtest,approved_for_paper,approved_for_live
+AAPL,0000320193,Apple Inc.,Information Technology,2026-10-15,false,false,false
+MSFT,0000789019,Microsoft Corporation,Information Technology,2026-10-15,false,false,false
+GOOGL,0001652044,"Alphabet Inc., Class A",Communication Services,2026-10-15,false,false,false
+AMZN,0001018724,"Amazon.com, Inc.",Consumer Discretionary,2026-10-15,false,false,false
+XOM,0000034088,Exxon Mobil Corporation,Energy,2026-10-15,false,false,false
+JNJ,0000200406,Johnson & Johnson,Health Care,2026-10-15,false,false,false
+PG,0000080424,The Procter & Gamble Company,Consumer Staples,2026-10-15,false,false,false
+KO,0000021344,The Coca-Cola Company,Consumer Staples,2026-10-15,false,false,false

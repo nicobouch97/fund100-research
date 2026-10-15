@@ -1,0 +1,56 @@
+name: Fund-100 Phase 4A US Stock SEC Quality (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_stock_sec_quality_p4a_v1_0.py"
+      - "test_fund100_stock_sec_quality_p4a_v1_0.py"
+      - "research_lab/stocks/**"
+      - ".github/workflows/fund100-p4a-sec-stock-quality.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-p4a-sec-stock-quality.yml"
+      - "fund100_stock_sec_quality_p4a_v1_0.py"
+      - "test_fund100_stock_sec_quality_p4a_v1_0.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sec-stock-quality:
+    name: Annual SEC accession-linked quality and no-lookahead tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # NO SEC internet scraping, broker connections, market accounts or secrets.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Validate accession-bound XBRL facts and conservative release dates
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_stock_sec_quality_p4a_v1_0.py
+      - name: Assert startup phase no automatic stock or exchange authority
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+          path=Path("research_lab/stocks/p4a_contemporary_universe_2026_10_15.csv")
+          with path.open(newline="") as stream:
+              items=list(csv.DictReader(stream))
+          assert len(items) == 8
+          assert len({r["ticker"] for r in items}) == 8
+          assert len({r["cik_10_digit"] for r in items}) == 8
+          assert all(len(r["cik_10_digit"]) == 10 and r["cik_10_digit"].isdigit() for r in items)
+          assert all(r["current_research_cohort_start"] == "2026-10-15" for r in items)
+          assert all(r["approved_for_backtest"] == "false" for r in items)
+          assert all(r["approved_for_paper"] == "false" for r in items)
+          assert all(r["approved_for_live"] == "false" for r in items)
+          print("Phase 4A contemporaneous research cohort only; zero stock trades.")
+          PY
