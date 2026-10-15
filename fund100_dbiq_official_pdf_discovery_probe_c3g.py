@@ -49,6 +49,8 @@ async def attempt() -> dict:
             context = await browser.new_context(accept_downloads=False)
             page = await context.new_page()
             observed = []
+            popups = []
+            context.on('page', lambda p: popups.append(p.url[:200]))
             page.on(
                 "response",
                 lambda response: observed.append({
@@ -82,6 +84,11 @@ async def attempt() -> dict:
                     item["rendered_exact_title_matches"] = count
                     if count:
                         node = locator.first
+                        item["rendered_dom_parent"] = (
+                            await node.evaluate(
+                                "(n) => (n.closest('a,button,[role=button]') || n.parentElement)?.outerHTML?.slice(0,700) || ''"
+                            )
+                        )[:700]
                         href = await node.get_attribute("href")
                         if not href:
                             href = await node.evaluate(
@@ -99,9 +106,11 @@ async def attempt() -> dict:
                             item["clicked_issuer_document"] = True
                         except Exception as exc:
                             item["click_result"] = type(exc).__name__
+                            item["click_diagnostic"] = str(exc)[-500:]
                 except Exception as exc:
                     item["locator_result"] = type(exc).__name__
                 results["documents"].append(item)
+            results["popups_first_seen"] = popups[:8]
             results["official_http_document_response_candidates"] = [
                 response for response in observed[:30]
                 if approved_url(response["url"])
