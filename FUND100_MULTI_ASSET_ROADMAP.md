@@ -1056,3 +1056,71 @@ authorization, no changes to the original V5 ETF
 whitelist, operator STOPPED, engaged kill switch, HIGH
 risk tier or $130.30 LIVE exposure limit. Existing
 commodity C1/C2/static forward research remains separate.
+
+## Phase 4E — frozen issuer-accounting source improves quality coverage to 6/8 (15 Oct 2026)
+
+[PR #36](https://github.com/nicobouch97/fund100-research/pull/36)
+merged a separate, frozen issuer-specific P4E annual
+SEC accounting source contract. It preserves original
+P4A quality thresholds (nonnegative revenue growth,
+>=10% operating margin, >=5% annual cash-based FCF
+margin) while pinning exact permitted latest-original
+10-K US-GAAP revenue/capital-asset purchase tags per
+issuer/CIK. Changes never rewrite first P4A/P4C
+actual-source scores. All periods and concepts come
+from **one latest publicly eligible original 10-K**
+for the current and prior-year annual comparative.
+The earlier comparative is available to the 2026
+researcher after this filing, **not** a historical
+vintage a trader knew in the prior year.
+
+Source study against the exact earlier 8-company
+real SEC archive, NO new SEC downloads:
+[Actions run 38760165063](https://github.com/nicobouch97/fund100-research/actions/runs/38760165063)
+**PASS**, source raw-manifest SHA256
+`bafc7a084a6d4deaf7c7b7a5e982d52a8b5ecd6fe1b70a0ebaf3e64a610b1e18`.
+P4E real-source quality coverage **6/8** versus
+P4A's original **2/8**. Scores: AAPL=3/3,
+MSFT=3/3, GOOGL=3/3, AMZN=2/3,
+PG=3/3, KO=3/3. Exxon Mobil (XOM) and
+Johnson & Johnson (JNJ) remain **UNKNOWN**
+because their latest original 10-K lacks
+the required full-year `OperatingIncomeLoss`
+for both periods. Their financial health is
+not thereby negative.
+
+AMZN's annual `PaymentsToAcquireProductiveAssets`
+is a **company-specific** cash productive-asset
+spending proxy and not proven cross-industry
+equivalent to other companies' PP&E purchases.
+GOOGL/PG/KO issuer-specific `Revenues` tags
+are consistently presented over both annual
+periods in their latest 10-K accession, but
+the scores are not standardized stock ranks
+or expected returns.
+
+Original-source 90-day GitHub P4E review
+artifact: `fund100-p4e-frozen-eight-company-sec-issuer-quality-38760165063`
+ID `11984384799`. Detailed actual outcome,
+report financial percentages and no-promotion
+decision:
+`research_lab/stocks/P4E_FIRST_REAL_ISSUER_GAAP_SCORE_REVIEW_2026_10_15.md`.
+Frozen policy:
+`research_lab/stocks/P4E_ISSUER_GAAP_COMPARATIVE_PROTOCOL_2026_10_15.md`.
+The original-P4E merged main full static LIVE safety
+audit [38760164965](https://github.com/nicobouch97/fund100-research/actions/runs/38760164965)
+passed **907 tests and 36 LIVE boundary checks**.
+
+**Decision:** research only. Source completeness is NOT
+alpha, independent prospective stock performance,
+point-in-time analyst EPS revisions, a delisting-safe
+universe, sector-neutral factor validation or trade
+approval. The next genuine Phase 4 bottleneck is
+historical company master & price/corporate action
+coverage and separately dated earnings-consensus
+revision data, plus full cash-flow tag semantics.
+Commodity forward C1/C2/static and the existing
+genuine V5 ETF PAPER workflow remain independent.
+Live operator STOPPED, engaged kill switch, HIGH
+risk selected, $130.30 pilot cap and the unchanged
+14 US ETF-only LIVE whitelist remain mandatory.
