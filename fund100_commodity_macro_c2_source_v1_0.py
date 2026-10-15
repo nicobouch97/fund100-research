@@ -40,7 +40,7 @@ def combine_public_history(series: dict[str, pd.Series], *,
                            end_exclusive: str) -> pd.DataFrame:
     if set(series) != set(MACRO_COLUMNS):
         raise CommodityRegimeStop("Incomplete required public macro series.")
-    union = pd.concat([series[s] for s in MACRO_COLUMNS], axis=1)
+    union = pd.concat([series[s].rename(s) for s in MACRO_COLUMNS], axis=1)
     union = union.loc[union.index < pd.Timestamp(end_exclusive)]
     # Retain only mutually observed daily values; never forward fill a
     # withheld or not-yet-published credit / real-yield observation.
