@@ -15,10 +15,10 @@ FY="2027-09-30"
 
 def inputs():
     values=[
-        ("B1", 2.00, 2.20, "2026-10-13T15:00:00Z"),
-        ("B2", 3.00, 3.10, "2026-10-13T17:00:00Z"),
-        ("B3", 2.00, 1.95, "2026-10-13T18:00:00Z"),
-        ("B4", 2.00, 2.01, "2026-10-13T19:00:00Z"),
+        ("BR1", 2.00, 2.20, "2026-10-13T15:00:00Z"),
+        ("BR2", 3.00, 3.10, "2026-10-13T17:00:00Z"),
+        ("BR3", 2.00, 1.95, "2026-10-13T18:00:00Z"),
+        ("BR4", 2.00, 2.01, "2026-10-13T19:00:00Z"),
     ]
     events=[]
     for i,(broker,old,new,published) in enumerate(values):
@@ -98,10 +98,19 @@ def test_cannot_learn_about_revisions_before_vendor_capture_and_lag():
     for earlier in ("2026-10-13T22:00:00Z","2026-10-14T07:00:00Z"):
         with pytest.raises(p4f.AnalystEvidenceStop):
             evaluate(raw,m,asof=earlier)
-    at_capture=evaluate(raw,m,asof="2026-10-14T08:00:00Z")
-    assert at_capture["descriptive_revision_pressure"] is None
+    # The research cohort itself did not exist before 2026-10-15.
     eligible=evaluate(raw,m,asof="2026-10-15T08:00:00Z")
     assert eligible["descriptive_revision_pressure"] is not None
+    # A later received, still-original observation stays invisible
+    # for 24 hours after receipt even when already in the source file.
+    data,_,new_manifest=inputs()
+    data["events"][0]["provider_received_at_utc"]="2026-10-15T05:00:00Z"
+    new_manifest["file_acquired_at_utc"]="2026-10-15T06:00:00Z"
+    revised_raw,new_manifest=pack(data,new_manifest)
+    near=evaluate(revised_raw,new_manifest,asof="2026-10-15T08:00:00Z")
+    assert near["descriptive_revision_pressure"] is None
+    later=evaluate(revised_raw,new_manifest,asof="2026-10-16T08:00:00Z")
+    assert later["descriptive_revision_pressure"] is not None
 
 
 def test_original_source_sha256_mismatch_and_source_schema_fail_closed():
@@ -116,7 +125,7 @@ def test_original_source_sha256_mismatch_and_source_schema_fail_closed():
 def test_actual_vendor_source_requires_declared_rights_but_stays_unverified():
     d,raw,m=inputs()
     d["provider"]="FACTSET_DETAIL"
-    m["provider"]="FACTSET_PIT_CONSENSUS"
+    m["provider"]="FACTSET_DETAIL"
     m["source_class"]="UNVERIFIED_LICENSED_EXPORT"
     raw,m=pack(d,m)
     with pytest.raises(p4f.AnalystEvidenceStop,match="access/rights"):
