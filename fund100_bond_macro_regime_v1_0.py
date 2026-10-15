@@ -104,7 +104,7 @@ def align_available_macro(price_index: pd.DatetimeIndex,
         left, right, on="known_by", direction="backward",
         allow_exact_matches=True,
     ).set_index("session").reindex(price_index)
-
+    return available
 
 
 def decision(macro_history: pd.DataFrame, index: int) -> dict[str, float]:
