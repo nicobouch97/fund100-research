@@ -91,19 +91,20 @@ def align_available_macro(price_index: pd.DatetimeIndex,
     rows = validate_macro(macro)
     if not isinstance(price_index, pd.DatetimeIndex) or price_index.tz is not None:
         raise MacroResearchStop("Bond ETF trading dates are invalid.")
-    left = pd.DataFrame({"session": price_index, "known_by": price_index.shift(1, freq=None)})
-    # DatetimeIndex.shift(1) with freq=None shifts INDEX FREQUENCY and may
-    # require stored freq; use position-based previous sessions instead.
-    left["known_by"] = [pd.NaT, *list(price_index[:-1])]
+    if len(price_index) < 2 or not price_index.is_monotonic_increasing:
+        raise MacroResearchStop("Need ordered bond trading session dates.")
+    left = pd.DataFrame({
+        "session": price_index[1:],
+        "known_by": price_index[:-1],
+    })
     right = rows.rename(columns={"available_date": "known_by"}).sort_values(
         ["known_by", "observation_date"]
     )
     available = pd.merge_asof(
-        left.sort_values("known_by", na_position="first"),
-        right, on="known_by", direction="backward",
+        left, right, on="known_by", direction="backward",
         allow_exact_matches=True,
-    ).sort_values("session").set_index("session")
-    return available
+    ).set_index("session").reindex(price_index)
+
 
 
 def decision(macro_history: pd.DataFrame, index: int) -> dict[str, float]:
