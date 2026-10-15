@@ -862,3 +862,64 @@ before evaluating historical strategy performance. Do not
 auto-trade the roster; original 14 US-ETF pilot LIVE
 whitelist, operator STOP, engaged kill switch, HIGH risk
 and $130.30 LIVE pilot ceiling remain unchanged.
+
+## Phase 4B — controlled REAL official SEC stock source ingestion (15 Oct 2026)
+
+[PR #31](https://github.com/nicobouch97/fund100-research/pull/31)
+merged a deliberately source-compliant, no-broker SEC
+CompanyFacts + submissions **prospective raw-data capture**
+capability. The production script
+`fund100_stock_sec_source_p4b_v1_0.py` is bounded to
+**two official `data.sec.gov` read-only GET endpoints per company**
+for the frozen 8-stock contemporary cohort. It requires a
+real user-supplied SEC requester identity and email and
+rate-limits requests; no contact address is fabricated.
+Any source access denial or missing identity FAILS CLOSED.
+Every successful future capture will record UTC acquisition
+time, original SEC JSON raw bytes, SHA256 hashes and a
+frozen P4A accession-linked reported quality score (or
+`MISSING`), with missing original price/delisting/analyst
+revisions explicitly labelled.
+
+The GitHub Actions workflow
+`.github/workflows/fund100-p4b-sec-source-snapshot.yml`
+runs offline source tests on PR/main commits, and only
+fetches actual SEC data on an explicit **manual
+`capture_prospective_sec` dispatch**, with a genuine
+requester contact supplied as repository secret
+`FUND100_SEC_USER_AGENT`. Read-only scope, no Alpaca
+keys, no LIVE/PAPER environments, and no automatic broker
+activation. Normal workflow never receives that contact.
+
+**Operational state at this checkpoint:** P4B code and
+CI are MERGED but **no real SEC JSON captures have
+yet been executed**. The actual user's contact
+information must be supplied by the operator for
+SEC-compliant automated access. Do not mistake the
+27 passing synthetic source/fundamental fixture tests for
+real financial observation, point-in-time original
+archived history, independent alpha, analyst EPS
+revisions, or a survivorship-safe market database.
+Full suite after change passed **861 tests** and all
+**36 LIVE boundary checks**. Source and operator
+instructions:
+`research_lab/stocks/P4B_SEC_REAL_SOURCE_CAPTURE_PROTOCOL_2026_10_15.md`.
+
+**Next operator action:** Configure a genuine
+`FUND100_SEC_USER_AGENT` Actions repository secret
+containing the SEC-required requester identity and
+contact email, then explicitly run
+`Fund-100 Phase 4B SEC Prospective Stock Snapshot`
+in `capture_prospective_sec` mode for two companies.
+Inspect actual issuer data coverage and SHA artifact;
+then build append-only prospective quality observations
+with timestamps, and separately establish price/actions,
+failed/delisted security history and dated analyst
+revision inputs. Don't promote current survivors
+to historical alpha or trades.
+
+The prior commodity C1/C2/static forward scorecard,
+V5 ETF PAPER workflow, STOPPED LIVE operator,
+engaged kill switch, HIGH risk tier and $130.30
+pilot maximum remain intact. No direct US stock
+PAPER or LIVE order authority has been created.
