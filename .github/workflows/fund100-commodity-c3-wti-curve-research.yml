@@ -1,0 +1,81 @@
+name: Fund-100 C3 Observed WTI Futures Curve Research (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_commodity_wti_curve_c3_*.py"
+      - "test_fund100_commodity_wti_curve_c3_*.py"
+      - ".github/workflows/fund100-commodity-c3-wti-curve-research.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-commodity-c3-wti-curve-research.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        required: true
+        default: offline_tests
+        options:
+          - offline_tests
+          - attempt_public_eia_historical
+        description: "Offline tests or try public discontinued EIA futures source"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-phase3-c3-wti-curve-research
+  cancel-in-progress: false
+
+jobs:
+  curve-data-research:
+    name: WTI front-vs-second term-structure observed historic only
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # NO trading or account environment; NO broker credentials.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install frozen research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify actual observed-quote math and anti-fabrication rules
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_commodity_wti_curve_c3_v1_0.py
+      - name: Attempt actual historical public EIA RCLC1 RCLC2 observations
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'attempt_public_eia_historical')
+        run: |
+          set -euo pipefail
+          python fund100_commodity_wti_curve_c3_source_v1_0.py --output-csv /tmp/fund100-c3-eia-wti.csv
+      - name: Derive historical WTI curve descriptive statistics only
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'attempt_public_eia_historical')
+        run: |
+          set -euo pipefail
+          python fund100_commodity_wti_curve_c3_v1_0.py \
+            --curve-csv /tmp/fund100-c3-eia-wti.csv \
+            --output-json /tmp/fund100-c3-wti-curve-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          x = json.loads(Path("/tmp/fund100-c3-wti-curve-report.json").read_text())
+          assert x["status"] == "RESEARCH_ONLY_NO_PROMOTION"
+          assert x["live_authorized"] is False and x["paper_authorized"] is False
+          assert x["c3_strategy_backtest_performed"] is False
+          assert x["broker_order_count"] == 0
+          assert x["last_observation_date"] <= "2024-04-05"
+          assert x["forward_carry_signal_current_as_of_2026"] is False
+          print("Historical WTI curve observed; NO DBC carry or broker trading claim.")
+          PY
+      - name: Preserve observed public EIA quotes and descriptive C3 report
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'attempt_public_eia_historical')
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-c3-eia-wti-curve-${{ github.run_id }}
+          path: |
+            /tmp/fund100-c3-eia-wti.csv
+            /tmp/fund100-c3-wti-curve-report.json
+          if-no-files-found: error
+          retention-days: 90
