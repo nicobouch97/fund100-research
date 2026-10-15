@@ -571,3 +571,59 @@ forward shadow scorecard continues separately; no commodity
 PAPER/LIVE activity or symbols have been authorized. Fund-100
 V5 ETF LIVE operator remains STOPPED, kill switch ENGAGED, HIGH
 risk selected, and the $130.30 pilot maximum unchanged.
+
+## Commodity C3E — five SEC-disclosed DBC futures snapshots (15 October 2026)
+
+PR #26
+([merged DBC five-period chronology](https://github.com/nicobouch97/fund100-research/pull/26))
+incorporated two additional genuine SEC open-futures schedules:
+**30 June 2025** pre-reform **14** futures descriptions and
+**31 December 2025** post-reform **28** descriptions. Together with
+30 September 2025, 31 March 2026 and 30 June 2026, this creates
+**five dated public holdings snapshots covering 112 actual reported
+open futures positions** across the November 10, 2025 DBIQ
+optimum-yield commodity index methodology break.
+
+**Critical SEC disclosure timing:** June 2025 positions were
+reported August 7, 2025 and become conservatively research-usable
+August 8, 2025. The *December 31, 2025* holdings were accepted
+after-hours February 27, 2026, given an official **SEC filing date
+of March 2, 2026**, and conservatively become research-usable
+**March 3, 2026**. No trading analysis can use that December
+2025 28-market basket in December or January. The prior
+September 2025 SEC schedule was released November 7, and only
+becomes eligible November 10—the reform day itself.
+
+New public-SEC reported open futures gross notionals were
+**$1,230,805,407** for June 2025 and **$1,223,550,999**
+for December 2025, reconciled to reported equity
+of **$1,230,605,532** and **$1,223,200,118** respectively.
+Source files/filing IDs, normalized line descriptions and strict
+known-as-of rules:
+`research_lab/commodities/C3E_DBC_FIVE_SEC_FILING_CHRONOLOGY_2026_10_15.md`.
+Data checked against original
+[June 2025 SEC 10-Q](https://www.sec.gov/Archives/edgar/data/1328237/000095017025105193/dbc-20250630.htm)
+and
+[December 2025 SEC 10-K](https://www.sec.gov/Archives/edgar/data/1328237/000119312526083563/dbc-20251231.htm).
+
+A real reported sector notional structure change is visible:
+energy was **55.76%** in June 2025 versus **37.40%**
+in December 2025, as livestock grew from zero to **9.69%**
+and more non-energy markets entered the fund. These are
+**sparse position-notional exposures**, not official index
+weights, forward curve carry, P&L or forecasts.
+
+C3E premerge research checks passed **33** relevant tests;
+the full LIVE audit passed **796** tests with 36 static
+boundary checks, and no commodity order or account
+credential exposure was added.
+
+**Next:** acquire real date-stamped exchange futures settlement
+curves and DBIQ actual constituent contract-selection/roll
+records. Historical filings have now substantially improved
+our commodity coverage; they still cannot verify a futures
+carry strategy, and a price-only proxy must not be presented
+as such. Keep C1/C2/static prospective ETF research live
+*as research only*, the separate V5 US ETF PAPER pilot
+unchanged, original 14 equities-only LIVE whitelist,
+HIGH risk, $130.30 ceiling, operator STOPPED and kill switch ENGAGED.
