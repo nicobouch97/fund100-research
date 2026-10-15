@@ -1,0 +1,70 @@
+name: Fund-100 Commodity Forward Shadow Research (NO BROKER)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-commodity-forward-shadow.yml"
+  schedule:
+    # 09:17 UTC Mon-Fri: previous US trading session should be finalized.
+    - cron: "17 9 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-commodity-forward-shadow-main
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    name: Observe new completed commodity session without trading
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # No Alpaca credentials, no broker environment, no market order APIs.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check no-lookahead and anti-backfill shadow regression
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_commodity_forward_observer_v1_0.py
+      - name: Observe latest completed commodity ETF bar (PUBLIC ONLY)
+        run: |
+          set -euo pipefail
+          python fund100_commodity_price_source_v1_0.py --output-csv /tmp/forward-commodity-prices.csv
+      - name: Observe only public real-yield and inflation series
+        run: |
+          set -euo pipefail
+          python fund100_commodity_macro_c2_source_v1_0.py --output-csv /tmp/forward-commodity-macro.csv
+      - name: Add only one new forward observation (never backfill missed sessions)
+        run: |
+          set -euo pipefail
+          python fund100_commodity_forward_observer_v1_0.py \
+            --prices-csv /tmp/forward-commodity-prices.csv \
+            --macro-csv /tmp/forward-commodity-macro.csv
+      - name: Append immutable prospective record to main only
+        run: |
+          set -euo pipefail
+          FILE=research_lab/commodities/prospective/observations.jsonl
+          if [ ! -f "$FILE" ]; then
+            echo "No new public observation; no ledger write."
+            exit 0
+          fi
+          git add -- "$FILE"
+          if git diff --cached --quiet; then
+            echo "Duplicate market session; zero ledger changes."
+            exit 0
+          fi
+          git config user.name "fund100-research-bot"
+          git config user.email "fund100-research-bot@users.noreply.github.com"
+          git commit -m "Record immutable prospective commodity observation"
+          git push origin HEAD:main
+          echo "Public prospective commodity shadow ledger advanced; broker orders 0."
