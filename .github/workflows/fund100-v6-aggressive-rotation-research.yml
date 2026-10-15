@@ -1,0 +1,55 @@
+name: Fund-100 V6 Aggressive Rotation Research (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_aggressive_rotation_research_v1_0.py"
+      - "test_fund100_v6_aggressive_rotation_research_v1_0.py"
+      - "research_lab/challengers/V6_ACTIVE_AGGRESSIVE_RESET_2026_10_15.md"
+      - ".github/workflows/fund100-v6-aggressive-rotation-research.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frozen-aggressive-challenger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test aggressive concentration, no-lookahead and no-order gates
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_aggressive_rotation_research_v1_0.py
+      - name: Compare real frozen historical source at 5,15,35 basis points
+        run: |
+          set -euo pipefail
+          python fund100_v6_aggressive_rotation_research_v1_0.py \
+            --frozen-prices-csv research_lab/frozen_history_v2.csv \
+            --output-json /tmp/fund100-v6-r1-exploratory.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("/tmp/fund100-v6-r1-exploratory.json").read_text())
+          assert d["status"]=="EXPLORATORY_ALREADY_EXAMINED_HISTORY_NOT_LIVE_APPROVED"
+          assert d["source_frozen_v2_file_sha256"]=="acc2c8c08953b895ca5062b3cfba287efb97143b10e108e8ce4bd8b82ffb0d28"
+          assert not d["operator_authorised_liquidation"]
+          assert not d["operator_authorised_v6_live"]
+          assert not d["paper_authorized"] and not d["live_authorized"]
+          assert d["broker_orders"]==0
+          assert set(d["results_by_one_way_cost_bps"])=={"5","15","35"}
+          print("Exploratory research only; no real order authority.")
+          PY
+      - name: Store reproducible historical review
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v6-aggressive-exploratory
+          path: /tmp/fund100-v6-r1-exploratory.json
+          retention-days: 90
+          if-no-files-found: error
