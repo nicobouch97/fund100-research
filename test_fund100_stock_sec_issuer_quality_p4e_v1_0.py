@@ -54,7 +54,8 @@ def test_same_newest_filing_year_and_comparative_are_allowed_after_filing_only()
 def test_future_newest_10k_cannot_be_used_before_conservative_pub_day():
     f,s=prepared_current()
     r=p4e.newest_annual_quality(f,s,apple_row(),"2026-11-04")
-    assert r["latest_10k_accession"]==ACCESSIONS[0]
+    assert r["latest_10k_accession"] is None
+    assert r["state"]=="INSUFFICIENT_PRIOR_OR_CURRENT_ORIGINAL_10KS"
     assert r["quality_score"] is None
     assert r["paper_authorized"] is False
     assert r["live_authorized"] is False
