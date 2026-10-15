@@ -386,3 +386,43 @@ even PAPER promotion. Existing V5 US-equity ETF pilot remains the
 only LIVE-whitelisted universe and is STILL awaiting a genuine
 strategy-driven PAPER rebalance. Operator STOPPED, LIVE kill switch
 ENGAGED, HIGH selected and $130.30 LIVE ceiling unchanged.
+
+## Commodity Phase 3 C3 — observed futures curve data milestone (15 October 2026)
+
+**Commodity research is ongoing, and C1/C2/static daily prospective
+comparison remains active, research only.** The next hypothesis requires
+real expiry-identified futures term structure and fund roll selection
+data, not more tuning to the already examined historical price period.
+
+PR #21 implemented the first market-source data contract for EIA's
+discontinued `RCLC1/RCLC2` NYMEX WTI nearby futures price series.
+Features explicitly distinguish observed positive-price contango /
+backwardation and per-barrel price differences from *earned roll P&L*.
+Negative WTI settlement observations cannot silently become positive
+percentage-carry calculations. The public EIA historical source
+**ends on 5 April 2024**, so it supplies NO current 2026 curve.
+DBC's underlying optimum-yield index changed methodology on
+**10 November 2025**, so even historical WTI rank spreads alone
+cannot identify actual DBC constituent contract selection or carry.
+
+Initial EIA source run
+[38714742378](https://github.com/nicobouch97/fund100-research/actions/runs/38714742378)
+passed dedicated offline C3 research tests, but direct public EIA API
+returned **HTTP 403 Forbidden**; no historical curve dataset,
+performance figures or DBC roll returns were generated or reported.
+PR #22 gated the source-dependent download behind explicit
+manual retry, keeping normal static audit and curve-feature tests
+deterministic. Details and source requirements are documented in
+`research_lab/commodities/C3_WTI_FUTURES_CURVE_DATA_PROTOCOL_2026_10_15.md`
+and `research_lab/commodities/C3_WTI_PUBLIC_EIA_SOURCE_STATUS_2026_10_15.md`.
+
+**Next engineering gate:** obtain a legally available, authenticated
+contract-level futures history (expiry, settlement/availability
+timestamp, quotes, liquidity and exchange), and dated DBC basket
+constituents, optimum-yield roll schedule and collateral treatment
+reflecting the 2025 method change. Only after successful provenance
+checks can C3 become a separately predeclared futures-curve/carry
+strategy candidate, then face out-of-sample and forward research
+versus the static baseline. No commodity PAPER/LIVE trading or
+whitelist expansion is authorised. HIGH risk tier, $130.30 maximum
+LIVE pilot ceiling, operator STOP and kill switch stay unchanged.
