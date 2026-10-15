@@ -211,3 +211,33 @@ def test_source_limit_cannot_fabricate_missing_fundamentals():
                                cohort=limited_cohort(), loader=load, captured_utc=UTC)
     assert result["companies"][0]["quality_score"] is None
     assert result["companies"][0]["quality_state"] == "MISSING_ELIGIBLE_FULL_YEAR_FILINGS"
+
+
+def test_genuine_sec_mixed_cik_formats_can_be_ingested_end_to_end():
+    facts, submissions = sample()
+    # Official CompanyFacts 'cik' is generally an integer; the
+    # submissions endpoint returns zero-padded string text.
+    submissions["cik"] = CIK
+    def live_shape(url, agent):
+        assert agent == TEST_AGENT
+        assert url.startswith(intake.BASE + "/")
+        return json.dumps(facts if "companyfacts" in url else submissions).encode()
+    report, raw = intake.collect(
+        user_agent=TEST_AGENT, limit=1, cohort=limited_cohort(),
+        loader=live_shape, captured_utc=UTC,
+    )
+    assert report["companies"][0]["quality_score"] == 3
+    assert report["source_count"] == 2
+    assert report["broker_orders"] == 0
+    assert not report["paper_authorized"]
+    assert not report["live_authorized"]
+    assert all(path.startswith("raw/") for path in raw)
+
+
+def test_sec_intake_accepts_zero_padded_string_cik_but_rejects_bad_types_and_mismatch():
+    assert intake.decode_source(b'{"cik":"0000320193"}', expected_cik=CIK)["cik"] == CIK
+    assert intake.decode_source(b'{"cik":320193}', expected_cik=CIK)["cik"] == 320193
+    for value in (True, 320193.0, "0000320194", "CIK0000320193", -320193, None):
+        encoded = json.dumps({"cik": value}).encode()
+        with pytest.raises(intake.SecIntakeStop, match="identity mismatch"):
+            intake.decode_source(encoded, expected_cik=CIK)
