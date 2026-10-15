@@ -48,7 +48,7 @@ def test_regime_off_moves_to_cash_but_preserves_long_only():
     f=prices()
     t=fridays(f)[-1]
     # Construct falling benchmark ending before today's date.
-    f.loc[f.index[t-80:t],"SPY"] = f["SPY"].iloc[t-80] * (.985 ** np.arange(80))
+    f.loc[f.index[t-80]:,"SPY"] = f["SPY"].iloc[t-80] * (.985 ** np.arange(len(f)-(t-80)))
     # Easier than retro-fitting all past records; retains positive prices.
     d=v6.signal(f,t)
     assert d.risk_on is False
