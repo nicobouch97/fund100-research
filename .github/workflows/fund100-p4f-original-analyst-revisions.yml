@@ -1,0 +1,60 @@
+name: Fund-100 P4F Original Analyst EPS Revision Evidence (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_stock_analyst_revisions_p4f_v1_0.py"
+      - "test_fund100_stock_analyst_revisions_p4f_v1_0.py"
+      - ".github/workflows/fund100-p4f-original-analyst-revisions.yml"
+      - "research_lab/stocks/P4F_ORIGINAL_ESTIMATE_REVISION_PROTOCOL_2026_10_15.md"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-p4f-original-analyst-revisions.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-clock-contract:
+    name: Strict broker publication/as-of/rights and no-stocks-orders fixture tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    # No FactSet/LSEG paid credentials, source secrets, market quotes or Alpaca.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test analyst source provenance, unique broker events and zero orders
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_stock_analyst_revisions_p4f_v1_0.py
+      - name: Emit honest provider readiness assessment
+        run: |
+          set -euo pipefail
+          python fund100_stock_analyst_revisions_p4f_v1_0.py \
+            --readiness-only --output-json /tmp/fund100-p4f-analyst-source-readiness.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("/tmp/fund100-p4f-analyst-source-readiness.json").read_text())
+          assert r["status"]=="PREDECLARED_SOURCE_CONTRACT_NO_REAL_ANALYST_DATA"
+          assert r["original_provider_feed_connected"] is False
+          assert r["analyst_earnings_revision_scores_computed_from_real_data"]==0
+          assert r["licensed_original_analyst_events_retrieved"]==0
+          assert not r["paper_authorized"] and not r["live_authorized"]
+          assert r["broker_orders"]==0
+          print("No original licensed broker estimate observations have been supplied.")
+          PY
+      - name: Store source readiness (no fabricated estimates)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-p4f-analyst-source-readiness-${{ github.run_id }}
+          path: /tmp/fund100-p4f-analyst-source-readiness.json
+          retention-days: 90
+          if-no-files-found: error
