@@ -95,3 +95,36 @@ and $130.30 pilot ceiling remain unchanged.
 
 **C3G is substantive market-source discovery, not a C3 strategy
 backtest, PAPER trade, LIVE permission or investment gain.**
+
+## Verified live rendered document links (same research date)
+
+An authorized, **public-site-only, headless-browser metadata probe**
+rendered the actual issuer index page on 15 October 2026 (HTTP 200)
+and observed the original website links to:
+
+| Document | Actual HTML anchor / issuer-file endpoint |
+|---|---|
+| DBIQ Optimum Yield Diversified Commodity Index Guide 2025.pdf | `/dbiq-web/rest/docsnoticesdata/file?id=3182&documentType=SPECIFIC_INDEX_DESCRIPTION` |
+| Diversified Commodity Index Weights for November 2025.pdf | `/dbiq-web/rest/docsnoticesdata/file?id=3205&documentType=SPECIFIC_REBAL_DOC` |
+
+Both anchors are relative to `https://index.db.com`, with
+provenance in
+`research_lab/commodities/dbiq_official_methodology_document_dom_links_2026_10_15.csv`.
+The browser displayed a **terms-and-conditions modal** that
+intercepted interaction. The separate public URL fetch returned
+`application/octet-stream`, which the available document previewer
+could not open. **No PDF bytes, guide contents, detailed index
+weights from the 2025 PDF, or verified monthly selected contracts
+have been acquired.** We have not accepted any website terms on
+the user's behalf or bypassed an authentication requirement. The
+issuer site may require an explicit user acceptance of its terms
+before permitted document access.
+
+An initial PR browser diagnostic therefore does NOT claim to
+have obtained those two PDFs. A subsequent version only inspects
+public rendered DOM link targets without clicking through a
+modal. For future proper acquisition, first confirm applicable
+access terms, then use the actual issuer download links to
+obtain the real documents through an authorized workflow,
+verify content hashes/visual pages and publication timestamps,
+and integrate only reviewed, date-valid index facts.
