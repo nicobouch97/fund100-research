@@ -743,3 +743,56 @@ publication timestamps. Combine authenticated contract-selection
 records with trade-date-specific exchange settlements, then
 preregister an actual carry hypothesis to test prospectively
 against static GLD/DBC and C1/C2.
+
+## Commodity C4 — separate lagged ETF equity-stress hypothesis, first result (15 Oct 2026)
+
+Because the official DBIQ PDF endpoints are discovered but not yet
+permitted/verified as document content, a **new independently fixed
+C4 ETF-level portfolio-diversification challenger** was built in
+[PR #29](https://github.com/nicobouch97/fund100-research/pull/29).
+This is NOT a futures roll/carry strategy and does not infer index
+constituents from unsupported document downloads.
+
+**C4 fixed monthly rules:** maintain GLD20%/DBC15%/SHY65%
+as capped default reference; using the prior **63 completed**
+market sessions, reduce DBC to 5% if SPY annualized realized
+volatility >=25% AND DBC/SPY daily correlation >=+0.40;
+independently reduce GLD to 10% if SPY vol >=25% and
+GLD/SPY correlation >=+0.30. Transfer reductions to SHY.
+No SPY trade, leverage, intramonth trading or broker path.
+Compare at 5/15/35bp per traded side against the simple
+capped static basket under identical reference accounting.
+Frozen research protocol:
+`research_lab/commodities/C4_STRESS_OVERLAY_PROTOCOL_2026_10_15.md`.
+
+**First real retrospective study**:
+[Actions 38736979158](https://github.com/nicobouch97/fund100-research/actions/runs/38736979158);
+public price source SHA256
+`fe47ef3a637e5fa74b1d735ceac57a2003746ce9d28b1f4b8cadf86506dbdc17`.
+C4's **net cumulative return minus capped static** over the
+ALREADY INSPECTED late historical segment was **−1.40360pp**
+at 5bp, **−1.56678pp** at 15bp and **−1.89152pp** at 35bp
+per side. This is not an independent holdout or forecast,
+and no risk-adjusted superiority has yet been verified.
+**DECISION: C4 NOT PROMOTED**; do not opportunistically tune
+the frozen rules using the same history.
+Full data, no-promotion decision and limitations:
+`research_lab/commodities/C4_EXPLORATORY_REVIEW_2026_10_15.md`.
+
+The [postmerge LIVE safety audit 38736979039](https://github.com/nicobouch97/fund100-research/actions/runs/38736979039)
+passed **834** tests and **36** boundary checks. The separate
+C1/C2/static append-only commodity forward shadow ledger still
+has its **one starting observation (14 Oct 2026)** with zero
+measured forward trading days as of this check; the next session
+must genuinely be recorded before claiming prospective evidence.
+Do not rewrite that hash chain to add C4.
+
+**Next research priority:** access and independently inspect
+issuer original DBIQ index methodology / weights / monthly
+contract-selection PDFs with proper permission; acquire
+exchange-dated actual per-contract settlement and roll records
+before any claim of futures carry alpha. Parallel Fund-100 V5
+US-ETF genuine PAPER event workflow remains separate and on
+its existing schedule. User HIGH, LIVE $130.30 ceiling,
+operator STOPPED, engaged kill switch and frozen 14 US
+ETF LIVE universe remain unchanged.
