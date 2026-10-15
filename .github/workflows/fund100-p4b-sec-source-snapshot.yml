@@ -54,7 +54,7 @@ jobs:
           python-version: "3.12"
       - name: Install existing research dependencies
         run: python -m pip install -r requirements.txt
-      - name: Test SEC prospective ingestion and earlier annual quality sources
+      - name: Test real SEC text/numeric CIK parsing, capture, and annual quality
         run: |
           set -euo pipefail
           python -m pytest -q test_fund100_stock_sec_source_p4b_v1_0.py test_fund100_stock_sec_quality_p4a_v1_0.py
