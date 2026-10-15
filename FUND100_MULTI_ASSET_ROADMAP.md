@@ -923,3 +923,59 @@ V5 ETF PAPER workflow, STOPPED LIVE operator,
 engaged kill switch, HIGH risk tier and $130.30
 pilot maximum remain intact. No direct US stock
 PAPER or LIVE order authority has been created.
+
+## Phase 4B — first real SEC annual-quality observations (15 Oct 2026)
+
+After the user supplied a legitimate SEC identifying
+contact secret and ran manual EDGAR ingestion, the
+initial [run 38744413858](https://github.com/nicobouch97/fund100-research/actions/runs/38744413858)
+failed a strict CIK type check (numeric SEC CompanyFacts
+versus text/zero-padded SEC submissions identifier).
+[PR #32](https://github.com/nicobouch97/fund100-research/pull/32)
+corrected exact-matching integer/digit-string issuer
+identity while still rejecting wrong companies and
+invalid types. The 865-test premerge LIVE safety audit
+passed all 36 boundary checks.
+
+A **single user-authorized retry**
+[Actions 38746277418](https://github.com/nicobouch97/fund100-research/actions/runs/38746277418)
+successfully fetched the **four genuine official SEC
+JSON source files** for **Apple (AAPL)** and
+**Microsoft (MSFT)** at **2026-10-15T13:52:50Z**.
+Raw bytes and source SHA256s are in the 90-day artifact
+`fund100-phase4b-real-sec-snapshot-38746277418`.
+The first frozen-source prospective reporting record:
+`research_lab/stocks/prospective/p4b_actual_sec_2026_10_15.json`.
+Full report:
+`research_lab/stocks/P4B_FIRST_REAL_SEC_REVIEW_2026_10_15.md`.
+
+The **real** SEC reported annual financial quality (P4A
+frozen score) observations:
+
+| Stock | Latest original eligible FY end | Revenue growth YoY | Operating margin | FCF margin | P4A quality |
+|---|---|---:|---:|---:|---:|
+| Apple | 2025-09-27 | +6.43% | 31.97% | 23.73% | 3/3 |
+| Microsoft | 2026-06-30 | +17.79% | 46.78% | 20.19% | 3/3 |
+
+The one-off retry trigger was subsequently **removed**;
+actual future SEC captures remain **manual only**, with
+the previously configured user SEC contact source secret.
+The live stock data now exist, but they do NOT constitute
+a delisting-safe historical universe, genuine historically
+archived SEC market vintages, analyst EPS revisions,
+priced stock returns, stock alpha or any stock trade
+approval. The AAPL and MSFT observation dates/fiscal
+periods differ, and both firms are selected 2026 survivors.
+
+**Next:** extend the explicitly dated, forward-only
+source coverage to the remainder of the frozen eight-stock
+cohort via authorized manual SEC capture; add a validated
+issuer-tag coverage review and independently timestamped
+estimates-revision and historical security-master research
+before attempting any performance-based stock ranker.
+
+Commodity C1/C2/static append-only forward scoreboard and
+V5 genuine US ETF PAPER execution are unchanged.
+Original 14 US ETF-only LIVE whitelist, operator STOPPED,
+engaged kill switch, HIGH risk and $130.30 pilot ceiling
+remain frozen. No equity individual-stock orders.
