@@ -1,0 +1,29 @@
+issuer_commodity,issuer_futures_contract_code,issuer_displayed_contract_date,issuer_index_weight_percent,mapped_sec_commodity
+Natural Gas,NGJ27,2027-03-29,2.16,NYMEX Natural Gas
+Brent Crude,LCOZ6,2026-10-30,17.85,ICE-UK Brent Crude
+Heating Oil,HOM27,2027-05-28,5.42,NYMEX NY Harbor ULSD
+RBOB Gasoline,RBZ26,2026-11-30,3.71,NYMEX RBOB Gasoline
+Gasoil,LGOZ6,2026-12-10,9.06,ICE Low Sulphur Gasoil
+Aluminium,MALZ26,2026-12-16,3.12,LME Aluminum
+Zinc,MZNH27,2027-03-17,1.01,LME Zinc
+Primary Nickel,MNIU27,2027-09-15,1.18,LME Nickel
+Standard Lead,MPBH27,2027-03-17,0.42,LME Lead
+Copper - Grade A,MCUH27,2027-03-17,2.86,LME Copper
+Wheat (Kansas Wheat),KWN27,2027-07-14,1.41,CBOT Wheat KCB
+Wheat,WN27,2027-07-14,1.71,CBOT Wheat
+Corn,CU27,2027-09-14,3.32,CBOT Corn
+Soybeans,SX26,2026-11-13,3.4,CBOT Soybean
+Sugar #11,SBN7,2027-06-30,1.35,NYB-ICE Sugar
+Soybean Meal,SMZ26,2026-12-14,1.23,CBOT Soybean Meal
+Copper,HGK27,2027-05-26,2.7,COMEX Copper
+SOYBEAN OIL,BOZ26,2026-12-14,1.54,CBOT Soybean Oil
+Cattle(FeederCattle),FCF27,2027-01-28,1.41,CME Feeder Cattle
+Cotton #2,CTZ6,2026-12-08,1.32,ICE Cotton
+"Coffee ""C""",KCZ6,2026-12-18,0.89,ICE Coffee
+Cocoa,CCZ6,2026-12-15,0.97,ICE Cocoa
+Live Cattle,LCQ27,2027-08-31,2.95,CME Live Cattle
+Lean Hogs,LHZ26,2026-12-14,2.17,CME Lean Hogs
+Platinum,PLN27,2027-07-28,0.69,NYMEX Platinum
+Light Crude,CLX26,2026-10-20,15.07,NYMEX WTI Crude
+Gold,GCZ26,2026-12-29,8.95,COMEX Gold
+Silver,SIZ26,2026-12-29,2.12,COMEX Silver
