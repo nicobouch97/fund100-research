@@ -1,0 +1,79 @@
+name: Fund-100 Phase 3 Commodity ETP Research (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_commodity_*.py"
+      - "test_fund100_commodity_*.py"
+      - ".github/workflows/fund100-commodity-research.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-commodity-research.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Offline tests, or one public-data historical study"
+        required: true
+        type: choice
+        default: tests_only
+        options:
+          - tests_only
+          - retrospective_exploratory
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-phase3-commodity-research
+  cancel-in-progress: false
+
+jobs:
+  commodity-research:
+    name: GLD physically-backed gold vs DBC futures ETP research
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # NO broker trading environment, secrets or privileges.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test trend, no-lookahead, costs and risk caps offline
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_commodity_etp_research_v1_0.py
+      - name: Download public GLD DBC SHY SPY histories for independent evaluation
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'retrospective_exploratory')
+        run: |
+          set -euo pipefail
+          python fund100_commodity_price_source_v1_0.py --output-csv /tmp/fund100-phase3-commodity-prices.csv
+      - name: Evaluate fixed rule vs SHY and risk-capped static basket
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'retrospective_exploratory')
+        run: |
+          set -euo pipefail
+          python fund100_commodity_etp_research_v1_0.py \
+            --prices-csv /tmp/fund100-phase3-commodity-prices.csv \
+            --output-json /tmp/fund100-phase3-commodity-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("/tmp/fund100-phase3-commodity-report.json").read_text())
+          assert report["scope"] == "RESEARCH_ONLY_NO_BROKER"
+          assert report["strategy_promoted_to_paper"] is False
+          assert report["strategy_promoted_to_live"] is False
+          assert report["broker_order_count"] == 0
+          print("No PAPER or LIVE authority, no order IDs or broker traffic.")
+          PY
+      - name: Archive data SHA and complete historical exploratory result
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'retrospective_exploratory')
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-phase3-commodity-research-${{ github.run_id }}
+          path: |
+            /tmp/fund100-phase3-commodity-prices.csv
+            /tmp/fund100-phase3-commodity-report.json
+          if-no-files-found: error
+          retention-days: 90
