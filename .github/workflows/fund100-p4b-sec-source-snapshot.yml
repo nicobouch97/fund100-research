@@ -8,6 +8,8 @@ on:
       - "test_fund100_stock_sec_capture_review_p4b_v1_0.py"
       - "fund100_stock_sec_forward_audit_p4c_v1_0.py"
       - "test_fund100_stock_sec_forward_audit_p4c_v1_0.py"
+      - "fund100_stock_sec_latest_filing_p4d_v1_0.py"
+      - "test_fund100_stock_sec_latest_filing_p4d_v1_0.py"
       - ".github/workflows/fund100-p4b-sec-source-snapshot.yml"
       - "research_lab/stocks/**"
   push:
@@ -62,7 +64,7 @@ jobs:
       - name: Test real SEC text/numeric CIK parsing, capture, and annual quality
         run: |
           set -euo pipefail
-          python -m pytest -q test_fund100_stock_sec_source_p4b_v1_0.py test_fund100_stock_sec_quality_p4a_v1_0.py test_fund100_stock_sec_capture_review_p4b_v1_0.py test_fund100_stock_sec_forward_audit_p4c_v1_0.py
+          python -m pytest -q test_fund100_stock_sec_source_p4b_v1_0.py test_fund100_stock_sec_quality_p4a_v1_0.py test_fund100_stock_sec_capture_review_p4b_v1_0.py test_fund100_stock_sec_forward_audit_p4c_v1_0.py test_fund100_stock_sec_latest_filing_p4d_v1_0.py
       - name: Confirm SEC live network access is not part of normal CI
         run: |
           echo "OFFLINE SEC source fixture tests only: no authenticated real company data claim."
@@ -147,6 +149,31 @@ jobs:
           path: |
             /tmp/fund100-p4c-cohort-quality-audit.json
             /tmp/fund100-p4c-next-ledger-record.json
+          retention-days: 90
+          if-no-files-found: error
+      - name: Verify each issuer's LATEST original annual 10-K concept coverage separately
+        run: |
+          set -euo pipefail
+          python fund100_stock_sec_latest_filing_p4d_v1_0.py \
+            --source-artifact /tmp/fund100-stock-p4b-sec-capture \
+            --output-json /tmp/fund100-p4d-latest-original-10k.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("/tmp/fund100-p4d-latest-original-10k.json").read_text())
+          assert r["status"]=="LATEST_10K_SOURCE_COVERAGE_DIAGNOSTIC_RESEARCH_ONLY"
+          assert not r["model_thresholds_changed"]
+          assert not r["automatic_tag_substitutions_performed"]
+          assert not r["older_p4b_p4c_prospective_results_mutated"]
+          assert not r["paper_authorized"] and not r["live_authorized"]
+          assert r["broker_orders"]==0
+          print("Latest 10-K evidence gate complete; no stale annual carryforward or orders.")
+          PY
+      - name: Retain latest-source completeness diagnostics separately
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-phase4d-sec-latest-tag-coverage-${{ github.run_id }}
+          path: /tmp/fund100-p4d-latest-original-10k.json
           retention-days: 90
           if-no-files-found: error
       - name: Preserve exact acquired official SEC JSON and read-only quality report
