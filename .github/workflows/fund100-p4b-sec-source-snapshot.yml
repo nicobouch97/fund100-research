@@ -66,12 +66,9 @@ jobs:
   manual-capture:
     name: Explicit source capture using actual declared SEC contact (research only)
     needs: offline-quality-source
-    # One-shot retry of the already user-requested two-issuer capture,
-    # only on the uniquely named hotfix merge commit. Ordinary push/PR
-    # runs are still offline, and future data collection stays manual.
-    if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.mode == 'capture_prospective_sec')
-      || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'fund100-p4b-SEC-20261015-user-authorized-retry'))
+    # Real SEC acquisitions require an explicit operator dispatch.
+    # No scheduled or automatic source capture on branch pushes.
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'capture_prospective_sec'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Only explicit workflow_dispatch can resolve SEC identification secret.
@@ -86,7 +83,7 @@ jobs:
       - name: Capture real current SEC source with exact UTC SHA provenance
         env:
           SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
-          RESEARCH_LIMIT: ${{ inputs.limit || '2' }}
+          RESEARCH_LIMIT: ${{ inputs.limit }}
         run: |
           set -euo pipefail
           # No SEC contact configured => FAIL CLOSED. Do not impersonate a
