@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 
 INDEX_URL = "https://index.db.com/dbiq-web/indices/95400"
 DOCUMENTS = (
@@ -89,28 +89,25 @@ async def attempt() -> dict:
                                 "(n) => (n.closest('a,button,[role=button]') || n.parentElement)?.outerHTML?.slice(0,700) || ''"
                             )
                         )[:700]
-                        href = await node.get_attribute("href")
-                        if not href:
-                            href = await node.evaluate(
-                                "(node) => node.closest('a')?.href || null"
-                            )
-                        if href and approved_url(href) and ".pdf" in href.lower():
-                            item["candidate_pdf_url"] = href
-                            item["direct_pdf_url_verified"] = True
-                        # Click only a displayed original issuer document.
-                        # Browsers may open native PDF viewer/download; the
-                        # no-download context deliberately blocks retention.
-                        try:
-                            await node.click(timeout=4000)
-                            await page.wait_for_timeout(1500)
-                            item["clicked_issuer_document"] = True
-                        except Exception as exc:
-                            item["click_result"] = type(exc).__name__
-                            item["click_diagnostic"] = str(exc)[-500:]
+                        href = await node.evaluate(
+                            "(n) => n.closest('a')?.getAttribute('href') || null"
+                        )
+                        item["terms_modal_visible"] = bool(
+                            await page.locator("div.tnc-modal[role=dialog]").count()
+                        )
+                        if href:
+                            url = urljoin(INDEX_URL, href)
+                            if approved_url(url) and (
+                                "/dbiq-web/rest/docsnoticesdata/file?" in url
+                            ):
+                                item["observed_official_file_route"] = url
+                                item["original_pdf_bytes_verified"] = False
+                        # Read issuer-published anchor ONLY. A T&C modal
+                        # blocks direct UI interaction; do NOT accept terms
+                        # or bypass this agreement without user approval.
                 except Exception as exc:
                     item["locator_result"] = type(exc).__name__
                 results["documents"].append(item)
-            results["popups_first_seen"] = popups[:8]
             results["official_http_document_response_candidates"] = [
                 response for response in observed[:30]
                 if approved_url(response["url"])
