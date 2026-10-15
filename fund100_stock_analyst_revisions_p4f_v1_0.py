@@ -266,7 +266,7 @@ def main() -> None:
             decision_at_utc=a.decision_at_utc,
         )
     Path(a.output_json).write_text(json.dumps(report,indent=2,sort_keys=True)+"\n")
-    print("P4F analyst revisions:",report["signal_state"])
+    print("P4F analyst revisions:",report.get("signal_state",report.get("status")))
     print("No licensed analyst feed attached; no stock PAPER/LIVE or historical alpha.")
 
 
