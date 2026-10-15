@@ -45,13 +45,20 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest -q test_fund100_commodity_wti_curve_c3_v1_0.py
+      - name: Report source limitation without fabricating data
+        if: github.event_name == 'push'
+        run: |
+          echo "C3 source status: EIA direct public API returned HTTP 403 during the first historical run."
+          echo "No real C3 futures curve statistics or DBC carry calculations were produced."
+          echo "Dedicated future source retry must be manually dispatched with verified access."
+          echo "Broker routes: ZERO."
       - name: Attempt actual historical public EIA RCLC1 RCLC2 observations
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'attempt_public_eia_historical')
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'attempt_public_eia_historical'
         run: |
           set -euo pipefail
           python fund100_commodity_wti_curve_c3_source_v1_0.py --output-csv /tmp/fund100-c3-eia-wti.csv
       - name: Derive historical WTI curve descriptive statistics only
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'attempt_public_eia_historical')
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'attempt_public_eia_historical'
         run: |
           set -euo pipefail
           python fund100_commodity_wti_curve_c3_v1_0.py \
@@ -70,7 +77,7 @@ jobs:
           print("Historical WTI curve observed; NO DBC carry or broker trading claim.")
           PY
       - name: Preserve observed public EIA quotes and descriptive C3 report
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'attempt_public_eia_historical')
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'attempt_public_eia_historical'
         uses: actions/upload-artifact@v4
         with:
           name: fund100-c3-eia-wti-curve-${{ github.run_id }}
