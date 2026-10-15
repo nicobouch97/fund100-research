@@ -115,7 +115,7 @@ def test_original_source_sha256_mismatch_and_source_schema_fail_closed():
 
 def test_actual_vendor_source_requires_declared_rights_but_stays_unverified():
     d,raw,m=inputs()
-    d["provider"]="FACTSET_PIT_CONSENSUS"
+    d["provider"]="FACTSET_DETAIL"
     m["provider"]="FACTSET_PIT_CONSENSUS"
     m["source_class"]="UNVERIFIED_LICENSED_EXPORT"
     raw,m=pack(d,m)
@@ -239,6 +239,7 @@ def test_research_cohort_not_presented_as_historic_stock_universe():
 def test_stale_broker_revision_and_ancient_earlier_estimate_ignored():
     d,_,m=inputs()
     d["events"][0]["old_published_at_utc"]="2025-01-01T15:00:00Z"
+    d["events"][1]["old_published_at_utc"]="2026-08-01T15:00:00Z"
     d["events"][1]["new_published_at_utc"]="2026-09-01T17:00:00Z"
     d["events"][1]["provider_received_at_utc"]="2026-09-01T18:00:00Z"
     raw,m=pack(d,m)
@@ -263,4 +264,12 @@ def test_source_provider_and_payload_must_match_exactly():
     d["provider"]="LSEG_IBES_DETAIL"
     raw,m=pack(d,m)
     with pytest.raises(p4f.AnalystEvidenceStop,match="differ"):
+        evaluate(raw,m)
+
+
+def test_issuer_share_class_change_cannot_double_count_one_analyst():
+    d,_,m=inputs()
+    d["events"][1]["vendor_security_id"]="US-AAPL-DIFFERENT-CLASS"
+    raw,m=pack(d,m)
+    with pytest.raises(p4f.AnalystEvidenceStop,match="security/share-class"):
         evaluate(raw,m)
