@@ -165,3 +165,27 @@ def test_official_document_probe_domain_allowlist_and_no_trading():
     ):
         assert not p.approved_url(bad)
     assert len(p.DOCUMENTS) == 2
+
+
+def test_exact_official_document_anchor_file_ids_and_terms_gate():
+    import csv
+    from pathlib import Path
+    from urllib.parse import urljoin, parse_qs, urlparse
+    import fund100_dbiq_official_pdf_discovery_probe_c3g as p
+
+    path = Path("research_lab/commodities/dbiq_official_methodology_document_dom_links_2026_10_15.csv")
+    rows = list(csv.DictReader(path.open(encoding="utf-8", newline="")))
+    assert len(rows) == 2
+    for row in rows:
+        assert row["issuer_index_ticker"] == "DBLCDBCE"
+        assert row["official_page"] == p.INDEX_URL
+        assert row["official_html_anchor_confirmed"] == "true"
+        assert row["pdf_bytes_acquired"] == "false"
+        assert row["publication_time_verified"] == "false"
+        full = urljoin(p.INDEX_URL, row["relative_dom_href"])
+        assert p.approved_url(full)
+        assert "/dbiq-web/rest/docsnoticesdata/file?" in full
+        query = parse_qs(urlparse(full).query)
+        assert query["id"] == [row["document_id"]]
+        assert query["documentType"] == [row["issuer_report_class"]]
+    assert {x["document_id"] for x in rows} == {"3182", "3205"}
