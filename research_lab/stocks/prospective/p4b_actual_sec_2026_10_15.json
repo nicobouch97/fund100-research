@@ -1,0 +1,55 @@
+{
+  "schema": "FUND100_P4B_FIRST_ACTUAL_SEC_QUALITY_CAPTURE_REVIEW_V1",
+  "state": "REAL_2026_SEC_ANNUAL_FUNDAMENTALS_RESEARCH_ONLY",
+  "captured_at_utc": "2026-10-15T13:52:50Z",
+  "report_utc_asof_date": "2026-10-15",
+  "original_run_url": "https://github.com/nicobouch97/fund100-research/actions/runs/38746277418",
+  "original_source_artifact_name": "fund100-phase4b-real-sec-snapshot-38746277418",
+  "original_source_artifact_id": 11980335484,
+  "artifact_retention_days": 90,
+  "original_manifest_sha256": "887bb4df1d6371aa52bafdbd7f0dde3dc0480cb432341f1b843c20fa6e7dc1cb",
+  "official_source_capture_types": [
+    "companyfacts",
+    "submissions"
+  ],
+  "company_count": 2,
+  "companies": [
+    {
+      "ticker": "AAPL",
+      "cik": "0000320193",
+      "annual_period_end": "2025-09-27",
+      "last_annual_accession": "0000320193-25-000079",
+      "last_annual_available_date": "2025-11-04",
+      "reported_quality_score": 3,
+      "maximum_quality_score": 3,
+      "revenue_growth_yoy": 0.06425512,
+      "operating_income_margin": 0.319708,
+      "free_cash_flow_margin": 0.23732882,
+      "source_companyfacts_sha256": "73a86c6aedc31f77cac2ea4df5f80f0b3bd7e6eb58bb4e01444fbedf3afb9c43",
+      "source_submissions_sha256": "2821703cf04e1138923243a87cc5148673feb9d3792a5b6a7747d1e1a093bf7f"
+    },
+    {
+      "ticker": "MSFT",
+      "cik": "0000789019",
+      "annual_period_end": "2026-06-30",
+      "last_annual_accession": "0001193125-26-323660",
+      "last_annual_available_date": "2026-07-31",
+      "reported_quality_score": 3,
+      "maximum_quality_score": 3,
+      "revenue_growth_yoy": 0.17788687,
+      "operating_income_margin": 0.46780818,
+      "free_cash_flow_margin": 0.20186597,
+      "source_companyfacts_sha256": "f8aae2965b20ad0df44bdf7ccbedf797d275b6b8dc030154a7a311361bb7246f",
+      "source_submissions_sha256": "4dce45d2dcac53cb8e9d690331ead28daff35cd042edc38524a0482382b2f3e3"
+    }
+  ],
+  "quality_is_reported_annual_fundamentals_not_analyst_estimate_revision": true,
+  "corpus_is_asof_2026_capture_not_independently_archived_historical_vintages": true,
+  "company_cohort_is_2026_contemporaneous_not_survivorship_safe_history": true,
+  "actual_stock_prices_or_executed_returns_measured": false,
+  "historical_alpha_established": false,
+  "analyst_revision_signal_available": false,
+  "paper_authorized": false,
+  "live_authorized": false,
+  "broker_orders": 0
+}
