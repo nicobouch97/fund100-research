@@ -150,3 +150,18 @@ def test_no_mutation_of_public_issuer_or_sec_data(inputs):
     c.analyze(data, secdata, "source")
     pd.testing.assert_frame_equal(data, a)
     pd.testing.assert_frame_equal(secdata, b)
+
+
+def test_official_document_probe_domain_allowlist_and_no_trading():
+    import fund100_dbiq_official_pdf_discovery_probe_c3g as p
+    assert p.approved_url("https://index.db.com/dbiq-web/indices/95400")
+    assert p.approved_url("https://dbindex.db.com/asset.pdf")
+    for bad in (
+        "http://index.db.com/asset.pdf",
+        "https://evilindex.db.com.example.net/file.pdf",
+        "https://example.org/dbc-trading.pdf",
+        "javascript:alert(1)",
+        "file:///etc/passwd",
+    ):
+        assert not p.approved_url(bad)
+    assert len(p.DOCUMENTS) == 2
