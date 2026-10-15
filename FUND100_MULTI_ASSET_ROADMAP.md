@@ -1228,3 +1228,48 @@ The Phase 3 C1/C2/static commodity forward ledger and V5 genuine ETF
 PAPER workflow remain independent. No individual-stock PAPER/LIVE
 permissions. LIVE operator STOPPED, kill switch ENGAGED, HIGH risk,
 USD 130.30 pilot ceiling and fixed 14 equity-ETF whitelist unchanged.
+
+
+## Operator-directed V6 active/aggressive strategic reset (15 October 2026)
+
+The operator clarified that their desired Fund-100 start is **not** a
+largely passive 75%-ACWI ETF core. Although four V5 LIVE bootstrap ETF
+buys were genuinely filled on 5 October 2026, these constitute
+**transitional investments, not approval of V5 as the active strategy
+experiment**. The 14-ETF LIVE list was a permission list, not 14 held
+positions. The user's intent is concentrated, actively managed,
+well-specified strategies with high upside *and material downside*,
+launched with the existing small funded capital after a lean but real
+risk/execution release check, not months of imaginary-money performance
+waiting.
+
+New priority: V6 replacement design and candid frozen-history
+comparison, as documented in [PR #39](https://github.com/nicobouch97/fund100-research/pull/39)
+and the immutable-research V6 charter:
+\`research_lab/challengers/V6_ACTIVE_AGGRESSIVE_RESET_2026_10_15.md\`.
+First V6-R1 candidate is weekly, 3-position concentrated sector/country
+ETF momentum (63/126-session relative to SPY; up to 35/35/30 allocation)
+with an explicit prior-session 200-day SPY risk-regime de-risking rule,
+5/15/35bp one-way trading friction and comparison against passive ACWI.
+It is an **experimental hypothesis, not yet demonstrated excess profit**.
+The previously inspected historical set cannot be sold as new independent
+validation. Its 35% concentrated positions would violate the existing
+HIGH per-satellite 25% limit; these parameters **must not** be inserted
+into V5 LIVE executor without an independently versioned risk model and
+operator approval.
+
+In parallel: pursue the distinct stock-earnings/quality/momentum,
+commodity futures/carry and crypto research lines; they remain broker-
+unapproved until genuine data/execution work exists. No automatic
+strategy self-promotion or doubled per-bot capital budget.
+
+**Real-money transition remains wholly unapproved:** operator
+\`trading_enabled=false\`, BROKER kill switch ENGAGED, HIGH risk profile,
+original $130.30 ceiling; the operator suggested they may later wish
+to sell four old ETF positions but has NOT instructed their liquidation.
+Do not sell anything, permit new buys, unlock existing LIVE scheduling,
+change guardrails or assume available cash now. When the operator
+explicitly chooses to migrate, read fresh LIVE broker positions and
+order history, prepare an exact staged transition, review sale proceeds
+and costs, prevent old V5 loop from repurchasing positions, verify risk
+limits and ask for specific buy/sell authorisation before any order.
