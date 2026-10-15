@@ -1,0 +1,63 @@
+name: Fund-100 C3F DBIQ Official Contract-Selection Registry (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_dbiq_publication_registry_c3f_v1_0.py"
+      - "test_fund100_dbiq_publication_registry_c3f_v1_0.py"
+      - "research_lab/commodities/dbiq_official_selection_report_registry_2025_2026.csv"
+      - ".github/workflows/fund100-dbiq-c3f-publication-registry.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-dbiq-c3f-publication-registry.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  issuer-publications:
+    name: Dated issuer roll-publication research with no guessed PDF bodies
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # No fund position / broker environment, credentials, trade endpoints.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test twelve dated DBIQ reports and provenance gates
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_dbiq_publication_registry_c3f_v1_0.py
+      - name: Summarize issuer publications without claiming extracted futures
+        run: |
+          set -euo pipefail
+          python fund100_dbiq_publication_registry_c3f_v1_0.py \
+            --output-json /tmp/fund100-c3f-dbiq-index-publications.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path("/tmp/fund100-c3f-dbiq-index-publications.json").read_text())
+          assert r["reports_listed"] == 12
+          assert r["official_index_ticker"] == "DBLCDBCE"
+          assert r["status"] == "OFFICIAL_PUBLICATION_METADATA_ONLY_NO_ROLL_PNL"
+          assert r["source_page_does_not_reveal_pdf_bytes"] is True
+          assert r["historical_backtest_eligible"] is False
+          assert r["contract_expiries_confirmed"] is False
+          assert r["live_authorized"] is False and r["paper_authorized"] is False
+          assert r["broker_order_count"] == 0
+          assert all(not row["pdf_bytes_downloaded"] for row in r["listed"])
+          print("Issuer catalog only: NO PDF contract selections/roll strategy extracted.")
+          PY
+      - name: Retain public source chronology report (metadata only)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-c3f-dbiq-issuer-publications-${{ github.run_id }}
+          path: /tmp/fund100-c3f-dbiq-index-publications.json
+          retention-days: 90
+          if-no-files-found: error
