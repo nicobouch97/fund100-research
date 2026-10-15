@@ -87,11 +87,11 @@ def validate_contracts(raw: pd.DataFrame) -> pd.DataFrame:
         raise ContractDataStop("Publication/capture before date or before release.")
     if (data["expiry_date"] <= data["observation_date"]).any():
         raise ContractDataStop("Expired contracts not eligible for forward curve.")
-    if not data["observation_date"].is_monotonic_increasing:
-        raise ContractDataStop("Date series must be ascending.")
     if data.duplicated(subset=["observation_date", "exchange_mic", "product_code",
                                "contract_id"]).any():
         raise ContractDataStop("Duplicate same-day contract quote: revisions unresolved.")
+    if not data["observation_date"].is_monotonic_increasing:
+        raise ContractDataStop("Date series must be ascending.")
     if data[["exchange_mic", "product_code", "contract_id", "quote_unit"]].isna().any().any():
         raise ContractDataStop("Missing exchange/contract identity or quote unit.")
     codes = data["contract_id"]
