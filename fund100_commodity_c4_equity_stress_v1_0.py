@@ -85,7 +85,7 @@ def decision(prices: pd.DataFrame, t: int) -> Decision:
     target["SHY"] = 1.-target["DBC"]-target["GLD"]
     if (target["GLD"] < 0 or target["GLD"] > MODEL_MAX_GLD or
         target["DBC"] < 0 or target["DBC"] > MODEL_MAX_DBC or
-        target["SHY"] < 1.-MODEL_MAX_GLD-MODEL_MAX_DBC):
+        target["SHY"] < 1.-MODEL_MAX_GLD-MODEL_MAX_DBC-1e-12):
         raise CommodityC4Stop("C4 target allocation constraint violation.")
     return Decision(target, annual, dbc, gld, cut_dbc, cut_gld)
 
