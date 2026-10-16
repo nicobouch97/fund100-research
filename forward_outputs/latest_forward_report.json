@@ -1,8 +1,8 @@
 {
-  "generated_utc": "2026-10-16T14:59:45.646499+00:00",
+  "generated_utc": "2026-10-16T17:41:19.018694+00:00",
   "latest_completed_market_date": "2026-10-15",
   "historical_cutoff": "2026-09-16",
-  "new_sessions_appended": 1,
+  "new_sessions_appended": 0,
   "one_way_cost_bps": 15.0,
   "models": {
     "V3": {
