@@ -21,9 +21,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Check free public PDF text extraction capability
+      - name: Install public PDF text extraction dependency
         run: |
           set -euo pipefail
+          if ! command -v pdftotext >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq poppler-utils
+          fi
           command -v pdftotext
           pdftotext -v
       - name: Verify FINAL-only CME source parsing / original full contract OI / no-orders
