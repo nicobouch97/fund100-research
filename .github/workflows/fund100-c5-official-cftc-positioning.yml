@@ -1,0 +1,74 @@
+name: Fund-100 C5 Original CFTC Gold/WTI Futures Positioning (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_cftc_official_positioning_c5_v1_0.py"
+      - "test_fund100_cftc_official_positioning_c5_v1_0.py"
+      - "research_lab/commodities/C5_CFTC_ORIGINAL_POSITIONING_AND_DBIQ_GASOIL_NOTICE_2026_10_17.md"
+      - ".github/workflows/fund100-c5-official-cftc-positioning.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-cftc-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing offline research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check original archive, contract identity, timing and no-order guards
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_cftc_official_positioning_c5_v1_0.py
+      - name: Try ORIGINAL public 2026 CFTC disaggregated Futures Only ZIP
+        id: source_attempt
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          python fund100_cftc_official_positioning_c5_v1_0.py \
+            --output-json /tmp/fund100-c5-official-cftc-positioning.json \
+            --output-zip /tmp/fund100-c5-original-cftc-futures-only-2026.zip
+          python - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          p=Path("/tmp/fund100-c5-official-cftc-positioning.json")
+          z=Path("/tmp/fund100-c5-original-cftc-futures-only-2026.zip")
+          r=json.loads(p.read_text())
+          assert hashlib.sha256(z.read_bytes()).hexdigest()==r["original_archive_sha256"]
+          assert r["schema"]=="FUND100_C5_ORIGINAL_CFTC_MANAGED_MONEY_FUTURES_ONLY_V1"
+          assert set(r["contract_markets"])=={"COMEX_GOLD","NYMEX_LIGHT_SWEET_WTI"}
+          assert not r["actual_historical_report_publication_times_verified"]
+          assert not r["actual_futures_expiry_settlements_captured"]
+          assert not r["independently_measured_futures_roll_yield"]
+          assert r["broker_orders"]==0 and not r["live_authorized"] and not r["paper_authorized"]
+          print("TRUE official CFTC market-position source verified. NO trade or carry claim.")
+          PY
+      - name: State original CFTC source status explicitly
+        if: always()
+        env:
+          SOURCE_RESULT: ${{ steps.source_attempt.outcome }}
+        run: |
+          if [ "${SOURCE_RESULT}" = "success" ]; then
+            echo "OFFICIAL ORIGINAL CFTC FUTURES ONLY SOURCE: VERIFIED and archived."
+            echo "CARRY/ROLL RETURN: NOT MEASURED. Broker orders: ZERO."
+          else
+            echo "::warning::OFFICIAL CFTC ORIGINAL SOURCE UNAVAILABLE, UNVERIFIED OR REJECTED BY SCHEMA."
+            echo "No CFTC observations are claimed; no fallback substitute, no signals or return estimates."
+          fi
+      - name: Preserve original CFTC ZIP and truthful source features ONLY when verified
+        if: steps.source_attempt.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-c5-original-cftc-futures-only-2026
+          path: |
+            /tmp/fund100-c5-official-cftc-positioning.json
+            /tmp/fund100-c5-original-cftc-futures-only-2026.zip
+          retention-days: 90
+          if-no-files-found: error
