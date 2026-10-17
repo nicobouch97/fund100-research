@@ -66,8 +66,11 @@ def test_source_rejects_missing_markets_and_schema():
     data=rows()
     with pytest.raises(c5.CFTCStop):
         c5.original_annual_zip(zipped(data.drop(columns=["M_Money_Positions_Short_All"])))
-    with pytest.raises(c5.CFTCStop):
-        c5.original_annual_zip(zipped(data[data.CFTC_Contract_Market_Code!="088691"]))
+    with pytest.raises(c5.CFTCStop,match="two independent weeks"):
+        c5.position_records(
+            c5.original_annual_zip(zipped(data[data.CFTC_Contract_Market_Code!="088691"])),
+            "2026-10-17T11:40:00Z",
+        )
 
 
 def test_source_blocks_combined_options_unexpected_archive_and_corruption():
