@@ -1,0 +1,79 @@
+name: Fund-100 C7 Original CME Energy Bulletin FINAL Curve (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_cme_section61_original_c7_v1_0.py"
+      - "test_fund100_cme_section61_original_c7_v1_0.py"
+      - "research_lab/commodities/C7_*"
+      - ".github/workflows/fund100-c7-official-cme-final-curve.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  one-public-original-pdf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check free public PDF text extraction capability
+        run: |
+          set -euo pipefail
+          command -v pdftotext
+          pdftotext -v
+      - name: Verify FINAL-only CME source parsing / original full contract OI / no-orders
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_cme_section61_original_c7_v1_0.py
+      - name: Retrieve ONE original public CME Section 61 PDF and validate source
+        id: original
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          python fund100_cme_section61_original_c7_v1_0.py \
+            --output-json /tmp/fund100-c7-official-final-cl-curve.json \
+            --output-pdf /tmp/fund100-c7-official-original-energy-bulletin.pdf
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          r=json.loads(Path("/tmp/fund100-c7-official-final-cl-curve.json").read_text())
+          raw=Path("/tmp/fund100-c7-official-original-energy-bulletin.pdf").read_bytes()
+          assert hashlib.sha256(raw).hexdigest()==r["original_pdf_sha256"]
+          assert r["schema"]=="FUND100_C7_CME_OFFICIAL_SECTION61_FINAL_CURVE_SOURCE_V1"
+          assert r["status"]=="OFFICIAL_FINAL_CME_CONTRACT_CURVE_SOURCE_ONLY"
+          assert r["contract_month_count"]>=12
+          assert r["sum_verified"]
+          assert not r["realized_roll_yield_measured"]
+          assert not r["historical_strips_present"]
+          assert not r["exact_original_cme_publication_utc_verified"]
+          assert r["broker_orders"]==0
+          assert not r["trading_authorized"] and not r["live_authorized"]
+          print("Original CME dated FINAL CL source integrity VERIFIED; no broker action.")
+          PY
+      - name: Honest public original CME publication state
+        if: always()
+        env:
+          RESULT: ${{ steps.original.outcome }}
+        run: |
+          if [ "${RESULT}" = "success" ]; then
+            echo "OFFICIAL CME ORIGINAL DATED FINAL SOURCE: ACCEPTED; raw PDF and computed OI validated."
+            echo "Only one cross-sectional curve; no earned carry or LIVE permit."
+          else
+            echo "::warning::OFFICIAL CME SOURCE NOT ADMISSIBLE: inaccessible, outdated, preliminary or schema-invalid."
+            echo "No settlement data admitted into Fund-100; cannot make any profitable carry claim."
+          fi
+      - name: Preserve the exact original CME PDF only when FINAL and valid
+        if: steps.original.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-c7-original-cme-final-energy-bulletin
+          path: |
+            /tmp/fund100-c7-official-final-cl-curve.json
+            /tmp/fund100-c7-official-original-energy-bulletin.pdf
+          retention-days: 90
+          if-no-files-found: error
