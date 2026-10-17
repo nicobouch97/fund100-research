@@ -23,7 +23,7 @@ SOURCE_HTML="https://www.cftc.gov/MarketReports/CommitmentsofTraders/HistoricalC
 MAX_ZIP=25_000_000
 MAX_UNPACKED=80_000_000
 FIELDS={
-    "date":"As_of_Date_Form_YYYY-MM-DD",
+    "date":"Report_Date_as_YYYY-MM-DD",
     "code":"CFTC_Contract_Market_Code",
     "name":"Market_and_Exchange_Names",
     "open_interest":"Open_Interest_All",
