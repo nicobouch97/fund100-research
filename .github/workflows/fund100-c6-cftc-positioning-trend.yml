@@ -1,0 +1,79 @@
+name: Fund-100 C6 CFTC Gold/WTI Positioning x Commodity ETF Trend (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_commodity_cftc_positioning_trend_c6_v1_0.py"
+      - "test_fund100_commodity_cftc_positioning_trend_c6_v1_0.py"
+      - "research_lab/commodities/C6_*"
+      - ".github/workflows/fund100-c6-cftc-positioning-trend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  real-source-cost-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install public research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Negative tests for source hashing, publication lag, sell/buy cost and LIVE prohibition
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_commodity_cftc_positioning_trend_c6_v1_0.py
+      - name: Retrieve EXACT original authentic C5 GOLD / WTI futures-only archive and SHA report
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fund100-c6-c5-original
+          gh run download 39030028357 \
+            -n fund100-c5-original-cftc-futures-only-2026 \
+            -D /tmp/fund100-c6-c5-original
+          test -s /tmp/fund100-c6-c5-original/fund100-c5-original-cftc-futures-only-2026.zip
+          test -s /tmp/fund100-c6-c5-original/fund100-c5-official-cftc-positioning.json
+      - name: Apply PREDECLARED CFTC release lag to actual current archival positioning plus real ETF prices
+        run: |
+          set -euo pipefail
+          python fund100_commodity_cftc_positioning_trend_c6_v1_0.py \
+            --original-c5-zip /tmp/fund100-c6-c5-original/fund100-c5-original-cftc-futures-only-2026.zip \
+            --original-c5-report /tmp/fund100-c6-c5-original/fund100-c5-official-cftc-positioning.json \
+            --output-json /tmp/fund100-c6-positioning-trend-real-economics.json \
+            --output-etf-csv /tmp/fund100-c6-original-gld-uso-shy.csv
+          python - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          r=json.loads(Path("/tmp/fund100-c6-positioning-trend-real-economics.json").read_text())
+          prices=Path("/tmp/fund100-c6-original-gld-uso-shy.csv").read_bytes()
+          assert hashlib.sha256(prices).hexdigest()==r["source_original_etf_canonical_sha256"]
+          assert r["schema"]=="FUND100_C6_CFTC_GOLD_WTI_ETF_RESEARCH_V1"
+          assert r["cftc_original_weekly_release_vintages_not_independently_verified"]
+          assert r["cftc_scheduled_dates_not_proof_of_release_at_that_time"]
+          assert r["uso_fund_total_returns_are_not_cftc_single_contract_futures_carry"]
+          assert r["independent_original_contract_futures_settlements_present"] is False
+          assert not r["live_promoted"] and not r["alpha_verified"]
+          assert r["broker_orders"]==0
+          assert not r["operator_authorized_old_position_sales"]
+          assert not r["operator_authorized_asset_expansion"]
+          assert not r["paper_authorized"] and not r["live_authorized"]
+          assert not r["trading_authorized"]
+          assert set(r["comparison"])=={"15","35","60"}
+          print("Real retrospective returns preserved as source-limited data; NO LIVE strategy promotion.")
+          PY
+      - name: Archive original real ETF price bytes and annotated retrospective research
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-c6-real-cftc-positioning-cost-test
+          path: |
+            /tmp/fund100-c6-positioning-trend-real-economics.json
+            /tmp/fund100-c6-original-gld-uso-shy.csv
+          retention-days: 90
+          if-no-files-found: error
