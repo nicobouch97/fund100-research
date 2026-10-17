@@ -30,6 +30,8 @@ jobs:
           fi
           command -v pdftotext
           pdftotext -v
+      - name: Install only necessary negative-test runtime
+        run: python -m pip install 'pytest>=8,<9'
       - name: Verify FINAL-only CME source parsing / original full contract OI / no-orders
         run: |
           set -euo pipefail
