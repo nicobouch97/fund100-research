@@ -1369,3 +1369,34 @@ better market-source coverage. The user's intention is an
 aggressive LIVE small-capital experiment backed by credible
 evidence, NOT blind promotion after a negative test.
 No old holdings sold; operator STOPPED and kill switch ENGAGED.
+
+
+## 17 October 2026 — V6-C1 distinct 24/7 crypto regime research
+
+After rejecting V6-R1 overtrading sector ETF rotation and V6-E2
+post-earnings chase, prioritize an economically different BTC/ETH
+trend following strategy with long-trend gates and volatility-limited
+exposure, without guaranteeing profitable alpha. The fixed **before**
+first real V6-C1 backtest spec lives in
+\`research_lab/crypto/V6C1_CRYPTO_24_7_TREND_PROTOCOL_2026_10_17.md\`.
+Companion broker-free code:
+\`fund100_v6_crypto_trend_c1_v1_0.py\` and
+\`.github/workflows/fund100-v6-c1-real-crypto-trend.yml\`.
+
+This new source experiment requests public historical BTC-USD/ETH-USD
+24/7 vendor closes (not original authenticated exchange historical
+fills), preserves acquisition UTC and original SHA256, tests weekly
+Sunday decisions using *prior* completed Saturday data, 180-day SMA
+plus 63-day absolute trend, 30-day realized basket volatility
+target 50% annualized, BTC/ETH long-only 65/35 maximum
+with cash fallback, and 25/35/60bps fee/spread stress.
+Compare to BTC passive buy-and-hold and a constant 65/35 BTC/ETH
+passive portfolio. Vendor histories and already observed past market
+regimes make any returns exploratory, not independent proof.
+Crypto 24/7 event monitoring and precise live fees/eligible
+assets/jurisdiction require further account-specific checking.
+Coin/fiat rights are separate from the original V5 ETF capital
+permission. No Alpaca secrets or brokerage calls in this research
+workflow, no broker crypto order permits. The existing V5
+operator remains STOPPED and kill switch ENGAGED, with pilot capital
+ceiling USD130.30 and four ETF holdings unchanged.
