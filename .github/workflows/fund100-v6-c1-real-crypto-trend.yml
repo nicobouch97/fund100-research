@@ -1,0 +1,60 @@
+name: Fund-100 V6-C1 Real Crypto Trend + Volatility Research (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_crypto_trend_c1_v1_0.py"
+      - "test_fund100_v6_crypto_trend_c1_v1_0.py"
+      - "research_lab/crypto/**"
+      - ".github/workflows/fund100-v6-c1-real-crypto-trend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-crypto-price-research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing public research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Regression for 24/7 chronology, cost, anti-leverage, missing source
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_crypto_trend_c1_v1_0.py
+      - name: Capture new completed historical USD crypto bars and evaluate frozen V6-C1
+        run: |
+          set -euo pipefail
+          python fund100_v6_crypto_trend_c1_v1_0.py \
+            --output-json /tmp/fund100-v6c1-actual-research.json \
+            --output-source-csv /tmp/fund100-v6c1-original-crypto-price.csv
+          python - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          report=json.loads(Path("/tmp/fund100-v6c1-actual-research.json").read_text())
+          original=Path("/tmp/fund100-v6c1-original-crypto-price.csv").read_bytes()
+          assert hashlib.sha256(original).hexdigest()==report["canonical_original_price_sha256"]
+          assert report["schema"]=="FUND100_V6_C1_CRYPTO_TREND_EXPLORATORY_V1"
+          assert report["status"]=="HISTORICAL_EXPLORATORY_CRYPTO_24_7_NOT_LIVE_APPROVED"
+          assert report["historical_research_is_not_independent_forward_alpha"]
+          assert set(report["comparison"])=={"25","35","60"}
+          assert not report["actual_broker_crypto_eligibility_verified"]
+          assert not report["future_live_production_migration_authorized"]
+          assert not report["old_live_etfs_sold"] and report["broker_orders"]==0
+          assert not report["paper_authorized"] and not report["live_authorized"]
+          print("Original real crypto price source verified, research only.")
+          PY
+      - name: Archive immutable input and explicitly retrospective research report
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v6c1-original-btc-eth-cost-review
+          path: |
+            /tmp/fund100-v6c1-actual-research.json
+            /tmp/fund100-v6c1-original-crypto-price.csv
+          retention-days: 90
+          if-no-files-found: error

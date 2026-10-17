@@ -1369,3 +1369,68 @@ better market-source coverage. The user's intention is an
 aggressive LIVE small-capital experiment backed by credible
 evidence, NOT blind promotion after a negative test.
 No old holdings sold; operator STOPPED and kill switch ENGAGED.
+
+
+## 17 October 2026 — V6-C1 distinct 24/7 crypto regime research
+
+After rejecting V6-R1 overtrading sector ETF rotation and V6-E2
+post-earnings chase, prioritize an economically different BTC/ETH
+trend following strategy with long-trend gates and volatility-limited
+exposure, without guaranteeing profitable alpha. The fixed **before**
+first real V6-C1 backtest spec lives in
+\`research_lab/crypto/V6C1_CRYPTO_24_7_TREND_PROTOCOL_2026_10_17.md\`.
+Companion broker-free code:
+\`fund100_v6_crypto_trend_c1_v1_0.py\` and
+\`.github/workflows/fund100-v6-c1-real-crypto-trend.yml\`.
+
+This new source experiment requests public historical BTC-USD/ETH-USD
+24/7 vendor closes (not original authenticated exchange historical
+fills), preserves acquisition UTC and original SHA256, tests weekly
+Sunday decisions using *prior* completed Saturday data, 180-day SMA
+plus 63-day absolute trend, 30-day realized basket volatility
+target 50% annualized, BTC/ETH long-only 65/35 maximum
+with cash fallback, and 25/35/60bps fee/spread stress.
+Compare to BTC passive buy-and-hold and a constant 65/35 BTC/ETH
+passive portfolio. Vendor histories and already observed past market
+regimes make any returns exploratory, not independent proof.
+Crypto 24/7 event monitoring and precise live fees/eligible
+assets/jurisdiction require further account-specific checking.
+Coin/fiat rights are separate from the original V5 ETF capital
+permission. No Alpaca secrets or brokerage calls in this research
+workflow, no broker crypto order permits. The existing V5
+operator remains STOPPED and kill switch ENGAGED, with pilot capital
+ceiling USD130.30 and four ETF holdings unchanged.
+
+
+### V6-C1 source-true result: reduced past drawdown, did NOT beat holding crypto
+
+[Actual real public historical BTC/ETH run 39027912139](https://github.com/nicobouch97/fund100-research/actions/runs/39027912139)
+completed the predeclared strategy research, archiving a canonical
+original data CSV (SHA256
+\`ae796a3141a4fe52453af8aa83e879b95841dc28b11b4294b1e0f43077e9f22f\`)
+and study result. 15 dedicated tests passed.
+
+For retrospective **2020 onward** at 35bps per traded side,
+V6-C1 yielded **30.0175% annualised compound** vs
+**42.9567%** BTC buy-and-hold and **47.2411%** passive
+65BTC/35ETH; corresponding maximum drawdowns V6 **−48.4349%**,
+BTC **−76.6346%**, BTC/ETH **−76.9412%**.
+At 25bps V6 was 30.8591%, at 60bps 27.9349%.
+Annual gross turnover **6.43953 × portfolio value**, ABOVE
+predeclared 5 × NAV limit. For descriptive 2023 onward,
+35bps V6 +29.6544% annual versus BTC +52.1256%;
+V6 max drawdown −33.2414% versus BTC −53.06%.
+These extremely high historical crypto returns and drawdowns are
+**not future expected rates**. Venue spreads, taxable activity,
+FX conversion and crypto account eligibility remain unverified.
+
+**Do NOT promote V6-C1 to LIVE.** It did reduce historical
+drawdowns but underperformed both long-hold crypto benchmarks,
+failed turnover criterion and lacked executable quote/permission
+evidence. Preserve rejected result:
+\`research_lab/crypto/V6C1_FIRST_REAL_RETROSPECTIVE_CRYPTO_RESULT_2026_10_17.md\`.
+Do not optimize the reviewed historical segment to manufacture
+a successful high-frequency strategy. Continue independent dated
+commodity-carry source efforts and distinct active portfolio
+hypotheses. Four original V5 LIVE ETFs remain held and the operator
+is STOPPED.
