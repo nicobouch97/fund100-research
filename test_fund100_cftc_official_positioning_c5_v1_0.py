@@ -15,7 +15,7 @@ def rows():
     records=[]
     for i in range(120):
         records.append({
-            "As_of_Date_Form_YYYY-MM-DD":"2026-10-06",
+            "Report_Date_as_YYYY-MM-DD":"2026-10-06",
             "CFTC_Contract_Market_Code":"023651",
             "Market_and_Exchange_Names":"NATURAL GAS - NEW YORK MERCANTILE EXCHANGE",
             "Open_Interest_All":"999999",
@@ -27,7 +27,7 @@ def rows():
                       ("067651","CRUDE OIL, LIGHT SWEET - NEW YORK MERCANTILE EXCHANGE")]:
         for d in ["2026-10-06","2026-10-13"]:
             records.append({
-                "As_of_Date_Form_YYYY-MM-DD":d,
+                "Report_Date_as_YYYY-MM-DD":d,
                 "CFTC_Contract_Market_Code":code,
                 "Market_and_Exchange_Names":name,
                 "Open_Interest_All":"400000",
@@ -91,7 +91,7 @@ def test_wrong_instrument_identity_and_spoofed_tuesday_rejected():
     with pytest.raises(c5.CFTCStop,match="mismatch"):
         c5.position_records(corrupt,"2026-10-17T11:40:00Z")
     corrupt=frame.copy()
-    corrupt.loc[corrupt.index[0],"As_of_Date_Form_YYYY-MM-DD"]="2026-10-16"
+    corrupt.loc[corrupt.index[0],"Report_Date_as_YYYY-MM-DD"]="2026-10-16"
     with pytest.raises(c5.CFTCStop,match="Tuesday"):
         c5.position_records(corrupt,"2026-10-17T11:40:00Z")
 
