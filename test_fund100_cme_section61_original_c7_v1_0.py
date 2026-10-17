@@ -108,3 +108,12 @@ def test_non_pdf_fake_source_and_pdf_that_cannot_be_read():
     for raw in (b"",b"SPOOF %PDF-"+b"0"*10000,b"%PDF-"+b"0"*5):
         with pytest.raises(c7.CMEStop,match="PDF bytes"):
             c7.extract_first_page_pdf(raw)
+
+def test_actual_multicolumn_cme_bulletin_header_is_accepted_only_if_final():
+    line="PG61 BULLETIN # 194@ Thu, Oct 08, 2026 PG61"
+    real_layout="PG61 BULLETIN # 194@                  ENERGY FUTURES PRODUCTS                Thu, Oct 08, 2026 PG61"
+    report=c7.parse_first_page(page().replace(line,real_layout),acquired_utc=ACQ)
+    assert report["original_trade_date"]=="2026-10-08"
+    assert report["original_bulletin_id"]==194
+    with pytest.raises(c7.CMEStop,match="PRELIMINARY"):
+        c7.parse_first_page(page(status="PRELIMINARY").replace(line,real_layout),acquired_utc=ACQ)
