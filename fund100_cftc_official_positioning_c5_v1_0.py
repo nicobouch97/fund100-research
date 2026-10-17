@@ -70,7 +70,7 @@ def original_annual_zip(raw:bytes)->pd.DataFrame:
         raise CFTCStop("CFTC original source CSV parse failed.") from exc
     data.columns=[s.strip().replace("\ufeff","") for s in data.columns]
     if not set(FIELDS.values()).issubset(data.columns):
-        raise CFTCStop("Official CFTC disaggregated source columns missing.")
+        raise CFTCStop("Official CFTC disaggregated source columns missing. PRESENT=" + repr(list(data.columns[:35])))
     if len(data)<100 or len(data)>500_000:
         raise CFTCStop("Expected nonempty entire-market official 2026 report.")
     if "FutOnly_or_Combined" in data.columns:
