@@ -99,7 +99,7 @@ def position_records(data:pd.DataFrame,observed_utc:str)->dict:
         if code not in MARKETS:
             raise CFTCStop("Unapproved CFTC contract market identity.")
         if MARKET_NAME[code] not in str(row[FIELDS["name"]]).upper():
-            raise CFTCStop("Market CFTC code/name mismatch (possibly substituted product).")
+            raise CFTCStop("Market CFTC code/name mismatch: " + code + " NAME=" + repr(str(row[FIELDS["name"]])[:130]))
         rawdate=str(row[FIELDS["date"]]).strip()
         dt=None
         for fmt in ("%Y-%m-%d","%m/%d/%Y"):
