@@ -1614,3 +1614,29 @@ Four original V5 LIVE ETF investments remain held;
 operator STOPPED, kill switch ENGAGED, HIGH tier and
 USD130.30 ceiling unchanged. No new futures/commodities
 LIVE or PAPER permit.
+
+
+### C7 original official CME source probe: PRELIMINARY rejected (17 Oct 2026)
+
+A direct original GitHub Actions GET of CME Daily Bulletin
+Section 61 **succeeded** at the network/extraction level in
+[run 39039186006](https://github.com/nicobouch97/fund100-research/actions/runs/39039186006).
+Original PDF first-page heading was **BULLETIN #200, Friday
+16 October 2026, PRELIMINARY**. C7 correctly rejected this
+document; the reference status for the first live probe is
+**NO ADMISSIBLE FINAL SETTLEMENT DATA / NO CARRY**.
+Nine synthetic format/source/anti-forgery tests passed.
+CME's rotating URL served another date/status in an earlier
+web renderer, demonstrating why exact raw PDF SHA256,
+FINAL document status and completed acquisition timestamp
+must be reconciled to each source. When a dated FINAL
+appears, source admission requires real contract-by-contract
+open-interest reconciliation and delivery-month identity.
+CME futures expiry rules, historic FINAL vintages and
+roll P&L are still **not** established by this attempt.
+
+Truthful source result:
+`research_lab/commodities/C7_FIRST_OFFICIAL_CME_BULLETIN_SOURCE_STATUS_2026_10_17.md`.
+No CME subscription, ETF liquidation, new futures trading
+or LIVE operator permission. Continue independent research
+with verified source admission; do not fabricate alpha.
