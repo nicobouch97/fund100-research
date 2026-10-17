@@ -297,11 +297,24 @@ def main()->None:
     args.output_source_csv.write_text(original,encoding="utf-8")
     args.output_json.write_text(json.dumps(result,indent=2,sort_keys=True)+"\n",encoding="utf-8")
     for cost in COST_BPS:
-        full=result["comparison"][str(cost)]["2020_onward"]
-        s=full["strategy_nav"]; b=full["btc_hold_nav"]
-        print(cost,"bps/side: V6 annual",s["cagr"],"BTC passive annual",b["cagr"],
-              "V6 drawdown",s["max_drawdown"],"BTC passive drawdown",b["max_drawdown"],
-              "annual gross turnover",full["annual_gross_weight_turnover"])
+        for period,full in result["comparison"][str(cost)].items():
+            s=full["strategy_nav"]; b=full["btc_hold_nav"]; e=full["constant_65btc_35eth_nav"]
+            print(cost,"bps/side",period,
+                  "V6_CAGR",s["cagr"],"BTC_CAGR",b["cagr"],"PASSIVE_65_35_CAGR",e["cagr"],
+                  "V6_MAX_DD",s["max_drawdown"],"BTC_MAX_DD",b["max_drawdown"],
+                  "PASSIVE_65_35_MAX_DD",e["max_drawdown"],
+                  "GROSS_ANNUAL_TURNOVER",full["annual_gross_weight_turnover"],
+                  "TRADE_DAYS",full["trade_days"])
+    cost35=result["comparison"]["35"]["2020_onward"]
+    annual_turnover=cost35["annual_gross_weight_turnover"]
+    score=cost35["strategy_nav"]["cagr"]/max(1e-9,abs(cost35["strategy_nav"]["max_drawdown"]))
+    hold_score=cost35["btc_hold_nav"]["cagr"]/max(1e-9,abs(cost35["btc_hold_nav"]["max_drawdown"]))
+    preregistered_minimum = annual_turnover<=5 and score>hold_score
+    print("PREREGISTERED_MINIMUM_ECONOMIC_GATE",preregistered_minimum,
+          "turnover_max_5",annual_turnover<=5,
+          "drawdown_adjusted_btc_superiority",score>hold_score)
+    print("CAN_PROMOTE_TO_LIVE",False,
+          "SOURCE_HASH",result["canonical_original_price_sha256"])
     print("No independent alpha or account crypto permission. No LIVE or PAPER orders.")
 
 
