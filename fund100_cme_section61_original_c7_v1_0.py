@@ -75,7 +75,7 @@ def parse_first_page(first_page_text:str,*,acquired_utc:str)->dict:
         raise CMEStop("Not actual CME original energy daily bulletin.")
     found=DOC_DATE.search(head)
     if not found:
-        raise CMEStop("Undated original bulletin, no reliable trade date.")
+        raise CMEStop("Undated original bulletin, no reliable trade date. ORIGINAL_HEADER=" + repr(head.splitlines()[:18]))
     bulletin=int(found.group(1))
     dow,mon,d,year=found.group(2),found.group(3),int(found.group(4)),int(found.group(5))
     try:
