@@ -1299,3 +1299,41 @@ strategy—not more trading for its own sake. Seek genuinely distinct
 sources and evidence (individual stock analyst revisions/catalysts,
 authentic futures carry, and other appropriately cost-aware methods)
 before a separately approved small-capital LIVE strategy reset.
+
+
+## 17 October 2026 — V6-E1 first original SEC earnings-catalyst research
+
+As the operator rejected the passive V5 75%-ACWI core and the
+experimental V6-R1 weekly concentrated ETF rotation lost heavily
+to ACWI net of historical costs, the next economically separate
+active-system challenger is **SEC Item 2.02 earnings-event price
+confirmation**. It is an individual-stock catalyst *hypothesis*,
+not actual verified predictive alpha or an approved stock trade.
+
+Preregistered source protocol:
+\`research_lab/stocks/V6E1_REAL_SEC_EARNINGS_CATALYST_PROTOCOL_2026_10_17.md\`.
+Implementation:
+\`fund100_v6_sec_earnings_catalyst_e1_v1_0.py\`.
+Read-only external evidence workflow:
+\`.github/workflows/fund100-v6-e1-real-catalyst-source-audit.yml\`.
+The workflow independently cross-binds original SEC eight-firm
+issuer submission JSON captured 15 Oct (original actual SEC
+artifact run 38756477914) with the first actual new completed
+stock-price public adjusted-close observation captured 17 Oct
+(original artifact run 39015519726). It accepts only real issuer
+8-K Item 2.02 records and waits two subsequent completed sessions
+before describing a benchmark-relative public-market reaction.
+The data source may yield **zero** eligible post-freeze events;
+a positive earnings surprise or future holding return must not
+be fabricated. Original SEC 8-K is NOT analyst consensus.
+Real stock quote vintage, bid/ask, point-in-time broad security
+master, independently genuine post-entry returns and actual
+broker stock authorisation remain missing.
+
+Potential future high-risk concentration would be capped at four
+positions of max 25% each, no leverage, an explicit shared
+$130.30 total pilot ceiling and independent cost/market-liquidity
+checks. Those are **research parameters only**, not LIVE authority.
+Current V5 portfolio unsold, V5 operator STOPPED, kill switch
+ENGAGED and current 14-ETF LIVE allowlist intact. The operator
+has not instructed liquidation or new stock purchases.
