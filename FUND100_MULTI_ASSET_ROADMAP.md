@@ -1467,3 +1467,36 @@ If original CFTC ZIP cannot be obtained, report BLOCKED, do not
 manufacture source observations. CFTC positioning remains research-only.
 No change to trading STOP, four current ETF holdings, HIGH risk,
 USD 130.30 cap or 14-ETF LIVE whitelist.
+
+
+### C5 first genuine current official commodity trader positions — 17 October 2026
+
+CFTC's actual 2026 Disaggregated Futures Only annual ZIP source
+**SUCCESSFULLY downloaded** in
+[run 39030028357](https://github.com/nicobouch97/fund100-research/actions/runs/39030028357).
+2026 report code/name format was validated against the authentic
+public source; original ZIP and SHA256-linked JSON were archived
+as artifact **12100485342**. 10 source contract / anti-forgery
+synthetic tests passed.
+
+Real reported Tuesday **13 October 2026** positions:
+- **COMEX gold / 088691:** managed-money net **+107,089 futures
+  contracts** (27.02% of aggregate open interest), down **3,898**
+  contracts from preceding weekly report.
+- **NYMEX WTI-PHYSICAL / 067651:** managed-money net **+40,574
+  contracts** (2.14% of open interest), down **13,024**.
+
+The original annual file was acquired after Friday 16 October
+(the CFTC calendar's ordinary intended release), but this is a
+current compiled/archive copy, **not independently archived release-
+timestamp original data**. Historical release anomalies in 2025 are
+material. No futures expiry settlements or authentic roll carry
+have been acquired, so **no commodity strategy alpha and no trading
+signal was proven**. Research finding preserved:
+`research_lab/commodities/C5_FIRST_AUTHENTIC_2026_CFTC_GOLD_WTI_REVIEW_2026_10_17.md`.
+
+This source unblocks a future properly release-lagged commodity
+positioning hypothesis, not the separate contract-price/expiry
+requirements for a real futures-carry trading edge. Continue
+commodity strategy development without promoting an unverified
+source to LIVE. Four original ETFs remain unsold and STOPPED.
