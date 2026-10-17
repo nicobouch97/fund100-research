@@ -1536,3 +1536,38 @@ a real execution profit. Even a promising signal cannot grant
 new LIVE permission or sell existing V5 positions.
 Trading remains STOPPED, kill switch ENGAGED,
 HIGH user-selected risk, unchanged USD 130.30 ceiling.
+
+
+### C6 empirical result: failed historical commodity positioning/ETF filter (17 October 2026)
+
+C6's genuine original C5 official futures-only CFTC source was cross-bound
+to a new archived GLD/USO/SHY public vendor adjusted-close source in
+[real action run 39030915263](https://github.com/nicobouch97/fund100-research/actions/runs/39030915263).
+**16** dedicated no-lookahead/source-cost guard tests passed.
+After frozen CFTC publication-schedule lag and 15/35/60bp one-way
+turnover deductions, the short **1 May–16 October 2026**
+cumulative returns were:
+
+- Static 50/50 GLD/USO: **+1.77429%**.
+- Static 35/35/30 GLD/USO/SHY: **+1.36231%**.
+- C6 at 15bp per traded side: **−20.26548%**.
+- C6 at 35bp per traded side: **−22.01665%**.
+- C6 at 60bp per traded side: **−24.15823%**.
+- 24 CFTC scheduled-release signal decisions; **11.06523 x NAV
+  gross accumulated target-weight turnover** (exceeds precommitted
+  total-period 4× threshold). At 35bp C6 drawdown **−22.28503%**.
+
+**C6 economic gate FAILED: DO NOT PROMOTE OR RESCUE-TUNE ON THE
+ALREADY STUDIED DATA.** This result is source-limited retrospective,
+not real historical release-vintage or actual ETF close fills.
+Original futures carry/roll settlement P&L remains unavailable.
+Results archived at
+`research_lab/commodities/C6_FIRST_REAL_CFTC_POSITIONING_ETF_RESULT_2026_10_17.md`.
+Research priorities should now be genuine independent contract-level
+forward-curve original prices, licensed analyst earnings-revision
+source, or a separately justified **cost-controlled and lower
+turnover** hypothesis. Aggression is not a substitute for
+positive net economic evidence. Do not liquidate the four V5
+ETF live holdings or extend their 14 ETF-only LIVE allowlist.
+Operator STOPPED, broker kill switch ENGAGED, risk HIGH and
+USD 130.30 total capital ceiling unchanged.
