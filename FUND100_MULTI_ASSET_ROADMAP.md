@@ -1434,3 +1434,36 @@ a successful high-frequency strategy. Continue independent dated
 commodity-carry source efforts and distinct active portfolio
 hypotheses. Four original V5 LIVE ETFs remain held and the operator
 is STOPPED.
+
+
+## 17 October 2026 — official CFTC positioning data and DBIQ gasoil event (C5)
+
+The public EIA daily WTI RCLC1/RCLC2 source was discontinued in
+April 2024 and the GitHub runner returned HTTP 403 in the previously
+recorded attempt. **It does not supply 2026 forward curves.**
+To make concrete independent commodity progress, Fund-100 added a
+read-only official 2026 CFTC *Disaggregated Futures Only* original ZIP
+source check for COMEX GOLD (contract code `088691`) and NYMEX WTI
+(code `067651`). Managed-money longs and shorts / open interest are
+observable trader positioning, **not actual futures settlement
+prices, a carry signal, or a profitable investment strategy**.
+Publication timing must account for the 2025 CFTC government shutdown
+and delayed releases; latest annual files are current compilations
+rather than weekly independently archived original vintages.
+
+Separately, Deutsche Bank's official indexed DBIQ publications page
+lists a **9 October 2026** gasoil extraordinary-weight amendment for
+its diversified commodity index: trigger observation 1 October,
+rebalancing effective 8 October. That amendment is AFTER the rebalance
+and **cannot be used to claim a tradable early-warning signal**. The
+original October 1 PDF and original real contract maturities/weights
+are still missing; official issuer website access terms remain an
+explicit acquisition gate. Frozen source review:
+`research_lab/commodities/C5_CFTC_ORIGINAL_POSITIONING_AND_DBIQ_GASOIL_NOTICE_2026_10_17.md`.
+Offline CFTC source ingestion and source-only workflow:
+`fund100_cftc_official_positioning_c5_v1_0.py`,
+`.github/workflows/fund100-c5-official-cftc-positioning.yml`.
+If original CFTC ZIP cannot be obtained, report BLOCKED, do not
+manufacture source observations. CFTC positioning remains research-only.
+No change to trading STOP, four current ETF holdings, HIGH risk,
+USD 130.30 cap or 14-ETF LIVE whitelist.
