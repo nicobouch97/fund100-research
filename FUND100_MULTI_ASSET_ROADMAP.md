@@ -1571,3 +1571,46 @@ positive net economic evidence. Do not liquidate the four V5
 ETF live holdings or extend their 14 ETF-only LIVE allowlist.
 Operator STOPPED, broker kill switch ENGAGED, risk HIGH and
 USD 130.30 total capital ceiling unchanged.
+
+
+## 17 October 2026 — C7 ORIGINAL CME futures-contract settlement source discovery
+
+After C6 original-data commodity positioning × GLD/USO ETF
+trend lost 20–24% in the short exploratory May–October
+period, avoid another high-turnover parameter search.
+A genuinely different commodity-specific information
+source is CME Group's original daily energy bulletin,
+**Section 61**:
+https://www.cmegroup.com/daily_bulletin/current/Section61_Energy_Futures_Products.pdf
+It contains NYMEX CL **named delivery-month settlements and OI**,
+the fundamental original inputs for a *futures term-structure*
+hypothesis rather than an ETF momentum proxy. CME public
+webpage index https://www.cmegroup.com/market-data/daily-bulletin.html
+links this first-party PDF, subject to CME's data rights.
+
+The PDF uses a ROTATING URL and must never be treated
+as an immutable dated file. 17 Oct web observations were
+discrepant: **October 16 PRELIMINARY text** versus
+**October 8 FINAL screenshot** at the exact same URL.
+Only bytes actually fetched and independently hash-stored
+with direct first-page extraction, date, FINAL status,
+physical NYMEX CL identity, unique delivery contracts,
+and complete per-contract OI sum matching the bulletin
+can be admitted. A newer PRELIMINARY is rejected even
+if older FINAL is all that is currently accessible.
+
+C7 original source intake/negative test/one-off workflow:
+`fund100_cme_section61_original_c7_v1_0.py`,
+`test_fund100_cme_section61_original_c7_v1_0.py`,
+`.github/workflows/fund100-c7-official-cme-final-curve.yml`,
+`research_lab/commodities/C7_ORIGINAL_CME_SECTION61_FUTURES_CURVE_SOURCE_PROTOCOL_2026_10_17.md`.
+One verified date is a **cross-sectional curve only**,
+NOT earned carry/rolling futures P&L. Need multiple validated
+dated finals, authenticated chronology, roll/expiry and
+fees. CME's licensed historical DataMine/APIs must not
+be purchased automatically against USD130.30 pilot.
+
+Four original V5 LIVE ETF investments remain held;
+operator STOPPED, kill switch ENGAGED, HIGH tier and
+USD130.30 ceiling unchanged. No new futures/commodities
+LIVE or PAPER permit.
