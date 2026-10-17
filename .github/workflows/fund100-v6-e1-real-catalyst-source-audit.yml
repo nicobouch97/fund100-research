@@ -1,0 +1,109 @@
+name: Fund-100 V6-E1 Original SEC Earnings + Real Price Evidence (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_sec_earnings_catalyst_e1_v1_0.py"
+      - "fund100_v6_earnings_event_feasibility_e2_v1_0.py"
+      - "test_fund100_v6_earnings_event_feasibility_e2_v1_0.py"
+      - "research_lab/stocks/V6E2_FROZEN_RETROSPECTIVE_EARNINGS_EVENT_FEASIBILITY_2026_10_17.md"
+      - "test_fund100_v6_sec_earnings_catalyst_e1_v1_0.py"
+      - "research_lab/stocks/V6E1_REAL_SEC_EARNINGS_CATALYST_PROTOCOL_2026_10_17.md"
+      - ".github/workflows/fund100-v6-e1-real-catalyst-source-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  review-original-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python research runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run synthetic chronology, falsification and non-order checks
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_v6_sec_earnings_catalyst_e1_v1_0.py \
+            test_fund100_v6_earnings_event_feasibility_e2_v1_0.py
+      - name: Retrieve ONLY existing authentic original SEC and stock price archives
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fund100-v6e1-sec-original /tmp/fund100-v6e1-price-original
+          gh run download 38756477914 \
+            -n fund100-phase4b-real-sec-snapshot-38756477914 \
+            -D /tmp/fund100-v6e1-sec-original
+          gh run download 39015519726 \
+            -n fund100-p4g-prospective-stock-price-evidence \
+            -D /tmp/fund100-v6e1-price-original
+          test -s /tmp/fund100-v6e1-sec-original/manifest-and-quality.json
+          test -s /tmp/fund100-v6e1-price-original/fund100-p4g-snapshot.json
+          test -s /tmp/fund100-v6e1-price-original/fund100-p4g-original-prices.csv
+          echo "Two real independent SEC and public-price source archives located."
+      - name: Cross-check original SEC issuer bytes against genuine stock price observation
+        run: |
+          set -euo pipefail
+          python fund100_v6_sec_earnings_catalyst_e1_v1_0.py \
+            --sec-original-directory /tmp/fund100-v6e1-sec-original \
+            --p4g-original-report /tmp/fund100-v6e1-price-original/fund100-p4g-snapshot.json \
+            --p4g-original-prices /tmp/fund100-v6e1-price-original/fund100-p4g-original-prices.csv \
+            --output /tmp/fund100-v6e1-observed-catalyst.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("/tmp/fund100-v6e1-observed-catalyst.json").read_text())
+          assert r["schema"]=="FUND100_V6_E1_EARNINGS_CATALYST_SOURCE_REVIEW_V1"
+          assert r["source_frozen_sec_acquired_at_utc"]=="2026-10-15T15:01:45Z"
+          assert r["completed_price_session"]>="2026-10-15"
+          assert not r["earnings_surprise_consensus_present"]
+          assert not r["actual_forward_holding_period_profit_measured"]
+          assert r["broker_orders"]==0
+          assert not r["operator_authorized_old_position_sales"]
+          assert not r["operator_authorized_stock_buys"]
+          assert not r["paper_authorized"] and not r["live_authorized"]
+          assert not r["trading_authorized"]
+          print("REAL original SEC and price source cross-proof; NO live orders.")
+          PY
+      - name: Independently assess original SEC earnings events and 10-session economics
+        run: |
+          set -euo pipefail
+          python fund100_v6_earnings_event_feasibility_e2_v1_0.py \
+            --sec-original-directory /tmp/fund100-v6e1-sec-original \
+            --p4g-original-report /tmp/fund100-v6e1-price-original/fund100-p4g-snapshot.json \
+            --p4g-original-prices /tmp/fund100-v6e1-price-original/fund100-p4g-original-prices.csv \
+            --output /tmp/fund100-v6e2-retrospective-economics.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("/tmp/fund100-v6e2-retrospective-economics.json").read_text())
+          assert r["schema"]=="FUND100_V6_E2_RETROSPECTIVE_EARNINGS_REACTION_FEASIBILITY_V1"
+          assert r["source_frozen_sec_acquisition"]=="2026-10-15T15:01:45Z"
+          assert r["status"]=="RETROSPECTIVE_SURVIVOR_BIASED_FEASIBILITY_NOT_PROVEN_ALPHA"
+          assert set(r["results_by_one_way_transaction_cost_bps"])=={"5","15","35"}
+          assert not r["measured_real_money_live_returns"]
+          assert not r["operator_authorized_liquidation"]
+          assert not r["paper_authorized"] and not r["live_authorized"]
+          assert r["broker_orders"]==0
+          print("No retrospective reconstructed profit is allowed to become a LIVE permit.")
+          PY
+      - name: Preserve independently source-linked first genuine catalyst result
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v6e1-original-earnings-catalyst
+          path: |
+            /tmp/fund100-v6e1-observed-catalyst.json
+            /tmp/fund100-v6e2-retrospective-economics.json
+          retention-days: 90
+          if-no-files-found: error

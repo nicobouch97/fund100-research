@@ -1299,3 +1299,73 @@ strategy—not more trading for its own sake. Seek genuinely distinct
 sources and evidence (individual stock analyst revisions/catalysts,
 authentic futures carry, and other appropriately cost-aware methods)
 before a separately approved small-capital LIVE strategy reset.
+
+
+## 17 October 2026 — V6-E1 first original SEC earnings-catalyst research
+
+As the operator rejected the passive V5 75%-ACWI core and the
+experimental V6-R1 weekly concentrated ETF rotation lost heavily
+to ACWI net of historical costs, the next economically separate
+active-system challenger is **SEC Item 2.02 earnings-event price
+confirmation**. It is an individual-stock catalyst *hypothesis*,
+not actual verified predictive alpha or an approved stock trade.
+
+Preregistered source protocol:
+\`research_lab/stocks/V6E1_REAL_SEC_EARNINGS_CATALYST_PROTOCOL_2026_10_17.md\`.
+Implementation:
+\`fund100_v6_sec_earnings_catalyst_e1_v1_0.py\`.
+Read-only external evidence workflow:
+\`.github/workflows/fund100-v6-e1-real-catalyst-source-audit.yml\`.
+The workflow independently cross-binds original SEC eight-firm
+issuer submission JSON captured 15 Oct (original actual SEC
+artifact run 38756477914) with the first actual new completed
+stock-price public adjusted-close observation captured 17 Oct
+(original artifact run 39015519726). It accepts only real issuer
+8-K Item 2.02 records and waits two subsequent completed sessions
+before describing a benchmark-relative public-market reaction.
+The data source may yield **zero** eligible post-freeze events;
+a positive earnings surprise or future holding return must not
+be fabricated. Original SEC 8-K is NOT analyst consensus.
+Real stock quote vintage, bid/ask, point-in-time broad security
+master, independently genuine post-entry returns and actual
+broker stock authorisation remain missing.
+
+Potential future high-risk concentration would be capped at four
+positions of max 25% each, no leverage, an explicit shared
+$130.30 total pilot ceiling and independent cost/market-liquidity
+checks. Those are **research parameters only**, not LIVE authority.
+Current V5 portfolio unsold, V5 operator STOPPED, kill switch
+ENGAGED and current 14-ETF LIVE allowlist intact. The operator
+has not instructed liquidation or new stock purchases.
+
+
+### V6-E1/E2 first REAL cross-source result — fail to establish an edge (17 Oct 2026)
+
+The source audit on [workflow run 39024722787](https://github.com/nicobouch97/fund100-research/actions/runs/39024722787)
+verified two original independent archives and passed 15 dedicated
+negative/chronology tests. **Zero** new Item 2.02 SEC earnings
+catalysts occurred in the first genuine post-freeze source slice:
+there is no current V6-E1 research watchlist, let alone an order.
+
+The predeclared E2 feasibility diagnostic used the ORIGINAL archived
+SEC accessions and the ORIGINAL price dataset, but the 8-company
+cohort was selected in 2026, and the old filing/data vintages are
+not independent contemporaneous archives. **23** historical events
+were observable; **11** passed the frozen +2pp SPY-relative
+initial price confirmation. Ten-session hypothetical third-close
+entry→exit event results (compared to passive SPY) were **negative**:
+at 5bp/side −1.44015pp *median* / −1.38165pp *mean*; at
+15bp/side −1.63633pp median / −1.58207pp mean; at
+35bp/side −2.02810pp median / −1.98231pp mean. Only 27.273%
+had positive excess at 35bp/side. These are small-sample
+survivorship-biased EVENT statistics, **not** an achievable portfolio
+CAGR or independent source-proven alpha. Source evidence and
+precommitted fail in
+\`research_lab/results/V6_E1_E2_REAL_EARNINGS_EVENT_FIRST_REVIEW_2026_10_17.md\`.
+
+**REJECT V6-E2 for live migration.** Avoid fitting fresh filters to
+the same failed data; pivot to independent predeclared ideas and
+better market-source coverage. The user's intention is an
+aggressive LIVE small-capital experiment backed by credible
+evidence, NOT blind promotion after a negative test.
+No old holdings sold; operator STOPPED and kill switch ENGAGED.
