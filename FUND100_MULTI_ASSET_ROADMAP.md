@@ -1500,3 +1500,74 @@ positioning hypothesis, not the separate contract-price/expiry
 requirements for a real futures-carry trading edge. Continue
 commodity strategy development without promoting an unverified
 source to LIVE. Four original ETFs remain unsold and STOPPED.
+
+
+## 17 October 2026 — C6 authentic CFTC positioning plus GLD/USO trend candidate
+
+The original successful C5 gold and WTI official CFTC 2026 archive
+(artifact 12100485342) now supports a distinct **C6 historical
+economic test**: managed-money net/open-interest share *rising over
+exactly four official weekly reports* alongside positive 63-session
+public ETF adjusted-price momentum, with GLD as gold, USO as an
+imperfect oil futures ETP (NOT a matched CFTC futures contract),
+SHY as fallback exposure. Trade only at next ETF close
+STRICTLY AFTER official **SCHEDULED** release date, so the model
+cannot collect Tuesday-to-Friday price movements before the
+3:30 p.m. ET publication. 2026 CFTC schedule includes delayed
+**22 June and 6 July Monday** release dates.
+The annual CFTC ZIP acquired on 17 October is not an independently
+archived historical weekly **actual release vintage**, so
+2026 backtests remain RETROSPECTIVE / source-clock approximate;
+CFTC publication anomalies may undermine assumed dates.
+
+Preregistered C6 rule and explicit economic thresholds:
+`research_lab/commodities/C6_PREREGISTERED_CFTC_GOLD_WTI_POSITIONING_TREND_2026_10_17.md`.
+Research-only source implementation, original-archive
+integrity test, reproducible public-price workflow:
+`fund100_commodity_cftc_positioning_trend_c6_v1_0.py`,
+`test_fund100_commodity_cftc_positioning_trend_c6_v1_0.py`,
+`.github/workflows/fund100-c6-cftc-positioning-trend.yml`.
+Economic review from May 1 to October 16 2026 is a short **cumulative**
+return comparison against static 50/50 GLD/USO,
+static 35/35/30 GLD/USO/SHY and SHY alone at
+15/35/60bps one-way gross buy/sell turnover.
+Any positive historical number is NOT independent alpha or
+a real execution profit. Even a promising signal cannot grant
+new LIVE permission or sell existing V5 positions.
+Trading remains STOPPED, kill switch ENGAGED,
+HIGH user-selected risk, unchanged USD 130.30 ceiling.
+
+
+### C6 empirical result: failed historical commodity positioning/ETF filter (17 October 2026)
+
+C6's genuine original C5 official futures-only CFTC source was cross-bound
+to a new archived GLD/USO/SHY public vendor adjusted-close source in
+[real action run 39030915263](https://github.com/nicobouch97/fund100-research/actions/runs/39030915263).
+**16** dedicated no-lookahead/source-cost guard tests passed.
+After frozen CFTC publication-schedule lag and 15/35/60bp one-way
+turnover deductions, the short **1 May–16 October 2026**
+cumulative returns were:
+
+- Static 50/50 GLD/USO: **+1.77429%**.
+- Static 35/35/30 GLD/USO/SHY: **+1.36231%**.
+- C6 at 15bp per traded side: **−20.26548%**.
+- C6 at 35bp per traded side: **−22.01665%**.
+- C6 at 60bp per traded side: **−24.15823%**.
+- 24 CFTC scheduled-release signal decisions; **11.06523 x NAV
+  gross accumulated target-weight turnover** (exceeds precommitted
+  total-period 4× threshold). At 35bp C6 drawdown **−22.28503%**.
+
+**C6 economic gate FAILED: DO NOT PROMOTE OR RESCUE-TUNE ON THE
+ALREADY STUDIED DATA.** This result is source-limited retrospective,
+not real historical release-vintage or actual ETF close fills.
+Original futures carry/roll settlement P&L remains unavailable.
+Results archived at
+`research_lab/commodities/C6_FIRST_REAL_CFTC_POSITIONING_ETF_RESULT_2026_10_17.md`.
+Research priorities should now be genuine independent contract-level
+forward-curve original prices, licensed analyst earnings-revision
+source, or a separately justified **cost-controlled and lower
+turnover** hypothesis. Aggression is not a substitute for
+positive net economic evidence. Do not liquidate the four V5
+ETF live holdings or extend their 14 ETF-only LIVE allowlist.
+Operator STOPPED, broker kill switch ENGAGED, risk HIGH and
+USD 130.30 total capital ceiling unchanged.
