@@ -24,7 +24,7 @@ def rows():
             "FutOnly_or_Combined":"FutOnly",
         })
     for code,name in [("088691","GOLD - COMMODITY EXCHANGE INC."),
-                      ("067651","CRUDE OIL, LIGHT SWEET - NEW YORK MERCANTILE EXCHANGE")]:
+                      ("067651","WTI-PHYSICAL - NEW YORK MERCANTILE EXCHANGE")]:
         for d in ["2026-10-06","2026-10-13"]:
             records.append({
                 "Report_Date_as_YYYY-MM-DD":d,
