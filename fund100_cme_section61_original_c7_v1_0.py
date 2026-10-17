@@ -25,7 +25,7 @@ MAX_DAYS_OLD=14
 MONTHS=("JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC")
 MONTH_INDEX={m:i for i,m in enumerate(MONTHS)}
 CODE=re.compile(r"^("+ "|".join(MONTHS)+r")(\d{2})$")
-DOC_DATE=re.compile(r"\bBULLETIN\s*#\s*(\d{1,4})@?\s+(Mon|Tue|Wed|Thu|Fri),?\s+"
+DOC_DATE=re.compile(r"\bBULLETIN\s*#\s*(\d{1,4})@?[^\n]{0,160}?(Mon|Tue|Wed|Thu|Fri),?\s+"
                     r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2}),\s*(20\d{2})",
                     re.I)
 # Settlement is the value *immediately followed by its signed
@@ -73,9 +73,13 @@ def parse_first_page(first_page_text:str,*,acquired_utc:str)->dict:
     head=first_page_text[:1800]
     if "ENERGY FUTURES PRODUCTS" not in head.upper() or "CME GROUP" not in head.upper():
         raise CMEStop("Not actual CME original energy daily bulletin.")
+    # CME prints its PRELIMINARY or FINAL label *before* the
+    # multi-column PG61 Bulletin/date heading. Reject draft first.
+    if re.search(r"\bPRELIMINARY\b",head,re.I):
+        raise CMEStop("PRELIMINARY original CME bulletin cannot become FINAL settlement source.")
     found=DOC_DATE.search(head)
     if not found:
-        raise CMEStop("Undated original bulletin, no reliable trade date. ORIGINAL_HEADER=" + repr(head.splitlines()[:18]))
+        raise CMEStop("Undated original bulletin, no reliable trade date.")
     bulletin=int(found.group(1))
     dow,mon,d,year=found.group(2),found.group(3),int(found.group(4)),int(found.group(5))
     try:
