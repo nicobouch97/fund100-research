@@ -2129,3 +2129,44 @@ controller plus short PAPER mechanics verification
 must precede even a micro LIVE release. None
 has been approved or deployed. Four original
 LIVE holdings unchanged and STOPPED.
+
+
+### V6-L1 same-assets counterfactual: volatility RULE DOES NOT CREATE THE RETURN
+
+[Source-locked run 39164782847](https://github.com/nicobouch97/fund100-research/actions/runs/39164782847)
+compared L1's fixed monthly volatility-managed
+XLK/XLE/IWM 50/30/20 basket against the IDENTICAL
+sector weights, same monthly trade schedule,
+same 10pp band and the exact same 5/15/35bps
+cost assumptions **without** any volatility cut.
+
+At 15bps each side, 2014–Sep2026 managed L1
+CAGR **16.23951%**, unmanaged fixed-sector
+**17.89297%**; the vol rule **detracted
+1.65346pp of annualized return** while max
+drawdown changed only **−34.29313%** versus
+**−34.28854%**. In the known 2020–Sep2026
+subset, managed underperformed identical fixed
+sectors by 2.67483pp/year. 6 source/no-trade
+counterfactual tests passed.
+
+**Reject the supposed incremental volatility-
+timing alpha for V6-L1**. Do NOT tune its
+cutoff/period to rescue it on this same
+history. Most of the appealing original
+16% L1 backtest came from historically strong
+chosen sector premia and selection/period effects,
+not proved algorithmic return skill.
+Detailed failure:
+`research_lab/results/V6_L1_VOLATILITY_RULE_ATRIBUTION_2026_10_18.md`.
+
+The faster experiment path is STILL in effect:
+historical economics and short PAPER execution
+mechanics can permit a clearly stated unproven
+risk-premium LIVE pilot without waiting months
+for paper P&L, once a specific risk-aware
+strategy and broker engine are legitimately
+released. A more aggressive factor portfolio
+is not automatically better than passive
+ACWI; nor does another failed rule give permission
+to sell the four current LIVE ETFs.
