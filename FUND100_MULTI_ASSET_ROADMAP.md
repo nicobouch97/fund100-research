@@ -2019,3 +2019,78 @@ gated via DataMine and cannot become fabricated
 historical settlement evidence. No trading or data
 purchases made. Four original LIVE ETF investments
 remain HELD; STOP, HIGH and $130.30 cap unchanged.
+
+
+## 18 October 2026 — operator-directed FAST LIVE experimental strategy program
+
+**SUPERSEDES any launch criterion that demands weeks/months
+of accumulated PAPER or forward PROFIT before real money.**
+The user explicitly wants a promptly operational USD130.30
+experiment, with empirical strategy research conducted now,
+a short mechanical PAPER execution verification, and ongoing
+live learning AFTER the strategy becomes executable.
+Historical outperformance is never guaranteed alpha.
+This amendment updates the 14 October roadmap's older
+forward-performance promotion language where it implied
+a mandatory months-long wait. Source continuity and
+longitudinal research observations STILL matter for
+strategy reviews after launch and for honest alpha claims.
+No "launch by date" pledge is an order permit.
+
+New standard:
+1. Economic mechanism supported by research or
+   economically plausible original evidence;
+   fixed selected inputs/risks *before* one tested
+   historical source study, no endless retuning.
+2. Historical *plausibility* across multiple regimes,
+   stressed both-sided costs and noncatastrophic drawdown,
+   rather than a requirement for reliable positive alpha.
+   Disclose in-sample/reused-period limitations, against
+   relevant passive benchmark.
+3. SHORT PAPER checks **only** of fractional minimum
+   notional, broker permissions, order/fill reconciliation,
+   trade timeout/idempotency, kill-switch and settlement;
+   no requirement for positive PAPER profits.
+4. Explicit separately versioned HIGH concentrated
+   LIVE risk contract and operator-approved capital
+   boundaries, verified original account cash and
+   broker-specific asset accessibility. SELL/BUY stages
+   must handle T+1 and no margin; new engine must not
+   run concurrently with STOPPED V5. Brokerage
+   environment release controls remain in force.
+5. LIVE deployment with existing approved budget
+   becomes a **small unproven experiment**. Observe
+   objective fills/performance, stop on losses/breaches,
+   and version learning decisions to avoid overfitting.
+   The bot never rewrites risk thresholds silently.
+
+First new economic candidate frozen before first test:
+`research_lab/V6_L1_FROZEN_AGGRESSIVE_VOL_REGIME_FAST_LAUNCH_2026_10_18.md`,
+`fund100_v6_fast_launch_vol_regime_l1_v1_0.py`,
+`test_fund100_v6_fast_launch_vol_regime_l1_v1_0.py`,
+`.github/workflows/fund100-v6-l1-fast-vol-regime.yml`.
+L1 uses fixed market premium exposures **XLK 50%,
+XLE 30%, IWM 20%**, half allocated to cash if
+prior 20-session annual SPY volatility >30%,
+reviewed month-end with 10pp trade band.
+It is RISK-regime driven, not another winner-
+rotation tweak of failed R1/R2. A single original
+SHA-locked 2014–Sep26 history with 5/15/35bps
+stressed costs is a *plausibility diagnostic*, not
+independent evidence of profitability. Original
+HIGH risk V5 max sector weight 25%, so 50% XLK
+is strictly RESEARCH until a separately tested
+concentrated risk contract and LIVE engine exist.
+
+P4H/P4I individual-stock forward observation and
+CME commodities original price/source work
+continue **in parallel** as learning research; they
+are not prerequisites for the first experimental
+LIVE V6. Existing ACWI/EEM/XLE/XLV positions
+remain HELD while strategy and broker readiness
+are resolved. The operator already delegated
+sell/hold discretion; do not seek repetitive
+investment-choice approval, but do not bypass
+GitHub/broker auth or transfer restrictions.
+Original USD130.30 capital ceiling, HIGH selection,
+V5 STOP and broker kill switch stay unchanged.
