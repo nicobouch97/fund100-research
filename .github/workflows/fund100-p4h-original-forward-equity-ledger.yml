@@ -1,16 +1,20 @@
-name: Fund-100 P4H Source-Locked Forward Stock Returns (NO BROKER)
+name: Fund-100 P4H/P4I Permanently Anchored Forward Stock Returns (NO BROKER)
 
 on:
   pull_request:
     paths:
       - "fund100_stock_forward_return_ledger_p4h_v1_0.py"
       - "test_fund100_stock_forward_return_ledger_p4h_v1_0.py"
-      - "research_lab/stocks/P4H_*"
+      - "fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
+      - "test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
+      - "research_lab/stocks/P4I_*"
       - ".github/workflows/fund100-p4h-original-forward-equity-ledger.yml"
   push:
     branches: [main]
     paths:
-      - "fund100_stock_forward_return_ledger_p4h_v1_0.py"
+      - "fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
+      - "test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
+      - "research_lab/stocks/P4I_*"
       - ".github/workflows/fund100-p4h-original-forward-equity-ledger.yml"
   schedule:
     # After P4G 03:30 UTC Tuesday-Saturday daily close archive.
@@ -39,32 +43,42 @@ jobs:
           python-version: "3.12"
       - name: Install existing offline research dependencies
         run: python -m pip install -r requirements.txt
-      - name: Check future-only entry chronology, source hashes and no-order controls
+      - name: Check P4H and P4I no-lookahead, old-vintage SHA and cost controls
         run: |
           set -euo pipefail
-          python -m pytest -q test_fund100_stock_forward_return_ledger_p4h_v1_0.py
-      - name: Retrieve EXACT first P4G 17 Oct authentic artifact; do not choose a convenient later baseline
+          python -m pytest -q \
+            test_fund100_stock_forward_return_ledger_p4h_v1_0.py \
+            test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py
+      - name: Confirm P4I source anchor permanently pins actual 17 Oct observation
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import fund100_stock_forward_permanent_anchor_p4i_v1_0 as a
+          row,sha=a.read_anchor(Path("research_lab/stocks/P4I_PERMANENT_2026_10_17_SOURCE_ANCHOR.json"))
+          assert row["original_preselected_watchlist"]==["MSFT","KO","PG"]
+          assert row["original_p4g_json_sha256"]==a.ORIGINAL_JSON_SHA
+          assert row["original_p4g_canonical_price_csv_sha256"]==a.ORIGINAL_CSV_SHA
+          assert row["broker_orders"]==0
+          print("Immutable original 17 Oct price and selected issuer fingerprints:",sha)
+          PY
+      - name: While original artifact still exists, independently verify anchors against its REAL bytes
+        if: github.event_name == 'pull_request'
         run: |
           set -euo pipefail
           actual="$(gh api /repos/nicobouch97/fund100-research/actions/runs/39015519726/artifacts \
             --jq '.artifacts[] | select(.name == "fund100-p4g-prospective-stock-price-evidence" and .expired == false) | .id')"
           test "${actual}" = "12094995126"
-          mkdir -p /tmp/fund100-p4h-baseline
+          mkdir -p /tmp/fund100-p4i-original
           gh run download 39015519726 \
             --repo nicobouch97/fund100-research \
             --name fund100-p4g-prospective-stock-price-evidence \
-            --dir /tmp/fund100-p4h-baseline
-          python - <<'PY'
-          from pathlib import Path
-          import fund100_stock_forward_return_ledger_p4h_v1_0 as h
-          path=Path("/tmp/fund100-p4h-baseline")
-          doc,_,original_json_sha=h.read_snapshot(path/"fund100-p4g-snapshot.json",path/"fund100-p4g-original-prices.csv")
-          assert doc["asof_completed_session"]==h.BASELINE_SESSION
-          assert doc["source_acquired_at_utc"]>=h.BASELINE_MIN_ACQUIRED
-          assert not doc["trading_authorized"] and doc["broker_orders"]==0
-          print("Exact original 17 October forward baseline independently accepted: ",original_json_sha)
-          PY
-      - name: Find later completed eligible P4G original-source capture, not PR fixture
+            --dir /tmp/fund100-p4i-original
+          python fund100_stock_forward_permanent_anchor_p4i_v1_0.py \
+            --original-json /tmp/fund100-p4i-original/fund100-p4g-snapshot.json \
+            --original-csv /tmp/fund100-p4i-original/fund100-p4g-original-prices.csv \
+            --output /tmp/fund100-p4i-original-verified.json
+      - name: Locate newest successful post-anchor real P4G source snapshot
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         id: followup
         run: |
@@ -75,45 +89,45 @@ jobs:
             --limit 40 --json databaseId,conclusion,event,headBranch \
             --jq '[.[] | select(.conclusion == "success" and .headBranch == "main" and (.event == "schedule" or .event == "workflow_dispatch") and .databaseId > 39015519726)] | sort_by(.databaseId) | reverse | .[0].databaseId // empty')"
           if [ -z "${next}" ]; then
-            echo "NO_LATER_AUTHENTIC_P4G_SOURCE: continue research on next completed US market session."
+            echo "NO_NEW_P4G_SOURCE: zero new future stock returns, not an alpha result."
             echo "eligible=false" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
-          mkdir -p /tmp/fund100-p4h-followup
+          mkdir -p /tmp/fund100-p4i-followup
           gh run download "${next}" --repo nicobouch97/fund100-research \
             --name fund100-p4g-prospective-stock-price-evidence \
-            --dir /tmp/fund100-p4h-followup
+            --dir /tmp/fund100-p4i-followup
           echo "eligible=true" >> "${GITHUB_OUTPUT}"
-          echo "ORIGINAL_FOLLOWUP_RUN_ID=${next}"
-      - name: Compare ONLY truly post-baseline real market sessions with reference benchmarks
+          echo "PROSPECTIVE_INPUT_RUN=${next}"
+      - name: Compare ONLY post-freeze closes, after both-sided friction; FAIL on restated old prices
         if: steps.followup.outputs.eligible == 'true'
         run: |
           set -euo pipefail
-          python fund100_stock_forward_return_ledger_p4h_v1_0.py \
-            --baseline-json /tmp/fund100-p4h-baseline/fund100-p4g-snapshot.json \
-            --baseline-csv /tmp/fund100-p4h-baseline/fund100-p4g-original-prices.csv \
-            --followup-json /tmp/fund100-p4h-followup/fund100-p4g-snapshot.json \
-            --followup-csv /tmp/fund100-p4h-followup/fund100-p4g-original-prices.csv \
-            --output /tmp/fund100-p4h-source-locked-forward-result.json
+          python fund100_stock_forward_permanent_anchor_p4i_v1_0.py \
+            --anchor research_lab/stocks/P4I_PERMANENT_2026_10_17_SOURCE_ANCHOR.json \
+            --followup-json /tmp/fund100-p4i-followup/fund100-p4g-snapshot.json \
+            --followup-csv /tmp/fund100-p4i-followup/fund100-p4g-original-prices.csv \
+            --output /tmp/fund100-p4i-anchored-prospective-result.json
           python - <<'PY'
           import json
           from pathlib import Path
-          r=json.loads(Path("/tmp/fund100-p4h-source-locked-forward-result.json").read_text())
-          assert r["schema"]=="FUND100_P4H_FROZEN_PROSPECTIVE_EQUITY_FORWARD_RETURNS_V1"
+          r=json.loads(Path("/tmp/fund100-p4i-anchored-prospective-result.json").read_text())
+          assert r["schema"]=="FUND100_P4I_HASH_ANCHORED_POST_FREEZE_EQUITY_RETURNS_V1"
           assert r["frozen_baseline_session"]=="2026-10-16"
-          assert r["first_original_source_artifact_id"]==12094995126
+          assert r["original_frozen_watchlist"]==["MSFT","KO","PG"]
+          assert r["overlapping_original_adjusted_prices_sha_verified"]
           assert not r["prior_history_used_for_strategy_pnl"]
           assert not r["period_cagr_or_statistical_alpha_inferred"]
           assert r["broker_orders"]==0
           assert not r["paper_authorized"] and not r["live_authorized"]
           assert not r["trading_authorized"]
-          print("No backdated entry, no live stock permit, no broker calls.")
+          print("Original archived 17 October signal anchored indefinitely; no trading.")
           PY
-      - name: Preserve original-hash-bound forward-only outcome
+      - name: Preserve real post-freeze source hash and only observed forward results
         if: steps.followup.outputs.eligible == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: fund100-p4h-real-post-freeze-costed-returns
-          path: /tmp/fund100-p4h-source-locked-forward-result.json
+          name: fund100-p4i-permanent-anchor-real-forward-return-evidence
+          path: /tmp/fund100-p4i-anchored-prospective-result.json
           retention-days: 90
           if-no-files-found: error
