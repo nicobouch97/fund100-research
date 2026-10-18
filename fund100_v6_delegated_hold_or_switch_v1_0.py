@@ -95,7 +95,7 @@ def decision(scope:dict,rejections:dict,
         h=git_blob_sha(raw)
         if h!=item.get("evidence_git_blob_sha1"):
             raise DecisionStop("Original candidate evidence changed after decision.")
-        if b"REJECT" not in raw.upper() or b"DO NOT PROMOTE" not in raw.upper() and b"DO NOT AUTHORISE" not in raw.upper():
+        if not (b"DO NOT PROMOTE" in raw.upper() or b"DO NOT AUTHORISE" in raw.upper()):
             raise DecisionStop("Rejection report lacks explicit original nonpromotion.")
         hashes[ident]=h
     if seen!=EXPECTED:
