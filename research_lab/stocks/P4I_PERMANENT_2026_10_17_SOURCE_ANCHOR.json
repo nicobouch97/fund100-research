@@ -1,0 +1,38 @@
+{
+  "schema": "FUND100_P4I_IMMUTABLE_P4G_2026_10_17_ANCHOR_V1",
+  "frozen_asof_completed_market_session": "2026-10-16",
+  "original_evidence_captured_calendar_date_utc": "2026-10-17",
+  "original_github_workflow_run_id": 39015519726,
+  "original_github_artifact_id": 12094995126,
+  "original_p4g_json_sha256": "403a6e23ad53ace626cb9663e3889ab9c0b4e58d7c582ad3aab85aa024bdffb7",
+  "original_p4g_canonical_price_csv_sha256": "9c01c045f6fe9d54f455513249c23433a806ffb350575bef9bfdbde5372d921d",
+  "original_sec_quality_source_manifest_sha256": "bafc7a084a6d4deaf7c7b7a5e982d52a8b5ecd6fe1b70a0ebaf3e64a610b1e18",
+  "original_preselected_watchlist": [
+    "MSFT",
+    "KO",
+    "PG"
+  ],
+  "reference_six_quality_cohort": [
+    "AAPL",
+    "AMZN",
+    "GOOGL",
+    "KO",
+    "MSFT",
+    "PG"
+  ],
+  "benchmark": "SPY",
+  "cash_proxy": "SHY",
+  "earliest_hypothetical_post_freeze_entry_session": "2026-10-19",
+  "first_possible_forward_return_session": "2026-10-20",
+  "entry_and_exit_cost_bps_each_side": [
+    5,
+    15,
+    35
+  ],
+  "prior_price_rows_must_match_exact_frozen_csv_sha256": true,
+  "original_vendor_revisions_must_not_be_silently_accepted": true,
+  "original_history_used_as_future_strategy_returns": false,
+  "independent_alpha_or_earned_returns_proven": false,
+  "derivatives_margin_live_stocks_authorized": false,
+  "broker_orders": 0
+}
