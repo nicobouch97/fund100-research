@@ -1,0 +1,27 @@
+{
+  "schema": "FUND100_V6_DELEGATED_DECISION_SCOPE_V1",
+  "acknowledged_at_utc": "2026-10-18T15:46:34Z",
+  "operator_instruction": "Delegated discretion to determine whether to sell existing LIVE ETF holdings if economically best; no repeated per-decision chat approvals sought.",
+  "investment_decisions_delegated": true,
+  "existing_holdings_conditional_sale_discretion_delegated": true,
+  "per_trade_chat_approval_requested_by_operator": false,
+  "requested_more_active_higher_risk_experiment": true,
+  "capital_ceiling_usd": "130.30",
+  "additional_funding_approved": false,
+  "leveraged_derivatives_short_or_margin_trading_approved": false,
+  "old_v5_live_strategy_selected_as_replacement": false,
+  "broker_live_order_control_modified": false,
+  "brokerage_environment_kill_switch_modified": false,
+  "no_broker_orders_enabled_by_this_manifest": true,
+  "current_portfolio_decision": "HOLD_EXISTING_UNTIL_CREDIBLE_REPLACEMENT",
+  "current_portfolio_decision_date_utc": "2026-10-18",
+  "independently_qualified_replacement_selected": false,
+  "original_account_must_be_verified_before_real_sales": true,
+  "live_trade_controller_requires_distinct_tested_release": true,
+  "allowed_old_holding_symbols": [
+    "ACWI",
+    "EEM",
+    "XLE",
+    "XLV"
+  ]
+}
