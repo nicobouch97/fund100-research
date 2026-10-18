@@ -1,0 +1,61 @@
+name: Fund-100 V6-L1 FAST Historical Sector Regime Candidate (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_fast_launch_vol_regime_l1_v1_0.py"
+      - "test_fund100_v6_fast_launch_vol_regime_l1_v1_0.py"
+      - "research_lab/V6_L1_*"
+      - ".github/workflows/fund100-v6-l1-fast-vol-regime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  one-frozen-historical-economic-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Existing source-locked offline research runtime
+        run: python -m pip install -r requirements.txt
+      - name: Test preregistered previous-close volatility, holdings and risk
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_fast_launch_vol_regime_l1_v1_0.py
+      - name: Run exactly one original source costed history (no parameter search)
+        run: |
+          set -euo pipefail
+          python fund100_v6_fast_launch_vol_regime_l1_v1_0.py \
+            --frozen-history research_lab/frozen_history_v2.csv \
+            --output /tmp/fund100-v6-l1-first-frozen-history.json
+          python - <<'PY'
+          from pathlib import Path
+          import json,hashlib
+          p=Path("research_lab/frozen_history_v2.csv")
+          r=json.loads(Path("/tmp/fund100-v6-l1-first-frozen-history.json").read_text())
+          assert hashlib.sha256(p.read_bytes()).hexdigest()==r["history_original_sha256"]
+          assert r["schema"]=="FUND100_V6_L1_VOL_MANAGED_HIGH_RISK_SECTOR_PRELAUNCH_RESEARCH_V1"
+          assert r["fixed_sector_weights"]=={"XLK":.5,"XLE":.3,"IWM":.2}
+          assert r["history_previously_studied_not_independent_holdout"]
+          assert r["risk_premium_not_proven_alpha"]
+          assert not r["benchmark_outperformance_required_for_experimental_launch"]
+          assert not r["independent_forward_profit_required_before_first_live_experiment"]
+          assert r["separate_concentrated_risk_manifest_review_required"]
+          assert not r["live_execution_controller_released"]
+          assert not r["live_authorized"] and not r["paper_authorized"]
+          assert r["broker_orders"]==0
+          print("History is NOT a forward profit gate. Experimental plausibility:",
+                r["experimental_research_pilot_screen_passed"])
+          PY
+      - name: Preserve original fixed model and first non-optimised economic result
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v6-l1-original-costed-history-prelaunch-review
+          path: /tmp/fund100-v6-l1-first-frozen-history.json
+          retention-days: 90
+          if-no-files-found: error
