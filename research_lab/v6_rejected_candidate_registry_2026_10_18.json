@@ -1,0 +1,39 @@
+{
+  "schema": "FUND100_V6_REJECTED_CANDIDATES_AT_DECISION_V1",
+  "asof_utc": "2026-10-18T15:46:34Z",
+  "source_is_retrospective_and_in_sample": true,
+  "candidates": [
+    {
+      "id": "V6-R1",
+      "status": "REJECTED_NOT_LIVE",
+      "evidence_path": "research_lab/results/V6_R1_AGGRESSIVE_ROTATION_FIRST_REAL_RESEARCH_REJECTION_2026_10_15.md",
+      "evidence_git_blob_sha1": "47003239412499093a132473a9fded669cda769f"
+    },
+    {
+      "id": "V6-E2",
+      "status": "REJECTED_NOT_LIVE",
+      "evidence_path": "research_lab/results/V6_E1_E2_REAL_EARNINGS_EVENT_FIRST_REVIEW_2026_10_17.md",
+      "evidence_git_blob_sha1": "5d54bd84070cfff8fb96bf2155ec502601313a3f"
+    },
+    {
+      "id": "V6-C1",
+      "status": "REJECTED_NOT_LIVE",
+      "evidence_path": "research_lab/crypto/V6C1_FIRST_REAL_RETROSPECTIVE_CRYPTO_RESULT_2026_10_17.md",
+      "evidence_git_blob_sha1": "b1bcbe0c7429ac190f7d2bf45338851f37ba2ace"
+    },
+    {
+      "id": "C6",
+      "status": "REJECTED_NOT_LIVE",
+      "evidence_path": "research_lab/commodities/C6_FIRST_REAL_CFTC_POSITIONING_ETF_RESULT_2026_10_17.md",
+      "evidence_git_blob_sha1": "6a4ed1d9484f263fe2094b97d64df82b04be6d4d"
+    },
+    {
+      "id": "V6-R2",
+      "status": "REJECTED_NOT_LIVE",
+      "evidence_path": "research_lab/results/V6_R2_LOW_TURNOVER_QUARTERLY_REAL_HISTORY_REJECTION_2026_10_18.md",
+      "evidence_git_blob_sha1": "a29ea42652a1559d5276f1299b2a9b1e75ecb803"
+    }
+  ],
+  "qualified_candidates": [],
+  "no_silent_new_candidate_promotion": true
+}
