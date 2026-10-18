@@ -1,0 +1,95 @@
+name: Fund-100 C8 Original CME Source Fingerprint (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_cme_source_state_c8_v1_0.py"
+      - "test_fund100_cme_source_state_c8_v1_0.py"
+      - "research_lab/commodities/C8_*"
+      - ".github/workflows/fund100-c8-cme-source-status.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  one-off-official-source-state:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install no-credential test and PDF extraction tools
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          if ! command -v pdftotext >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq poppler-utils
+          fi
+      - name: Test source status, original SHA, FINAL-only settlement checks and no-order gates
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_cme_section61_original_c7_v1_0.py \
+            test_fund100_cme_source_state_c8_v1_0.py
+      - name: One CME official GET - preserve rejection metadata not rejected PDF
+        run: |
+          set -euo pipefail
+          python fund100_cme_source_state_c8_v1_0.py \
+            --output-status-json /tmp/fund100-c8-official-cme-source-status.json \
+            --output-final-pdf /tmp/fund100-c8-admitted-final-cme.pdf
+      - name: Reject all mistaken trading or settlement claims
+        id: source_status
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, hashlib
+          from pathlib import Path
+          result=json.loads(Path("/tmp/fund100-c8-official-cme-source-status.json").read_text())
+          assert result["schema"]=="FUND100_C8_CME_SOURCE_ADMISSION_STATUS_V1"
+          assert result["official_rotating_source_url"].startswith("https://www.cmegroup.com/")
+          assert not result["one_date_is_not_historical_earned_carry"] is False
+          assert not result["independent_historical_settlement_return_series"]
+          assert not result["operator_authorized_etf_liquidation"]
+          assert not result["operator_authorized_new_futures"]
+          assert result["broker_orders"]==0
+          assert not result["paper_authorized"] and not result["live_authorized"]
+          assert not result["trading_authorized"]
+          admitted=result["source_admission_status"]=="ACCEPT_FINAL_SOURCE_ONLY"
+          original=Path("/tmp/fund100-c8-admitted-final-cme.pdf")
+          if admitted:
+              assert result["admitted_contract_curve"]
+              assert result["printed_original_status"]=="FINAL"
+              assert original.is_file()
+              assert hashlib.sha256(original.read_bytes()).hexdigest()==result["original_pdf_sha256"]
+              assert result["admitted_final_curve"]["contract_month_count"]>=12
+              assert result["admitted_final_curve"]["sum_verified"]
+          else:
+              assert not result["admitted_contract_curve"]
+              assert not result["original_pdf_archived"]
+              assert not result["futures_settlement_values_present_in_report"]
+              assert not original.exists()
+              assert "admitted_final_curve" not in result
+          with open(os.environ["GITHUB_OUTPUT"],"a") as out:
+              out.write("admitted="+str(admitted).lower()+"\n")
+          print("OFFICIAL_CME_FINAL_ADMITTED",admitted)
+          print("ISSUED_ORDERS",result["broker_orders"])
+          PY
+      - name: Preserve source status and source SHA even when preliminary
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-c8-cme-verified-source-status
+          path: /tmp/fund100-c8-official-cme-source-status.json
+          retention-days: 90
+          if-no-files-found: error
+      - name: Preserve original CME PDF ONLY if verified FINAL and complete
+        if: steps.source_status.outputs.admitted == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-c8-official-admitted-final-cme
+          path: /tmp/fund100-c8-admitted-final-cme.pdf
+          retention-days: 90
+          if-no-files-found: error
