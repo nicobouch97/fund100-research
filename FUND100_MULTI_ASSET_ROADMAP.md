@@ -1930,3 +1930,44 @@ funds. CLI and tests have no SELL/BUY paths.
 Protocol: `research_lab/V6_ACTUAL_LIVE_ACCOUNT_READINESS_PROTOCOL_2026_10_18.md`.
 One original GET on Sunday is NOT a fresh executable
 Monday session quote, and cannot release LIVE trading.
+
+
+## 18 October 2026 — P4H true post-freeze stock return attribution
+
+P4G historical price lookbacks and SEC quality freeze on
+15 October cannot be relabelled historical alpha. The
+**original 17 Oct P4G GitHub Action run 39015519726**,
+artifact ID **12094995126**, was obtained after
+the **16 Oct completed session**. This is an authentic,
+fixed market-data observation before the next Monday.
+The 8-stock current research cohort and six known
+SEC issuer-score names remain frozen; no hindsight
+reranking or analyst revision source is fabricated.
+
+P4H now provides a **read-only costed forward ledger**
+from that original existing source and future unmodified
+P4G snapshots at 03:30 UTC Tuesday-Saturday:
+`fund100_stock_forward_return_ledger_p4h_v1_0.py`,
+`test_fund100_stock_forward_return_ledger_p4h_v1_0.py`,
+`.github/workflows/fund100-p4h-original-forward-equity-ledger.yml`,
+`research_lab/stocks/P4H_FROZEN_OCT17_BASELINE_PROSPECTIVE_EQUITY_RETURNS_2026_10_18.md`.
+It downloads EXACT baseline original artifact (refuses a
+replacement baseline), checks both JSON+CSV SHA256 and
+all old overlapping price bars unchanged. Original
+selection is P4G as of 16 Oct, simulated first entry
+only at the **NEXT session close** (earliest Mon19),
+first future earned return earliest Tue20. Until
+then it truthfully records **0 future trade returns**
+rather than annualising in-sample price lookback.
+
+It measures hypothetical buy-and-hold <=3-name
+frozen watchlist vs original 6-name quality cohort
+and passive SPY on identical forward dates, each with
+5/15/35bps entry AND modelled exit costs. No alpha
+forecast or realistic closing-auction fill is implied;
+retrospective price revisions, missing original
+history or missing new observations stop/abstain.
+No LIVE stocks, crypto or futures authorised;
+four existing LIVE ETF investments remain HELD,
+operator STOPPED, last audited broker kill switch
+ENGAGED, HIGH, original USD130.30 ceiling.
