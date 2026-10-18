@@ -2094,3 +2094,38 @@ investment-choice approval, but do not bypass
 GitHub/broker auth or transfer restrictions.
 Original USD130.30 capital ceiling, HIGH selection,
 V5 STOP and broker kill switch stay unchanged.
+
+
+### V6-L1 first original historical return study: feasibility pass, not trading permit
+
+First real original-source locked history:
+[GitHub Actions run 39164109643](https://github.com/nicobouch97/fund100-research/actions/runs/39164109643).
+At 15bps/traded side, 2014–Sep2026 **V6-L1 CAGR
+16.23951% vs ACWI 12.29808%**, excess +3.94143pp/yr;
+max drawdown −34.29313%, annual gross turnover
+0.67470× NAV; 10 monthly volatility spikes. At
+35bps side annual CAGR 16.08258%; original
+preregistered PLAUSIBILITY gate **PASS**.
+2020-onward L1 15bps CAGR 17.40909%
+vs ACWI 12.18279%, a descriptive same-known-history
+comparison, NOT independent alpha. Full original run
+and study:
+`research_lab/results/V6_L1_INITIAL_COSTED_PLAUSIBILITY_RESULT_2026_10_18.md`.
+
+Crucial distinction: Results could be mostly explained
+by large technology/energy sector allocations,
+rather than vol regime skill. A **fixed same-asset
+sector mix diagnostic** should compare performance
+without volatility scaling, without changing the
+precommitted model. Historical 2014–2026 is already
+frequently explored in Fund-100; do not assert
+a reliable +3.94pp future advantage, or change
+parameters to rescue later results.
+
+L1 is RESEARCH ONLY. 50% XLK exceeds the V5 HIGH
+25% satellite concentration limit, so a new
+explicit, checked risk policy and execution
+controller plus short PAPER mechanics verification
+must precede even a micro LIVE release. None
+has been approved or deployed. Four original
+LIVE holdings unchanged and STOPPED.
