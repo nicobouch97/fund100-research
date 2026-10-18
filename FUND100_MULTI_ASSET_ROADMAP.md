@@ -1728,3 +1728,50 @@ There is still no validated V6 replacement; no fake
 paper-performance delay is required to *propose* a credible
 real-money pilot once it exists. Existing four V5 ETFs
 remain invested and STOPPED, $130.30 authorisation intact.
+
+
+## 18 October 2026 — V6-R2 lower-turnover, genuinely active micro-pilot candidate
+
+Because direct CL/MCL futures fail the **$130.30 capital**
+test (C9), original CME FINAL multi-date futures carry prices
+are not yet available (C7/C8), and the earlier V6-R1 weekly
+momentum candidate lost heavily to ACWI with ~19.7x/year
+turnover, test a distinct **slow concentrated time-series
+momentum** hypothesis based on empirical academic research.
+
+V6-R2 holds up to **TWO** selected, currently LIVE-whitelisted
+but still STOPPED equity/sector ETFs, excluding passive
+SPY and ACWI, with **quarterly** decisions, **252-day
+lookback excluding latest 21 sessions**, positive absolute
+trend and prior-completed 200-day moving average gate.
+Concentration is **60% first / 40% second** (residual
+cash if fewer qualifying; no interest/leverage). Only
+rebalance when a weight drifts ≥15 percentage points;
+compare **5/15/35bp each traded side** to passive ACWI.
+This is NOT a tweak to V6-R1's 63/126d weekly relative
+momentum, and must NEVER be tuned to rescue failure on
+the previously studied frozen sample.
+
+Frozen preregistration:
+`research_lab/stocks/V6R2_PREREGISTERED_QUARTERLY_CONCENTRATED_MOMENTUM_2026_10_18.md`.
+Script/tests/actual original data run:
+`fund100_v6_quarterly_concentrated_trend_r2_v1_0.py`,
+`test_fund100_v6_quarterly_concentrated_trend_r2_v1_0.py`,
+`.github/workflows/fund100-v6-r2-quarterly-trend.yml`.
+Source is original immutable exact
+`research_lab/frozen_history_v2.csv`
+with SHA256
+`acc2c8c08953b895ca5062b3cfba287efb97143b10e108e8ce4bd8b82ffb0d28`.
+2014 onward and 2020 onward were previously analysed,
+so these are **exploratory return differences and NOT
+independent validation or projected LIVE alpha**.
+Predeclared **further-research-only** conditions: 15bp
+full +≥2pp annual return vs ACWI; 35bp full positive
+vs ACWI; 15bp 2020 onward positive vs ACWI; ≤3x
+annual turnover; no >40% historical drawdown.
+Even passing would not make this a LIVE order plan:
+60% single-ETF weight exceeds the original V5 HIGH
+portfolio risk contracts and must be explicitly
+redesigned/authorised. There is no liquidation
+permission, no broker POST and no new account activation.
+Keep C7 futures data as a separate research stream.
