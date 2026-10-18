@@ -1775,3 +1775,42 @@ portfolio risk contracts and must be explicitly
 redesigned/authorised. There is no liquidation
 permission, no broker POST and no new account activation.
 Keep C7 futures data as a separate research stream.
+
+
+### V6-R2 real historical study outcome (18 October 2026)
+
+Original SHA256-exact 2014–September 2026 research
+[Actions run 39131536100](https://github.com/nicobouch97/fund100-research/actions/runs/39131536100)
+passed 19 no-order/source/chronology tests and measured
+a genuine **negative longer-term economic result**:
+at 15bps per traded side, quarterly concentrated
+R2 produced **11.54595% annual historical CAGR**
+vs passive ACWI **12.29808%**, excess **−0.75213
+percentage points per year**; at 5bps excess
+−0.30171pp/yr and 35bps excess −1.64936pp/yr.
+Full-period gross weight turnover **4.02438× NAV/year**
+(exceeds precommitted 3×), max R2 drawdown
+**−27.85944%**. Descriptively 2020-onward at
+15bps it achieved **14.949% CAGR** vs ACWI
+**12.18279%**, excess +2.76621pp, but that
+period is NOT an independent holdout and cannot
+rescue the full-source failure.
+
+**V6-R2 PREDECLARED research gate FAILED. Reject R2
+for LIVE migration; do not post-hoc rescue-tune on
+the same familiar data.** Candidate demonstrates
+that lower turnover / slower trend can reduce
+some past disadvantages of weekly V6-R1, but
+does not prove higher returns net of costs or
+even stay below the 3× annual turnover ceiling.
+Full archived result:
+`research_lab/results/V6_R2_LOW_TURNOVER_QUARTERLY_REAL_HISTORY_REJECTION_2026_10_18.md`.
+
+Next priority is original acquisition of truly
+prospective independent market/issuer sources
+and new economically distinct hypotheses, or
+an explicitly modest real-money pilot with
+clearly stated unproven alpha and separately
+approved loss budget. No V5 portfolio liquidation,
+order authority, new HIGH risk concentration
+or new asset-class release.
