@@ -1640,3 +1640,50 @@ Truthful source result:
 No CME subscription, ETF liquidation, new futures trading
 or LIVE operator permission. Continue independent research
 with verified source admission; do not fabricate alpha.
+
+
+## 18 Oct 2026 — C8 source provenance and transparent FINAL-admission state
+
+CME officially explains that next-business-day **FINAL**
+Section 61 bulletin is generally published at **10:00 a.m.
+Chicago time**. Friday 16 October 2026 bulletin was observed
+as **PRELIMINARY** on Saturday 17 Oct; Monday 19 Oct is the
+next business-day FINAL target, subject to actual publication
+and caching. The official rotating /current/ URL alone is
+not an immutable historical reference.
+
+C8 introduces a one-off (not background cron) original-PDF
+status workflow that records a **SHA256 source fingerprint,
+acquisition UTC and printed date/status/bulletin number**
+even for rejected PRELIMINARY documents WITHOUT copying
+rejected PDF bytes or its commodity quotations into
+research. FINAL is accepted only after complete C7 date,
+CL product, maturity, settlement and open-interest
+reconciliation. Each source outcome can be distinguished:
+REJECT_PRELIMINARY / REJECT_INVALID / REJECT_UNAVAILABLE /
+REJECT_FINAL_INVALID / ACCEPT_FINAL_SOURCE_ONLY.
+No futures carry profit or trading right can be inferred
+from a single final source.
+
+Official CME notice indicates certain daily settlement
+files remain **free of charge after midnight through
+DataMine** following retirement of the prior FTP endpoints,
+but this does NOT verify anonymous access, all historical
+files, API/redistribution rights or account registration;
+no paid subscriptions or credentials should be opened
+without separate operator consent. CME physical NYMEX CL
+margin/expiry/delivery mechanics would not suit the
+$130.30-long-only micro-pilot directly. Future approved
+commodity exposure, if justified, would need an accurately
+tracked small-size instrument.
+
+Research doc:
+`research_lab/commodities/C8_CME_ORIGINAL_SOURCE_AND_FREE_DATAMINE_ENTITLEMENT_2026_10_18.md`.
+Code/tests/workflow:
+`fund100_cme_source_state_c8_v1_0.py`,
+`test_fund100_cme_source_state_c8_v1_0.py`,
+`.github/workflows/fund100-c8-cme-source-status.yml`.
+
+Trading remains STOPPED; the existing four V5 ETFs remain
+invested, no sell permission, HIGH risk, USD130.30 ceiling
+and current ETF-only LIVE whitelist unchanged.
