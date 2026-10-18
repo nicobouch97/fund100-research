@@ -1,0 +1,62 @@
+name: Fund-100 V6-R2 Quarterly Concentrated Trend Real History (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_quarterly_concentrated_trend_r2_v1_0.py"
+      - "test_fund100_v6_quarterly_concentrated_trend_r2_v1_0.py"
+      - "research_lab/stocks/V6R2_*"
+      - ".github/workflows/fund100-v6-r2-quarterly-trend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preregistered-history-comparison:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install original offline research runtime
+        run: python -m pip install -r requirements.txt
+      - name: No lookahead, quarter signal, source SHA and no-trade safeguards
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_quarterly_concentrated_trend_r2_v1_0.py
+      - name: Run ONE predeclared economic comparison on EXACT frozen source
+        run: |
+          set -euo pipefail
+          python fund100_v6_quarterly_concentrated_trend_r2_v1_0.py \
+            --frozen-prices research_lab/frozen_history_v2.csv \
+            --out /tmp/fund100-v6-r2-original-source-review.json
+          python - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          r=json.loads(Path("/tmp/fund100-v6-r2-original-source-review.json").read_text())
+          sha=hashlib.sha256(Path("research_lab/frozen_history_v2.csv").read_bytes()).hexdigest()
+          assert sha==r["source_original_frozen_v2_sha256"]
+          assert r["schema"]=="FUND100_V6_R2_QUARTERLY_ABSOLUTE_TREND_RESEARCH_V1"
+          assert r["historic_market_period_already_previously_examined"]
+          assert not r["new_independent_forward_strategy_returns_measured"]
+          assert r["single_etf_weight_exceeds_original_high_risk_policy"]
+          assert set(r["results"])=={"5","15","35"}
+          assert len(r["predeclared_research_conditions"])==5
+          assert not r["live_promotion_authorized_even_if_gate_passes"]
+          assert not r["original_v5_holdings_liquidated"]
+          assert not r["operator_authorized_sell_orders"]
+          assert not r["operator_authorized_v6_reentry"]
+          assert not r["paper_authorized"] and not r["live_authorized"]
+          assert r["broker_orders"]==0
+          print("One source-exact historical R2 test. Existing portfolio untouched. No trading.")
+          PY
+      - name: Archive research outputs with falsifiable original hash
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v6-r2-precommitted-frozen-source-result
+          path: /tmp/fund100-v6-r2-original-source-review.json
+          retention-days: 90
+          if-no-files-found: error
