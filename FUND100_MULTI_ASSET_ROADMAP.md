@@ -1814,3 +1814,51 @@ clearly stated unproven alpha and separately
 approved loss budget. No V5 portfolio liquidation,
 order authority, new HIGH risk concentration
 or new asset-class release.
+
+
+## 18 Oct 2026 — V6 transition bridge: real ETF cost preview without unauthorised orders
+
+After several honest FAILED V6 research candidates and the
+$130.30 microcapital infeasibility of direct CME futures,
+prioritise actual implementation of a **brokerless
+original-LIVE-ledger transition preview** instead of
+claiming another in-sample fitted strategy is ready.
+
+The user considers current four V5 LIVE ETF holdings
+ACWI, EEM, XLE and XLV a temporary investment,
+**not the desired aggressive V6 trading experiment**.
+Those positions are real, with 5 Oct fills, and
+cannot be treated as cash. The historical buy
+ledger, original policy and STOP operator are SHA256
+verified by a new read-only *offline* CLI:
+`fund100_v6_brokerless_transition_preview_v1_0.py`,
+`.github/workflows/fund100-v6-no-order-transition-preview.yml`,
+`research_lab/V6_LIVE_RESET_READONLY_EXIT_VALUATION_PROTOCOL_2026_10_18.md`.
+Until a fresh LIVE account GET (positions/mark/cash/open
+orders/settlement) is bound and independently authenticated,
+the CLI emits `NO_FRESH_READ_ONLY_MARKS_NO_EXIT_VALUATION`,
+actual historical filled share quantities but **NO current
+equity, liquidation proceeds or present trade cost estimates**.
+The pure test-only hypothetical quote path exercises
+5/15/35bps one-way sale friction while clearly noting
+input marks are not independently authenticated or
+live broker quotes.
+
+The next real funded transition is not authorised just
+because the original 5 October LIVE bootstrap already
+occurred. It requires a specifically selected active
+replacement strategy, explicit user authorisation to
+sell original holdings, new versioned HIGH concentration/
+risk and capital policy, broker cash settlement/asset
+support and separate SELL/BUY release controls.
+No account secrets, Alpaca API requests, LIVE orders
+or ETF sales were made by V6 research.
+
+The CME route remains source research only. CME DataMine
+file API requires credentials/entitlement and official
+Daily Bulletin file documentation describes top-of-day
+files **overwriting** prior daily bulletins; rotating
+/current/ PDF does not provide free historical curve
+series. Friday FINAL publication expected Monday is
+not an established dated historical sample. No
+paid subscription or unauthorised data redistribution.
