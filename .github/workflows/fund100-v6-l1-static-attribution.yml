@@ -1,0 +1,55 @@
+name: Fund-100 V6-L1 Same-Assets Unmanaged Attribution (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_l1_fixed_mix_attribution_v1_0.py"
+      - "test_fund100_v6_l1_fixed_mix_attribution_v1_0.py"
+      - "research_lab/results/V6_L1_*"
+      - ".github/workflows/fund100-v6-l1-static-attribution.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-frozen-history-attribution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing research runtime
+        run: python -m pip install -r requirements.txt
+      - name: Test static same-sector counterfactual, no tuning or broker access
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_l1_fixed_mix_attribution_v1_0.py
+      - name: Compute actual original period attribution, unchanged L1 strategy
+        run: |
+          set -euo pipefail
+          python fund100_v6_l1_fixed_mix_attribution_v1_0.py \
+            --frozen-history research_lab/frozen_history_v2.csv \
+            --output /tmp/fund100-v6-l1-vol-rule-attribution.json
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          r=json.loads(Path("/tmp/fund100-v6-l1-vol-rule-attribution.json").read_text())
+          assert r["schema"]=="FUND100_V6_L1_UNMANAGED_EQUAL_UNDERLYINGS_DIAGNOSTIC_V1"
+          assert hashlib.sha256(Path("research_lab/frozen_history_v2.csv").read_bytes()).hexdigest()==r["original_source_sha256"]
+          assert r["initial_L1_historical_run_id"]==39164109643
+          assert r["attribution_only_no_new_candidate"] and r["original_model_parameters_untouched"]
+          assert not r["independent_alpha_proved"]
+          assert not r["paper_authorized"] and not r["live_authorized"]
+          assert r["broker_orders"]==0
+          print("Comparison is only factor exposure attribution, never authorization.")
+          PY
+      - name: Preserve real same-underlyings result independently of original L1 study
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v6-l1-volatility-rule-incremental-attribution
+          path: /tmp/fund100-v6-l1-vol-rule-attribution.json
+          retention-days: 90
+          if-no-files-found: error
