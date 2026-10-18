@@ -131,7 +131,7 @@ def preview(bootstrap:dict,policy:dict,control:dict,
         "paper_authorized":False,
         "live_authorized":False,
         "trading_authorized":False,
-        "estimated_sale_values_are_real_market_observations":False,
+        "estimated_sale_values_independently_authenticated":False,
         "next_actions":[
             "CHOOSE_NEW_INDEPENDENTLY_EVIDENCED_STRATEGY",
             "EXPLICIT_USER_APPROVAL_FOR_LIVE_PORTFOLIO_SELLS_AND_NEW_RISK",
@@ -183,7 +183,7 @@ def preview(bootstrap:dict,policy:dict,control:dict,
         }
     result["status"]="HYPOTHETICAL_EXIT_ONLY_NOT_ORDER_AUTHORIZED"
     result["live_quotes_or_current_cash_known"]=True
-    result["estimated_sale_values_are_real_market_observations"]=True
+    result["caller_asserted_broker_snapshot_not_independently_authenticated"]=True
     result["fresh_broker_cash_settlement_checked"]=False
     result["observed_at_utc"]=snapshot["observed_at_utc"]
     result["current_live_equity_usd"]=None  # Holdings + cash != broker total account equity.
