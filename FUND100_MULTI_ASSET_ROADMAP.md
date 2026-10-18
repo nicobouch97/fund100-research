@@ -1687,3 +1687,44 @@ Code/tests/workflow:
 Trading remains STOPPED; the existing four V5 ETFs remain
 invested, no sell permission, HIGH risk, USD130.30 ceiling
 and current ETF-only LIVE whitelist unchanged.
+
+
+## 18 Oct 2026 — C9 hard feasibility of a real $130.30 long-only commodity strategy
+
+Research is not economically useful if its intended instrument
+cannot be held at the original LIVE microcapital size.
+CME's official WTI contract-comparison page reports
+**7 July 2026** indicative initial margins of
+**$6,826 CL** (physically deliverable 1,000bbl),
+**$3,423 QM** (500bbl), and **$685 MCL**
+(financially settled 100bbl). MCL alone requires ~5.26×
+the **entire USD130.30 cap** *before* reserves or losses.
+The proposed smaller 10-barrel WTI contract is marked
+pending regulatory review and not established LIVE.
+Broker customer margin, leverage/futures permissions
+and actual available cash are not verified and are not
+implied by CME's 2026 estimates.
+
+A new **C9 source-bound instrument feasibility audit** reads
+only the original checked-in LIVE micro-pilot policy and
+STOP control, hashes both and fails if the cap, 14-ETF
+whitelist, crypto/leverage/order permissions or STOP changed.
+It rejects CL/QM/MCL as capital-infeasible and prohibited.
+GLD, USO and SHY remain research-only because **not
+in the existing LIVE ETF universe**; XLE is allowlisted
+equity-energy companies, **not crude-oil futures carry**.
+Any actual ETF buys require source-true current cash/asset
+support, explicit user decision and separately versioned
+strategy/risk authority. None of these constraints change
+with the HIGH risk selection. No CME payment, financial
+transfer, sales or trading workflow activation is performed.
+
+Implementation and dated official evidence:
+`fund100_microaccount_instrument_feasibility_c9_v1_0.py`
+`research_lab/commodities/C9_MICROACCOUNT_CME_MARGIN_AND_TRADABLE_INSTRUMENT_ROUTE_2026_10_18.md`.
+C9 focuses future strategy research on **low-turnover,
+evidence-led and feasible low-dollar trading instruments**.
+There is still no validated V6 replacement; no fake
+paper-performance delay is required to *propose* a credible
+real-money pilot once it exists. Existing four V5 ETFs
+remain invested and STOPPED, $130.30 authorisation intact.
