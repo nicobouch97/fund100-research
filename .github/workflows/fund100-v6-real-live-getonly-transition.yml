@@ -81,5 +81,5 @@ jobs:
           python fund100_v6_real_live_getonly_transition_readiness_v1_0.py
       - name: Confirm no trading controls changed
         run: |
-          test "$(python -c 'import json; print(json.load(open("fund100_live_operator_control.json"))["trading_enabled"])')" = "False"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
           echo "V6 real-account transition inspection finished; no orders, no exposure changes."
