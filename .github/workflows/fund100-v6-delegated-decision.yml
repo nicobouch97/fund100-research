@@ -1,0 +1,60 @@
+name: Fund-100 V6 Delegated Investment Decision (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_delegated_hold_or_switch_v1_0.py"
+      - "test_fund100_v6_delegated_hold_or_switch_v1_0.py"
+      - "research_lab/v6_delegated_decision_scope_v1_0.json"
+      - "research_lab/v6_rejected_candidate_registry_2026_10_18.json"
+      - "research_lab/V6_DELEGATED_OPERATOR_DECISION_2026_10_18.md"
+      - ".github/workflows/fund100-v6-delegated-decision.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  documented-strategy-hold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install negative decision checks
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Verify delegated operator scope against rejected strategy source and STOP
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_delegated_hold_or_switch_v1_0.py
+      - name: Produce current autonomous HOLD decision from actual source evidence
+        run: |
+          set -euo pipefail
+          python fund100_v6_delegated_hold_or_switch_v1_0.py \
+            --output /tmp/fund100-v6-delegated-decision.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result=json.loads(Path("/tmp/fund100-v6-delegated-decision.json").read_text())
+          assert result["schema"]=="FUND100_V6_DELEGATED_DISCRETION_DECISION_V1"
+          assert result["decision"]=="HOLD_EXISTING_FOUR_ETFS_NO_SELL"
+          assert result["decision_basis"]=="ALL_FIVE_SOURCE_ATTESTED_REPLACEMENT_CANDIDATES_REJECTED"
+          assert set(result["rejected_strategy_evidence_git_sha1"])=={"V6-R1","V6-E2","V6-C1","C6","V6-R2"}
+          assert result["operator_delegation_acknowledged"]
+          assert not result["per_trade_chat_approval_expected"]
+          assert result["current_live_equity_or_available_cash_usd"] is None
+          assert not result["existing_broker_trading_enabled"]
+          assert not result["new_strategy_trades_authorized"]
+          assert result["broker_orders"]==result["sell_orders"]==result["buy_orders"]==0
+          assert not result["unapproved_asset_class_or_broker_expansion"]
+          print("Delegated decision: HOLD, NO order permission and NO false fresh broker valuation.")
+          PY
+      - name: Archive dated source-attested strategy-selection decision
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v6-delegated-hold-source-evidence
+          path: /tmp/fund100-v6-delegated-decision.json
+          retention-days: 90
+          if-no-files-found: error
