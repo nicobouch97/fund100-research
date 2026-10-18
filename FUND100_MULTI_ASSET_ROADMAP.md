@@ -1900,3 +1900,33 @@ future reallocation; the old bot remains STOPPED and the
 broker kill switch's last audited state ENGAGED. The
 delegation is permission to exercise investment judgment,
 not self-signed replacement for brokerage order controls.
+
+
+## 18 October 2026 — actual LIVE account GET-only transition readiness
+
+In response to delegated operator discretion to sell old
+ETF holdings when economically best, today's investment
+decision remains HOLD (5 rejected/unevidenced V6
+alternatives). But the next launch critical path is an
+ACTUAL broker GET-only validation rather than treating
+historical Oct5 fills/Oct14 balances as today's valuation.
+
+`fund100_v6_real_live_getonly_transition_readiness_v1_0.py`
+plus
+`.github/workflows/fund100-v6-real-live-getonly-transition.yml`
+performs a single after-merge account inspection on
+LIVE environment restricted to main. Exactly four
+HTTP GET requests—account, positions, zero open orders,
+market clock—using the original read-only Alpaca client.
+Fresh repo STOP and ENGAGED broker kill switch, correct
+account binding, HIGH risk and unchanged original
+four filled fractional quantities are required.
+It reconciles NAV=market-value+cash in transient
+runner memory; deliberately prints/persists NO
+account IDs, quantities, cash, equity, price, proceeds
+or orders. Authentication or changed positions
+failing stops safely rather than fabricating spendable
+funds. CLI and tests have no SELL/BUY paths.
+Protocol: `research_lab/V6_ACTUAL_LIVE_ACCOUNT_READINESS_PROTOCOL_2026_10_18.md`.
+One original GET on Sunday is NOT a fresh executable
+Monday session quote, and cannot release LIVE trading.
