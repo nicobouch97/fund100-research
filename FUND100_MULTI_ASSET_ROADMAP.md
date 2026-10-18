@@ -1862,3 +1862,41 @@ files **overwriting** prior daily bulletins; rotating
 series. Friday FINAL publication expected Monday is
 not an established dated historical sample. No
 paid subscription or unauthorised data redistribution.
+
+
+## 18 October 2026 — explicit operator delegation, autonomous decision: HOLD
+
+The operator explicitly delegated discretion to select
+whether/when to sell their existing four LIVE ETFs if
+economically appropriate, **without repeated per-decision
+chat approval**. Preserve that instruction via
+`research_lab/v6_delegated_decision_scope_v1_0.json`
+and decision narrative
+`research_lab/V6_DELEGATED_OPERATOR_DECISION_2026_10_18.md`.
+This supersedes earlier roadmap references to seeking a
+separate chat reapproval for every investment decision;
+it is **NOT** a waiver of the original $130.30
+total-capital limit, no leverage/short/margin policy,
+broker account environment controls, or exchange access.
+
+The delegated decision on **18 October is HOLD existing
+ACWI/EEM/XLE/XLV** temporarily, NOT to restart V5
+or endorse it as V6: original source-verified
+V6-R1, V6-E2, V6-C1, C6 and V6-R2 proposed replacements
+all failed economic gates or reliable excess-return
+evidence. Selling now would create costs and an
+unallocated cash position without a better strategy.
+There is no market-hours order or queued liquidation.
+
+`fund100_v6_delegated_hold_or_switch_v1_0.py`
+cross-checks all five exact Git-blob research rejection
+reports and source-bound original LIVE holdings/policy
+STOP; its research-only output is
+`HOLD_EXISTING_FOUR_ETFS_NO_SELL`, with zero
+broker calls/orders and no fake current market values.
+Separate execution software/platform permissions and
+fresh account reconciliation must exist BEFORE actual
+future reallocation; the old bot remains STOPPED and the
+broker kill switch's last audited state ENGAGED. The
+delegation is permission to exercise investment judgment,
+not self-signed replacement for brokerage order controls.
