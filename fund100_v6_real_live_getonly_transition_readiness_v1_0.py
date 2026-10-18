@@ -155,7 +155,12 @@ def runtime()->dict:
         if path not in PATHS:
             raise ReadinessStop("LIVE GET-only endpoint not allowed.")
         calls.append(path)
-        return live.get_json(path=path,key=key,secret=secret,params=params)
+        try:
+            return live.get_json(path=path,key=key,secret=secret,params=params)
+        except Exception as exc:
+            # Broker HTTP error descriptions may contain sensitive
+            # request/account details. Never print them in Actions.
+            raise ReadinessStop("LIVE GET-only broker request failed; private details withheld.") from None
     account=read_exact("/v2/account")
     positions=read_exact("/v2/positions")
     orders=read_exact("/v2/orders",{"status":"open","limit":100})
