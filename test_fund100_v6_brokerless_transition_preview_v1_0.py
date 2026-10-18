@@ -67,7 +67,8 @@ def test_real_ledger_no_current_quotes_never_estimates_equity_or_sales():
 def test_synthetic_current_quote_preview_only_and_both_side_friction():
     v=run(snap=True)
     assert v["status"]=="HYPOTHETICAL_EXIT_ONLY_NOT_ORDER_AUTHORIZED"
-    assert v["estimated_sale_values_are_real_market_observations"] # from hypothetical fixture only
+    assert v["caller_asserted_broker_snapshot_not_independently_authenticated"]
+    assert not v["estimated_sale_values_independently_authenticated"]
     assert not v["fresh_broker_cash_settlement_checked"]
     vals=v["hypothetical_sale_proceeds_usd"]
     assert set(vals)=={"5","15","35"}
