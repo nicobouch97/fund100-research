@@ -48,7 +48,9 @@ jobs:
           assert all(not x["live_order_permitted"] for x in r["futures"])
           assert r["broker_orders"]==0 and r["operator_stopped"]
           assert not r["live_authorized"] and not r["paper_authorized"]
-          assert not r["operator_authorized_new_futures"] if "operator_authorized_new_futures" in r else not r["direct_physical_or_margin_futures_order_viable"]
+          assert not r["direct_physical_or_margin_futures_order_viable"]
+          assert not r["existing_live_whitelist_expansion_authorized"]
+          assert not r["live_strategy_transition_authorized"]
           print("Microaccount reality: futures not viable; no new assets or broker orders.")
           PY
       - name: Preserve original policy-bound no-trade feasibility result
