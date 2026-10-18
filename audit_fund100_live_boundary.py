@@ -202,6 +202,12 @@ ALLOWED_LIVE_CREDENTIAL_SCRIPTS = {
 # Git-blob digest pins each reviewed implementation; any code change
 # removes credential eligibility until independently re-reviewed.
 PINNED_LIVE_CREDENTIAL_JOBS = {
+    # V6 source-reviewed CURRENT-account inspector: only 4 GET
+    # requests; code is Git-blob pinned and workflow main-only.
+    (
+        ".github/workflows/fund100-v6-real-live-getonly-transition.yml",
+        "fund100_v6_real_live_getonly_transition_readiness_v1_0.py",
+    ): "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
     (
         ".github/workflows/fund100-live-bootstrap.yml",
         "fund100_live_bootstrap_v1_0.py",
