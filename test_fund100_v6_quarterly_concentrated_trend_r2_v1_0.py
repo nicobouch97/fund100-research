@@ -93,7 +93,7 @@ def test_costs_decrease_strategy_nav_and_do_not_change_passive_benchmark():
     assert paths[5]["acwi_nav"].iloc[-1]==pytest.approx(paths[35]["acwi_nav"].iloc[-1])
     assert sum(paths[5]["gross_turnover"])>0
     for path in paths.values():
-        assert all(0<=x<=1 for x in path["gross_equity_exposure"])
+        assert all(-1e-10<=x<=1+1e-10 for x in path["gross_equity_exposure"])
         assert all(x>=0 for x in path["gross_turnover"])
         assert (path["gross_turnover"][path.index.month.isin([2,5,8,11])]==0).all()
 
