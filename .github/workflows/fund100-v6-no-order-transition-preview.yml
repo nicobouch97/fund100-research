@@ -1,0 +1,66 @@
+name: Fund-100 V6 Historical LIVE Exit Preview (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_brokerless_transition_preview_v1_0.py"
+      - "test_fund100_v6_brokerless_transition_preview_v1_0.py"
+      - "research_lab/V6_LIVE_RESET_READONLY_EXIT_VALUATION_PROTOCOL_2026_10_18.md"
+      - ".github/workflows/fund100-v6-no-order-transition-preview.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-linked-no-orders:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify source controls and quote freshness gates with fabricated price fixtures
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_brokerless_transition_preview_v1_0.py
+      - name: Produce ONLY original real fill quantities, NOT invented present market values
+        run: |
+          set -euo pipefail
+          python fund100_v6_brokerless_transition_preview_v1_0.py \
+            --bootstrap live_activation_outputs/v5_002/live_bootstrap_v1_0.json \
+            --policy live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json \
+            --control fund100_live_operator_control.json \
+            --output /tmp/fund100-v6-brokerless-exit-preview.json
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          r=json.loads(Path("/tmp/fund100-v6-brokerless-exit-preview.json").read_text())
+          assert r["schema"]=="FUND100_V6_NO_ORDER_TRANSITION_PREVIEW_V1"
+          assert r["status"]=="NO_FRESH_READ_ONLY_MARKS_NO_EXIT_VALUATION"
+          assert r["original_authorized_usd_cap"]=="130.30"
+          assert set(r["historical_real_filled_quantities"])=={"ACWI","EEM","XLE","XLV"}
+          paths={"bootstrap_sha256":"live_activation_outputs/v5_002/live_bootstrap_v1_0.json",
+                 "policy_sha256":"live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json",
+                 "control_sha256":"fund100_live_operator_control.json"}
+          for key,path in paths.items():
+              assert hashlib.sha256(Path(path).read_bytes()).hexdigest()==r["original_source_sha256"][key]
+          assert r["hypothetical_sale_proceeds_usd"] is None
+          assert r["current_live_equity_usd"] is None
+          assert not r["live_quotes_or_current_cash_known"]
+          assert not r["live_position_liquidation_authorized"]
+          assert not r["new_strategy_name_verified_and_promoted"]
+          assert not r["reinvest_sold_proceeds_or_new_deposits_authorized"]
+          assert not r["paper_authorized"] and not r["live_authorized"]
+          assert r["broker_orders"]==0
+          print("REAL 2026 OCT 5 fill quantities only; NO PRESENT MARKS, NO EXIT NOTIONAL, NO ORDERS.")
+          PY
+      - name: Archive historical source-sha evidence without account credentials or mark prices
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v6-brokerless-transition-no-valuation
+          path: /tmp/fund100-v6-brokerless-exit-preview.json
+          retention-days: 90
+          if-no-files-found: error
