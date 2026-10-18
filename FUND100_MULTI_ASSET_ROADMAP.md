@@ -1971,3 +1971,51 @@ No LIVE stocks, crypto or futures authorised;
 four existing LIVE ETF investments remain HELD,
 operator STOPPED, last audited broker kill switch
 ENGAGED, HIGH, original USD130.30 ceiling.
+
+
+## 18 October 2026 — P4I permanent genuine pre-entry market source anchor
+
+Original P4G quality/momentum watchlist **MSFT, KO, PG**
+was actually recorded on 17 Oct 2026 after the
+**16 Oct Friday** completed close; original source
+run **39015519726**, GitHub artifact **12094995126**,
+canonical full price CSV SHA256
+`9c01c045f6fe9d54f455513249c23433a806ffb350575bef9bfdbde5372d921d`,
+P4G original JSON SHA256
+`403a6e23ad53ace626cb9663e3889ab9c0b4e58d7c582ad3aab85aa024bdffb7`.
+These are now immutably retained WITHOUT copyrighted
+original full vendor price series in
+`research_lab/stocks/P4I_PERMANENT_2026_10_17_SOURCE_ANCHOR.json`.
+
+The initial original archived GitHub artifact expires
+after 90 days. P4I source verified in PR CI against
+the still-available ORIGINAL 17 Oct archive first;
+later scheduled P4G observations can be processed
+against this anchor alone. Each later adjusted close
+series must exactly reproduce the original full
+pre-17-Oct canonical price CSV SHA256 by truncating
+the new source after 16 Oct. Vendor history restatements
+fail closed rather than faking vintage-consistent
+return data. Hypothetical entry no earlier than
+19 Oct next-close, first future earned return
+no earlier than 20 Oct; modelled full two-sided
+5/15/35bps fees, SPY and fixed six-accounting-score
+issuer benchmarks, no backfilled CAGR.
+
+Implementation:
+`fund100_stock_forward_permanent_anchor_p4i_v1_0.py`,
+`test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py`,
+`research_lab/stocks/P4I_PERMANENT_SOURCE_ANCHOR_AND_AGE_OUT_PROOF_2026_10_18.md`
+and modified recurring existing P4H workflow.
+Original chosen trio is an independent **defensive
+watchlist**, not the aggressive user's preferred
+V6 strategy. It may underperform and must be
+measured honestly, with no LIVE stock order rights.
+
+Separately, CME original Standard Continuous Price
+Series has **underlying futures contract ID and
+next official roll date**, but data remains license-
+gated via DataMine and cannot become fabricated
+historical settlement evidence. No trading or data
+purchases made. Four original LIVE ETF investments
+remain HELD; STOP, HIGH and $130.30 cap unchanged.
