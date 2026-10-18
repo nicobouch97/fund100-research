@@ -1,0 +1,60 @@
+name: Fund-100 C9 Original LIVE Capital / Commodity Asset Fit (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_microaccount_instrument_feasibility_c9_v1_0.py"
+      - "test_fund100_microaccount_instrument_feasibility_c9_v1_0.py"
+      - "research_lab/commodities/C9_*"
+      - ".github/workflows/fund100-c9-microaccount-feasibility.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  size-and-permission-reality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test against exact original Fund-100 LIVE policy (no secrets)
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_microaccount_instrument_feasibility_c9_v1_0.py
+      - name: Record source-bound real pilot capital and commodity instrument feasibility
+        run: |
+          set -euo pipefail
+          python fund100_microaccount_instrument_feasibility_c9_v1_0.py \
+            --live-policy live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json \
+            --operator fund100_live_operator_control.json \
+            --output /tmp/fund100-c9-microaccount-reality.json
+          python - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          r=json.loads(Path("/tmp/fund100-c9-microaccount-reality.json").read_text())
+          assert r["schema"]=="FUND100_C9_MICROACCOUNT_INSTRUMENT_FEASIBILITY_V1"
+          assert r["original_authorized_cap_usd"]=="130.30"
+          p=Path("live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json")
+          o=Path("fund100_live_operator_control.json")
+          assert hashlib.sha256(p.read_bytes()).hexdigest()==r["original_source_controls_sha256"]["live_policy_sha256"]
+          assert hashlib.sha256(o.read_bytes()).hexdigest()==r["original_source_controls_sha256"]["operator_sha256"]
+          assert set(x["symbol"] for x in r["futures"])=={"CL","QM","MCL"}
+          assert all(not x["fundable_under_entire_cap_estimate"] for x in r["futures"])
+          assert all(not x["live_order_permitted"] for x in r["futures"])
+          assert r["broker_orders"]==0 and r["operator_stopped"]
+          assert not r["live_authorized"] and not r["paper_authorized"]
+          assert not r["operator_authorized_new_futures"] if "operator_authorized_new_futures" in r else not r["direct_physical_or_margin_futures_order_viable"]
+          print("Microaccount reality: futures not viable; no new assets or broker orders.")
+          PY
+      - name: Preserve original policy-bound no-trade feasibility result
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-c9-capital-and-market-access-feasibility
+          path: /tmp/fund100-c9-microaccount-reality.json
+          retention-days: 90
+          if-no-files-found: error
