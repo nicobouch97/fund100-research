@@ -1,0 +1,310 @@
+{
+  "schema": "FUND100_V6_EVIDENCE_FIRST_INVESTMENT_THESES_V1",
+  "frozen_date_utc": "2026-10-19",
+  "status": "RESEARCH_REGISTER_ONLY_NO_TRADE",
+  "mandate": "HIGH experimental risk, original $130.30 committed-capital ceiling, no leverage or strategy self-promotion",
+  "research_ranking_principle": "Prioritize independent economic mechanisms, original point-in-time data, and microaccount execution. Do not rank by recent fitted historical CAGR.",
+  "references": [
+    {
+      "id": "BUFFETT_1986",
+      "authors": "Warren E. Buffett",
+      "work": "Berkshire Hathaway 1986 shareholder letter — owner earnings",
+      "url": "https://www.berkshirehathaway.com/letters/1986.html",
+      "insight": "Owner earnings need maintenance capital and working capital adjustments; accounting EPS is not free cash.",
+      "limitation": "A shareholder letter is not a mechanically testable trading signal."
+    },
+    {
+      "id": "NOVY_MARX_2013",
+      "authors": "Robert Novy-Marx",
+      "work": "The Other Side of Value: Gross Profitability Premium",
+      "url": "https://doi.org/10.1016/j.jfineco.2013.01.003",
+      "insight": "Gross profitability contains information distinct from book-to-market value.",
+      "limitation": "Individual-stock cross-sectional evidence does not validate six current large-cap stocks."
+    },
+    {
+      "id": "ASNESS_2013",
+      "authors": "Cliff Asness, Tobias Moskowitz, Lasse Pedersen",
+      "work": "Value and Momentum Everywhere",
+      "url": "https://doi.org/10.1111/jofi.12021",
+      "insight": "Value and momentum are distinct broad factor families; interactions may diversify.",
+      "limitation": "Broad factor results are not a guarantee for a tiny ETF universe."
+    },
+    {
+      "id": "MOSKOWITZ_2012",
+      "authors": "Tobias Moskowitz, Yao Hua Ooi, Lasse Pedersen",
+      "work": "Time Series Momentum",
+      "url": "https://doi.org/10.1016/j.jfineco.2011.11.003",
+      "insight": "Time-series trend has historical cross-market support in liquid futures.",
+      "limitation": "Futures evidence does not demonstrate an edge in US equity ETFs with our original rules."
+    },
+    {
+      "id": "KOIJEN_2018",
+      "authors": "Ralph Koijen, Tobias Moskowitz, Lasse Pedersen, Evert Vrugt",
+      "work": "Carry",
+      "url": "https://doi.org/10.1016/j.jfineco.2017.11.002",
+      "insight": "Carry differs from expected spot-price appreciation and may earn risk premia across assets.",
+      "limitation": "Carry exposes recession, liquidity and volatility risk; ETF price momentum is not futures carry."
+    },
+    {
+      "id": "COCHRANE_PIAZZESI_2005",
+      "authors": "John Cochrane, Monika Piazzesi",
+      "work": "Bond Risk Premia",
+      "url": "https://doi.org/10.1257/0002828053828581",
+      "insight": "Bond forward-rate combinations can forecast time-varying excess bond returns.",
+      "limitation": "Original historical yield vintage, timing, financing and maturity mapping required."
+    },
+    {
+      "id": "LIU_TSYVINSKI_2021",
+      "authors": "Yukun Liu, Aleh Tsyvinski",
+      "work": "Risks and Returns of Cryptocurrency",
+      "url": "https://doi.org/10.1093/rfs/hhaa113",
+      "insight": "Crypto-specific network activity, investor attention and momentum factors require separate treatment.",
+      "limitation": "Historical crypto factor evidence is not a current executable edge nor a reason to copy old momentum parameters."
+    }
+  ],
+  "candidates": [
+    {
+      "id": "V6-S1",
+      "asset": "equity_etfs",
+      "label": "Concentrated risk-premium pilot",
+      "status": "HISTORICAL_EXPLORATORY_CASH_FLOOR_FAILED",
+      "priority": 1,
+      "foundation": [
+        "ASNESS_2013"
+      ],
+      "mechanism": "Exposure to a preselected concentrated equity/sector risk premium, not active skill or stock selection.",
+      "expression": "Original proposed account targets 47.5% XLK / 28.5% XLE / 19% IWM / 5% cash; monthly 10pp band",
+      "benchmarks": [
+        "ACWI",
+        "Original 100%-invested XLK/XLE/IWM mix"
+      ],
+      "required_next_sources": [
+        "Actual S1 $2 PAPER fill result",
+        "Broker-attested LIVE position/cash/settlement",
+        "Consistent account-cash reserve execution specification"
+      ],
+      "failure_modes": [
+        "Original 5% minimum cash buffer breached in 2,792 modeled sessions",
+        "No demonstrated independent alpha",
+        "Large equity concentration"
+      ],
+      "next_experiment": "Complete one-session PAPER mechanics, define independently reviewed reserve-at-order-versus-continuous-floor contract without retroactive performance tuning.",
+      "current_broker_live_approved": false,
+      "alpha_established": false,
+      "may_issue_orders": false,
+      "evidence": "research_lab/results/V6_S1_ACTUAL_95PCT_COSTED_CASH_FLOOR_RESULT_2026_10_19.md"
+    },
+    {
+      "id": "V6-Q1",
+      "asset": "individual_equities",
+      "label": "Business profitability / owner earnings plus valuation discipline",
+      "status": "NEW_PRE_REGISTERED_RESEARCH_HYPOTHESIS_DATA_INCOMPLETE",
+      "priority": 2,
+      "foundation": [
+        "BUFFETT_1986",
+        "NOVY_MARX_2013",
+        "ASNESS_2013"
+      ],
+      "mechanism": "Quality and durable owner cash generation are potentially mispriced; avoid overpaying and combine with independently measured price trend only after quality/valuation data are sourced.",
+      "expression": "Initially eight frozen 2026 companies research only; no actual share orders.",
+      "benchmarks": [
+        "SPY after both-side friction",
+        "Six-name equal-weight quality reference",
+        "Valuation-only and momentum-only ablations"
+      ],
+      "required_next_sources": [
+        "Original dated SEC cash-flow and maintenance-capex definition",
+        "Point-in-time share count/market cap/enterprise value",
+        "As-of public prices and corporate actions",
+        "Broad delisting-aware universe for historical claims"
+      ],
+      "failure_modes": [
+        "Issuer-specific accounting labels not comparable",
+        "Valuation missing or stale",
+        "Only six of eight SEC scores available and no point-in-time broad sample",
+        "Turnover and spreads erase returns"
+      ],
+      "next_experiment": "Audit owner-earnings comparability and exact as-of market capitalization in the current six scored 2026 names; then preregister an independently priced cross-sectional ranking, never backfill 2026 facts to 2015.",
+      "current_broker_live_approved": false,
+      "alpha_established": false,
+      "may_issue_orders": false,
+      "evidence": "research_lab/stocks/P4I_PERMANENT_SOURCE_ANCHOR_AND_AGE_OUT_PROOF_2026_10_18.md"
+    },
+    {
+      "id": "V6-S2",
+      "asset": "equity_etfs",
+      "label": "Look-through quality/value-plus-momentum ETF challenger",
+      "status": "NEW_PRE_REGISTERED_SOURCE_QUALIFICATION_ONLY",
+      "priority": 3,
+      "foundation": [
+        "NOVY_MARX_2013",
+        "ASNESS_2013",
+        "MOSKOWITZ_2012"
+      ],
+      "mechanism": "Hold only diversified ETF exposures when independently measured underlying profitability/valuation and slow price trend agree; not an optimization of rejected R1/R2 signals.",
+      "expression": "Broker-eligible unlevered US equity ETFs only if validated; no list currently promoted.",
+      "benchmarks": [
+        "ACWI",
+        "Static same-ETF factor mix",
+        "Previously rejected V6-R1 and R2 records"
+      ],
+      "required_next_sources": [
+        "Timestamped sector ETF holdings and weights",
+        "As-of company fundamentals and valuation aggregated consistently",
+        "Total-return prices and trading spreads"
+      ],
+      "failure_modes": [
+        "Historical ETF holding look-through reconstructs hindsight winners",
+        "AUM/underlying overlap creates extreme concentration",
+        "Factor signal adds costs without beating static comparable sectors"
+      ],
+      "next_experiment": "Acquire verifiable first as-of sector-holdings snapshot and document provider vintage/rights before setting any scoring thresholds.",
+      "current_broker_live_approved": false,
+      "alpha_established": false,
+      "may_issue_orders": false,
+      "evidence": "research_lab/results/V6_R1_AGGRESSIVE_ROTATION_FIRST_REAL_RESEARCH_REJECTION_2026_10_15.md"
+    },
+    {
+      "id": "V6-C10",
+      "asset": "commodities",
+      "label": "Contract-observed futures curve carry (ETF-expressed if feasible)",
+      "status": "NEW_PRE_REGISTERED_SOURCE_QUALIFICATION_ONLY",
+      "priority": 4,
+      "foundation": [
+        "KOIJEN_2018",
+        "MOSKOWITZ_2012"
+      ],
+      "mechanism": "Term structure, roll yield and risk premia reflect hedging pressure and inventory financing; distinguish carry from spot-direction bets.",
+      "expression": "Potential long-only fractional commodity-linked ETF ONLY after product look-through, permission and tracking verification; direct futures excluded under $130.30 ceiling.",
+      "benchmarks": [
+        "Capped static GLD/DBC/SHY comparator",
+        "Matched-cost ETF price trend",
+        "Commodity ETF buy-and-hold"
+      ],
+      "required_next_sources": [
+        "Original dated front/next futures contract settlements and roll calendar",
+        "Exact historical ETF held contracts and price tracking",
+        "Unleveraged broker-accessible ETF notional and spread"
+      ],
+      "failure_modes": [
+        "CME licensed contract history unavailable",
+        "Carry inferred incorrectly from ETF adjusted closes",
+        "Futures-exposure proxy costs dominate or unsupported"
+      ],
+      "next_experiment": "Qualify authentic point-in-time contract-month price/roll source; do not simulate carry from USO, XLE or quarterly DBC positions.",
+      "current_broker_live_approved": false,
+      "alpha_established": false,
+      "may_issue_orders": false,
+      "evidence": "research_lab/commodities/C9_MICROACCOUNT_CME_MARGIN_AND_TRADABLE_INSTRUMENT_ROUTE_2026_10_18.md"
+    },
+    {
+      "id": "V6-B3",
+      "asset": "bonds",
+      "label": "Time-varying Treasury term-premium and duration regime",
+      "status": "NEW_PRE_REGISTERED_SOURCE_QUALIFICATION_ONLY",
+      "priority": 5,
+      "foundation": [
+        "COCHRANE_PIAZZESI_2005",
+        "KOIJEN_2018"
+      ],
+      "mechanism": "Forward-curve term premia may compensate duration risk; separately measure when exposure adds portfolio diversification.",
+      "expression": "Research-only unlevered SHY/IEF/TLT/TIP/LQD; no broker order rights.",
+      "benchmarks": [
+        "SHY passive",
+        "Long-duration buy-and-hold",
+        "Simple duration matched benchmark"
+      ],
+      "required_next_sources": [
+        "Original Treasury rate release calendar and ALFRED vintage",
+        "Yield tenor mapping and ETF duration/convexity",
+        "Fund total-return source with stress periods"
+      ],
+      "failure_modes": [
+        "Uses ex-post revised FRED curve",
+        "Different ETF durations misalign forward-rate thesis",
+        "Credit/rate regime loses to SHY after costs"
+      ],
+      "next_experiment": "Validate historical original availability timestamps and ETF forward duration mapping; keep both prior failing B1/B2 immutable.",
+      "current_broker_live_approved": false,
+      "alpha_established": false,
+      "may_issue_orders": false,
+      "evidence": "research_lab/bonds/MACRO_EXPLORATORY_REVIEW_2026_10_15.md"
+    },
+    {
+      "id": "V6-CR2",
+      "asset": "crypto",
+      "label": "Crypto-specific network/activity factor with slow trend control",
+      "status": "NEW_PRE_REGISTERED_SOURCE_QUALIFICATION_ONLY",
+      "priority": 6,
+      "foundation": [
+        "LIU_TSYVINSKI_2021",
+        "MOSKOWITZ_2012"
+      ],
+      "mechanism": "Network/adoption and investor attention might explain returns distinct from stock or macro factors; test incremental predictive value versus passive crypto.",
+      "expression": "Research only BTC/ETH 24/7 long-only; no current real crypto permission.",
+      "benchmarks": [
+        "BTC buy-and-hold",
+        "Initial passive BTC/ETH blend",
+        "Previously rejected V6-C1 trend after costs"
+      ],
+      "required_next_sources": [
+        "Source-timestamped genuine on-chain activity/network indicators",
+        "Tradeable cross-venue BTC/ETH spreads/fee tiers",
+        "Actual customer-specific broker and regulatory permission"
+      ],
+      "failure_modes": [
+        "Social/network metric availability retroactively restated",
+        "Factor merely predicts volatility but not net returns",
+        "Turnover or 24/7 gap exposures dominate"
+      ],
+      "next_experiment": "Choose original network-activity timestamp and stable data-vintage source BEFORE fitting indicator definitions; no parameters borrowed from failed C1.",
+      "current_broker_live_approved": false,
+      "alpha_established": false,
+      "may_issue_orders": false,
+      "evidence": "research_lab/crypto/V6C1_FIRST_REAL_RETROSPECTIVE_CRYPTO_RESULT_2026_10_17.md"
+    },
+    {
+      "id": "V6-FX1",
+      "asset": "fx",
+      "label": "FX carry with independent slow trend and crash-risk check",
+      "status": "BROKER_ROUTE_UNAVAILABLE_RESEARCH_ONLY",
+      "priority": 7,
+      "foundation": [
+        "KOIJEN_2018",
+        "MOSKOWITZ_2012"
+      ],
+      "mechanism": "Rate differentials plus momentum may compensate risk and exposures; no presumed free interest spread.",
+      "expression": "Major currency pairs research only; neither original broker permissions nor a margin-free execution path established.",
+      "benchmarks": [
+        "No-trade USD cash reference",
+        "Raw currency carry after real swaps",
+        "Standalone trend"
+      ],
+      "required_next_sources": [
+        "As-of short rates/forward points and publication times",
+        "Actual retail overnight swap/spread/minimums",
+        "No-leverage microaccount forex venue and legal permission"
+      ],
+      "failure_modes": [
+        "Interest-rate differential is not actual financed carry",
+        "Margin/overnight costs exceed trial account",
+        "Unhedged jumps and 24-hour broker failures"
+      ],
+      "next_experiment": "Verify whether a truly unleveraged account-level execution expression exists before coding an FX trader.",
+      "current_broker_live_approved": false,
+      "alpha_established": false,
+      "may_issue_orders": false,
+      "evidence": "FUND100_MULTI_ASSET_ROADMAP.md"
+    }
+  ],
+  "approval_guard": {
+    "max_original_capital_usd": "130.30",
+    "independent_history_can_promote_to_live": false,
+    "paper_pnl_wait_required": false,
+    "account_stop_must_remain_engaged": true,
+    "allow_leverage": false,
+    "allow_new_assets_without_explicit_versioned_release": false,
+    "rejected_models_automatically_revived": false,
+    "may_issue_broker_orders": false
+  }
+}
