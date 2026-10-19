@@ -5,7 +5,7 @@ GET eligibility, DAY/market notional buy, filled quantity, unique
 client IDs, matching long-only qty sell and baseline restoration.
 
 Runs only 2026-10-19 during regular US market hours, main branch,
-GitHub run attempt 1, with BROKER KILL SWITCH ENGAGED, LIVE STOPPED,
+GitHub run attempt 1, push or manual-dispatch event, prior PAPER order\nhistory must contain NO S1 attempt, with BROKER KILL SWITCH ENGAGED, LIVE STOPPED,
 HIGH tier and PAPER-only keys. No LIVE API endpoint or credentials.
 """
 from __future__ import annotations
@@ -17,6 +17,7 @@ import json
 import os
 import time
 from zoneinfo import ZoneInfo
+from urllib.parse import urlencode
 
 import fund100_alpaca_paper_orchestrator_connected_v1_0 as paper
 import fund100_live_operator_control_v1_0 as operator
@@ -54,6 +55,7 @@ def check_arm(now:datetime)->None:
         or os.getenv("GITHUB_REPOSITORY")!="nicobouch97/fund100-research"
         or os.getenv("GITHUB_REF")!="refs/heads/main"
         or os.getenv("GITHUB_RUN_ATTEMPT")!="1"
+        or os.getenv("GITHUB_EVENT_NAME") not in {"push","workflow_dispatch"}
         or not str(os.getenv("GITHUB_RUN_ID","")).isdigit()
         or os.getenv("FUND100_BROKER_KILL_SWITCH")!="ENGAGED"
         or os.getenv("FUND100_RISK_LEVEL")!="HIGH"
@@ -68,6 +70,30 @@ def check_arm(now:datetime)->None:
             raise PaperS1Stop("Remote LIVE operator is RUNNING; PAPER probe refused.")
     except operator.OperatorControlStop:
         raise PaperS1Stop("Remote LIVE operator STOP could not be verified.") from None
+
+
+def refuse_prior_s1_paper_attempt():
+    """Read ALL broker PAPER orders for the fixed test day before any POST.
+
+    Closing/flattening the earlier test position does not make a second
+    rehearsal okay: history across different GitHub run IDs still proves
+    an S1 order was already attempted. Fail closed on 500-row truncation,
+    absent IDs or any compatible pre-existing attempt. No secrets logged.
+    """
+    query=urlencode({
+        "status":"all",
+        "limit":500,
+        "after":TEST_DATE+"T00:00:00Z",
+        "direction":"desc",
+    })
+    rows=paper.paper_request(method="GET",path="/v2/orders?"+query)
+    if not isinstance(rows,list) or len(rows)>=500:
+        raise PaperS1Stop("Cannot establish complete S1 PAPER attempt history.")
+    for row in rows:
+        if not isinstance(row,dict) or not isinstance(row.get("client_order_id"),str):
+            raise PaperS1Stop("Unknown prior PAPER order client identity.")
+        if row["client_order_id"].startswith("f100-v6s1-"+TEST_DATE.replace("-","")+"-"):
+            raise PaperS1Stop("One-time S1 PAPER rehearsal already attempted today: do NOT repeat.")
 
 
 def snapshots(rows)->dict[str,Decimal]:
@@ -156,6 +182,9 @@ def paper_probe():
     check_arm(now)
     if not regular_session(paper.get_clock(),now):
         raise PaperS1Stop("PAPER day session not open for protected tiny test.")
+    # A previous same-day S1 attempt may already have completed or failed
+    # under a DIFFERENT GitHub run ID. Refuse before any buy/try/finally.
+    refuse_prior_s1_paper_attempt()
     acc=paper.get_account()
     if (not isinstance(acc,dict) or acc.get("status")!="ACTIVE"
         or acc.get("trading_blocked") is not False
