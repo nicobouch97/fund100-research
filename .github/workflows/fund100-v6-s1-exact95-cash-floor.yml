@@ -1,0 +1,69 @@
+name: Fund-100 V6-S1 Exact 95 Percent Frozen Cash Reserve Audit (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_exact95_costed_cash_floor_v1_0.py"
+      - "test_fund100_v6_s1_exact95_costed_cash_floor_v1_0.py"
+      - "research_lab/V6_S1_EXACT95_COST_AND_CASH_FLOOR_PROTOCOL_2026_10_19.md"
+      - ".github/workflows/fund100-v6-s1-exact95-cash-floor.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-locked-economics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install offline research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run synthetic no-orders and no-tuning checks
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_s1_exact95_costed_cash_floor_v1_0.py
+      - name: Verify this is the pre-existing frozen dataset, not recent vendor data
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          p=Path("research_lab/frozen_history_v2.csv")
+          a=json.loads(Path("research_lab/frozen_history_v2_manifest.json").read_text())
+          assert hashlib.sha256(p.read_bytes()).hexdigest()==a["file_sha256"]
+          assert a["file_sha256"]=="acc2c8c08953b895ca5062b3cfba287efb97143b10e108e8ce4bd8b82ffb0d28"
+          assert a["historical_cutoff"]=="2026-09-16"
+          assert not Path("research_lab/V6_S1_EXACT95_COST_AND_CASH_FLOOR_PROTOCOL_2026_10_19.md").read_text().startswith("RESULT")
+          print("Original immutable Fund-100 research price dataset SHA verified")
+          PY
+      - name: Compute first exact S1 95%-deployed historical economics
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_exact95_costed_cash_floor_v1_0.py \
+            --frozen-history research_lab/frozen_history_v2.csv \
+            --output /tmp/fund100-v6-s1-exact95-cash-floor.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("/tmp/fund100-v6-s1-exact95-cash-floor.json").read_text())
+          assert r["schema"]=="FUND100_V6_S1_EXACT_95PCT_COSTED_CASH_FLOOR_DIAGNOSTIC_V1"
+          assert r["exact_whole_account_target"]=={"XLK":0.475,"XLE":0.285,"IWM":0.19}
+          assert r["history_exploratory_not_out_of_sample"]
+          assert r["new_strategy_live_authorized"] is False
+          assert not r["independent_alpha_proved"]
+          assert r["live_orders"]==r["paper_orders"]==r["broker_calls"]==0
+          assert set(r["results"])=={"5","15","35"}
+          print("S1 exact allocation evaluated, broker-free, no LIVE promotion.")
+          PY
+      - name: Archive locked S1 economic and cash-reserve evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v6-s1-exact95-original-frozen-history
+          path: /tmp/fund100-v6-s1-exact95-cash-floor.json
+          retention-days: 90
+          if-no-files-found: error
