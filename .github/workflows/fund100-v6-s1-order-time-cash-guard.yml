@@ -1,0 +1,42 @@
+name: Fund-100 V6-S1 Cash-at-Order No-Churn Resolution (OFFLINE)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_cash_at_order_no_churn_v1_0.py"
+      - "test_fund100_v6_s1_cash_at_order_no_churn_v1_0.py"
+      - "research_lab/V6_S1_ORDER_TIME_CASH_FLOOR_WITHOUT_FORCED_CHURN_2026_10_19.md"
+      - ".github/workflows/fund100-v6-s1-order-time-cash-guard.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-stop-and-no-broker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install offline minimal tests
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Verify S1 order-time cash arithmetic and pause-on-drift
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_s1_cash_at_order_no_churn_v1_0.py
+          python fund100_v6_investment_thesis_gate_v1_0.py
+      - name: Original REAL execution boundary remains disabled
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          from pathlib import Path
+          source=Path("fund100_v6_s1_cash_at_order_no_churn_v1_0.py").read_text()
+          assert "def check(" in source
+          for forbidden in ("paper_request(", "requests.post(", "/v2/orders", "client_order_id"):
+              assert forbidden not in source
+          print("S1 cash-at-order is an offline hypothetical math check; NO trades authorised.")
+          PY
