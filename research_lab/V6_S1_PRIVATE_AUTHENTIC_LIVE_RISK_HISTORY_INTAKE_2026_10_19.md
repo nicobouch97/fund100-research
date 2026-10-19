@@ -11,7 +11,7 @@ Existing verified facts remain pinned:
 - Actual authenticated LIVE account original four holdings/zero orders: [run 39272813574](https://github.com/nicobouch97/fund100-research/actions/runs/39272813574), 19 Oct 14:52 UTC.
 - Overlap-aware V6-S1 DRAFT v2: retain original XLE when compatible, hypothetical legacy exits only ACWI, EEM, XLV. Executable staged V6-S1 candidate controller remains disconnected [PR 65](https://github.com/nicobouch97/fund100-research/pull/65).
 
-This observer runs only on exact repository **main** inside the already protected `fund100-live-broker` environment. It first requires original operator `trading_enabled=false`, remote GitHub main STOP, HIGH profile, broker kill `ENGAGED`, fresh GET-only arm and the existing correctly bound 2026 original live policy. It reads **exactly five endpoints**, in order:
+A future **connected release** of this observer would run only on exact repository **main** inside the already protected `fund100-live-broker` environment. It first requires original operator `trading_enabled=false`, remote GitHub main STOP, HIGH profile, broker kill `ENGAGED`, fresh GET-only arm and the existing correctly bound 2026 original live policy. It reads **exactly five endpoints**, in order:
 
 1. `GET /v2/account`
 2. `GET /v2/positions`
@@ -41,4 +41,6 @@ Do not print, save, upload or expose account IDs, share quantities, mark-to-mark
 - No new deposits, margin, leverage, stocks, futures, FX, crypto, options or outgoing order API requests.
 - $130.30 original capital cap, HIGH pilot and all original holdings unchanged.
 
-**Next stage after results:** Broker-fresh comprehensive risk history adjusted for actual account cashflows and open/filled orders, original reusable XLE weight measured privately, then separate live adapter plus actual T+1 settlement proof. The goal remains a small genuine LIVE risk-premium experiment without months of forward PAPER strategy-returns testing.
+**Next stage before authenticated results:** conduct a distinct source-hash-pinned audit allowing this exact five-GET script to access LIVE credentials only through the protected main-only environment, with a separate reviewed workflow. This initial PR runs offline synthetic tests only. A successful offline review is not an actual LIVE history read.
+
+**Following a genuine authenticated result:** Broker-fresh comprehensive risk history adjusted for actual account cashflows and open/filled orders, original reusable XLE weight measured privately, then separate live adapter plus actual T+1 settlement proof. The goal remains a small genuine LIVE risk-premium experiment without months of forward PAPER strategy-returns testing.
