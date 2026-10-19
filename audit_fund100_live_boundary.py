@@ -224,6 +224,11 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml",
         "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
     ): "fd3a19b18e3f3afa5a73107630239727390ebfb6",
+    # Actual LIVE original client-ID query for V6-S1; strictly 7 GET, no order POST.
+    (
+        ".github/workflows/fund100-v6-s1-original-client-id-getonly.yml",
+        "fund100_v6_s1_live_original_client_ids_getonly_v1_0.py",
+    ): "31d4ff0e1e90091eb8514f06452adeded782f019",
     (
         ".github/workflows/fund100-live-bootstrap.yml",
         "fund100_live_bootstrap_v1_0.py",
@@ -404,6 +409,41 @@ def approved_scoped_live_script(
             candidate_path = ROOT / dependency
             if (not candidate_path.is_file()
                 or git_blob_digest(candidate_path) != expected_digest):
+                return False
+
+    if script == "fund100_v6_s1_live_original_client_ids_getonly_v1_0.py":
+        # Exact new original account+three client-ID GET source, never an order sender.
+        if workflow != ".github/workflows/fund100-v6-s1-original-client-id-getonly.yml":
+            return False
+        if "if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'" not in source:
+            return False
+        if "FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE" not in source:
+            return False
+        if "FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}" not in source:
+            return False
+        if "ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}" not in source:
+            return False
+        if "ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}" not in source:
+            return False
+        if "schedule:" in source or "FUND100_LIVE_WRITE_MODE: ENABLED" in source:
+            return False
+        dependencies = {
+            "fund100_alpaca_live_readonly_smoke.py":
+                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+            "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
+                "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
+            "fund100_v6_s1_frac_live_sell_writer_candidate_v1_0.py":
+                "b5a7d98737858684e3ba7600bc9665f106410243",
+            "fund100_v6_brokerless_transition_preview_v1_0.py":
+                "a0b4efc660f30395b6cdda104f0eddf63b8a6dd9",
+            "fund100_v6_s1_concentrated_risk_and_paper_asset_v1_0.py":
+                "7c67973713cb5e0af8729e6814ff36cf713f7f36",
+            "fund100_live_operator_control_v1_0.py":
+                PINNED_PRODUCTION_OPERATOR_MODULE,
+        }
+        for dep, expected_digest in dependencies.items():
+            dep_path = ROOT / dep
+            if not dep_path.is_file() or git_blob_digest(dep_path)!=expected_digest:
                 return False
 
     if script == "fund100_live_production_controller_v1_0.py":
