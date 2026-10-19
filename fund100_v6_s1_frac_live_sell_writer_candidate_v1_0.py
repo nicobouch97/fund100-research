@@ -21,7 +21,6 @@ SCHEMA="FUND100_V6_S1_FRACTIONAL_LEGACY_SELL_LOCKED_V1"
 LIVE_HOST="api.alpaca.markets"
 BASE_URL="https://"+LIVE_HOST
 GET_PATH="/v2/orders:by_client_order_id"
-POST_PATH="/v2/orders"
 MIGRATION_KEY="FUND100-V6-S1-FIRST-PILOT-20261019-V1"
 LEGACY_TO_EXIT=("ACWI","EEM","XLV")
 PRESERVE_OVERLAP="XLE"
@@ -157,7 +156,7 @@ def _validate_credentials(key:str,secret:str)->None:
         raise V6SellStop("LIVE credentials absent")
 
 def _safe_url(path:str)->str:
-    if path not in (GET_PATH,POST_PATH):
+    if path!=GET_PATH:
         raise V6SellStop("Only original order and client ID endpoints allowed")
     value=BASE_URL+path
     parsed=urlparse(value)
