@@ -42,6 +42,7 @@ jobs:
           python -m pytest -q test_fund100_v6_s1_one_time_paper_fill_probe_v1_0.py
           python -m pytest -q test_fund100_v6_s1_concentrated_risk_and_paper_asset_v1_0.py
       - name: Prove this run cannot contact LIVE broker credentials or endpoint
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           test "${GITHUB_REF}" = "refs/heads/main"
@@ -60,6 +61,7 @@ jobs:
           print("S1 PAPER transport locked, $2 maximum BUY, no LIVE credentials.")
           PY
       - name: Execute ONE genuine $2 PAPER BUY then exact-qty SELL in open US session
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
           ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
@@ -83,6 +85,7 @@ jobs:
           print("PAPER ONLY. ZERO LIVE orders, ZERO live permissions changed.")
           PY
       - name: No live activation and original STOP unchanged
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
