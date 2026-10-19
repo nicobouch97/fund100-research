@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "fund100_v6_s1_live_risk_history_getonly_v1_0.py"
+      - "audit_fund100_live_boundary.py"
+      - "test_fund100_v6_s1_live_risk_pinned_credential_scope_v1_0.py"
       - "test_fund100_v6_s1_live_risk_history_getonly_v1_0.py"
       - "research_lab/V6_S1_PRIVATE_AUTHENTIC_LIVE_RISK_HISTORY_INTAKE_2026_10_19.md"
       - ".github/workflows/fund100-v6-s1-live-risk-history-getonly.yml"
@@ -35,6 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest -q test_fund100_v6_s1_live_risk_history_getonly_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_live_risk_pinned_credential_scope_v1_0.py
           python -m pytest -q test_fund100_v6_real_live_getonly_transition_readiness_v1_0.py
           python -m pytest -q test_fund100_live_portfolio_risk_v1_0.py
       - name: Prove no V6 risk observer order capability
