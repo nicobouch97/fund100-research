@@ -208,7 +208,13 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-v6-real-live-getonly-transition.yml",
         "fund100_v6_real_live_getonly_transition_readiness_v1_0.py",
     ): "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
-    # V6-S1 original five-GET risk-history read: exact file pin only.\n    # Separate permission from original four-GET inspector; no write rights.\n    (\n        ".github/workflows/fund100-v6-s1-live-risk-history-getonly.yml",\n        "fund100_v6_s1_live_risk_history_getonly_v1_0.py",\n    ): "e195746ed594c3215f6d83198c64778a24a8cf63",\n    (
+    # V6-S1 original five-GET risk-history read: exact file pin only.
+    # Separate permission from original four-GET inspector; no write rights.
+    (
+        ".github/workflows/fund100-v6-s1-live-risk-history-getonly.yml",
+        "fund100_v6_s1_live_risk_history_getonly_v1_0.py",
+    ): "e195746ed594c3215f6d83198c64778a24a8cf63",
+    (
         ".github/workflows/fund100-live-bootstrap.yml",
         "fund100_live_bootstrap_v1_0.py",
     ): "2df0e9b216366b7659386d9cc541041b5365a2ab",
