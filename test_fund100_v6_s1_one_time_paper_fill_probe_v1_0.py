@@ -26,6 +26,7 @@ def arm(monkeypatch):
         "GITHUB_REF":"refs/heads/main",
         "GITHUB_RUN_ID":"39299920000",
         "GITHUB_RUN_ATTEMPT":"1",
+        "GITHUB_EVENT_NAME":"push",
         "FUND100_S1_PAPER_FILL_ARM":"S1_ONLY_2USD_ONCE",
         "FUND100_BROKER_KILL_SWITCH":"ENGAGED",
         "FUND100_RISK_LEVEL":"HIGH",
@@ -62,6 +63,7 @@ def test_one_time_main_only_current_stop_and_day_guard(monkeypatch):
     ("FUND100_BROKER_KILL_SWITCH","DISENGAGED"),
     ("FUND100_RISK_LEVEL","LOW"),
     ("GITHUB_RUN_ATTEMPT","2"),
+    ("GITHUB_EVENT_NAME","schedule"),
     ("ALPACA_PAPER_KEY",""),
     ("FUND100_S1_PAPER_FILL_ARM","YES"),
     ("ALPACA_LIVE_SECRET","DO_NOT_USE"),
@@ -153,7 +155,10 @@ def test_actual_control_flow_2_paper_orders_restore_original_positions(monkeypat
     held=old.copy()
     orders={}
     posts=[]
-    def mock_post(*,method,path,body):
+    def mock_post(*,method,path,body=None):
+        if method=="GET":
+            assert path.startswith("/v2/orders?") and "status=all" in path
+            return []
         assert method=="POST" and path=="/v2/orders"
         tag=body["client_order_id"]
         assert tag not in orders
@@ -204,6 +209,7 @@ def test_open_orders_prevent_trade(monkeypatch):
     monkeypatch.setattr(s1.paper,"get_account",lambda:{
         "status":"ACTIVE","trading_blocked":False,"cash":"100"})
     monkeypatch.setattr(s1.paper,"get_open_orders",lambda:[{"id":"SOMEONE-ELSE"}])
+    monkeypatch.setattr(s1.paper,"paper_request",lambda **k:[] if k["method"]=="GET" else pytest.fail("No POST"))
     with pytest.raises(s1.PaperS1Stop,match="open orders"):
         s1.paper_probe()
 
@@ -216,3 +222,55 @@ def test_bad_partial_or_zero_fill_never_marked_pass():
     ]:
         with pytest.raises(s1.PaperS1Stop):
             s1.require_filled(invalid,"buy")
+
+def test_no_second_one_time_paper_buy_if_already_attempted_other_run(monkeypatch):
+    arm(monkeypatch)
+    historical={"client_order_id":"f100-v6s1-20261019-0123456789abcdef12-b",
+                "status":"filled","id":"PRIOR-RUN"}
+    reads=[]
+    def get(*,method,path,body=None):
+        reads.append((method,path))
+        assert method=="GET" and path.startswith("/v2/orders?")
+        return [historical]
+    monkeypatch.setattr(s1.paper,"paper_request",get)
+    with pytest.raises(s1.PaperS1Stop,match="already attempted"):
+        s1.refuse_prior_s1_paper_attempt()
+    assert len(reads)==1
+
+@pytest.mark.parametrize("rows",[
+    None,
+    {"orders":[]},
+    [{"id":"missing-client-id"}],
+    [{"client_order_id":12345}],
+    [{"client_order_id":"legitimate-older-order"}]*500,
+])
+def test_cannot_safely_prove_original_paper_history_fails_closed(monkeypatch,rows):
+    arm(monkeypatch)
+    monkeypatch.setattr(s1.paper,"paper_request",lambda **_:rows)
+    with pytest.raises(s1.PaperS1Stop):
+        s1.refuse_prior_s1_paper_attempt()
+
+def test_existing_other_strategies_do_not_prevent_first_s1_run(monkeypatch):
+    arm(monkeypatch)
+    calls=[]
+    def get(*,method,path,body=None):
+        calls.append((method,path))
+        assert method=="GET" and "after=2026-10-19" in path
+        return [{"client_order_id":"f100-v5-paper-previous","status":"filled"}]
+    monkeypatch.setattr(s1.paper,"paper_request",get)
+    s1.refuse_prior_s1_paper_attempt()
+    assert len(calls)==1
+
+def test_prior_attempt_guard_runs_before_any_new_paper_order(monkeypatch):
+    arm(monkeypatch)
+    monkeypatch.setattr(s1.paper,"get_clock",lambda:{"is_open":True})
+    requests=[]
+    def get(*,method,path,body=None):
+        requests.append(method)
+        assert method=="GET"
+        return [{"client_order_id":"f100-v6s1-20261019-abcdef123456789abc-b"}]
+    monkeypatch.setattr(s1.paper,"paper_request",get)
+    monkeypatch.setattr(s1.paper,"get_account",lambda:pytest.fail("MUST halt before account or POST"))
+    with pytest.raises(s1.PaperS1Stop,match="already attempted"):
+        s1.paper_probe()
+    assert requests==["GET"]
