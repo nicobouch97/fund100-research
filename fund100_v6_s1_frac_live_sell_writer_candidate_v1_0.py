@@ -1,8 +1,9 @@
 """Fund-100 V6-S1 fractionally quantified LIVE SELL adapter; HARD LOCKED.
 
 This is distinct from the original V5 buy-notional writer and from the
-fake S1 controller. It contains Alpaca LIVE GET-by-client-id / POST shape
-for code review only. BOTH network and public order permissions are
+fake S1 controller. It contains Alpaca LIVE GET-by-client-ID and pure
+sell-quantity payload shaping for review. It DELIBERATELY contains NO
+mutating Alpaca HTTP implementation. Network/public permissions are
 hardcoded False; cannot be armed by environment variables or secrets.
 """
 from __future__ import annotations
@@ -186,25 +187,11 @@ def _get_by_client_id(*,symbol:str,key:str,secret:str)->dict|None:
     except (URLError,TimeoutError,OSError,ValueError):
         raise V6SellStop("LIVE client ID lookup uncertain, manual reconciliation") from None
 
-def _post_qty_sell(*,symbol:str,original_qty:str,key:str,secret:str)->dict:
-    require_transport_release() # MUST BE FIRST EXECUTABLE STATEMENT
-    _validate_credentials(key,secret)
-    payload=inspect_sell_shape(symbol=symbol,original_qty=original_qty)
-    req=Request(_safe_url(POST_PATH),
-                data=json.dumps(payload).encode("utf-8"),method="POST",
-                headers={"Accept":"application/json",
-                         "Content-Type":"application/json",
-                         "APCA-API-KEY-ID":key,
-                         "APCA-API-SECRET-KEY":secret})
-    try:
-        with urlopen(req,timeout=20) as resp:
-            value=json.loads(resp.read().decode("utf-8"))
-    except (HTTPError,URLError,TimeoutError,OSError,ValueError):
-        raise V6SellStop("LIVE sell POST outcome unknown; NEVER BLINDLY RETRY") from None
-    if type(value) is not dict:
-        raise V6SellStop("LIVE broker acknowledgement malformed")
-    return value
+def _disconnected_sell_submission(*,symbol:str,original_qty:str)->dict:
+    require_public_execution_release() # MUST be first; no POST implementation exists
+    raise V6SellStop("Mutating Alpaca LIVE HTTP transport has not been approved")
+
 
 def submit_live_legacy_sell(*,symbol:str,original_qty:str,key:str,secret:str):
     require_public_execution_release() # HARD BLOCK, including with real secrets
-    raise V6SellStop("No reviewed LIVE SELL workflow, ledger or active risk policy")
+    raise V6SellStop("No reviewed LIVE SELL workflow, journal, risk policy or POST transport")
