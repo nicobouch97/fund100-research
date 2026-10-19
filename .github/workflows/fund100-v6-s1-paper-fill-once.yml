@@ -7,10 +7,14 @@ on:
       - "test_fund100_v6_s1_one_time_paper_fill_probe_v1_0.py"
       - "research_lab/V6_S1_2USD_PAPER_ORDER_MECHANICS_PROTOCOL_2026_10_19.md"
       - ".github/workflows/fund100-v6-s1-paper-fill-once.yml"
-  # Exactly one intended market session. Python rechecks 2026-10-19
-  # and will NOT permit the same annual cron in any future year.
-  schedule:
-    - cron: "43 13 19 10 *"
+  # The original 13:43 UTC scheduler produced no run when checked after
+  # 13:49 UTC. One same-day main push of THIS workflow triggers the
+  # controlled $2 PAPER fallback. Historical broker order IDs gate repeats.
+  # No recurring schedule: prevents a late cron + fallback dual attempt.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v6-s1-paper-fill-once.yml"
   workflow_dispatch:
 
 permissions:
