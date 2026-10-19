@@ -219,6 +219,11 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-v6-s1-live-private-xle-activities.yml",
         "fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py",
     ): "cea00b694b52e3ad1835305796608684c765e8e4",
+    # Original seven-GET cashflow timing and native NONE source; NO trade authorization.
+    (
+        ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml",
+        "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
+    ): "fd3a19b18e3f3afa5a73107630239727390ebfb6",
     (
         ".github/workflows/fund100-live-bootstrap.yml",
         "fund100_live_bootstrap_v1_0.py",
@@ -355,6 +360,41 @@ def approved_scoped_live_script(
                 "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
             "fund100_v6_s1_live_risk_history_getonly_v1_0.py":
                 "e195746ed594c3215f6d83198c64778a24a8cf63",
+            "fund100_live_portfolio_risk_v1_0.py":
+                PINNED_PRODUCTION_PORTFOLIO_MODULE,
+            "fund100_live_operator_control_v1_0.py":
+                PINNED_PRODUCTION_OPERATOR_MODULE,
+        }
+        for dependency, expected_digest in immutable_dependencies.items():
+            candidate_path = ROOT / dependency
+            if (not candidate_path.is_file()
+                or git_blob_digest(candidate_path) != expected_digest):
+                return False
+
+    if script == "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py":
+        if workflow != ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml":
+            return False
+        if "if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'" not in source:
+            return False
+        if "FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE" not in source:
+            return False
+        if "FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}" not in source:
+            return False
+        if "ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}" not in source:
+            return False
+        if "ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}" not in source:
+            return False
+        if "schedule:" in source or "FUND100_LIVE_WRITE_MODE: ENABLED" in source:
+            return False
+        immutable_dependencies = {
+            "fund100_alpaca_live_readonly_smoke.py":
+                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+            "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
+                "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
+            "fund100_v6_s1_live_risk_history_getonly_v1_0.py":
+                "e195746ed594c3215f6d83198c64778a24a8cf63",
+            "fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py":
+                "cea00b694b52e3ad1835305796608684c765e8e4",
             "fund100_live_portfolio_risk_v1_0.py":
                 PINNED_PRODUCTION_PORTFOLIO_MODULE,
             "fund100_live_operator_control_v1_0.py":
