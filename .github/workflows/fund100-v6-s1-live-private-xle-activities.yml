@@ -1,0 +1,95 @@
+name: Fund-100 V6-S1 LIVE XLE and Nontrade Cashflow Six GET (NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py"
+      - "test_fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py"
+      - "test_fund100_v6_s1_live_private_xle_pinned_scope_v1_0.py"
+      - "audit_fund100_live_boundary.py"
+      - "research_lab/V6_S1_AUTHENTIC_LIVE_XLE_ACTIVITY_SOURCE_PROTOCOL_2026_10_19.md"
+      - ".github/workflows/fund100-v6-s1-live-private-xle-activities.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v6-s1-live-private-xle-activities.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-s1-private-xle-activities-readonly
+  cancel-in-progress: false
+
+jobs:
+  original-privacy-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install strict offline test runner
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Recheck original five GETs, XLE/private activities and scoped source
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_live_private_xle_pinned_scope_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_live_risk_history_getonly_v1_0.py
+      - name: Real-money writer never available to source reader
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          from pathlib import Path
+          from fund100_v6_s1_live_private_xle_activity_getonly_v1_0 import PATHS
+          assert len(PATHS)==6 and PATHS[-1]=='/v2/account/activities'
+          text=Path('fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py').read_text()
+          for token in ('method="POST"', 'method="DELETE"',
+                        'submit_'+'authorized_order_batch(', 'requests.post('):
+            assert token not in text
+          print('Original six GET sources ONLY; no trading functionality.')
+          PY
+
+  real-live-private-six-get:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: original-privacy-tests
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 8
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Confirm six original immutable GET endpoints, main-only source
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import audit_fund100_live_boundary as a
+          from pathlib import Path
+          p='.github/workflows/fund100-v6-s1-live-private-xle-activities.yml'
+          s='fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py'
+          assert a.approved_scoped_live_script(p,s,Path(p).read_text())
+          print('PINNED private LIVE six-GET scope: PASS; no broker write capability.')
+          PY
+      - name: Read actual XLE weight and nontrade activity classes, output categories ONLY
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py
+      - name: Confirm original live operator remains stopped
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Private nontrade source probe complete; NO LIVE orders.'
