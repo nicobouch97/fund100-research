@@ -208,7 +208,7 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-v6-real-live-getonly-transition.yml",
         "fund100_v6_real_live_getonly_transition_readiness_v1_0.py",
     ): "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
-    (
+    # V6-S1 original five-GET risk-history read: exact file pin only.\n    # Separate permission from original four-GET inspector; no write rights.\n    (\n        ".github/workflows/fund100-v6-s1-live-risk-history-getonly.yml",\n        "fund100_v6_s1_live_risk_history_getonly_v1_0.py",\n    ): "e195746ed594c3215f6d83198c64778a24a8cf63",\n    (
         ".github/workflows/fund100-live-bootstrap.yml",
         "fund100_live_bootstrap_v1_0.py",
     ): "2df0e9b216366b7659386d9cc541041b5365a2ab",
@@ -288,6 +288,39 @@ def approved_scoped_live_script(
     path = ROOT / script
     if not path.is_file() or git_blob_digest(path) != expected:
         return False
+
+    if script == "fund100_v6_s1_live_risk_history_getonly_v1_0.py":
+        # THIS SCRIPT ONLY: signed-for-review 5 GET, main branch, STOP
+        # and original proven GET-only transport/source dependences.
+        if workflow != ".github/workflows/fund100-v6-s1-live-risk-history-getonly.yml":
+            return False
+        if "if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'" not in source:
+            return False
+        if "FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE" not in source:
+            return False
+        if "FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}" not in source:
+            return False
+        if "ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}" not in source:
+            return False
+        if "ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}" not in source:
+            return False
+        if "schedule:" in source or "FUND100_LIVE_WRITE_MODE: ENABLED" in source:
+            return False
+        # Pin the underlying GET-only HTTP implementation and both
+        # financial-authentication/portfolio-risk dependencies as well
+        # as the new entry-point; any mutation removes its eligibility.
+        pinned_dependencies = {
+            "fund100_alpaca_live_readonly_smoke.py":
+                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+            "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
+                "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
+            "fund100_live_portfolio_risk_v1_0.py":
+                PINNED_PRODUCTION_PORTFOLIO_MODULE,
+        }
+        for dep, digest in pinned_dependencies.items():
+            dep_path = ROOT / dep
+            if not dep_path.is_file() or git_blob_digest(dep_path) != digest:
+                return False
 
     if script == "fund100_live_production_controller_v1_0.py":
         if (
