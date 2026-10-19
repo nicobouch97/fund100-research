@@ -145,7 +145,7 @@ def test_every_production_transport_invocation_is_locked_before_network_or_crede
     assert w.PUBLIC_EXECUTION_ENABLED is False
     for attempt in [
         lambda:w._get_by_client_id(symbol="ACWI",key="none",secret="none"),
-        lambda:w._post_qty_sell(symbol="ACWI",original_qty=Q,key="none",secret="none"),
+        lambda:w._disconnected_sell_submission(symbol="ACWI",original_qty=Q),
         lambda:w.submit_live_legacy_sell(symbol="ACWI",original_qty=Q,key="none",secret="none"),
     ]:
         with pytest.raises(w.V6SellStop,match="locked"):
@@ -156,12 +156,12 @@ def test_guard_is_first_executable_statement_on_both_network_functions():
     source=Path(w.__file__).read_text()
     tree=ast.parse(source)
     methods={x.name:x for x in tree.body if isinstance(x,ast.FunctionDef)}
-    for fn in ("_get_by_client_id","_post_qty_sell"):
+    for fn in ("_get_by_client_id","_disconnected_sell_submission"):
         first=methods[fn].body[0]
         assert isinstance(first,ast.Expr)
         assert isinstance(first.value,ast.Call)
         assert isinstance(first.value.func,ast.Name)
-        assert first.value.func.id=="require_transport_release"
+        assert first.value.func.id==("require_transport_release" if fn=="_get_by_client_id" else "require_public_execution_release")
     pub=methods["submit_live_legacy_sell"].body[0]
     assert pub.value.func.id=="require_public_execution_release"
 
@@ -172,6 +172,8 @@ def test_no_live_workflow_main_auto_enable_or_secret_based_activation():
     assert "os.environ" not in source
     assert "os.getenv" not in source
     assert "if __name__" not in source
+    assert 'method="POST"' not in source
+    assert 'method="DELETE"' not in source
 
 def test_repo_old_v5_writer_still_locked_and_unmodified():
     import fund100_alpaca_live_writer_candidate_v1_1 as v5
