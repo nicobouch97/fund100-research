@@ -16,7 +16,7 @@ import fund100_v6_s1_one_time_paper_fill_probe_v1_0 as s1
 class MockClock(datetime):
     @classmethod
     def now(cls,tz=None):
-        return datetime(2026,10,19,14,0,tzinfo=timezone.utc)
+        return cls(2026,10,19,14,0,tzinfo=timezone.utc)
 
 
 def arm(monkeypatch):
