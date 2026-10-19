@@ -17,6 +17,8 @@ def snap(*,cash="130.30",equity="130.30",positions=None,settled=None):
     }
 
 def check(s=None,**kw):
+    if "hypothetical_new_buy_usd" in kw and "hypothetical_buy_symbol" not in kw:
+        kw["hypothetical_buy_symbol"]="IWM"
     return c.check(snapshot=s if s is not None else snap(),
                    now_utc="2026-10-19T13:30:05Z",**kw)
 
@@ -36,15 +38,15 @@ def test_empty_existing_legacy_account_is_never_a_trade_permit():
     assert not result["caller_snapshot_independently_authenticated"]
 
 def test_exact_three_hypothetical_s1_notional_screens_pass_without_fees():
-    x=check(hypothetical_new_buy_usd="61.89",
+    x=check(hypothetical_new_buy_usd="61.89",hypothetical_buy_symbol="XLK",
             hypothetical_worst_case_total_cost_usd="0.00")
     assert x["status"]=="HYPOTHETICAL_BUY_SCREEN_CLEARED_NOT_AUTHORIZED"
     y=check(snap(cash="68.41",positions={"XLK":"61.89"}),
-            hypothetical_new_buy_usd="37.13",
+            hypothetical_new_buy_usd="37.13",hypothetical_buy_symbol="XLE",
             hypothetical_worst_case_total_cost_usd="0")
     assert y["status"]=="HYPOTHETICAL_BUY_SCREEN_CLEARED_NOT_AUTHORIZED"
     z=check(snap(cash="31.28",positions={"XLK":"61.89","XLE":"37.13"}),
-            hypothetical_new_buy_usd="24.75",
+            hypothetical_new_buy_usd="24.75",hypothetical_buy_symbol="IWM",
             hypothetical_worst_case_total_cost_usd="0")
     assert z["status"]=="HYPOTHETICAL_BUY_SCREEN_CLEARED_NOT_AUTHORIZED"
     assert not z["new_live_buy_authorized"] and not z["risk_stop_inputs_complete"]
@@ -126,3 +128,19 @@ def test_no_credentials_broker_clients_or_live_payload_fields_in_code():
         # Authorization tokens are banned; plain discussion is allowed.
         if forbidden=="authorization":continue
         assert forbidden not in source
+
+def test_no_trade_can_push_a_sector_above_50pct_of_post_cost_nav():
+    s=snap(cash="67.30",equity="130.30",positions={"XLK":"63.00"})
+    x=check(s,hypothetical_buy_symbol="XLK",hypothetical_new_buy_usd="3.00",
+            hypothetical_worst_case_total_cost_usd="0")
+    assert x["status"]=="BLOCK_HYPOTHETICAL_BUY_SINGLE_SYMBOL_CONCENTRATION"
+    assert not x["new_live_buy_authorized"]
+
+def test_missing_or_wrong_buy_symbol_is_not_accepted_as_research_intent():
+    s=snap()
+    with pytest.raises(c.CashStop):
+        c.check(snapshot=s,now_utc="2026-10-19T13:30:05Z",
+                hypothetical_new_buy_usd="2.00",hypothetical_worst_case_total_cost_usd="0")
+    with pytest.raises(c.CashStop):
+        check(s,hypothetical_buy_symbol="BTC",hypothetical_new_buy_usd="2.00",
+              hypothetical_worst_case_total_cost_usd="0")
