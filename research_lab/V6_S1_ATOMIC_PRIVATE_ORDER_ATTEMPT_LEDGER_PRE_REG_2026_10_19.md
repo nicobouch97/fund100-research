@@ -1,0 +1,29 @@
+# Fund-100 V6-S1 — atomic write-ahead legacy SELL journal (NO BROKER)
+
+**19 October 2026, frozen before the first journal test. Research-only storage on one locally persistent, private volume.**
+
+We have an original, genuine [$2 Alpaca PAPER BUY and exact acquired-quantity SELL](https://github.com/nicobouch97/fund100-research/actions/runs/39269640353), genuine LIVE account source holding ACWI/EEM/XLE/XLV with no open orders, and a source-reviewed hard-locked V6-S1 fractional SELL adapter from [PR 74](https://github.com/nicobouch97/fund100-research/pull/74). The next missing control is **recording an attempt durably BEFORE any broker POST** so an uncertain response, partial fill, runner restart or client-ID lookup 404 cannot cause a blind repeat SELL.
+
+## Security model, exact guarantees and limitations
+
+- Dedicated **SQLite transactional write-ahead reservation engine**; no HTTP, broker credentials, network transport, GitHub credentials, workflow env releases or actual LIVE POST.
+- **Only synthetic fixture account binding and original SELL quantity** accepted during the current test phase; no actual customer quantity is stored in Git, Actions output or committed data. On a real private deployment use a private **persistent** encrypted volume; repository is PUBLIC.
+- File must be a regular SQLite file under a previously created **owner-private 0700 directory**, own mode **0600**, no symlinks. Strict `synchronous=FULL` + SQLite `BEGIN IMMEDIATE` transactions and unique order-ID/symbol indexes. This provides atomic same-database transaction semantics on a correctly configured local persistent filesystem; hardware failures, NFS durability, machine loss or runtime deletion are outside this guarantee.
+- Every original amount is represented in storage by `HMAC-SHA256(secret, migration|binding|symbol|normalized qty)`; no raw quantity, cash or account ID persisted. Key is supplied in memory, never persisted; losing this private key or the DB blocks recovery. A hash of a private brokerage quantity is still sensitive operational metadata; DB must never be added to public Git or attached to a public Actions artifact.
+- Fixed original migration ID and original allowed EXIT order `ACWI → EEM → XLV`; original held XLE is explicitly not for sale. Client IDs come from the distinct V6-S1 hard-locked candidate; no symbol substitutions, edits of reserved amount or reinitializing a previous order.
+- First atomic `reserve_next` creates `RESERVED_NO_RETRY`. **Even without a broker receipt, a second reservation for that same id NEVER yields executable authority**. Separately committing `mark_possible_post` sets `POST_MAY_HAVE_BEEN_SENT` BEFORE a future, independently reviewed external POST; if it crashes between transaction and POST, status remains uncertain and requires reconciliation. No code here ever submits a real order.
+- `observe_simulated_broker` recognizes only strictly matching synthesized broker receipts. Exact `filled_qty`, status filled and fresh synthetic flat position qualifies `SIM_FILLED_AND_FLAT_RECONCILED`. Partial/active, failure, unknown, mismatched, 404 or no-position-without-receipt never permits retry or next symbol. **This is NOT verified LIVE fill evidence.**
+- A change to the original account binding, migration key, quantity commitment or HMAC key stops. A missing/replaced database creates a *new* genesis that cannot be distinguished from the old one without an **independent externally anchored ledger continuity receipt**. The actual future LIVE release must demand a matching private persistent storage identity and durable off-host anchor. **This implementation does NOT yet provide that anchor or survive ephemeral separate GitHub Actions runners** and therefore cannot authorize real SELL.
+- Owner-private path, commit atomicity and unique order ID are defense-in-depth, not substitutes for authenticated broker source, real original position quantity proof, hosted storage, serialized LIVE worker, liquidity/slippage/tax suitability, HIGH 6%-daily/20%-peak/35%-vol checks, explicit $130.30 cap and approved separate LIVE order submission.
+- A potential broker 404 after `POST_MAY_HAVE_BEEN_SENT` is **UNRESOLVED**, not proof that an order never existed.
+
+## Frozen negative tests
+
+1. First ACWI reserve success; same client ID/quantity reservation repeat denied, changed qty or account/key mismatch fails. EEM cannot reserve before ACWI simulated fully-filled and position-flat. XLE and buys rejected.
+2. Crash/reopen before/after possible-POST boundary preserves original committed state. Broker lookup missing, 404, ambiguous or partial order remains no-retry.
+3. Only exact fully-filled original shares + synthetic position absent marks synthetic complete. Wrong symbol/side/order type/TIF, overfill, missing filled timestamp, canceled/partial/unknown/filled residual and mutated original quantity refuse to progress.
+4. Two separate SQLite connections compete for same original reservation: at most one initial successful reservation, never an executable duplicate.
+5. Reject symlink, group-readable file, public/world-writable parent, invalid HMAC key/account SHA, unencrypted/non-private directory, noncanonical qty.
+6. No mutating Alpaca HTTP implementation or LIVE credential env; original Fund-100 broker kill ENGAGED, main operator STOPPED, HIGH risk and original $130.30 pilot cap unchanged.
+
+**Acceptance is strictly a working locally durable _OFFLINE_ idempotency primitive, not a LIVE execution release**. To deploy with GitHub Actions later we need a separately reviewed off-run persistent storage + continuity anchor and audited broker GET-by-client-ID and position reconciliation, with no leakage of financial quantities into the public repository or logs. The user does not need weeks of PAPER profitability tests for this.
