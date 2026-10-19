@@ -1,0 +1,98 @@
+name: Fund-100 V6-S1 Actual LIVE Risk History (FIVE GET ONLY)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_live_risk_history_getonly_v1_0.py"
+      - "test_fund100_v6_s1_live_risk_history_getonly_v1_0.py"
+      - "research_lab/V6_S1_PRIVATE_AUTHENTIC_LIVE_RISK_HISTORY_INTAKE_2026_10_19.md"
+      - ".github/workflows/fund100-v6-s1-live-risk-history-getonly.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v6-s1-live-risk-history-getonly.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-s1-private-risk-getonly
+  cancel-in-progress: false
+
+jobs:
+  strict-privacy-risk-fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing no-orders portfolio-risk test requirements
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Original identity, raw daily history, no misclaimed settled cash tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_s1_live_risk_history_getonly_v1_0.py
+          python -m pytest -q test_fund100_v6_real_live_getonly_transition_readiness_v1_0.py
+          python -m pytest -q test_fund100_live_portfolio_risk_v1_0.py
+      - name: Prove no V6 risk observer order capability
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          s=Path("fund100_v6_s1_live_risk_history_getonly_v1_0.py").read_text()
+          for forbidden in ('submit_authorized_order_batch(', 'live_request(',
+                            'requests.post(', 'method="POST"', 'method="DELETE"',
+                            'httpx.post(', '/v2/orders:by_client_order_id'):
+              assert forbidden not in s, forbidden
+          assert 'live.get_json(' in s
+          print('GET ONLY, original LIVE STOP, NO brokerage execution.')
+          PY
+
+  authentic-live-private-risk-read:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: strict-privacy-risk-fixtures
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 8
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify strict source and all read-only call boundaries before broker authentication
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          import fund100_v6_s1_live_risk_history_getonly_v1_0 as v
+          assert len(v.PATHS)==5
+          assert v.PATHS[-1]=='/v2/account/portfolio/history'
+          assert v.HISTORY_PARAMS=={'period':'1M','timeframe':'1D'}
+          tree=ast.parse(Path(v.__file__).read_text())
+          for n in ast.walk(tree):
+            if isinstance(n,ast.FunctionDef):
+              assert n.name not in {'post','put','delete','submit_order','place_order'}
+          assert not hasattr(v,'release_transport')
+          print('Five GET endpoints only, no write transport or broker artifacts.')
+          PY
+      - name: Source-bound original LIVE account plus one-month broker raw risk history GET
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_live_risk_history_getonly_v1_0.py
+      - name: Preserve disabled LIVE operator after source observations
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'LIVE research read completed. Original STOP unchanged; zero orders.'
