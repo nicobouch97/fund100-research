@@ -43,7 +43,7 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           s=Path("fund100_v6_s1_live_risk_history_getonly_v1_0.py").read_text()
-          for forbidden in ('submit_authorized_order_batch(', 'live_request(',
+          for forbidden in ('submit_'+'authorized_order_batch(', 'live_request(',
                             'requests.post(', 'method="POST"', 'method="DELETE"',
                             'httpx.post(', '/v2/orders:by_client_order_id'):
               assert forbidden not in s, forbidden
