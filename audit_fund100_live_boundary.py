@@ -202,6 +202,12 @@ ALLOWED_LIVE_CREDENTIAL_SCRIPTS = {
 # Git-blob digest pins each reviewed implementation; any code change
 # removes credential eligibility until independently re-reviewed.
 PINNED_LIVE_CREDENTIAL_JOBS = {
+    # GitHub Free PRIVATE read-only cutover: a uniquely scoped 4-GET
+    # verifier, NOT the old environment-backed production writer.
+    (
+        ".github/workflows/fund100-free-private-live-getonly.yml",
+        "fund100_v6_real_live_getonly_transition_readiness_v1_0.py",
+    ): "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
     # V6 source-reviewed CURRENT-account inspector: only 4 GET
     # requests; code is Git-blob pinned and workflow main-only.
     (
@@ -270,6 +276,78 @@ def git_blob_digest(path: Path) -> str:
     return hashlib.sha1(header + content).hexdigest()
 
 
+PRIVATE_FREE_GETONLY_WORKFLOW = (
+    ".github/workflows/fund100-free-private-live-getonly.yml"
+)
+PRIVATE_FREE_GETONLY_SCRIPT = (
+    "fund100_v6_real_live_getonly_transition_readiness_v1_0.py"
+)
+
+
+def approved_free_private_getonly_script(
+    workflow: str,
+    script: str,
+    source: str,
+) -> bool:
+    """Separate highly restricted GitHub Free PRIVATE read-only exception.
+
+    No environment reviewer is available on GitHub Free PRIVATE.
+    This authorizes ONLY one manually dispatched main/private 4-GET
+    reader and new, isolated repo-level secret NAMES, never LIVE orders.
+    """
+    if workflow != PRIVATE_FREE_GETONLY_WORKFLOW or script != PRIVATE_FREE_GETONLY_SCRIPT:
+        return False
+    # The normal environment-backed LIVE writer rule is intentionally
+    # NOT weakened. Public repositories are never allowed to access
+    # the new credentials through this workflow.
+    required = (
+        "workflow_dispatch:",
+        "if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.event.repository.private == true && vars.FUND100_PRIVATE_FREE_READONLY_ENABLED == 'YES'",
+        "FUND100_BROKER_KILL_SWITCH: ENGAGED",
+        "FUND100_RISK_LEVEL: HIGH",
+        "FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE",
+        "GITHUB_TOKEN: ${{ github.token }}",
+        "GITHUB_REPOSITORY: ${{ github.repository }}",
+        "ALPACA_LIVE_KEY: ${{ secrets.FUND100_PRIVATE_LIVE_READ_KEY }}",
+        "ALPACA_LIVE_SECRET: ${{ secrets.FUND100_PRIVATE_LIVE_READ_SECRET }}",
+        "permissions:\\n  contents: read",
+        "needs: offline-private-secrets-policy",
+        "python audit_fund100_free_private_migration_v1_0.py",
+    )
+    if any(value not in source for value in required):
+        return False
+    if (
+        "environment:" in source
+        or "schedule:" in source
+        or "FUND100_LIVE_WRITE_MODE: ENABLED" in source
+        or "secrets.ALPACA_LIVE_KEY" in source
+        or "secrets.ALPACA_LIVE_SECRET" in source
+        or "pull_request_target:" in source
+        or "workflow_run:" in source
+        or "secrets: inherit" in source
+    ):
+        return False
+    # Source immutability before secret use: this FOUR-GET routine and
+    # all direct account-control, broker and strategy-read dependencies.
+    dependencies = {
+        PRIVATE_FREE_GETONLY_SCRIPT:
+            "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
+        "fund100_alpaca_live_readonly_smoke.py":
+            "cf871f849a140c7b1db29fd991c8e00da31e1974",
+        "fund100_live_operator_control_v1_0.py":
+            PINNED_PRODUCTION_OPERATOR_MODULE,
+        "fund100_v6_brokerless_transition_preview_v1_0.py":
+            "a0b4efc660f30395b6cdda104f0eddf63b8a6dd9",
+        "fund100_broker_safety.py":
+            "871908c2027f1f5c8917f3138f95f1b1fea73816",
+    }
+    for name, digest in dependencies.items():
+        source_path = ROOT / name
+        if not source_path.is_file() or git_blob_digest(source_path) != digest:
+            return False
+    return True
+
+
 def approved_scoped_live_script(
     workflow: str,
     script: str,
@@ -279,7 +357,13 @@ def approved_scoped_live_script(
     if expected is None:
         return False
 
-    # Credentials must come only from the isolated main-only environment.
+    # The GitHub Free PRIVATE check intentionally does NOT claim
+    # environment reviewer protection. It has a separate exact allowlist,
+    # private-only manual trigger, unique secret names, and source pins.
+    if workflow == PRIVATE_FREE_GETONLY_WORKFLOW:
+        return approved_free_private_getonly_script(workflow, script, source)
+
+    # All existing LIVE jobs must still use the original environment.
     if "environment: fund100-live-broker" not in source:
         return False
     if workflow == ".github/workflows/fund100-live-emergency-stop.yml":
@@ -1083,6 +1167,12 @@ def audit_workflows(
             in source
             or
             "ALPACA_LIVE_SECRET"
+            in source
+            or
+            "FUND100_PRIVATE_LIVE_READ_KEY"
+            in source
+            or
+            "FUND100_PRIVATE_LIVE_READ_SECRET"
             in source
         )
 
