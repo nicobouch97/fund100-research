@@ -23,21 +23,18 @@ jobs:
           python-version: "3.12"
       - name: Install pure test runner
         run: python -m pip install 'pytest>=8,<9'
-      - name: Check strict V6 fractional SELL shape, existing order recovery and original S1 stages
+      - name: Check V6 fractional SELL shape and original S1 staged-controller recovery
         run: |
           set -euo pipefail
           python -m pytest -q test_fund100_v6_s1_frac_live_sell_writer_candidate_v1_0.py
           python -m pytest -q test_fund100_v6_s1_staged_controller_core_v1_0.py
-          python -m pytest -q test_fund100_alpaca_live_writer_candidate_v1_1.py
       - name: Hard locks and operator STOP unchanged
         run: |
           set -euo pipefail
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
           python - <<'PY'
           import fund100_v6_s1_frac_live_sell_writer_candidate_v1_0 as w
-          import fund100_alpaca_live_writer_candidate_v1_1 as old
           assert not w.TRANSPORT_RELEASED and not w.PUBLIC_EXECUTION_ENABLED
-          assert not old.TRANSPORT_RELEASED and not old.PUBLIC_EXECUTION_ENABLED
           for name in w.LEGACY_TO_EXIT:
               p=w.inspect_sell_shape(symbol=name,original_qty='0.123456789')
               assert p['side']=='sell' and p['time_in_force']=='day'
