@@ -44,7 +44,8 @@ def utc(value):
     return d
 
 def check(*, snapshot:dict, now_utc:str, hypothetical_new_buy_usd:str|None=None,
-          hypothetical_worst_case_total_cost_usd:str|None=None)->dict:
+          hypothetical_worst_case_total_cost_usd:str|None=None,
+          hypothetical_buy_symbol:str|None=None)->dict:
     original=s1.source_controls()
     if (original.get("status")!="PROPOSED_NOT_LIVE"
         or original.get("target_weights")!={"XLK":"0.475","XLE":"0.285","IWM":"0.190"}
@@ -98,8 +99,10 @@ def check(*, snapshot:dict, now_utc:str, hypothetical_new_buy_usd:str|None=None,
     stage=("NO_NEW_BUYS_HOLD_AND_RECONCILE" if reasons else
            "CASH_FRACTION_CURRENTLY_ABOVE_FLOOR_NO_ACTION")
     hypothetical_screen=None
-    if hypothetical_new_buy_usd is not None or hypothetical_worst_case_total_cost_usd is not None:
-        if hypothetical_new_buy_usd is None or hypothetical_worst_case_total_cost_usd is None:
+    if (hypothetical_new_buy_usd is not None or hypothetical_worst_case_total_cost_usd is not None
+        or hypothetical_buy_symbol is not None):
+        if (hypothetical_new_buy_usd is None or hypothetical_worst_case_total_cost_usd is None
+            or hypothetical_buy_symbol not in S1_ETFS):
             raise CashStop("Both hypothetical buy and conservative ALL-IN cost required")
         buy=decimal(hypothetical_new_buy_usd,"hypothetical notional",allow_zero=False)
         friction=decimal(hypothetical_worst_case_total_cost_usd,"all-in execution cost")
@@ -113,6 +116,8 @@ def check(*, snapshot:dict, now_utc:str, hypothetical_new_buy_usd:str|None=None,
                 stage="BLOCK_HYPOTHETICAL_BUY_RESERVED_CASH"
             elif equity<=friction or (gross+buy)/(equity-friction)>TARGET_GROSS:
                 stage="BLOCK_HYPOTHETICAL_BUY_GROSS_EXPOSURE"
+            elif (marks.get(hypothetical_buy_symbol,Decimal(0))+buy)/(equity-friction)>MAX_SYMBOL:
+                stage="BLOCK_HYPOTHETICAL_BUY_SINGLE_SYMBOL_CONCENTRATION"
             elif gross+buy>CAP:
                 # CAUTION: Market values do not prove cumulative cost basis.
                 # This is an extra conservative mark-based screen only.
