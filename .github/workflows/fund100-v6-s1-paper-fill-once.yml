@@ -1,5 +1,8 @@
-name: Fund-100 V6-S1 One-Time $2 PAPER Fractional BUY/SELL (NO LIVE)
+name: Fund-100 V6-S1 Completed PAPER Proof (OFFLINE REGRESSION ONLY)
 
+# The genuine one-time paper round trip already PASSED in run 39269640353.
+# The annual cron caused a second, blocked rehearsal on 2026-10-19.
+# Never automatically submit or re-submit another paper order.
 on:
   pull_request:
     paths:
@@ -7,86 +10,39 @@ on:
       - "test_fund100_v6_s1_one_time_paper_fill_probe_v1_0.py"
       - "research_lab/V6_S1_2USD_PAPER_ORDER_MECHANICS_PROTOCOL_2026_10_19.md"
       - ".github/workflows/fund100-v6-s1-paper-fill-once.yml"
-  # Exactly one intended market session. Python rechecks 2026-10-19
-  # and will NOT permit the same annual cron in any future year.
-  schedule:
-    - cron: "43 13 19 10 *"
-  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: fund100-alpaca-paper-execution
-  cancel-in-progress: false
-
 jobs:
-  s1-rehearsal:
+  archived-one-time-proof-offline-fixtures:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
-      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
-      FUND100_S1_PAPER_FILL_ARM: S1_ONLY_2USD_ONCE
-      GITHUB_TOKEN: ${{ github.token }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install offline tests only
+      - name: Install offline regression runner
         run: python -m pip install 'pytest>=8,<9'
-      - name: Reject duplicates, bad paper day or risk arm before real paper POST
+      - name: Verify original one-time fractional PAPER implementation without broker requests
         run: |
           set -euo pipefail
           python -m pytest -q test_fund100_v6_s1_one_time_paper_fill_probe_v1_0.py
           python -m pytest -q test_fund100_v6_s1_concentrated_risk_and_paper_asset_v1_0.py
-      - name: Prove this run cannot contact LIVE broker credentials or endpoint
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      - name: One-time PAPER credentials and broker orders are permanently absent from this workflow
         run: |
           set -euo pipefail
-          test "${GITHUB_REF}" = "refs/heads/main"
-          test "${GITHUB_REPOSITORY}" = "nicobouch97/fund100-research"
-          test "$(date -u +%F)" = "2026-10-19"
-          test "${GITHUB_RUN_ATTEMPT}" = "1"
           python - <<'PY'
           from pathlib import Path
-          import fund100_alpaca_paper_orchestrator_connected_v1_0 as paper
-          import fund100_v6_s1_one_time_paper_fill_probe_v1_0 as s
-          assert paper.PAPER_BASE_URL=="https://paper-api.alpaca.markets"
-          assert s.NOTIONAL==__import__("decimal").Decimal("2.00")
-          assert s.TEST_DATE=="2026-10-19"
-          assert set(s.SYMBOLS)=={"XLK","XLE","IWM"}
-          assert '"live_authorized"' not in s.__doc__
-          print("S1 PAPER transport locked, $2 maximum BUY, no LIVE credentials.")
+          flow=Path(".github/workflows/fund100-v6-s1-paper-fill-once.yml").read_text()
+          lines=flow.splitlines()
+          assert not any(line.strip().startswith('schedule:') for line in lines)
+          assert not any(line.strip().startswith('workflow_dispatch:') for line in lines)
+          key_name='ALPACA_'+'PAPER_KEY:'
+          secret_name='ALPACA_'+'PAPER_SECRET:'
+          assert not any(line.strip().startswith((key_name,secret_name)) for line in lines)
+          full_probe='python '+'fund100_v6_s1_one_time_paper_fill_probe_v1_0.py'
+          assert not any(line.strip().startswith(full_probe) for line in lines)
+          print("One-time PAPER execution retired; archived tests ONLY. ZERO broker orders.")
           PY
-      - name: Execute ONE genuine $2 PAPER BUY then exact-qty SELL in open US session
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        env:
-          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
-          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
-        run: |
-          set -euo pipefail
-          python fund100_v6_s1_one_time_paper_fill_probe_v1_0.py \
-            > /tmp/fund100-v6-s1-one-time-paper-result.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          r=json.loads(Path("/tmp/fund100-v6-s1-one-time-paper-result.json").read_text())
-          assert r["schema"]=="FUND100_V6_S1_ACTUAL_2USD_PAPER_ROUND_TRIP_V1"
-          assert r["status"]=="PASS" and r["mode"]=="REAL_ALPACA_PAPER_ONLY"
-          assert r["symbol"] in {"XLK","XLE","IWM"}
-          assert r["paper_buy_filled"] and r["paper_sell_filled"]
-          assert r["all_starting_paper_positions_preserved"]
-          assert r["paper_orders_submitted"]==2 and r["live_orders_submitted"]==0
-          assert not r["live_credentials_present"]
-          assert not r["new_strategy_live_authorized"]
-          print("S1 PAPER buy+sell exact fractional fill: PASS; baseline holdings restored.")
-          print("PAPER ONLY. ZERO LIVE orders, ZERO live permissions changed.")
-          PY
-      - name: No live activation and original STOP unchanged
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        run: |
-          set -euo pipefail
-          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
-          echo "Original V5 LIVE STOP still on. No LIVE broker, deposit or liquidation."
