@@ -1,0 +1,53 @@
+name: Fund-100 V6-S1 Private Atomic Order Attempt Journal (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_private_order_attempt_journal_v1_0.py"
+      - "test_fund100_v6_s1_private_order_attempt_journal_v1_0.py"
+      - "research_lab/V6_S1_ATOMIC_PRIVATE_ORDER_ATTEMPT_LEDGER_PRE_REG_2026_10_19.md"
+      - ".gitignore"
+      - ".github/workflows/fund100-v6-s1-private-attempt-journal-offline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  strict-private-sqlite-attempt-journal-research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install original offline test runner
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Test cross-Python-process durable journal, concurrent reservations and broker-status recovery
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_s1_private_order_attempt_journal_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_frac_live_sell_writer_candidate_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_staged_controller_core_v1_0.py
+      - name: Ledger is OFFLINE, actual funded account remains STOPPED
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          from pathlib import Path
+          import fund100_v6_s1_private_order_attempt_journal_v1_0 as journal
+          import fund100_v6_s1_frac_live_sell_writer_candidate_v1_0 as candidate
+          s=Path(journal.__file__).read_text()
+          assert journal.MODE=='SYNTHETIC_BROKER_EVENTS_ONLY'
+          assert not journal.OFFLINE_RELEASED
+          assert not candidate.TRANSPORT_RELEASED
+          assert not candidate.PUBLIC_EXECUTION_ENABLED
+          assert "urlopen(" not in s
+          assert 'method="POST"' not in s
+          assert "ALPACA_"+"LIVE_KEY" not in s
+          ignore=Path('.gitignore').read_text()
+          assert '*.sqlite' in ignore and '*.sqlite-journal' in ignore
+          print('Local-only private SQLite attempt journal, no broker requests or LIVE execution.')
+          print('Temporary GitHub Actions storage IS NOT approved production persistence.')
+          PY
