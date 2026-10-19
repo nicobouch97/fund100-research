@@ -150,7 +150,7 @@ def assess(*,snap:dict,now_utc:str)->dict:
     if daily<=Decimal("-0.06") or drawdown<=Decimal("-0.20") or vol>Decimal("0.35"):
         return blocked("BLOCKED_ACCOUNT_RISK_STOP",holdings=holdings,
                        prior_orders=open_orders)
-    if any(x["market"]/equity>MAX_SYMBOL for x in holdings.values()):
+    if any(x["market"]/equity>MAX_SYMBOL for symbol,x in holdings.items() if symbol not in OLD):
         return blocked("BLOCKED_SYMBOL_CONCENTRATION",holdings=holdings,prior_orders=open_orders)
     if gross/equity>MAX_GROSS and not set(holdings)&set(OLD):
         return blocked("BLOCKED_TOTAL_EXPOSURE",holdings=holdings,prior_orders=open_orders)
