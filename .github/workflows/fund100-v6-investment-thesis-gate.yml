@@ -37,7 +37,7 @@ jobs:
           from pathlib import Path
           p=Path('fund100_v6_investment_thesis_gate_v1_0.py')
           txt=p.read_text()
-          for forbidden in ('ALPACA_LIVE_KEY','ALPACA_PAPER_KEY','/v2/orders','requests.post(','httpx.post('):
+          for forbidden in ('ALPACA_'+'LIVE_KEY','ALPACA_'+'PAPER_KEY','/v2/orders','requests.post(','httpx.post('):
               assert forbidden not in txt,forbidden
           tree=ast.parse(txt)
           assert not any(isinstance(n,ast.ImportFrom) and n.module and n.module.startswith('fund100_alpaca')
