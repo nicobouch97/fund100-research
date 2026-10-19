@@ -1,0 +1,53 @@
+name: Fund-100 V6-S1 Staged Controller Restart and Settlement (FAKE BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_staged_controller_core_v1_0.py"
+      - "test_fund100_v6_s1_staged_controller_core_v1_0.py"
+      - "research_lab/V6_S1_CONTROLLER_TWO_PHASE_RESTART_PROTOCOL_2026_10_19.md"
+      - ".github/workflows/fund100-v6-s1-staged-controller-fake.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staged-3-sells-cash-3-buys-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install only testing dependency
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Test restart, idempotence, original XLE preservation and T+1 gates
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_s1_staged_controller_core_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_low_churn_migration_v2_0.py
+          python -m pytest -q test_fund100_v6_s1_cash_at_order_no_churn_v1_0.py
+      - name: NO broker network, no LIVE user secrets or release
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          import fund100_v6_s1_staged_controller_core_v1_0 as c
+          assert not c.TRANSPORT_RELEASED and not c.PUBLIC_EXECUTION_ENABLED
+          s=Path("fund100_v6_s1_staged_controller_core_v1_0.py").read_text()
+          tree=ast.parse(s)
+          network={"requests","httpx","socket","urllib.request","subprocess","os"}
+          mods=set()
+          for n in ast.walk(tree):
+              if isinstance(n,ast.Import):
+                  mods.update(a.name for a in n.names)
+              if isinstance(n,ast.ImportFrom) and n.module:
+                  mods.add(n.module)
+          assert not mods & network
+          assert "SIM-v6s1-" in s
+          print("Offline fake-broker stage controller, original operator STOPPED, NO LIVE execution.")
+          PY
