@@ -169,6 +169,9 @@ def test_observation_clock_and_points_are_bounded():
 def test_all_external_contributions_must_have_an_investable_denominator():
     d=fixture()
     d["nontrade_activities"]=[event(kind="CSW",dollars="-300")]
+    # Almost the entire interval remains after the withdrawal, so its
+    # Modified Dietz capital weight exceeds the $100 opening balance.
+    d["nontrade_activities"][0]["transaction_time"]=(BASE+timedelta(seconds=1)).isoformat().replace("+00:00","Z")
     with pytest.raises(f.FundingRiskStop,match="Nonpositive invested"):check(d)
 
 def test_account_risk_estimator_has_no_broker_or_environment_access():
