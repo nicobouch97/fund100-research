@@ -50,7 +50,9 @@ def _qty(value)->Decimal:
     try:v=Decimal(str(value))
     except (InvalidOperation,ValueError) as exc:
         raise V6SellStop("Invalid original fractional qty") from exc
-    if not v.is_finite() or v<=0 or v.as_tuple().exponent < -MAX_FRAC_PLACES:
+    if (not v.is_finite() or v<=0 or v>Decimal("1000000")
+        or v.as_tuple().exponent < -MAX_FRAC_PLACES
+        or (isinstance(value,str) and ("e" in value.lower()))):
         raise V6SellStop("Fractional qty must be positive and <=9 decimal places")
     return v
 
