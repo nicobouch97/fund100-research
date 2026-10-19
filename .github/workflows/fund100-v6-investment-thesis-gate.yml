@@ -1,0 +1,51 @@
+name: Fund-100 V6 Investment Thesis Source and Risk Gate (OFFLINE)
+
+on:
+  pull_request:
+    paths:
+      - "research_lab/V6_INVESTMENT_PHILOSOPHY_THESIS_REGISTER_2026_10_19.json"
+      - "research_lab/V6_INVESTOR_INSPIRED_STRATEGY_DESIGN_PROTOCOL_2026_10_19.md"
+      - "fund100_v6_investment_thesis_gate_v1_0.py"
+      - "test_fund100_v6_investment_thesis_gate_v1_0.py"
+      - ".github/workflows/fund100-v6-investment-thesis-gate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reject-unfounded-research-promotion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install no-network-test dependencies
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Test source completeness, rejected-model preservation and broker STOP
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_investment_thesis_gate_v1_0.py
+      - name: Audit all seven distinct hypotheses without broker secrets
+        run: |
+          set -euo pipefail
+          python fund100_v6_investment_thesis_gate_v1_0.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('fund100_v6_investment_thesis_gate_v1_0.py')
+          txt=p.read_text()
+          for forbidden in ('ALPACA_LIVE_KEY','ALPACA_PAPER_KEY','/v2/orders','requests.post(','httpx.post('):
+              assert forbidden not in txt,forbidden
+          tree=ast.parse(txt)
+          assert not any(isinstance(n,ast.ImportFrom) and n.module and n.module.startswith('fund100_alpaca')
+              for n in tree.body)
+          print('No credentials, broker operations, or LIVE authorisations.')
+          PY
+      - name: Original operator STOP remains engaged
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo "OFFLINE ONLY. Existing four LIVE holdings and $130.30 original capital remain unaffected."
