@@ -12,6 +12,7 @@ on:
     paths:
       - "fund100_v6_real_live_getonly_transition_readiness_v1_0.py"
       - ".github/workflows/fund100-v6-real-live-getonly-transition.yml"
+      - "research_lab/results/V6_S1_ACTUAL_PAPER_FRACTIONAL_BUY_SELL_PASS_2026_10_19.md"
   workflow_dispatch:
 
 permissions:
