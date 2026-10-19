@@ -1,0 +1,91 @@
+name: Fund-100 V6-S1 Concentrated Risk + Actual Alpaca PAPER Asset GET (NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_concentrated_risk_and_paper_asset_v1_0.py"
+      - "test_fund100_v6_s1_concentrated_risk_and_paper_asset_v1_0.py"
+      - "research_lab/v6_s1_high_risk_micro_pilot_proposed_manifest.json"
+      - "research_lab/V6_S1_MICROACCOUNT_TRANSITION_CONTRACT_2026_10_19.md"
+      - ".github/workflows/fund100-v6-s1-paper-asset-readiness.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v6_s1_concentrated_risk_and_paper_asset_v1_0.py"
+      - "research_lab/v6_s1_high_risk_micro_pilot_proposed_manifest.json"
+      - ".github/workflows/fund100-v6-s1-paper-asset-readiness.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-s1-paper-asset-getonly
+  cancel-in-progress: false
+
+jobs:
+  risk-and-notional-tests:
+    name: Immutable HIGH risk contract and simulated microaccount arithmetic
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify proposed contract, original V5 STOP and no brokerage orders
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_s1_concentrated_risk_and_paper_asset_v1_0.py
+          python - <<'PY'
+          import fund100_v6_s1_concentrated_risk_and_paper_asset_v1_0 as s
+          from decimal import Decimal
+          m=s.source_controls()
+          assert m["risk_tier"]=="HIGH"
+          assert m["original_trial_max_capital_usd"]=="130.30"
+          assert m["cash_reserve_fraction"]=="0.05"
+          assert sum(s.TARGET.values())==Decimal(".95")
+          assert m["live_order_execution_released"] is False
+          print("V6-S1: proposed, not live, three original-whitelist ETFs, 5% theoretical buffer.")
+          PY
+
+  genuine-paper-asset-get-only:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: risk-and-notional-tests
+    name: Authenticate existing paper connection and verify XLK/XLE/IWM fractional eligibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Offline command-path integrity before PAPER credential injection
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          s=Path("fund100_v6_s1_concentrated_risk_and_paper_asset_v1_0.py").read_text()
+          assert "paper.get_json(" in s
+          assert "paper.place_order(" not in s
+          assert "paper.submit_order(" not in s
+          assert "requests.post(" not in s
+          assert "urlopen(" not in s
+          assert "method=\"POST\"" not in s
+          print("No direct order submitter; actual Alpaca PAPER GET helper only.")
+          PY
+      - name: Read PAPER assets only; live kill switch must remain ENGAGED
+        env:
+          ALPACA_PAPER_KEY: ${{ secrets.ALPACA_PAPER_KEY }}
+          ALPACA_PAPER_SECRET: ${{ secrets.ALPACA_PAPER_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_concentrated_risk_and_paper_asset_v1_0.py
+      - name: No live risk manifest, order, sell or deposit touched
+        run: |
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo "V6-S1 fractional PAPER asset support checked. NO PAPER OR LIVE ORDERS."

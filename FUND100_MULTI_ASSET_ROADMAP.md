@@ -2170,3 +2170,49 @@ released. A more aggressive factor portfolio
 is not automatically better than passive
 ACWI; nor does another failed rule give permission
 to sell the four current LIVE ETFs.
+
+
+## 19 October 2026 — S1 concentrated risk-contract + actual PAPER ETF eligibility, no profit-wait gate
+
+The operator-approved faster approach is now targeted at **historical economic
+plausibility and short PAPER order MECHANICS**, not months of forward PAPER
+returns. Original L1 20-session volatility overlay failed its own
+same-underlyings attribution; the attractive historical result came
+from the fixed 50% XLK / 30% XLE / 20% IWM **sector risk exposures**,
+not demonstrated volatility timing alpha. This underexplored fixed
+basket is an aggressive **unproven beta/factor experiment**, not an
+established return-seeking proprietary bot.
+
+Propose a broker-realistic **S1 HIGH concentrated pilot** with
+original pilot capital ceiling USD130.30, **95% gross invested** /
+**5% minimum cash reserve** and notional weights XLK 47.5%,
+XLE 28.5%, IWM 19%. This 5% cash buffer means S1's own CAGR
+has NOT been historically measured; do not promote the original
+100%-invested fixed basket's 17.89% exploratory CAGR as
+S1 return evidence. Existing V5 HIGH 25% sector position cap
+is unaffected. The distinct proposed S1 contract requires
+a newly versioned 50% max instrument policy, 6% daily loss
+and 20% drawdown / 35% annual vol stops, no margin or
+new deposits, and independently tested actual LIVE release
+before any order. Original STOP and kill switch preserved.
+
+Implementation:
+`research_lab/v6_s1_high_risk_micro_pilot_proposed_manifest.json`,
+`fund100_v6_s1_concentrated_risk_and_paper_asset_v1_0.py`,
+`test_fund100_v6_s1_concentrated_risk_and_paper_asset_v1_0.py`,
+`research_lab/V6_S1_MICROACCOUNT_TRANSITION_CONTRACT_2026_10_19.md`,
+`.github/workflows/fund100-v6-s1-paper-asset-readiness.yml`.
+
+After PR acceptance, authentic Alpaca PAPER GET-only asset requests
+for all three ETFs run in the pre-existing paper environment to
+verify `active`, `tradable`, `fractionable`. That is broker
+eligibility investigation, NOT completed S1 PAPER BUY/SELL,
+not REAL LIVE asset confirmation, not a release to trade.
+Offline risk contract arithmetic only simulates
+**$61.89 XLK, $37.13 XLE, $24.75 IWM, $6.53 cash**
+if the full $130.30 were already available as settled CASH;
+**currently it's not** because four original V5 ETFs remain held.
+Any future transition must verify settled cash separately,
+prevent V5/V6 concurrent controllers and honor all original
+broker STOPs. Independent paper order-mechanics check next;
+no profitable paper waiting period.
