@@ -1,0 +1,50 @@
+name: Fund-100 V6-S1 Funding-Adjusted Risk Research (SYNTHETIC ONLY)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_funding_adjusted_risk_dietz_v1_0.py"
+      - "test_fund100_v6_s1_funding_adjusted_risk_dietz_v1_0.py"
+      - "research_lab/V6_S1_FLOW_ADJUSTED_ACCOUNT_RISK_PRE_REG_2026_10_19.md"
+      - ".github/workflows/fund100-v6-s1-flow-adjusted-risk-offline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  funded-account-estimate-no-broker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install synthetic testing only
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Synthetic modified-Dietz accounting and stop controls
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_s1_funding_adjusted_risk_dietz_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_staged_controller_core_v1_0.py
+      - name: Offline source; original LIVE STOP remains active
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          import fund100_v6_s1_funding_adjusted_risk_dietz_v1_0 as f
+          assert f.MODE=="INVENTED_EQUITY_AND_ACCOUNT_ACTIVITY_FIXTURES_ONLY"
+          s=Path(f.__file__).read_text()
+          roots=set()
+          for n in ast.walk(ast.parse(s)):
+            if isinstance(n,ast.Import):
+              roots.update(x.name.split('.')[0] for x in n.names)
+            if isinstance(n,ast.ImportFrom) and n.module:
+              roots.add(n.module.split('.')[0])
+          assert not roots & {'urllib','requests','httpx','socket','os','subprocess'}
+          print('Funding-aware risk: OFFLINE diagnostic, ZERO broker orders or credentials.')
+          PY
