@@ -1,0 +1,81 @@
+name: Fund-100 GitHub Free PRIVATE LIVE Account GET ONLY (NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fund100-free-private-live-getonly.yml"
+      - "audit_fund100_live_boundary.py"
+      - "audit_fund100_free_private_migration_v1_0.py"
+      - "test_fund100_free_private_migration_v1_0.py"
+      - "research_lab/GITHUB_FREE_PRIVATE_MIGRATION_RUNBOOK_2026_10_19.md"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-free-private-live-getonly.yml"
+      - "audit_fund100_live_boundary.py"
+      - "audit_fund100_free_private_migration_v1_0.py"
+      - "test_fund100_free_private_migration_v1_0.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-free-private-getonly-exclusive
+  cancel-in-progress: false
+
+jobs:
+  offline-private-secrets-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install source audit test dependency
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Assert future PRIVATE secrets only referenced in reviewed read-only workflow
+        run: |
+          set -euo pipefail
+          python audit_fund100_free_private_migration_v1_0.py
+          python -m pytest -q test_fund100_free_private_migration_v1_0.py
+          python -m pytest -q test_fund100_v6_real_live_getonly_transition_readiness_v1_0.py
+      - name: Original account stop latch, no orders, no secret values in sources
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'PRIVATE GitHub Free LIVE GET source has no public-mode credentials or broker order writer.'
+
+  private-only-actual-live-four-get:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.event.repository.private == true && vars.FUND100_PRIVATE_FREE_READONLY_ENABLED == 'YES'
+    needs: offline-private-secrets-policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_RISK_LEVEL: HIGH
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+      GITHUB_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Independently verify privacy, main-only and pinned GET source before broker keys
+        run: |
+          set -euo pipefail
+          python audit_fund100_free_private_migration_v1_0.py
+      - name: Authenticate private repository LIVE account (exact four GET, NO orders)
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.FUND100_PRIVATE_LIVE_READ_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.FUND100_PRIVATE_LIVE_READ_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_real_live_getonly_transition_readiness_v1_0.py
+      - name: Verify original operator STOP remains active
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'GitHub Free PRIVATE four-GET source check completed. ZERO LIVE orders.'
