@@ -1,0 +1,85 @@
+{
+  "schema": "FUND100_V6_S1_OVERLAP_AWARE_CASH_AT_ORDER_TRANSITION_V2",
+  "date": "2026-10-19",
+  "status": "DRAFT_UNRELEASED_NO_BROKER_ORDERS",
+  "strategy_id": "V6_S1_FIXED_SECTOR_RISK_PREMIUM",
+  "paper_executable_mechanics": {
+    "workflow_run_id": 39269640353,
+    "workflow_run_event": "workflow_dispatch",
+    "workflow_run_attempt": 1,
+    "real_paper_fills_verified": true,
+    "paper_baseline_restored": true,
+    "live_orders_during_rehearsal": 0
+  },
+  "fresh_original_live_get_only": {
+    "workflow_run_id": 39272813574,
+    "exact_original_four_held": true,
+    "open_orders": 0,
+    "broker_get_requests": 4,
+    "broker_orders_submitted": 0,
+    "actual_quantities_and_balances_private": true
+  },
+  "original_trial_capital_limit_usd": "130.30",
+  "risk_level": "HIGH",
+  "leverage_allowed": false,
+  "shorts_allowed": false,
+  "crypto_allowed": false,
+  "options_futures_fx_allowed": false,
+  "new_funding_allowed": false,
+  "whole_account_targets": {
+    "XLK": "0.475",
+    "XLE": "0.285",
+    "IWM": "0.190"
+  },
+  "new_cash_rule": {
+    "description": "5% minimum current account equity cash immediately AFTER EACH NEW BUY, net of conservative all-in fees",
+    "order_time_cash_floor": "0.05",
+    "at_entry_target_cash": "0.05",
+    "continuous_minimum_claim": false,
+    "automatic_forced_sales_from_passive_cash_percentage_drift": false,
+    "new_buy_paused_if_cash_below_floor": true,
+    "requires_verified_settled_cash": true,
+    "requires_broker_quote_and_fee_buffer": true
+  },
+  "legacy_nonoverlap_to_exit_after_risk_review": [
+    "ACWI",
+    "EEM",
+    "XLV"
+  ],
+  "overlap_to_retain_if_no_breach": [
+    "XLE"
+  ],
+  "xle_above_285pct_target_requires_independent_review": true,
+  "no_new_buys_before_original_three_exits_reconciled": true,
+  "cash_sale_settlement_wait_required": true,
+  "risks": {
+    "single_asset_max_fraction": "0.50",
+    "total_gross_fraction_ceiling": "0.95",
+    "max_daily_account_loss_fraction": "0.06",
+    "max_peak_to_trough_drawdown_fraction": "0.20",
+    "max_annualized_realized_volatility": "0.35",
+    "max_single_new_buy_usd": "65.00",
+    "min_buy_usd": "1.00",
+    "stop_blocks_new_orders_not_guarantee_against_gaps": true
+  },
+  "live_preparation_requirements": [
+    "Separate newly reviewed LIVE order execution/risk policy",
+    "Fresh LIVE account binding and holdings GET in executor on each phase",
+    "No open orders and exact prior fill accounting",
+    "Account daily loss, drawdown and realized volatility evidence",
+    "Cash/settlement proof from broker not merely caller asserted",
+    "Intraday quote, minimum order and all-in cost confirmation",
+    "Stable idempotent client-order-ID / partial fill cleanup",
+    "Broker kill switch release through separately controlled workflow",
+    "Original operator STOP release under separately reviewed launch policy"
+  ],
+  "live_operator_stop_preserved": true,
+  "broker_kill_switch_engaged": true,
+  "may_place_buy_orders": false,
+  "may_place_sell_orders": false,
+  "executable_notional_instructions_present": false,
+  "strategy_alpha_established": false,
+  "source_original_manifest": "research_lab/v6_s1_high_risk_micro_pilot_proposed_manifest.json",
+  "source_paper_evidence": "research_lab/results/V6_S1_ACTUAL_PAPER_FRACTIONAL_BUY_SELL_PASS_2026_10_19.md",
+  "source_real_live_evidence": "https://github.com/nicobouch97/fund100-research/actions/runs/39272813574"
+}
