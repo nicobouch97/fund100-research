@@ -111,7 +111,7 @@ def check(*, snapshot:dict, now_utc:str, hypothetical_new_buy_usd:str|None=None,
             # friction), and mark-to-market gross exposure after purchase.
             if remaining<equity*MIN_CASH:
                 stage="BLOCK_HYPOTHETICAL_BUY_RESERVED_CASH"
-            elif (gross+buy)/equity>TARGET_GROSS:
+            elif equity<=friction or (gross+buy)/(equity-friction)>TARGET_GROSS:
                 stage="BLOCK_HYPOTHETICAL_BUY_GROSS_EXPOSURE"
             elif gross+buy>CAP:
                 # CAUTION: Market values do not prove cumulative cost basis.
