@@ -1,0 +1,90 @@
+name: Fund-100 V6-Q1 Original SEC Owner Cash Proxy Source (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_q1_original_sec_cash_proxy_v1_0.py"
+      - "test_fund100_v6_q1_original_sec_cash_proxy_v1_0.py"
+      - "research_lab/stocks/V6_Q1_SEC_OWNER_CASH_PROXY_SOURCE_PROTOCOL_2026_10_19.md"
+      - ".github/workflows/fund100-v6-q1-original-sec-cash-source.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v6-q1-original-sec-cash-source.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  offline-strict-accounting-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test genuine original 10K-only issuer source invariants
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_q1_original_sec_cash_proxy_v1_0.py
+          python -m pytest -q test_fund100_stock_sec_issuer_quality_p4e_v1_0.py
+      - name: No broker or valuation claim
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Research-only original issuer cash-generation source. Zero orders.'
+
+  first-real-original-sec-cash-source:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: offline-strict-accounting-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install offline research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Retrieve ALREADY original acquired SEC evidence, no current SEC HTTP
+        uses: actions/download-artifact@v4
+        with:
+          name: fund100-phase4b-real-sec-snapshot-38756477914
+          run-id: 38756477914
+          github-token: ${{ github.token }}
+          path: /tmp/fund100-q1-original-sec
+      - name: Verify every SEC file digest and recalculate actual original CFO minus asset spending
+        run: |
+          set -euo pipefail
+          python fund100_v6_q1_original_sec_cash_proxy_v1_0.py \
+            --original-sec-artifact /tmp/fund100-q1-original-sec \
+            --output /tmp/fund100-v6-q1-original-cash-generation.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/fund100-v6-q1-original-cash-generation.json').read_text())
+          assert r["schema"]=="FUND100_V6_Q1_ORIGINAL_SEC_CASH_GENERATION_PROXY_SOURCE_GAP_V1"
+          assert r["issuer_count"]==8
+          assert r["issuer_cfo_capex_complete_count"]==6
+          assert r["unknown_issuer_count"]==2
+          assert r["source_original_latest_10k_only"]
+          assert len(r["valuation_and_owner_earnings_inputs_missing"])==7
+          assert not r["price_valuation_signal_available"]
+          assert not r["maintenance_capex_verified"]
+          assert not r["independently_validated_alpha"]
+          assert not r["live_authorized"] and not r["paper_authorized"]
+          assert r["broker_calls"]==r["broker_orders"]==0
+          print('Actual original SEC cash proxy source PASS, NOT owner earnings, NOT stock alpha.')
+          PY
+      - name: Archive exact genuine October SEC CFO-capex source review
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v6-q1-original-20261015-sec-cfo-asset-spend-${{ github.run_id }}
+          path: /tmp/fund100-v6-q1-original-cash-generation.json
+          retention-days: 90
+          if-no-files-found: error
