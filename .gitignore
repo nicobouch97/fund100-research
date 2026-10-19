@@ -3,3 +3,14 @@ __pycache__/
 .pytest_cache/
 .env
 .venv/
+
+# PRIVATE V6 attempt-state: never commit broker-migration SQLite files.
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+fund100-v6-private-state/
