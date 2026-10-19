@@ -48,4 +48,4 @@ jobs:
         run: |
           set -euo pipefail
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
-          echo "OFFLINE ONLY. Existing four LIVE holdings and $130.30 original capital remain unaffected."
+          echo 'OFFLINE ONLY. Existing four LIVE holdings and $130.30 original capital remain unaffected.'
