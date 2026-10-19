@@ -2216,3 +2216,46 @@ Any future transition must verify settled cash separately,
 prevent V5/V6 concurrent controllers and honor all original
 broker STOPs. Independent paper order-mechanics check next;
 no profitable paper waiting period.
+
+
+## 19 Oct 2026 — one-session S1 genuine PAPER fractional share mechanics
+
+The actual authenticated Alpaca PAPER GET-only asset probe
+[run 39227661735](https://github.com/nicobouch97/fund100-research/actions/runs/39227661735)
+confirmed **XLK, XLE, IWM** all active/tradable/fractionable,
+with ZERO broker order creation and LIVE no-change.
+S1 remains a **proposed** 95% gross, 5% cash fixed factor
+experiment, NOT a proven active alpha engine or approved
+LIVE V5-to-V6 migration.
+
+Instead of asking for weeks of PAPER profit, run one
+**$2 real Alpaca PAPER buy/restore SELL** to check
+market DAY fractional notional, fill quantity,
+client-order-ID de-duplication and no unowned
+portfolio change. New
+`fund100_v6_s1_one_time_paper_fill_probe_v1_0.py`
+plus synthetic negative tests and
+`.github/workflows/fund100-v6-s1-paper-fill-once.yml`
+targets only US trading session **Monday 19 October
+2026, 13:43 UTC (9:43 EDT)**. Exact date, main
+branch, initial GitHub attempt, risk HIGH, engaged
+kill switch and remotely verified LIVE STOP are
+hard requirements; no LIVE credential, endpoint,
+orders or cash transfers. If broker rejected the
+round trip or original PAPER positions were not
+fully restored, the workflow must FAIL and require
+manual PAPER-only reconciliation (never silently
+repeat in later sessions).
+
+Detailed original workflow purpose:
+`research_lab/V6_S1_2USD_PAPER_ORDER_MECHANICS_PROTOCOL_2026_10_19.md`.
+PAPER success is an execution-mechanics observation,
+NOT proof of LIVE permissions, S1 market beating
+returns or profitable prediction. After that:
+fresh LIVE asset/cash and settlement verification,
+a new separately controlled HIGH 50% concentration
+policy, transitions in explicit stages from four
+current investments, and single live execution
+controller. No user reapproval for routine
+investment-choice discretion is implied, and no
+platform/environment STOP is bypassed.
