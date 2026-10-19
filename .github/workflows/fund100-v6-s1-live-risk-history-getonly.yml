@@ -1,4 +1,4 @@
-name: Fund-100 V6-S1 Private Risk History Source Candidate (OFFLINE)
+name: Fund-100 V6-S1 Pinned Actual LIVE Risk History GET-only (NO ORDERS)
 
 on:
   pull_request:
@@ -51,3 +51,48 @@ jobs:
           print('GET ONLY, original LIVE STOP, NO brokerage execution.')
           PY
 
+
+  authentic-live-private-risk-read:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: strict-privacy-risk-fixtures
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 8
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify bound source and exact five-GET contract before LIVE keys
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          import fund100_v6_s1_live_risk_history_getonly_v1_0 as v
+          assert len(v.PATHS)==5
+          assert v.PATHS[-1]=='/v2/account/portfolio/history'
+          assert v.HISTORY_PARAMS=={'period':'1M','timeframe':'1D'}
+          tree=ast.parse(Path(v.__file__).read_text())
+          for n in ast.walk(tree):
+            if isinstance(n,ast.FunctionDef):
+              assert n.name not in {'post','put','delete','submit_order','place_order'}
+          print('Five GET endpoints only, no write transport or broker artifacts.')
+          PY
+      - name: Actual original LIVE account and raw risk-history GET
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_live_risk_history_getonly_v1_0.py
+      - name: Preserve original disabled LIVE operator after original-source read
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'PRIVATE LIVE risk source read finished; no strategy live orders or authorization.'
