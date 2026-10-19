@@ -99,7 +99,7 @@ def test_order_replacements_and_ambiguous_cancel_states_block(status):
                   currently_held_qty=Q)
     assert z["stage"]=="HOLD_AMBIGUOUS_ORDER_REQUIRES_REVIEW_NO_RESUBMISSION"
 
-@pytest.mark.parametrize("status",["ALMOST_FILLED","",None,"unknown_future_status"])
+@pytest.mark.parametrize("status",["ALMOST_FILLED","","unknown_future_status"])
 def test_new_unknown_broker_status_never_resubmits(status):
     z=w.reconcile(symbol="ACWI",original_qty=Q,
          receipt=filled_order(status=status,filled_qty="0"),currently_held_qty=Q)
@@ -124,6 +124,12 @@ def test_missing_filled_at_and_partial_quantity_cannot_claim_full_exit():
     r=filled_order(filled_qty="0.12")
     with pytest.raises(w.V6SellStop):
         w.reconcile(symbol="ACWI",original_qty=Q,receipt=r,currently_held_qty=None)
+
+def test_null_broker_status_is_invalid_not_silently_treated_as_completed():
+    with pytest.raises(w.V6SellStop,match="Missing broker status"):
+        w.reconcile(symbol="ACWI",original_qty=Q,
+                    receipt=filled_order(status=None,filled_qty="0"),
+                    currently_held_qty=Q)
 
 def test_unexplained_position_increase_is_not_a_completed_exit():
     with pytest.raises(w.V6SellStop):
