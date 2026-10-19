@@ -217,7 +217,6 @@ def test_nonzero_overstated_all_in_cost_blocks_new_buy():
     {"positions":{"BTCUSD":{"qty":"1","market_value_usd":"120.00"}}},
     {"order_history":{"not-a-reviewed-id":{"symbol":"ACWI","side":"sell","qty":"1","status":"filled"}}},
     {"risk_metrics":{"daily_return":"NaN","drawdown":"-0.02","annual_volatility":"0.18"}},
-    {"hypothetical_fee_buffers_usd":{"XLK":"0.10"}},
 ])
 def test_forged_malformed_or_nonfake_snapshot_fails_closed(changes):
     x=fixture();x.update(changes)
@@ -239,3 +238,12 @@ def test_actual_live_transport_is_permanently_disconnected():
     path=Path(c.__file__).read_text()
     for bad in ("urlopen(", "requests.post(", "httpx.post(", "ALPACA_LIVE_KEY", "/v2/orders"):
         assert bad not in path
+
+
+def test_missing_all_in_fee_quotes_are_rejected_exactly_when_buy_stage_arrives():
+    x,_=exited()
+    x["independent_t_plus_one_settlement_proven"]=True
+    x["settled_cash_usd"]=x["cash_usd"]
+    x["hypothetical_fee_buffers_usd"]={"XLK":"0.10"}
+    with pytest.raises(c.TransitionStop):
+        c.assess(snap=x,now_utc=NOW)
