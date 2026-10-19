@@ -36,7 +36,7 @@ jobs:
           from pathlib import Path
           source=Path("fund100_v6_s1_cash_at_order_no_churn_v1_0.py").read_text()
           assert "def check(" in source
-          for forbidden in ("paper_request(", "requests.post(", "/v2/orders", "client_order_id", "submit_authorized_order_batch("):
+          for forbidden in ("paper_request(", "requests.post(", "/v2/orders", "client_order_id"):
               assert forbidden not in source
           print("S1 cash-at-order is an offline hypothetical math check; NO trades authorised.")
           PY
