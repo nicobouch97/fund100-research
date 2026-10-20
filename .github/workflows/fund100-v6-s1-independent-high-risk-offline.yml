@@ -1,0 +1,45 @@
+name: Fund-100 V6-S1 Independent HIGH Risk & Warmup (OFFLINE NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_independent_high_exante_policy_v1_0.py"
+      - "test_fund100_v6_s1_independent_high_exante_policy_v1_0.py"
+      - "research_lab/V6_S1_INDEPENDENT_HIGH_RISK_EXANTE_WARMUP_PRE_REG_2026_10_20.md"
+      - ".github/workflows/fund100-v6-s1-independent-high-risk-offline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  research-only-v6-high-risk-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pure offline pytest only
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Check separate HIGH risk, immutable original S1, no XLE churn
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_s1_independent_high_exante_policy_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_staged_controller_core_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_frac_live_sell_writer_candidate_v1_0.py
+      - name: Keep funded account original STOP and no LIVE trade transport
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import fund100_v6_s1_independent_high_exante_policy_v1_0 as v6
+          from pathlib import Path
+          c=v6.contract()
+          assert c["corrected_v6_only_staged_exits"]==("ACWI","EEM","XLV")
+          assert not v6.RELEASE_LIVE_ORDER_EXECUTION
+          assert c["order_submission_authorized"] is False
+          assert "urlopen(" not in Path(v6.__file__).read_text()
+          print("V6-S1 independent HIGH policy is research only, no LIVE risk or trading release.")
+          PY
