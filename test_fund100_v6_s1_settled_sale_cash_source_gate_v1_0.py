@@ -150,7 +150,7 @@ def test_no_sale_cash_credit_stops(delta):
     if delta.startswith("-"):
         with pytest.raises(g.SettlementStop):g.evaluate(snap=x,now_utc=NOW)
     else:
-        assert checked(x)=="BLOCKED_UNRECONCILED_GROSS_EQUITY_CASH"
+        assert checked(x)=="BLOCKED_NO_SALE_CASH_CREDIT_OBSERVED"
 
 @pytest.mark.parametrize("field,value",[
     ("unreconciled_open_orders",1),
