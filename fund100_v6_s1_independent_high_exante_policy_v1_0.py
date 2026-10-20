@@ -212,3 +212,50 @@ def _hold(status):
             "original_live_order_execution_released":False,
             "broker_order_posts":0,"broker_requests":0,
             "live_order_authorized":False,"order":None}
+
+
+def _signed(raw,label):
+    if type(raw) not in (str,int,Decimal):
+        raise S1HighStop("Missing signed "+label)
+    try:value=Decimal(str(raw))
+    except (InvalidOperation,ValueError):
+        raise S1HighStop("Malformed signed "+label) from None
+    if not value.is_finite() or value<Decimal("-1") or value>Decimal("1"):
+        raise S1HighStop("Signed account risk outside reasonable limits")
+    return value
+
+def hypothetical_warmup_risk(*,snapshot:dict)->dict:
+    """Research-only clean post-migration 6/20/35 bridge.
+
+    A 60-session ETF price proxy is NOT live realized-volatility.
+    No actual V6 LIVE risk release without independently reviewed source.
+    """
+    contract()
+    if (type(snapshot) is not dict
+        or snapshot.get("mode")!=MODE
+        or snapshot.get("source_authenticated_live") is not False
+        or snapshot.get("operator_stopped") is not True
+        or snapshot.get("kill_switch")!="ENGAGED"
+        or snapshot.get("post_migration_clean_baseline_proven_synthetically") is not True
+        or snapshot.get("external_flows_reconciled_synthetically") is not True):
+        return _hold("BLOCKED_MISSING_CLEAN_V6_ACCOUNT_RISK_BASELINE")
+    closes=snapshot.get("completed_strategy_daily_closes")
+    if type(closes) is not int or closes<1:
+        return _hold("BLOCKED_NO_REAL_DAILY_ACCOUNT_RISK_OBSERVATION")
+    daily=_signed(snapshot.get("daily_return"),"clean V6 daily return")
+    drawdown=_signed(snapshot.get("peak_to_trough_drawdown"),"clean V6 drawdown")
+    if drawdown>0:
+        raise S1HighStop("Drawdown cannot be positive")
+    if daily<=-MAX_DAILY_LOSS or drawdown<=-MAX_DRAWDOWN:
+        return _hold("BLOCKED_SIX_PERCENT_DAILY_OR_TWENTY_PERCENT_DRAWDOWN")
+    exante=dec(snapshot.get("aligned_etf_exante_vol"),"illustrative ex-ante volatility")
+    if exante>EXANTE_PLANNING_VOL:
+        return _hold("BLOCKED_EXANTE_VOLATILITY_NOT_BELOW_30PCT")
+    if closes<6:
+        if snapshot.get("actual_annual_volatility") is not None:
+            raise S1HighStop("Do not claim stable realized volatility before 6 closes")
+        return _hold("HYPOTHETICAL_WARMUP_EXANTE_PROXY_ONLY_NOT_ACTUAL_35PCT_PROOF")
+    actual=dec(snapshot.get("actual_annual_volatility"),"synthetic clean actual vol")
+    if actual>MAX_ACTUAL_VOL:
+        return _hold("BLOCKED_THIRTY_FIVE_PERCENT_REALIZED_VOLATILITY")
+    return _hold("HYPOTHETICAL_SIX_TWENTY_THIRTYFIVE_RISK_ENVELOPE_NO_LIVE_AUTH")
