@@ -51,8 +51,14 @@ def classify(*,account:dict,expected_original_binding_sha256:str)->dict:
         raise CashCapabilityStop("Account not ACTIVE USD or account/trading blocked")
     values={}
     for field in DOCUMENTED_TRADING_FIELDS:
-        if field not in account:
-            raise CashCapabilityStop("Missing essential documented Trading account field")
+        if field in ("pending_transfer_in","pending_transfer_out"):
+            # Actual original Trading LIVE GET returned neither field.
+            # Absence is UNKNOWN history, not zero pending cash transfers.
+            if field in account and account[field] is not None:
+                values[field]=_num(account[field],field)
+            continue
+        if field not in account or account[field] is None:
+            raise CashCapabilityStop("Missing essential Trading account field")
         values[field]=_num(account[field],field)
     if values["equity"]<=0:
         raise CashCapabilityStop("No positive account equity")
@@ -76,7 +82,9 @@ def classify(*,account:dict,expected_original_binding_sha256:str)->dict:
         settlement_status="PARTIAL_SETTLED_FIELDS_AMBIGUOUS_HOLD"
     else:
         settlement_status="TRADING_API_SETTLED_FIELDS_NOT_EXPOSED_IN_SUPPLIED_SNAPSHOT"
-    if (values["pending_transfer_in"]>0 or values["pending_transfer_out"]>0):
+    if "pending_transfer_in" not in values or "pending_transfer_out" not in values:
+        funding_status="PENDING_TRANSFER_FIELDS_ABSENT_HISTORY_REQUIRED"
+    elif (values["pending_transfer_in"]>0 or values["pending_transfer_out"]>0):
         funding_status="PENDING_EXTERNAL_FUNDING_OR_WITHDRAWAL_REQUIRES_REVIEW"
     else:
         funding_status="NO_PENDING_TRANSFER_BALANCE_FIELDS_BUT_HISTORY_UNVERIFIED"
