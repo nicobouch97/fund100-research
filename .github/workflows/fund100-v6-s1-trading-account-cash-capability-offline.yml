@@ -23,7 +23,7 @@ jobs:
           python-version: "3.12"
       - name: Install offline test runner
         run: python -m pip install 'pytest>=8,<9'
-      - name: Test independent Trading account field inventory, BUY settlement hold
+      - name: Test actual Trading field inventory incl absent pending transfers, no BUY
         run: |
           set -euo pipefail
           python -m pytest -q test_fund100_v6_s1_trading_account_cash_capability_v1_0.py
