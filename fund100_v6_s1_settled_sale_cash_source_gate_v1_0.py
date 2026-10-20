@@ -132,10 +132,10 @@ def evaluate(*,snap:dict,now_utc:str)->dict:
         return _summary("BLOCKED_UNRECONCILED_GROSS_EQUITY_CASH")
     if first_equity>policy.CAP or nav>policy.CAP*Decimal("1.5"):
         return _summary("BLOCKED_PILOT_CAP_OR_UNEXPECTED_EQUITY")
-    if val>min(nav,policy.CAP)*policy.TARGET["XLE"]:
-        return _summary("BLOCKED_ORIGINAL_XLE_OVERWEIGHT_REVIEW")
     if cash<=first_cash:
         return _summary("BLOCKED_NO_SALE_CASH_CREDIT_OBSERVED")
+    if val>min(nav,policy.CAP)*policy.TARGET["XLE"]:
+        return _summary("BLOCKED_ORIGINAL_XLE_OVERWEIGHT_REVIEW")
     sessions=snap.get("invented_us_equity_settlement_sessions")
     if (type(sessions) is not list or not 2<=len(sessions)<=ALLOWED_SETTLEMENT_LOOKBACK_SESSIONS):
         raise SettlementStop("No independent calendar session sequence supplied")
