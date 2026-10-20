@@ -1,0 +1,95 @@
+name: Fund-100 V6-S1 Authentic LIVE Trading Cash FIELDS four GET (NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_real_trading_cash_field_four_get_v1_0.py"
+      - "test_fund100_v6_s1_real_trading_cash_field_four_get_v1_0.py"
+      - "test_fund100_v6_s1_cash_field_pin_scope_v1_0.py"
+      - "audit_fund100_live_boundary.py"
+      - "research_lab/V6_S1_REAL_TRADING_ACCOUNT_CASH_FIELDS_FOUR_GET_PROTOCOL_2026_10_20.md"
+      - ".github/workflows/fund100-v6-s1-real-trading-cash-fields-getonly.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v6-s1-real-trading-cash-fields-getonly.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-s1-authentic-cash-field-inventory-getonly
+  cancel-in-progress: false
+
+jobs:
+  offline-account-binding-and-credential-scope-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install credentialless offline tests
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Exact original four-GET and field presence negative cases
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_s1_real_trading_cash_field_four_get_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_cash_field_pin_scope_v1_0.py
+          python -m pytest -q test_fund100_v6_real_live_getonly_transition_readiness_v1_0.py
+      - name: Original LIVE order writer and operator remain locked
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import fund100_v6_s1_real_trading_cash_field_four_get_v1_0 as q
+          assert not q.LIVE_SELL_BUY_RELEASED
+          assert q.CANDIDATES==("cash_withdrawable","cash_transferable")
+          assert q.four.PATHS==("/v2/account","/v2/positions","/v2/orders","/v2/clock")
+          print("Four original account GET only; no LIVE write execution.")
+          PY
+
+  authentic-live-four-get-cash-field-presence:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: offline-account-binding-and-credential-scope-regression
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 8
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Exact SHA approved source and original broker STOP
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test "${FUND100_BROKER_KILL_SWITCH}" = "ENGAGED"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import audit_fund100_live_boundary as a
+          from pathlib import Path
+          path=".github/workflows/fund100-v6-s1-real-trading-cash-fields-getonly.yml"
+          reader="fund100_v6_s1_real_trading_cash_field_four_get_v1_0.py"
+          assert a.approved_scoped_live_script(path,reader,Path(path).read_text())
+          print("Original source and four-GET reader pinned and approved.")
+          PY
+      - name: Read actual Alpaca Trading account settlement FIELD PRESENCE (FOUR GET)
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_real_trading_cash_field_four_get_v1_0.py
+      - name: Confirm old LIVE operator STOP remains intact
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Trading LIVE cash source FIELDS only. Zero orders, zero financial quantities.'
