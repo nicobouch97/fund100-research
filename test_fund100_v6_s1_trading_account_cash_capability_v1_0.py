@@ -95,11 +95,29 @@ def test_broker_style_withdrawable_above_cash_stops():
     with pytest.raises(c.CashCapabilityStop):
         assess(a)
 
-@pytest.mark.parametrize("name",c.DOCUMENTED_TRADING_FIELDS)
+@pytest.mark.parametrize("name",[
+    x for x in c.DOCUMENTED_TRADING_FIELDS
+    if x not in ("pending_transfer_in","pending_transfer_out")
+])
 def test_missing_required_documented_account_fields_stops(name):
     a=sample();del a[name]
     with pytest.raises(c.CashCapabilityStop):
         assess(a)
+
+@pytest.mark.parametrize("missing",[
+    ("pending_transfer_in",),
+    ("pending_transfer_out",),
+    ("pending_transfer_in","pending_transfer_out"),
+])
+def test_actually_absent_trading_pending_transfer_fields_remain_unknowable(missing):
+    a=sample()
+    for field in missing:
+        a.pop(field)
+    r=assess(a)
+    assert r["pending_transfers_status"]=="PENDING_TRANSFER_FIELDS_ABSENT_HISTORY_REQUIRED"
+    assert r["settlement_field_capability"]=="TRADING_API_SETTLED_FIELDS_NOT_EXPOSED_IN_SUPPLIED_SNAPSHOT"
+    assert not r["cashflow_activity_history_reconciled"]
+    no_trade(r)
 
 @pytest.mark.parametrize("name",c.DOCUMENTED_TRADING_FIELDS)
 @pytest.mark.parametrize("bad",["NaN","-1",True,"Infinity"])
