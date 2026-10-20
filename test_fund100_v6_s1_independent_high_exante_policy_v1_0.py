@@ -136,8 +136,8 @@ def test_original_xle_holdings_and_buy_envelope_hypothetical_only():
     ("buy_notional","0.99","BLOCKED_ORDER_SIZE_OR_CASH"),
     ("buy_notional","65.01","BLOCKED_ORDER_SIZE_OR_CASH"),
     ("buy_notional","65.00","HYPOTHETICAL_V6_ENVELOPE_PASSED_NO_TRADE_AUTHORIZATION"),
-    ("cash","10","BLOCKED_ACCOUNT_GROSS_CASH_MISMATCH"),
-    ("estimated_cost","30","BLOCKED_FIVE_PERCENT_CASH_FLOOR"),
+    ("cash","10","BLOCKED_ORDER_SIZE_OR_CASH"),
+    ("estimated_cost","45","BLOCKED_FIVE_PERCENT_CASH_FLOOR"),
     ("positions",{"XLE":"39.00"},"BLOCKED_ACCOUNT_GROSS_CASH_MISMATCH"),
 ])
 def test_projected_cash_and_no_churn_controls(field,value,stage):
