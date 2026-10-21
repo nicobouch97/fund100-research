@@ -313,52 +313,97 @@ def test_exact_allowed_GitHub_HTTP_methods_and_no_private_ledger_overwrite():
         p._json(method="PUT", url=p.PRODUCTION_URL, token=WRITE, payload=None)
 
 
-def test_immutable_original_four_GET_prior_actions_job_metadata_is_required():
+def test_existing_protected_four_GET_main_manual_run_and_job_both_required():
     from datetime import datetime, timezone
+    now = datetime(2026, 10, 21, 15, 45, 35, tzinfo=timezone.utc)
+    sha = "a"*40
+    original_run = {
+        "id": 123456789, "path": p.ORIGINAL_BROKER_WORKFLOW_PATH,
+        "event": "workflow_dispatch", "head_branch": "main",
+        "head_sha": sha, "status": "completed", "conclusion": "success",
+        "repository": {"full_name": "nicobouch97/fund100-research"},
+        "created_at": "2026-10-21T15:42:00Z",
+    }
     good_job = {
         "name": p.BROKER_GUARD_JOB,
-        "status": "completed",
-        "conclusion": "success",
+        "status": "completed", "conclusion": "success",
         "completed_at": "2026-10-21T15:45:00Z",
-        "steps": [
-            {"name": p.BROKER_GUARD_STEP, "status": "completed", "conclusion": "success"}
-        ],
+        "steps": [{"name": p.BROKER_GUARD_STEP, "status": "completed",
+                   "conclusion": "success"}],
     }
-    class JobTransport:
-        def __init__(self, job):
-            self.job = job
+    class ExistingWorkflowBackend:
+        def __init__(self, run=None, job=None):
+            self.run = original_run if run is None else run
+            self.job = good_job if job is None else job
+            self.calls = []
         def __call__(self, req, timeout):
-            assert req.full_url == (
-                p.ACTIONS_RUN_JOB_URL_PREFIX + "9999999/jobs?per_page=100")
+            assert timeout == 12
+            self.calls.append(req.full_url)
             assert req.get_method() == "GET"
             assert req.get_header("Authorization") == "Bearer " + ISSUE
+            if req.full_url == p.ORIGINAL_BROKER_WORKFLOW_RUNS_URL:
+                return Response({"workflow_runs": [self.run]}, 200)
+            assert req.full_url == p.ACTIONS_RUN_JOB_URL_PREFIX + "123456789/jobs?per_page=100"
             return Response({"jobs": [self.job]}, 200)
-    t = datetime(2026, 10, 21, 15, 45, 35, tzinfo=timezone.utc)
+    good = ExistingWorkflowBackend()
     result = p.authentic_original_four_get_job(
-        run_id="9999999", public_token=ISSUE,
-        transport=JobTransport(good_job), now_utc=t)
+        current_main_sha=sha, public_token=ISSUE, transport=good,
+        now_utc=now)
     p.require_original_broker_confirmation(result)
     assert result["broker_get_requests"] == 4
+    assert len(good.calls) == 2
     assert result["broker_orders_submitted"] == 0
-    for change in (
+    for patch in (
+        {"event": "push"}, {"head_branch": "not-main"},
+        {"head_sha": "b"*40}, {"status": "in_progress"},
         {"conclusion": "failure"},
-        {"status": "in_progress"},
-        {"completed_at": "2026-10-21T15:20:00Z"},
-        {"steps": [{"name": p.BROKER_GUARD_STEP, "status": "completed",
-                     "conclusion": "skipped"}]},
-        {"name": "wrong-alpaca-job"},
+        {"repository": {"full_name": "other/repository"}},
     ):
-        modified = {**good_job, **change}
         with pytest.raises(p.GenesisBootstrapStop):
             p.authentic_original_four_get_job(
-                run_id="9999999", public_token=ISSUE,
-                transport=JobTransport(modified), now_utc=t)
-
-
-def test_actions_job_proof_does_not_accept_fake_run_ids_or_stale_UTC():
-    for wrong in ("", "0", "x", "-1", "1?debug=1"):
+                current_main_sha=sha, public_token=ISSUE,
+                transport=ExistingWorkflowBackend(run={**original_run, **patch}),
+                now_utc=now)
+    for change in (
+        {"conclusion": "failure"}, {"status": "in_progress"},
+        {"completed_at": "2026-10-21T15:20:00Z"},
+        {"steps": [{"name": p.BROKER_GUARD_STEP, "status": "completed",
+                    "conclusion": "skipped"}]},
+        {"name": "wrong-broker-job"},
+    ):
         with pytest.raises(p.GenesisBootstrapStop):
-            p.authentic_original_four_get_job(run_id=wrong, public_token=ISSUE)
+            p.authentic_original_four_get_job(
+                current_main_sha=sha, public_token=ISSUE,
+                transport=ExistingWorkflowBackend(job={**good_job, **change}),
+                now_utc=now)
+
+
+def test_newer_failed_main_manual_broker_probe_blocks_older_success():
+    from datetime import datetime, timezone
+    sha = "a"*40
+    good = {
+        "id": 123, "path": p.ORIGINAL_BROKER_WORKFLOW_PATH,
+        "event": "workflow_dispatch", "head_branch": "main",
+        "head_sha": sha, "status": "completed", "conclusion": "success",
+        "repository": {"full_name": "nicobouch97/fund100-research"},
+        "created_at": "2026-10-21T15:39:00Z",
+    }
+    bad = {**good, "id": 456, "conclusion": "failure",
+           "created_at": "2026-10-21T15:44:00Z"}
+    def transport(req, timeout):
+        assert req.full_url == p.ORIGINAL_BROKER_WORKFLOW_RUNS_URL
+        return Response({"workflow_runs": [good, bad]}, 200)
+    with pytest.raises(p.GenesisBootstrapStop, match="failed"):
+        p.authentic_original_four_get_job(
+            current_main_sha=sha, public_token=ISSUE, transport=transport,
+            now_utc=datetime(2026, 10, 21, 15, 45, 0, tzinfo=timezone.utc))
+
+
+def test_actions_workflow_proof_does_not_accept_invalid_SHA_or_UTC():
+    for wrong in ("", "0", "x", "a"*39, "g"*40):
+        with pytest.raises(p.GenesisBootstrapStop):
+            p.authentic_original_four_get_job(
+                current_main_sha=wrong, public_token=ISSUE)
 
 
 def test_main_module_has_no_broker_order_http_calls_or_unprotected_secret_fallback():
