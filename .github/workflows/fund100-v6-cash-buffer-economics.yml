@@ -1,0 +1,37 @@
+name: Fund-100 V6 Cash Buffer Economics (OFFLINE)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_cash_buffer_costed_comparison_v1_0.py"
+      - "test_fund100_v6_cash_buffer_costed_comparison_v1_0.py"
+      - "research_lab/V6_CASH_BUFFER_COSTED_COMPARISON_PRE_REG_2026_10_21.md"
+      - "research_lab/results/V6_95_98_100_ENTRY_CASH_COSTED_RESULT_2026_10_21.md"
+      - ".github/workflows/fund100-v6-cash-buffer-economics.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  historical-price-source-locked:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing research requirements
+        run: pip install -r requirements.txt
+      - name: Offline parity and no-trade tests
+        run: python -m pytest -q test_fund100_v6_cash_buffer_costed_comparison_v1_0.py
+      - name: Compare 95 98 and 100 on frozen original prices
+        run: |
+          python fund100_v6_cash_buffer_costed_comparison_v1_0.py --output /tmp/fund100-v6-cash-costed.json
+      - name: Archive source-pinned descriptive report
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v6-95-98-100-original-frozen-costed
+          path: /tmp/fund100-v6-cash-costed.json
+          retention-days: 30
