@@ -88,9 +88,11 @@ def test_first_new_close_is_entry_without_earned_return():
 
 
 def test_no_postfreeze_market_session_is_no_return():
-    a,d,p,v=newer("2026-10-16",capture="2026-10-18T08:00:00Z")
-    # The source P4J classifier requires at least one new session; create
-    # explicit canonical metadata for a synthetic no-session outcome.
+    a,d,p,v=newer("2026-10-19",capture="2026-10-20T08:00:00Z")
+    p=p.loc[:"2026-10-16"].copy()
+    d["asof_completed_session"]="2026-10-16"
+    d["source_acquired_at_utc"]="2026-10-18T08:00:00Z"
+    # P4J needs a new session, so provide explicit no-session metadata here.
     v={"comparison_status":"EXACT_PREFIX_PRESERVED",
        "missing_original_sessions":0,"extra_baseline_sessions":0,
        "no_forward_return_calculated":True}
