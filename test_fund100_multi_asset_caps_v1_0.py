@@ -35,4 +35,26 @@ class SharedCaps(unittest.TestCase):
         b1=row("V6-Q1","65.00","XLK","TECH")
         self.assertEqual(run(a1,b1),run(b1,a1))
 
+
+    def test_global_cents_floor_and_5_percent_minimum_cash(self):
+        x={"strategy_id":"V6-S1","asset_class":"equity_etfs",
+           "mode":a.MODE,"requested_usd":"130.30",
+           "instruments":{"XLK":"0.5","XLE":"0.3","IWM":"0.2"},
+           "risk_factors":{"TECH":"0.5","ENERGY":"0.3","SMALL":"0.2"},
+           "order_authorized":False}
+        r=run(x)
+        self.assertEqual(r["hypothetical_invested_usd"],"123.78")
+        self.assertEqual(r["hypothetical_cash_usd"],"6.52")
+        self.assertFalse(r["actual_holdings_or_cash_inspected"])
+
+    def test_all_seven_registered_research_candidates_share_one_fund(self):
+        ids=["V6-S1","V6-S2","V6-Q1","V6-C10","V6-B3","V6-CR2","V6-FX1"]
+        x=[row(k,"30.00",f"S{i}",f"F{i}") for i,k in enumerate(ids)]
+        r=run(*x)
+        self.assertEqual(r,run(*reversed(x)))
+        self.assertEqual(len(r["hypothetical_strategy_allocations"]),7)
+        self.assertEqual(len(r["research_families_supported"]),6)
+        self.assertLessEqual(float(r["hypothetical_invested_usd"]),123.78)
+        self.assertEqual(r["valid_live_strategy_count"],0)
+
 if __name__=="__main__":unittest.main()
