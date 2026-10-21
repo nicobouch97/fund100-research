@@ -69,8 +69,9 @@ def test_duplicate_broker_closed_order_client_id_or_id_is_error():
 def test_original_closed_order_missing_is_hold():
     data=fixture();data["closed"]=data["closed"][:3]
     result=s.classify(**data)
+    # A fill whose closed receipt is missing is a stronger unmatched-ID hold.
     assert result["original_v5_buy_order_receipt_fill_linkage_status"]==(
-        "ORIGINAL_BUY_RECEIPTS_OR_FILLED_ACTIVITIES_MISSING_STOP")
+        "ORDER_FILL_OR_UNEXPECTED_RECEIPT_RECONCILIATION_STOP")
     no_auth(result)
 
 def test_unknown_closed_trade_is_conservative_reconciliation_hold():
