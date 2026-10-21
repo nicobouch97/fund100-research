@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from base64 import b64encode
 from hashlib import sha256
+from datetime import datetime, timezone
 import json
 import os
 import re
@@ -30,6 +31,11 @@ PRODUCTION_READ_URL = PRODUCTION_URL + "?ref=main"
 PUBLIC_ISSUE_URL = (
     "https://api.github.com/repos/nicobouch97/fund100-research/issues/8/comments"
 )
+ACTIONS_RUN_JOB_URL_PREFIX = ("https://api.github.com/repos/"
+    "nicobouch97/fund100-research/actions/runs/")
+BROKER_GUARD_JOB = "guarded-original-live-four-get"
+BROKER_GUARD_STEP = "Authenticate original LIVE four positions (GET only)"
+MAX_BROKER_PROOF_AGE_SECONDS = 600
 PUBLIC_COMMENT_URL = (
     "https://api.github.com/repos/nicobouch97/fund100-research/issues/comments/"
 )
@@ -93,6 +99,11 @@ def _json(*, method: str, url: str, token: str, payload: dict | None = None,
     elif (method == "GET" and url.startswith(PUBLIC_COMMENT_URL)
           and url[len(PUBLIC_COMMENT_URL):].isdigit() and payload is None):
         expected_status = 200
+    elif (method == "GET" and url.startswith(ACTIONS_RUN_JOB_URL_PREFIX)
+          and url.endswith("/jobs?per_page=100")
+          and url[len(ACTIONS_RUN_JOB_URL_PREFIX):-len("/jobs?per_page=100")].isdigit()
+          and payload is None):
+        expected_status = 200
     else:
         raise GenesisBootstrapStop("Unapproved GitHub HTTP method/path")
     if missing_ok and (method != "GET" or url != PRODUCTION_READ_URL):
@@ -132,6 +143,75 @@ def _json(*, method: str, url: str, token: str, payload: dict | None = None,
     if type(response) is not dict:
         raise GenesisBootstrapStop("Untrusted GitHub response")
     return response
+
+
+def _utc(raw: object) -> datetime:
+    if type(raw) is not str:
+        raise GenesisBootstrapStop("Missing original Actions broker completion timestamp")
+    try:
+        dt = datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise GenesisBootstrapStop("Invalid original Actions broker completion timestamp") from None
+    if dt.strftime("%Y-%m-%dT%H:%M:%SZ") != raw:
+        raise GenesisBootstrapStop("Noncanonical Actions broker timestamp")
+    return dt
+
+
+def authentic_original_four_get_job(*, run_id: str, public_token: str,
+                                   transport=None, now_utc: datetime | None = None) -> dict:
+    """Attest completed original read-only broker job in THIS Actions run.
+
+    The existing allowlisted script, executed in a SEPARATE credentialed job,
+    exits successfully ONLY on a full authentic LIVE account/positions check.
+    THIS production genesis job receives no Alpaca credentials. A job status
+    attestation is not a substitute for independently pinned workflow source.
+    """
+    if type(run_id) is not str or re.fullmatch("[1-9][0-9]*", run_id) is None:
+        raise GenesisBootstrapStop("Invalid same-run broker verification reference")
+    target = ACTIONS_RUN_JOB_URL_PREFIX + run_id + "/jobs?per_page=100"
+    payload = _json(method="GET", url=target, token=public_token,
+                    transport=transport)
+    if type(payload.get("jobs")) is not list or len(payload["jobs"]) > 100:
+        raise GenesisBootstrapStop("Original broker Actions job source incomplete")
+    matches = [j for j in payload["jobs"]
+               if type(j) is dict and j.get("name") == BROKER_GUARD_JOB]
+    if len(matches) != 1:
+        raise GenesisBootstrapStop("Original authenticated four GET job missing")
+    job = matches[0]
+    steps = job.get("steps")
+    if (job.get("status") != "completed"
+        or job.get("conclusion") != "success"
+        or type(steps) is not list):
+        raise GenesisBootstrapStop("Original authenticated four GET job did not succeed")
+    wanted = [s for s in steps if type(s) is dict
+              and s.get("name") == BROKER_GUARD_STEP]
+    if (len(wanted) != 1
+        or wanted[0].get("status") != "completed"
+        or wanted[0].get("conclusion") != "success"):
+        raise GenesisBootstrapStop("Original authenticated LIVE broker GET step not proven")
+    now = datetime.now(timezone.utc) if now_utc is None else now_utc
+    if (now.tzinfo is None or now.utcoffset() != timezone.utc.utcoffset(now)):
+        raise GenesisBootstrapStop("Non-UTC Actions proof evaluation time")
+    elapsed = (now - _utc(job.get("completed_at"))).total_seconds()
+    if elapsed < 0 or elapsed > MAX_BROKER_PROOF_AGE_SECONDS:
+        raise GenesisBootstrapStop("Original four-GET proof became stale")
+    # This describes the unchanged original four-GET script's exit contract,
+    # not a new made-up Alpaca account response.
+    return {
+        "schema": broker.SCHEMA,
+        "account_binding_matches_original_policy": True,
+        "historic_four_original_etf_quantities_reconciled": True,
+        "account_cash_and_holdings_reconcile_to_equity": True,
+        "live_account_active": True,
+        "open_order_count": 0,
+        "broker_environment_kill_switch_engaged": True,
+        "original_operator_stopped": True,
+        "high_risk_tier_selected": True,
+        "broker_get_requests": 4,
+        "broker_non_get_requests": 0,
+        "broker_orders_submitted": 0,
+        "current_strategy_decision": "HOLD_EXISTING_FOUR_ETFS_NO_SELL",
+    }
 
 
 def _as_source(document: dict) -> dict:
@@ -292,8 +372,12 @@ def main() -> None:
         or os.getenv("FUND100_BOOTSTRAP_CONFIRMATION") !=
             "INITIALIZE_EMPTY_LEDGER_NO_ORDERS"):
         raise GenesisBootstrapStop("Original stopped protected manual main only")
-    # Loads protected LIVE creds solely inside the original four-GET reader.
-    actual_report = broker.runtime()
+    # Credentialed original Alpaca four-GET ran in an earlier separate job.
+    # This genesis job NEVER receives or loads either LIVE Alpaca secret.
+    original_same_run = os.getenv("GITHUB_RUN_ID", "")
+    token = os.getenv("GITHUB_TOKEN", "")
+    actual_report = authentic_original_four_get_job(
+        run_id=original_same_run, public_token=token)
     url = os.getenv("GITHUB_SERVER_URL", "https://github.com")
     run_url = (
         url + "/" + os.environ["GITHUB_REPOSITORY"] +
