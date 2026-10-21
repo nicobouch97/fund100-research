@@ -1,0 +1,50 @@
+name: Fund-100 V7 User-Prioritized Multi-Asset Research (NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - "research_lab/V7_EVIDENCE_FIRST_RETURN_STRATEGY_PRIORITIES_2026_10_21.md"
+      - "research_lab/V7_STRATEGY_RESEARCH_PRIORITY_REGISTER_2026_10_21.json"
+      - "fund100_v7_research_priority_overlay_v1_0.py"
+      - "test_fund100_v7_research_priority_overlay_v1_0.py"
+      - ".github/workflows/fund100-v7-strategy-research-priorities.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proof-of-priorities-without-new-capital-or-orders:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify actual original research sources, opportunity ranks and unchanged STOP
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q \
+            test_fund100_v7_research_priority_overlay_v1_0.py \
+            test_fund100_v6_investment_thesis_gate_v1_0.py \
+            test_fund100_multi_asset_portfolio_arbiter_v1_0.py
+          test "$(git hash-object fund100_v7_research_priority_overlay_v1_0.py)" = "573906113d834023025ddeaca65526d52797f109"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'V7 approved opportunity priorities are research ONLY. No broker access.'
+      - name: Print only categorical user-approved priorities, no candidate returns
+        run: |
+          set -euo pipefail
+          python fund100_v7_research_priority_overlay_v1_0.py > /tmp/fund100_v7_research_priorities.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('/tmp/fund100_v7_research_priorities.json').read_text())
+          assert obj['research_streams']==10
+          assert len(obj['first_priority_streams'])==3
+          assert obj['unapproved_new_capital_sleeve_count']==0
+          assert not obj['new_live_orders_authorized']
+          assert obj['broker_post_requests']==obj['private_state_writes']==0
+          print('Ten streams source-qualified as research priorities; nothing LIVE promoted.')
+          PY
