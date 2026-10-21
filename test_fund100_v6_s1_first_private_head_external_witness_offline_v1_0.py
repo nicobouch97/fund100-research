@@ -13,7 +13,7 @@ import fund100_v6_s1_private_git_cas_protocol_v1_0 as cas
 import fund100_v6_s1_public_genesis_witness_v1_0 as witness
 import fund100_v6_s1_one_shot_private_empty_genesis_bootstrap_v1_0 as bootstrap
 
-KEY=b"offline-fake-hmac-for-CAS-public-head-tests-2026-only"
+KEY=bytes.fromhex("0123456789abcdef"*4)  # exactly 32 fake test bytes
 QTY="0.123456789"
 RUN="9876543210"
 COMMENT="1234567890"
