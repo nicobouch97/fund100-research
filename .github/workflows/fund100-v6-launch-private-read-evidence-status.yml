@@ -1,0 +1,66 @@
+name: Fund-100 V6-S1 Launch Evidence Private Actions Read Status (GET ONLY)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_protected_actions_read_status_v1_0.py"
+      - "test_fund100_v6_s1_protected_actions_read_status_v1_0.py"
+      - "research_lab/V6_LAUNCH_PRIVATE_ACTIONS_ACCESS_STATUS_PROTOCOL_2026_10_21.md"
+      - ".github/workflows/fund100-v6-launch-private-read-evidence-status.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v6_s1_protected_actions_read_status_v1_0.py"
+      - ".github/workflows/fund100-v6-launch-private-read-evidence-status.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  no-secrets-private-proof-status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install offline proof-shape test dependency
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Prove no PR or skipped protected job can masquerade as private access
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_s1_protected_actions_read_status_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Fetch read-only Actions metadata for most recent manual main proof
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          python fund100_v6_s1_protected_actions_read_status_v1_0.py \
+            > /tmp/fund100-v6-s1-protected-private-read-proof-status.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('/tmp/fund100-v6-s1-protected-private-read-proof-status.json').read_text())
+          assert report['schema']=='FUND100_V6_PROTECTED_ACTIONS_READ_EVIDENCE_STATUS_V1'
+          assert report['original_operator_stopped'] is True
+          assert not report['live_launch_ready']
+          assert not report['paper_or_live_order_authorized']
+          assert report['live_orders']==report['live_broker_requests']==0
+          assert report['private_repository_reads']==report['private_repository_writes']==0
+          print('Protected Actions read status:', report['protected_private_actions_read_status'])
+          print('This diagnostic never reads private contents or authorizes LIVE trading.')
+          PY
+      - name: Preserve sanitized report without tokens private files or balances
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v6-s1-protected-actions-read-status-no-secrets
+          path: /tmp/fund100-v6-s1-protected-private-read-proof-status.json
+          retention-days: 30
+          if-no-files-found: error
