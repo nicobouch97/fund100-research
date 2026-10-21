@@ -313,9 +313,58 @@ def test_exact_allowed_GitHub_HTTP_methods_and_no_private_ledger_overwrite():
         p._json(method="PUT", url=p.PRODUCTION_URL, token=WRITE, payload=None)
 
 
+def test_immutable_original_four_GET_prior_actions_job_metadata_is_required():
+    from datetime import datetime, timezone
+    good_job = {
+        "name": p.BROKER_GUARD_JOB,
+        "status": "completed",
+        "conclusion": "success",
+        "completed_at": "2026-10-21T15:45:00Z",
+        "steps": [
+            {"name": p.BROKER_GUARD_STEP, "status": "completed", "conclusion": "success"}
+        ],
+    }
+    class JobTransport:
+        def __init__(self, job):
+            self.job = job
+        def __call__(self, req, timeout):
+            assert req.full_url == (
+                p.ACTIONS_RUN_JOB_URL_PREFIX + "9999999/jobs?per_page=100")
+            assert req.get_method() == "GET"
+            assert req.get_header("Authorization") == "Bearer " + ISSUE
+            return Response({"jobs": [self.job]}, 200)
+    t = datetime(2026, 10, 21, 15, 45, 35, tzinfo=timezone.utc)
+    result = p.authentic_original_four_get_job(
+        run_id="9999999", public_token=ISSUE,
+        transport=JobTransport(good_job), now_utc=t)
+    p.require_original_broker_confirmation(result)
+    assert result["broker_get_requests"] == 4
+    assert result["broker_orders_submitted"] == 0
+    for change in (
+        {"conclusion": "failure"},
+        {"status": "in_progress"},
+        {"completed_at": "2026-10-21T15:20:00Z"},
+        {"steps": [{"name": p.BROKER_GUARD_STEP, "status": "completed",
+                     "conclusion": "skipped"}]},
+        {"name": "wrong-alpaca-job"},
+    ):
+        modified = {**good_job, **change}
+        with pytest.raises(p.GenesisBootstrapStop):
+            p.authentic_original_four_get_job(
+                run_id="9999999", public_token=ISSUE,
+                transport=JobTransport(modified), now_utc=t)
+
+
+def test_actions_job_proof_does_not_accept_fake_run_ids_or_stale_UTC():
+    for wrong in ("", "0", "x", "-1", "1?debug=1"):
+        with pytest.raises(p.GenesisBootstrapStop):
+            p.authentic_original_four_get_job(run_id=wrong, public_token=ISSUE)
+
+
 def test_main_module_has_no_broker_order_http_calls_or_unprotected_secret_fallback():
     s = Path(p.__file__).read_text()
-    assert "broker.runtime()" in s
+    assert "authentic_original_four_get_job(" in s
+    assert "broker.runtime()" not in s
     assert "cas.genesis(" in s
     assert '"branch": "main"' in s
     assert "GITHUB_EVENT_NAME" in s
