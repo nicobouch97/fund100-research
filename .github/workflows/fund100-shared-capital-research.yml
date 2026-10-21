@@ -1,0 +1,22 @@
+name: Fund-100 Shared Capital Research Checks
+
+on:
+  pull_request:
+    paths:
+      - "fund100_multi_asset_portfolio_arbiter_v1_0.py"
+      - "test_fund100_multi_asset*.py"
+      - ".github/workflows/fund100-shared-capital-research.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -p 'test_fund100_multi_asset*.py' -v
