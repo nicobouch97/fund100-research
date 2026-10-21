@@ -1,0 +1,98 @@
+name: Fund-100 V6-S1 Actual LIVE Original BUY Order-FILL Six GET (NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_actual_live_original_buy_receipt_fill_six_get_v1_0.py"
+      - "test_fund100_v6_s1_actual_live_original_buy_receipt_fill_six_get_v1_0.py"
+      - "test_fund100_v6_s1_buy_receipt_fill_scope_v1_0.py"
+      - "audit_fund100_live_boundary.py"
+      - "research_lab/V6_S1_ACTUAL_ORIGINAL_BUY_ORDER_FILLS_SIX_GET_PROTOCOL_2026_10_21.md"
+      - ".github/workflows/fund100-v6-s1-real-buy-receipt-fill-six-get.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v6-s1-real-buy-receipt-fill-six-get.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-s1-original-buy-closed-receipt-fills-6get
+  cancel-in-progress: false
+
+jobs:
+  offline-receipt-fill-matching-and-source-pins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install offline tests
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Original historical order-FILL and scoped broker source regression
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_s1_actual_live_original_buy_receipt_fill_six_get_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_buy_receipt_fill_scope_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_authentic_live_fill_schema_getonly_v1_0.py
+      - name: Preserve original no-order remote control
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          from pathlib import Path
+          import fund100_v6_s1_actual_live_original_buy_receipt_fill_six_get_v1_0 as q
+          assert not q.TRANSPORT_RELEASED
+          assert len(q.GET_SEQUENCE)==6
+          src=Path(q.__file__).read_text()
+          assert 'urlopen(' not in src
+          assert 'method="POST"' not in src
+          print("Original V5 order/FILL linkage: OFFLINE proof only, no LIVE POST.")
+          PY
+
+  real-original-live-six-get-order-fill-proof:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: offline-receipt-fill-matching-and-source-pins
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 8
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify original account/FILL six-GET pinned immutable source and STOP
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test "${FUND100_BROKER_KILL_SWITCH}" = "ENGAGED"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          from pathlib import Path
+          import audit_fund100_live_boundary as audit
+          path=".github/workflows/fund100-v6-s1-real-buy-receipt-fill-six-get.yml"
+          source="fund100_v6_s1_actual_live_original_buy_receipt_fill_six_get_v1_0.py"
+          assert audit.approved_scoped_live_script(path,source,Path(path).read_text())
+          print("Original closed BUY receipt and FILL read-only pin scope PASS.")
+          PY
+      - name: Read original BUY closed orders and FILL linkage (six GET, no trades)
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_actual_live_original_buy_receipt_fill_six_get_v1_0.py
+      - name: Ensure unchanged operator STOP
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Original LIVE BUY receipt to FILL source read-only; no order submitted.'
