@@ -13,6 +13,7 @@ from datetime import datetime,timezone
 from decimal import Decimal,InvalidOperation
 from uuid import UUID
 import hmac
+import re
 
 import fund100_v6_s1_private_git_cas_protocol_v1_0 as cas
 import fund100_v6_s1_frac_live_sell_writer_candidate_v1_0 as sell
@@ -41,14 +42,19 @@ def _qty(raw,label,*,zero=False):
     return value
 
 def _utc(raw):
-    if type(raw) is not str or not raw.endswith("Z"):
+    # Alpaca order and account FILL timestamps can contain fractional
+    # seconds (for example .123Z); accept only exact UTC ISO form and
+    # preserve the subsecond chronology, never round to seconds.
+    if (type(raw) is not str
+        or re.fullmatch(
+            r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?Z",
+            raw) is None):
         raise RecoveryStop("Missing canonical UTC timestamp")
     try:result=datetime.fromisoformat(raw[:-1]+"+00:00")
     except ValueError:
         raise RecoveryStop("Invalid broker UTC timestamp") from None
-    if (result.tzinfo is None or result.utcoffset()!=timezone.utc.utcoffset(result)
-        or result.isoformat(timespec="seconds").replace("+00:00","Z")!=raw):
-        raise RecoveryStop("Noncanonical broker UTC timestamp")
+    if result.tzinfo is None or result.utcoffset()!=timezone.utc.utcoffset(result):
+        raise RecoveryStop("Non-UTC original broker timestamp")
     return result
 
 def _hold(reason,*,digest=None):
