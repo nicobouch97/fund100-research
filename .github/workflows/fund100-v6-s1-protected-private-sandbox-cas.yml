@@ -1,0 +1,76 @@
+name: Fund-100 V6-S1 Actions Private SANDBOX CAS Proof (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_actions_private_sandbox_cas_probe_v1_0.py"
+      - "test_fund100_v6_s1_actions_private_sandbox_cas_probe_v1_0.py"
+      - "research_lab/V6_S1_PROTECTED_ACTIONS_PRIVATE_SANDBOX_CAS_PROTOCOL_2026_10_21.md"
+      - ".github/workflows/fund100-v6-s1-protected-private-sandbox-cas.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-s1-private-sandbox-cas-only
+  cancel-in-progress: false
+
+jobs:
+  offline-no-credential-sandbox-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Mock GitHub Contents CAS, stale conflict and zero LIVE orders
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_s1_actions_private_sandbox_cas_probe_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          test "$(git hash-object fund100_v6_s1_actions_private_sandbox_cas_probe_v1_0.py)" = "bc490fe1c25208bbdfccd3d8ab815ae5ee44d0ad"
+          echo 'Mocked SANDBOX-only CAS PASS; no private token, LIVE credentials or orders.'
+
+  protected-main-sandbox-cas-only:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: offline-no-credential-sandbox-contract
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 8
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Pin original main/source SHA and strict private SANDBOX-only URL
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          test "$(git hash-object fund100_v6_s1_actions_private_sandbox_cas_probe_v1_0.py)" = "bc490fe1c25208bbdfccd3d8ab815ae5ee44d0ad"
+          python - <<'PY'
+          import fund100_v6_s1_actions_private_sandbox_cas_probe_v1_0 as p
+          assert p.URL == "https://api.github.com/repos/nicobouch97/fund100-state-private/contents/sandbox/v6_s1_actions_cas_smoke_2026_10_21.json"
+          assert not p.BROKER_ACCESS and not p.PRODUCTION_STATE_ACCESS
+          assert not p.PRODUCTION_LEDGER_INITIALIZATION and not p.LIVE_TRADING_AUTHORITY
+          print("Pinned sandbox-only source, protected main, STOP: PASS")
+          PY
+      - name: Perform one synthetic private sandbox Git CAS and stale SHA rejection
+        env:
+          FUND100_PRIVATE_STATE_SANDBOX_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_SANDBOX_WRITE_TOKEN }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_actions_private_sandbox_cas_probe_v1_0.py
+      - name: Confirm original operator STOP remains and no broker output
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Only isolated private sandbox CAS; NO live orders or production ledger changes.'
