@@ -31,7 +31,7 @@ jobs:
           python -m pip install 'pytest>=8,<9'
           python -m pytest -q test_fund100_v6_s1_actions_private_sandbox_cas_probe_v1_0.py
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
-          test "$(git hash-object fund100_v6_s1_actions_private_sandbox_cas_probe_v1_0.py)" = "d74518c1c9e59f57f362cd2583d30ad01ec10804"
+          test "$(git hash-object fund100_v6_s1_actions_private_sandbox_cas_probe_v1_0.py)" = "bc490fe1c25208bbdfccd3d8ab815ae5ee44d0ad"
           echo 'Mocked SANDBOX-only CAS PASS; no private token, LIVE credentials or orders.'
 
   protected-main-sandbox-cas-only:
@@ -55,7 +55,7 @@ jobs:
           test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
           test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
-          test "$(git hash-object fund100_v6_s1_actions_private_sandbox_cas_probe_v1_0.py)" = "d74518c1c9e59f57f362cd2583d30ad01ec10804"
+          test "$(git hash-object fund100_v6_s1_actions_private_sandbox_cas_probe_v1_0.py)" = "bc490fe1c25208bbdfccd3d8ab815ae5ee44d0ad"
           python - <<'PY'
           import fund100_v6_s1_actions_private_sandbox_cas_probe_v1_0 as p
           assert p.URL == "https://api.github.com/repos/nicobouch97/fund100-state-private/contents/sandbox/v6_s1_actions_cas_smoke_2026_10_21.json"
