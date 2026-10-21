@@ -1,0 +1,44 @@
+name: Fund-100 V6-S1 ACWI QTY SELL INSIDE Reviewed Writer (LOCKED; MOCK)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_alpaca_live_writer_candidate_v1_1.py"
+      - "test_fund100_v6_s1_qty_sell_inside_reviewed_writer_v1_0.py"
+      - "research_lab/V6_S1_APPROVED_WRITER_ACWI_FRACTIONAL_SELL_TRANSPORT_LOCKED_PROTOCOL_2026_10_21.md"
+      - ".github/workflows/fund100-v6-s1-acwi-qty-sell-inside-reviewed-writer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  credentialless-reviewed-writer-mock-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify six independent V6+V5 locks, signed prePOST, fake order and V5 regression
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q \
+            test_fund100_v6_s1_qty_sell_inside_reviewed_writer_v1_0.py \
+            test_fund100_alpaca_live_writer_candidate_v1_1.py \
+            test_fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0.py \
+            test_fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0.py
+          test "$(git hash-object fund100_alpaca_live_writer_candidate_v1_1.py)" = "3213295f9ad83d282642089382819e1ec088acc4"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import fund100_alpaca_live_writer_candidate_v1_1 as m
+          assert m.TRANSPORT_RELEASED is False
+          assert m.PUBLIC_EXECUTION_ENABLED is False
+          assert m.V6_S1_ACWI_QTY_SELL_TRANSPORT_RELEASED is False
+          assert m.V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED is False
+          assert m.V6_S1_ACWI_FRESH_ACCOUNT_RISK_SOURCE_RELEASED is False
+          assert m.V6_S1_ACWI_EXTERNAL_WATERMARK_RELEASED is False
+          print('Original reviewed writer V5+V6 locks are ALL engaged, 0 authentic orders.')
+          PY
