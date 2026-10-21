@@ -1,0 +1,60 @@
+name: Fund-100 V6 C12 Cross-Asset Source Evidence Preflight (OFFLINE)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_c12_source_qualified_multi_asset_preflight_v1_0.py"
+      - "test_fund100_v6_c12_source_qualified_multi_asset_preflight_v1_0.py"
+      - "research_lab/V6_C12_EVIDENCE_QUALIFIED_MULTI_ASSET_RISK_PREFLIGHT_2026_10_21.md"
+      - ".github/workflows/fund100-v6-c12-source-aware-multiasset.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sec-original-sources-and-central-budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install offline test harness
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Test original SEC availability, shared budget, spoofing, and STOP
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_v6_c12_source_qualified_multi_asset_preflight_v1_0.py \
+            test_fund100_v6_c11_dbc_sec_futures_lookthrough_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Run synthetic V6-S1 plus DBC source-awareness diagnostic only
+        run: |
+          set -euo pipefail
+          python fund100_v6_c12_source_qualified_multi_asset_preflight_v1_0.py \
+            --decision-date 2026-10-21 \
+            > /tmp/fund100-v6-c12-original-sec-risks.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("/tmp/fund100-v6-c12-original-sec-risks.json").read_text())
+          assert report["hypothetical_invested_usd"]=="120.00"
+          assert report["hypothetical_XLE_energy_company_equity_notional_usd"]=="30.000000000"
+          assert report["hypothetical_DBC_sleeve_notional_usd"]=="20.000000000"
+          assert report["DBC_lookthrough_freshness_classification"]=="STALE_HISTORICAL_SEC_LOOKTHROUGH"
+          assert report["XLE_equity_DBC_futures_shared_energy_risk_unquantified"]
+          assert not report["current_underlying_lookthrough_independently_verified"]
+          assert not report["safe_to_rely_on_report_for_LIVE_risk_factor_or_beta_weights"]
+          assert report["live_orders"]==report["paper_orders"]==report["broker_network_requests"]==0
+          assert report["private_state_write_requests"]==0
+          print("Source-quality preflight research passed; no order authority.")
+          PY
+      - name: Preserve research report, not a broker allocation
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v6-c12-crossasset-sec-source-aware-scenario
+          path: /tmp/fund100-v6-c12-original-sec-risks.json
+          retention-days: 60
+          if-no-files-found: error
