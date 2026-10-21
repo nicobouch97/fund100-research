@@ -1,0 +1,49 @@
+name: Fund-100 V6-S1 RECONCILED HIGH Policy Candidate (NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0.py"
+      - "test_fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0.py"
+      - "research_lab/V6_S1_HIGH_RECONCILED_LIVE_EXECUTION_POLICY_CANDIDATE_2026_10_21.json"
+      - "research_lab/V6_S1_HIGH_LIVE_EXECUTION_POLICY_RECONCILIATION_PROTOCOL_2026_10_21.md"
+      - ".github/workflows/fund100-v6-s1-reconciled-high-policy-candidate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-pinned-original-v6-risk-policy-no-credential:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check original V5 and proposed V6 HIGH separation, 3 SELLs, zero trade
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q \
+            test_fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0.py \
+            test_fund100_v6_s1_independent_high_exante_policy_v1_0.py
+          test "$(git hash-object fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0.py)" = "f421a7c5f0a8b4beb20cb4ec22aa69b4dd6ad8b5"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Separate HIGH V6 candidate, original account pinned, XLE retained, 0 orders.'
+      - name: Emit categorical read-only V6 policy status (no private HTTP)
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0.py > /tmp/fund100-v6-s1-high-proposed.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path('/tmp/fund100-v6-s1-high-proposed.json').read_text())
+          assert x['stage']=='RECONCILED_SEPARATE_V6_HIGH_PROPOSED_POLICY_NO_ORDERS'
+          assert x['legacy_sells_in_order']==['ACWI','EEM','XLV']
+          assert x['retains_original_XLE_subject_to_target']
+          assert x['orders_authorized'] is False
+          assert x['broker_GETs']==x['broker_POSTs']==x['private_Git_writes']==0
+          print('Source-pinned reconciled V6 HIGH candidate passed. NO LIVE TRADE RELEASE.')
+          PY
