@@ -1,0 +1,95 @@
+name: Fund-100 V6-S1 Independent Signed GENESIS Recovery (GET ONLY; NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py"
+      - "test_fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py"
+      - "research_lab/V6_S1_INDEPENDENT_SIGNED_GENESIS_RECOVERY_PREFLIGHT_PROTOCOL_2026_10_21.md"
+      - ".github/workflows/fund100-v6-s1-genesis-recovery-readonly.yml"
+  workflow_dispatch:
+    inputs:
+      public_comment_id:
+        description: "Public GitHub issue #8 witness comment ID emitted by completed genesis run"
+        required: true
+        type: string
+      original_bootstrap_run_id:
+        description: "GitHub Actions run ID of the successful original signed genesis"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-s1-genesis-recovery-getonly
+  cancel-in-progress: false
+
+jobs:
+  offline-original-HMAC-public-witness-mocks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test signatures Git SHA missing state tampered public comment and STOP
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q \
+            test_fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py \
+            test_fund100_v6_s1_private_git_cas_protocol_v1_0.py
+          test "$(git hash-object fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py)" = "a774a67de7b5e0abac0a13f06d744c0c45baf079"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+
+  protected-main-independent-signed-genesis-getonly:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: offline-original-HMAC-public-witness-mocks
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      issues: read
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_GENESIS_COMMENT_ID: ${{ inputs.public_comment_id }}
+      FUND100_GENESIS_RUN_ID: ${{ inputs.original_bootstrap_run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pin original main STOP and strict GET-only source
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          test "$FUND100_RISK_LEVEL" = "HIGH"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          test "$(git hash-object fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py)" = "a774a67de7b5e0abac0a13f06d744c0c45baf079"
+          test "$(git hash-object fund100_v6_s1_private_git_cas_protocol_v1_0.py)" = "9b9f8917faa21b4157600ac642f80595445a7276"
+          test "$(git hash-object research_lab/V6_S1_INITIAL_PUBLIC_LEDGER_GENESIS_WITNESS_2026_10_21.json)" = "b6fd44c4bb0b17bcd906e97c7ca8d6a50cc00a99"
+          python - <<'PY'
+          import fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0 as m
+          assert m.ORIGINAL_PRIVATE_URL == 'https://api.github.com/repos/nicobouch97/fund100-state-private/contents/state/v6_s1_original_legacy_sales.json?ref=main'
+          assert m.NO_PRIVATE_GIT_WRITE and m.NO_ALPACA_NETWORK and m.NO_LIVE_ORDER_RELEASE
+          print('Only signed original private state and independent public comment GET are admitted.')
+          PY
+      - name: Verify private HMAC signed initial state and exact public issue witness
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py
+      - name: Confirm original operator STOP remains and no broker POST
+        run: |
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Signed initial ledger read and public commitment verified without private writes or brokerage orders.'
