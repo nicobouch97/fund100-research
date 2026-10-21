@@ -1,18 +1,15 @@
-"""LOCKED Alpaca LIVE original ACWI fractional qty SELL HTTP transport candidate.
+"""LOCKED Alpaca LIVE original ACWI fractional qty SELL *shape* candidate.
 
-This module implements wire-shape and receipt validation only. It MUST NOT
+This module implements pure payload-shape and receipt validation only. It MUST NOT
 be connected to a secret-bearing GitHub workflow, can NEVER automatically
 unlock, and has NO main(). Original STOP, HMAC and live permissions remain
-separate. Real production adapter release is a FUTURE reviewed change.
+separate. Real HTTP POST belongs exclusively to the separate reviewed writer boundary.
 """
 from __future__ import annotations
 
 from base64 import b64encode
 from decimal import Decimal
 import json
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
-from urllib.request import Request, urlopen
 from uuid import UUID
 
 import fund100_v6_s1_private_git_cas_protocol_v1_0 as cas
@@ -119,11 +116,11 @@ def check_prepost_sources(*,reserved_source:dict,prepost_source:dict,
     }
 
 
-def build_exact_wire_request(*,original_qty:str,api_key:str,api_secret:str):
-    """Construct only a HTTP Request object. NOT a send/permission.
+def build_exact_sell_payload(*,original_qty:str)->dict:
+    """Return deterministic original qty-SELL JSON shape; NO network/keys.
 
-    Method/host/payload/credentials are reviewed with fake values in tests.
-    This function never invokes network and is NOT a live-release guard.
+    The separate, pre-existing reviewed broker writer boundary owns real
+    HTTP requests. This module cannot build or send an HTTP Request.
     """
     seller._source_lock()
     payload=seller.inspect_sell_shape(symbol=ORIGINAL,original_qty=original_qty)
@@ -136,25 +133,8 @@ def build_exact_wire_request(*,original_qty:str,api_key:str,api_secret:str):
         or payload["time_in_force"]!="day"
         or payload["extended_hours"] is not False):
         raise LockedSellStop("Original ACWI fractional SELL shape changed")
-    parsed=urlparse(LIVE_POST_URL)
-    if (parsed.scheme!="https" or parsed.hostname!=LIVE_HOST
-        or parsed.path!="/v2/orders" or parsed.query
-        or parsed.port is not None or parsed.username is not None):
-        raise LockedSellStop("Nonoriginal LIVE broker order host/path")
-    if (type(api_key) is not str or len(api_key.strip())<10
-        or type(api_secret) is not str or len(api_secret.strip())<10
-        or api_key != api_key.strip() or api_secret != api_secret.strip()):
-        raise LockedSellStop("Missing privately provided broker credentials")
-    body=json.dumps(payload,sort_keys=True,separators=(",",":")).encode("ascii")
-    return Request(
-        url=LIVE_POST_URL,method="POST",data=body,
-        headers={
-            "Accept":"application/json",
-            "Content-Type":"application/json",
-            "APCA-API-KEY-ID":api_key,
-            "APCA-API-SECRET-KEY":api_secret,
-            "User-Agent":"fund100-v6-s1-original-acwi-one-attempt-LOCKED",
-        })
+    return payload
+
 
 
 def _validate_receipt(receipt:dict,*,original_qty:str)->dict:
@@ -225,43 +205,42 @@ def _hard_locked()->None:
         raise LockedSellStop("LIVE ACWI fractional SELL HTTP candidate HARD LOCKED")
 
 
+def offline_review_signed_prepost_and_receipt(*,signed_sources:dict,
+                                              simulated_receipt:dict)->dict:
+    """Pure signed-state → qty payload → fake receipt review.
+
+    It does NOT source a real broker receipt, authenticate a fresh risk
+    snapshot, or authorize a trade. Only original synthetic fixtures may be
+    used by the credentialless PR workflow.
+    """
+    if type(signed_sources) is not dict:
+        raise LockedSellStop("Signed source fixtures missing")
+    checked=check_prepost_sources(**signed_sources)
+    expected=build_exact_sell_payload(
+        original_qty=checked["canonical_original_fractional_qty"])
+    if expected["client_order_id"]!=checked["stable_original_client_order_id"]:
+        raise LockedSellStop("Original signed client ID is inconsistent")
+    classified=_validate_receipt(
+        simulated_receipt,original_qty=expected["qty"])
+    return {
+        "schema":SCHEMA,
+        "status":"PURE_SIGNED_PREPOST_AND_FAKE_BROKER_RECEIPT_VERIFIED_NO_SEND",
+        "signed_sequence":checked["signed_private_sequence"],
+        "original_symbol":"ACWI",
+        "receipt_stage":classified["stage"],
+        "independent_real_broker_receipt_verified":False,
+        "immutable_rollback_watermark_verified":False,
+        "real_live_order_authorized":False,
+        "actual_broker_POSTs":0,
+        "original_quantity_or_receipt_exported":False,
+        "payload":None,
+    }
+
+
 def submit_live_original_acwi_sell(*,original_qty:str,api_key:str,api_secret:str,
                                    signed_sources:dict,transport=None)->dict:
-    """Actual HTTP POST code path exists for review, but is HARD LOCKED.
-
-    Never wired into any GitHub Actions secret-bearing runner.
-    Real execution additionally requires a separate reviewed source of fresh
-    account risk and durable external anti-rollback anchor. Neither exists here.
-    """
-    _hard_locked()  # MUST remain the first executable statement.
-    fields={
-        "reserved_source","prepost_source","genesis_comment","first_comment",
-        "prepost_comment","first_comment_id","first_run_id",
-        "prepost_comment_id","prepost_run_id","original_qty","key",
-    }
-    if (type(signed_sources) is not dict or set(signed_sources)!=fields
-        or signed_sources["original_qty"]!=original_qty):
-        raise LockedSellStop("Unsigned or incomplete original pre-POST sources")
-    # Recompute real HMAC/Git-blob and both public issue commitments here;
-    # NEVER trust a caller-supplied 'approved' boolean/dict as a send permit.
-    checked=check_prepost_sources(**signed_sources)
-    if (checked.get("stage")!=
-            "ORIGINAL_SIGNED_PREPOST_AND_PUBLIC_CHAIN_STRUCTURALLY_VALID_LOCKED"
-        or checked.get("canonical_original_fractional_qty")!=cas._qty(original_qty)
-        or checked.get("stable_original_client_order_id")!=cas.CLIENT_IDS[ORIGINAL]):
-        raise LockedSellStop("Signed source validation refused ACWI submission")
-    req=build_exact_wire_request(
-        original_qty=original_qty,api_key=api_key,api_secret=api_secret)
-    sender=urlopen if transport is None else transport
-    # Exactly one network invocation, no retry on timeout or non-2xx.
-    try:
-        with sender(req,timeout=12) as response:
-            if getattr(response,"status",None) not in (200,201):
-                raise LockedSellStop("Broker SELL HTTP not acknowledged, no retry")
-            raw=response.read(RESPONSE_MAX_BYTES+1)
-        if len(raw)>RESPONSE_MAX_BYTES:
-            raise LockedSellStop("Broker response too large, no retry")
-        parsed=json.loads(raw.decode("utf-8"))
-    except (HTTPError,URLError,TimeoutError,OSError,ValueError,UnicodeError):
-        raise LockedSellStop("Broker POST response ambiguous/denied; NEVER retry") from None
-    return _validate_receipt(parsed,original_qty=original_qty)
+    """PERMANENTLY DISCONNECTED. Do not bypass reviewed writer boundary."""
+    _hard_locked()  # MUST be first executable action.
+    raise LockedSellStop(
+        "The reviewed original LIVE broker writer boundary has NOT approved "
+        "the V6 fractional SELL POST transport; no executable HTTP in this module")
