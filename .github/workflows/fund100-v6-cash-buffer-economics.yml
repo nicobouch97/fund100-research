@@ -6,6 +6,7 @@ on:
       - "fund100_v6_cash_buffer_costed_comparison_v1_0.py"
       - "test_fund100_v6_cash_buffer_costed_comparison_v1_0.py"
       - "research_lab/V6_CASH_BUFFER_COSTED_COMPARISON_PRE_REG_2026_10_21.md"
+      - "research_lab/results/V6_95_98_100_ENTRY_CASH_COSTED_RESULT_2026_10_21.md"
       - ".github/workflows/fund100-v6-cash-buffer-economics.yml"
   workflow_dispatch:
 
