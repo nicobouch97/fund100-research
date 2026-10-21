@@ -955,3 +955,106 @@ def submit_authorized_order_batch(
 # rehearsed and hash-locked.
 #
 # ============================================================
+
+
+# ============================================================
+# V6-S1 — APPENDED ORIGINAL ACWI FRACTIONAL-QTY SELL, HARD LOCKED
+# ============================================================
+# Existing V5 writer functions above are UNCHANGED. This is the ONLY
+# existing reviewed broker writer boundary allowed to hold new POST code.
+# New V6 release switches are never environment-controllable.
+# No GitHub workflow carries LIVE credentials to this new function.
+# ============================================================
+
+V6_S1_ACWI_QTY_SELL_TRANSPORT_RELEASED = False
+V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED = False
+V6_S1_ACWI_FRESH_ACCOUNT_RISK_SOURCE_RELEASED = False
+V6_S1_ACWI_EXTERNAL_WATERMARK_RELEASED = False
+
+
+def require_v6_s1_acwi_live_release() -> None:
+    """The FIRST executable call in the V6 LIVE adapter."""
+    require_public_execution_released()  # original V5 hard locks
+    if (V6_S1_ACWI_QTY_SELL_TRANSPORT_RELEASED is not True
+        or V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED is not True
+        or V6_S1_ACWI_FRESH_ACCOUNT_RISK_SOURCE_RELEASED is not True
+        or V6_S1_ACWI_EXTERNAL_WATERMARK_RELEASED is not True):
+        raise LiveWriterCandidateLocked(
+            "V6-S1 first ACWI quantity SELL writer: release locks ENGAGED")
+
+
+def submit_v6_s1_original_acwi_fractional_sell(*,
+                                               original_qty: str,
+                                               signed_sources: dict,
+                                               key: str,
+                                               secret: str,
+                                               transport=None) -> dict:
+    """One reviewed-shape Alpaca POST, completely LOCKED in production.
+
+    Authentication of a future LIVE risk run and latest external private
+    head watermark are separate unreleased prerequisites. Dummy fake
+    transports are used ONLY in credentialless offline tests.
+    """
+    require_v6_s1_acwi_live_release()  # MUST remain the FIRST action.
+    # Avoid trusting a user-supplied approved flag/receipt status.
+    import fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0 as v6
+    if (type(signed_sources) is not dict
+        or set(signed_sources)!={
+            "reserved_source","prepost_source","genesis_comment",
+            "first_comment","prepost_comment","first_comment_id",
+            "first_run_id","prepost_comment_id","prepost_run_id",
+            "original_qty","key"}
+        or signed_sources.get("original_qty")!=original_qty):
+        raise LiveWriterCandidateLocked(
+            "V6-S1 LIVE writer requires complete original signed private evidence")
+    try:
+        review=v6.check_prepost_sources(**signed_sources)
+        payload=v6.build_exact_sell_payload(original_qty=original_qty)
+    except Exception:
+        raise LiveWriterCandidateLocked(
+            "V6-S1 HMAC pre-POST or original qty payload not authenticated") from None
+    if (review.get("stage")!=
+            "ORIGINAL_SIGNED_PREPOST_AND_PUBLIC_CHAIN_STRUCTURALLY_VALID_LOCKED"
+        or review.get("signed_private_sequence")!=2
+        or review.get("stable_original_client_order_id")!=payload["client_order_id"]
+        or review.get("canonical_original_fractional_qty")!=payload["qty"]
+        or review.get("live_order_authorized") is not False):
+        raise LiveWriterCandidateLocked(
+            "V6 signed seq2/ACWI original order proof inconsistent")
+    validate_credentials(key,secret)
+    url=LIVE_BASE_URL+LIVE_ORDER_PATH
+    validate_live_url(url)
+    if url!="https://api.alpaca.markets/v2/orders":
+        raise LiveWriterCandidateLocked("V6 broker endpoint changed")
+    request=Request(
+        url=url,
+        data=json.dumps(
+            payload,sort_keys=True,separators=(",",":")
+        ).encode("ascii"),
+        method="POST",
+        headers={
+            "Accept":"application/json",
+            "Content-Type":"application/json",
+            "APCA-API-KEY-ID":key,
+            "APCA-API-SECRET-KEY":secret,
+            "User-Agent":"fund100-v6-s1-original-acwi-locked-first-attempt",
+        },
+    )
+    # ONE and only one POST request; uncertain results MUST NOT be retried.
+    sender=urlopen if transport is None else transport
+    try:
+        with sender(request,timeout=12) as response:
+            if getattr(response,"status",None) not in (200,201):
+                raise LiveWriterCandidateLocked("Broker POST not confirmed, no retry")
+            body=response.read(v6.RESPONSE_MAX_BYTES+1)
+        if len(body)>v6.RESPONSE_MAX_BYTES:
+            raise LiveWriterCandidateLocked("Broker response oversized, no retry")
+        receipt=json.loads(body.decode("utf-8"))
+    except (HTTPError,URLError,TimeoutError,OSError,ValueError,UnicodeError):
+        raise LiveWriterCandidateLocked(
+            "V6 broker POST uncertain or rejected; NEVER retry") from None
+    try:
+        return v6._validate_receipt(receipt,original_qty=original_qty)
+    except Exception:
+        raise LiveWriterCandidateLocked(
+            "Broker response invalid/terminal/ambiguous; HOLD never retry") from None
