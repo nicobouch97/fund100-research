@@ -108,6 +108,8 @@ def _request(*, method: str, token: str, body: dict | None = None,
         if conflict_expected and exc.code == 409:
             return None
         raise SandboxCasStop("Private sandbox operation rejected; redacted") from None
+    except SandboxCasStop:
+        raise
     except (URLError, OSError, TimeoutError, ValueError, UnicodeError):
         raise SandboxCasStop("Private sandbox operation unavailable; redacted") from None
     if type(parsed) is not dict:
