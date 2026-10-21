@@ -33,8 +33,16 @@ PUBLIC_ISSUE_URL = (
 )
 ACTIONS_RUN_JOB_URL_PREFIX = ("https://api.github.com/repos/"
     "nicobouch97/fund100-research/actions/runs/")
-BROKER_GUARD_JOB = "guarded-original-live-four-get"
-BROKER_GUARD_STEP = "Authenticate original LIVE four positions (GET only)"
+ORIGINAL_BROKER_WORKFLOW_RUNS_URL = (
+    "https://api.github.com/repos/nicobouch97/fund100-research/actions/"
+    "workflows/fund100-v6-real-live-getonly-transition.yml/runs"
+    "?branch=main&event=workflow_dispatch&per_page=20"
+)
+ORIGINAL_BROKER_WORKFLOW_PATH = (
+    ".github/workflows/fund100-v6-real-live-getonly-transition.yml"
+)
+BROKER_GUARD_JOB = "LIVE account direct GET only; private numbers never printed"
+BROKER_GUARD_STEP = "Authenticate via existing LIVE env and check four positions (GET only)"
 MAX_BROKER_PROOF_AGE_SECONDS = 600
 PUBLIC_COMMENT_URL = (
     "https://api.github.com/repos/nicobouch97/fund100-research/issues/comments/"
@@ -104,6 +112,9 @@ def _json(*, method: str, url: str, token: str, payload: dict | None = None,
           and url[len(ACTIONS_RUN_JOB_URL_PREFIX):-len("/jobs?per_page=100")].isdigit()
           and payload is None):
         expected_status = 200
+    elif (method == "GET" and url == ORIGINAL_BROKER_WORKFLOW_RUNS_URL
+          and payload is None):
+        expected_status = 200
     else:
         raise GenesisBootstrapStop("Unapproved GitHub HTTP method/path")
     if missing_ok and (method != "GET" or url != PRODUCTION_READ_URL):
@@ -157,19 +168,47 @@ def _utc(raw: object) -> datetime:
     return dt
 
 
-def authentic_original_four_get_job(*, run_id: str, public_token: str,
-                                   transport=None, now_utc: datetime | None = None) -> dict:
-    """Attest completed original read-only broker job in THIS Actions run.
+def authentic_original_four_get_job(*, current_main_sha: str,
+                                   public_token: str, transport=None,
+                                   now_utc: datetime | None = None) -> dict:
+    """Require latest verified manually triggered existing four-GET workflow.
 
-    The existing allowlisted script, executed in a SEPARATE credentialed job,
-    exits successfully ONLY on a full authentic LIVE account/positions check.
-    THIS production genesis job receives no Alpaca credentials. A job status
-    attestation is not a substitute for independently pinned workflow source.
+    New production-genesis workflow carries NO Alpaca credentials. It reads
+    GitHub Actions metadata for a separately completed ORIGINAL protected
+    authenticated broker four-GET workflow on the SAME current main commit.
     """
-    if type(run_id) is not str or re.fullmatch("[1-9][0-9]*", run_id) is None:
-        raise GenesisBootstrapStop("Invalid same-run broker verification reference")
-    target = ACTIONS_RUN_JOB_URL_PREFIX + run_id + "/jobs?per_page=100"
-    payload = _json(method="GET", url=target, token=public_token,
+    if (type(current_main_sha) is not str
+        or re.fullmatch("[0-9a-f]{40}", current_main_sha) is None):
+        raise GenesisBootstrapStop("Untrusted current main commit")
+    runs_data = _json(method="GET", url=ORIGINAL_BROKER_WORKFLOW_RUNS_URL,
+                      token=public_token, transport=transport)
+    if (type(runs_data.get("workflow_runs")) is not list
+        or len(runs_data["workflow_runs"]) > 20):
+        raise GenesisBootstrapStop("Original broker workflow-run evidence incomplete")
+    # Require latest eligible dispatch on THIS exact main SHA, never select
+    # an old successful result while a newer eligible attempt failed.
+    eligible = []
+    for run in runs_data["workflow_runs"]:
+        if type(run) is not dict:
+            continue
+        if (run.get("path") != ORIGINAL_BROKER_WORKFLOW_PATH
+            or run.get("event") != "workflow_dispatch"
+            or run.get("head_branch") != "main"
+            or run.get("head_sha") != current_main_sha
+            or type(run.get("repository")) is not dict
+            or run["repository"].get("full_name") !=
+               "nicobouch97/fund100-research"
+            or type(run.get("id")) is not int):
+            continue
+        eligible.append(run)
+    if not eligible:
+        raise GenesisBootstrapStop("Fresh matching manual main original LIVE check missing")
+    latest = max(eligible, key=lambda r: (_utc(r.get("created_at")), r["id"]))
+    if latest.get("status") != "completed" or latest.get("conclusion") != "success":
+        raise GenesisBootstrapStop("Latest matching manual LIVE four-GET workflow failed")
+    job_url = (ACTIONS_RUN_JOB_URL_PREFIX + str(latest["id"]) +
+               "/jobs?per_page=100")
+    payload = _json(method="GET", url=job_url, token=public_token,
                     transport=transport)
     if type(payload.get("jobs")) is not list or len(payload["jobs"]) > 100:
         raise GenesisBootstrapStop("Original broker Actions job source incomplete")
@@ -195,8 +234,9 @@ def authentic_original_four_get_job(*, run_id: str, public_token: str,
     elapsed = (now - _utc(job.get("completed_at"))).total_seconds()
     if elapsed < 0 or elapsed > MAX_BROKER_PROOF_AGE_SECONDS:
         raise GenesisBootstrapStop("Original four-GET proof became stale")
-    # This describes the unchanged original four-GET script's exit contract,
-    # not a new made-up Alpaca account response.
+    # Observed status comes from original previously audited source's EXIT
+    # contract, not fabricated raw brokerage data. Existing workflow also
+    # separately enforces original HIGH, STOP and identity.
     return {
         "schema": broker.SCHEMA,
         "account_binding_matches_original_policy": True,
@@ -372,12 +412,12 @@ def main() -> None:
         or os.getenv("FUND100_BOOTSTRAP_CONFIRMATION") !=
             "INITIALIZE_EMPTY_LEDGER_NO_ORDERS"):
         raise GenesisBootstrapStop("Original stopped protected manual main only")
-    # Credentialed original Alpaca four-GET ran in an earlier separate job.
-    # This genesis job NEVER receives or loads either LIVE Alpaca secret.
-    original_same_run = os.getenv("GITHUB_RUN_ID", "")
+    # Credentialed original Alpaca four-GET was a separate, PRE-EXISTING
+    # vetted GitHub workflow manually run on this same current main commit.
+    # This new genesis workflow NEVER receives either LIVE Alpaca secret.
     token = os.getenv("GITHUB_TOKEN", "")
     actual_report = authentic_original_four_get_job(
-        run_id=original_same_run, public_token=token)
+        current_main_sha=os.getenv("GITHUB_SHA", ""), public_token=token)
     url = os.getenv("GITHUB_SERVER_URL", "https://github.com")
     run_url = (
         url + "/" + os.environ["GITHUB_REPOSITORY"] +
