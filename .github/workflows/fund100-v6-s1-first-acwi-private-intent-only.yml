@@ -1,0 +1,98 @@
+name: Fund-100 V6-S1 ONE ACWI Original Intent Signed CAS (STORAGE ONLY; NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py"
+      - "test_fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py"
+      - "research_lab/V6_S1_FIRST_AUTHENTIC_ACWI_PRIVATE_INTENT_CAS_PROTOCOL_2026_10_21.md"
+      - ".github/workflows/fund100-v6-s1-first-acwi-private-intent-only.yml"
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type RECORD_ACWI_INTENT_NO_ORDERS after a fresh successful manual original LIVE four GET on main'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-s1-first-acwi-one-time-private-intent
+  cancel-in-progress: false
+
+jobs:
+  offline-original-signed-ACWI-intent-transport-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fake private CAS original shares authenticated history, signed Git 409 and public witness
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q \
+            test_fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py \
+            test_fund100_v6_s1_private_git_cas_protocol_v1_0.py \
+            test_fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py
+          test "$(git hash-object fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py)" = "7802c8f92146d01f33f0cb47d1bdc8b413785d7e"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Simulated Git writes only, no Alpaca credential or LIVE order.'
+
+  protected-main-one-original-ACWI-intent-NO-orders:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'RECORD_ACWI_INTENT_NO_ORDERS'
+    needs: offline-original-signed-ACWI-intent-transport-contract
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_FIRST_INTENT_CONFIRM: ${{ inputs.confirmation }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prove protected original main STOP, source pins, no direct Alpaca capability
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$FUND100_FIRST_INTENT_CONFIRM" = "RECORD_ACWI_INTENT_NO_ORDERS"
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          test "$FUND100_RISK_LEVEL" = "HIGH"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          test "$(git hash-object fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py)" = "7802c8f92146d01f33f0cb47d1bdc8b413785d7e"
+          test "$(git hash-object live_activation_outputs/v5_002/live_bootstrap_v1_0.json)" = "19557af50e20149470906d22e33ca99753892fb4"
+          test "$(git hash-object fund100_v6_s1_private_git_cas_protocol_v1_0.py)" = "9b9f8917faa21b4157600ac642f80595445a7276"
+          python - <<'PY'
+          import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as p
+          assert p.CONFIRM == 'RECORD_ACWI_INTENT_NO_ORDERS'
+          assert p.NO_BROKER_NETWORK and p.NO_LIVE_ORDER_RELEASE
+          assert not p.GIT_HEAD_ADVANCE_HARD_RELEASED
+          assert p.ONE_PRIVATE_INTENT_PUT_MAX == 1
+          print('Protected one ACWI original intent path inspected; NO broker orders.')
+          PY
+      - name: Read latest successful unchanged original broker four-GET then record one HMAC signed ACWI INTENT
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py
+      - name: Ensure original operator STOP remains
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Signed ACWI order INTENT only, no Alpaca SELL submission or LIVE trade activation.'
