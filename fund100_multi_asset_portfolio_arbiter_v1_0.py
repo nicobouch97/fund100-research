@@ -7,7 +7,6 @@ are not an investment-quality score or a LIVE strategy promotion.
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
-from hashlib import sha256
 import json
 import re
 
@@ -16,7 +15,13 @@ import fund100_v6_investment_thesis_gate_v1_0 as thesis
 SCHEMA = "FUND100_V6_MULTI_ASSET_RESEARCH_ARBITER_V1"
 MODE = "INVENTED_PORTFOLIO_SCENARIO_ONLY"
 TOTAL = Decimal("130.30")
-GROSS_MAX = Decimal(".95")
+# ENTRY-ONLY capital scenarios, never an always-on holdings threshold.
+# Research assumptions only: no portfolio or broker release from this module.
+CASH_POLICIES = {
+    "BASELINE_95": Decimal(".05"),
+    "LOW_BUFFER_98": Decimal(".02"),
+    "FULLY_ALLOCATED_100": Decimal("0"),
+}
 PER_INSTRUMENT_MAX = Decimal(".50")
 PER_FACTOR_MAX = Decimal(".60")
 CENT = Decimal(".01")
@@ -82,8 +87,13 @@ def _dollars(v: Decimal) -> str:
     return format(v.quantize(CENT), ".2f")
 
 
-def simulate(*, register: dict, proposals: list[dict]) -> dict:
-    """Research-only scenario. Does not read or alter a brokerage portfolio."""
+def simulate(*, register: dict, proposals: list[dict],
+             cash_policy: str = "BASELINE_95") -> dict:
+    """Compare entry-only cash scenarios; NO portfolio or order connection."""
+    if type(cash_policy) is not str or cash_policy not in CASH_POLICIES:
+        raise ArbiterStop("Unknown or unauthorized research cash scenario")
+    reserve = CASH_POLICIES[cash_policy]
+    gross_ceiling = Decimal(1) - reserve
     thesis.audit(register, verify_paths=False)
     if type(proposals) is not list or len(proposals) > 7:
         raise ArbiterStop("Only original registered hypothesis candidates permitted")
@@ -114,9 +124,10 @@ def simulate(*, register: dict, proposals: list[dict]) -> dict:
             "factors": _basket(row["risk_factors"], instrument=False),
         }
 
-    # Limits are hypothetical research guardrails. They are NOT the
-    # authoritative existing V5 or future multi-asset LIVE policy.
-    total_limit = _floor_cents(TOTAL * GROSS_MAX)
+    # Limits are hypothetical ENTRY-only research guardrails. They are NOT
+    # actual account liquidity, live policy, or a continuous exposure-control
+    # mechanism: price drift can change invested fractions between decisions.
+    total_limit = _floor_cents(TOTAL * gross_ceiling)
     remaining = total_limit
     allocated_by_class = {k: Decimal(0) for k in CLASS_LIMITS}
     allocated_by_instrument: dict[str, Decimal] = {}
@@ -151,7 +162,7 @@ def simulate(*, register: dict, proposals: list[dict]) -> dict:
 
     invested = total_limit - remaining
     cash = TOTAL - invested
-    if (invested > total_limit or cash < TOTAL * (1 - GROSS_MAX)
+    if (invested > total_limit or cash < TOTAL * reserve
         or any(x > TOTAL * PER_INSTRUMENT_MAX for x in allocated_by_instrument.values())
         or any(x > TOTAL * PER_FACTOR_MAX for x in allocated_by_factor.values())
         or any(allocated_by_class[k] > TOTAL * CLASS_LIMITS[k] for k in CLASS_LIMITS)):
@@ -162,6 +173,11 @@ def simulate(*, register: dict, proposals: list[dict]) -> dict:
         "hypothetical_fund_ceiling_usd": _dollars(TOTAL),
         "hypothetical_invested_usd": _dollars(invested),
         "hypothetical_cash_usd": _dollars(cash),
+        "research_entry_cash_policy": cash_policy,
+        "research_max_entry_gross_fraction": format(gross_ceiling, ".2f"),
+        "research_entry_cash_fraction": format(reserve, ".2f"),
+        "hypothetical_entry_cash_is_not_continuous_floor": True,
+        "zero_cash_scenario_not_an_execution_or_liquidity_approval": True,
         "cash_floor_scenario_only": True,
         "actual_holdings_or_cash_inspected": False,
         "performance_evidence_compared": False,
