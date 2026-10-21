@@ -56,7 +56,7 @@ def test_witness_public_nonce_tamper_rejected(tmp_path):
     doc = json.loads(path.read_text())
     doc["public_genesis_nonce_hex"] = "f" * 64
     path.write_text(json.dumps(doc))
-    with pytest.raises(w.WitnessStop, match="witness changed"):
+    with pytest.raises(w.WitnessStop, match="public genesis changed"):
         w.verify(root=tmp_path)
 
 
