@@ -59,9 +59,8 @@ def check_prepost_sources(*,reserved_source:dict,prepost_source:dict,
     No statement here proves real broker account/session/current head or
     grants order authority. All inputs need independently sourced data.
     """
-    if (TRANSPORT_RELEASED or PUBLIC_EXECUTION_ENABLED
-        or SEPARATE_SIGNED_V6_LIVE_RELEASE_PRESENT):
-        raise LockedSellStop("Original hard LOCK contract changed")
+    if risk.contract()["orders_authorized"] is not False:
+        raise LockedSellStop("Original account STOP/policy changed")
     try:
         parent=prev.check_initial_reserved(
             source=reserved_source,
@@ -227,7 +226,7 @@ def _hard_locked()->None:
 
 
 def submit_live_original_acwi_sell(*,original_qty:str,api_key:str,api_secret:str,
-                                   signed_review:dict,transport=None)->dict:
+                                   signed_sources:dict,transport=None)->dict:
     """Actual HTTP POST code path exists for review, but is HARD LOCKED.
 
     Never wired into any GitHub Actions secret-bearing runner.
@@ -235,16 +234,22 @@ def submit_live_original_acwi_sell(*,original_qty:str,api_key:str,api_secret:str
     account risk and durable external anti-rollback anchor. Neither exists here.
     """
     _hard_locked()  # MUST remain the first executable statement.
-    if (type(signed_review) is not dict
-        or signed_review.get("schema")!=SCHEMA
-        or signed_review.get("signed_private_sequence")!=2
-        or signed_review.get("stage")!=
+    fields={
+        "reserved_source","prepost_source","genesis_comment","first_comment",
+        "prepost_comment","first_comment_id","first_run_id",
+        "prepost_comment_id","prepost_run_id","original_qty","key",
+    }
+    if (type(signed_sources) is not dict or set(signed_sources)!=fields
+        or signed_sources["original_qty"]!=original_qty):
+        raise LockedSellStop("Unsigned or incomplete original pre-POST sources")
+    # Recompute real HMAC/Git-blob and both public issue commitments here;
+    # NEVER trust a caller-supplied 'approved' boolean/dict as a send permit.
+    checked=check_prepost_sources(**signed_sources)
+    if (checked.get("stage")!=
             "ORIGINAL_SIGNED_PREPOST_AND_PUBLIC_CHAIN_STRUCTURALLY_VALID_LOCKED"
-        or signed_review.get("canonical_original_fractional_qty")!=cas._qty(original_qty)
-        or signed_review.get("stable_original_client_order_id")!=cas.CLIENT_IDS[ORIGINAL]
-        or signed_review.get("immutable_rollback_watermark_verified") is not False
-        or signed_review.get("live_order_authorized") is not False):
-        raise LockedSellStop("Signed request preconditions not genuine or reviewed")
+        or checked.get("canonical_original_fractional_qty")!=cas._qty(original_qty)
+        or checked.get("stable_original_client_order_id")!=cas.CLIENT_IDS[ORIGINAL]):
+        raise LockedSellStop("Signed source validation refused ACWI submission")
     req=build_exact_wire_request(
         original_qty=original_qty,api_key=api_key,api_secret=api_secret)
     sender=urlopen if transport is None else transport
