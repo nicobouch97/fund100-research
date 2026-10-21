@@ -1,0 +1,83 @@
+name: Fund-100 V6-S1 Private PRODUCTION Ledger Readiness (THREE GET; NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_private_production_ledger_getonly_preflight_v1_0.py"
+      - "test_fund100_v6_s1_private_production_ledger_getonly_preflight_v1_0.py"
+      - "research_lab/V6_S1_PRIVATE_PRODUCTION_LEDGER_GETONLY_AND_EXTERNAL_ANCHOR_PROTOCOL_2026_10_21.md"
+      - ".github/workflows/fund100-v6-s1-production-ledger-readonly.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v6_s1_private_production_ledger_getonly_preflight_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-production-ledger-readonly.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-s1-private-production-ledger-readonly
+  cancel-in-progress: false
+
+jobs:
+  offline-original-ledger-source-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify exact original HMAC/rollback/missing state and no broker
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q \
+            test_fund100_v6_s1_private_production_ledger_getonly_preflight_v1_0.py \
+            test_fund100_v6_s1_private_git_cas_protocol_v1_0.py \
+            test_fund100_v6_s1_sell_fill_flat_cas_recovery_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          test "$(git hash-object fund100_v6_s1_private_production_ledger_getonly_preflight_v1_0.py)" = "25887d4377c92ce43c769dd47d48eeb0c1f68507"
+          echo 'Offline original HMAC/head continuity test only, no broker or private state writes.'
+
+  main-original-private-production-read-only:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: offline-original-ledger-source-tests
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 8
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify original protected main STOP and pinned READ ONLY ledger source
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          test "$(git hash-object fund100_v6_s1_private_production_ledger_getonly_preflight_v1_0.py)" = "25887d4377c92ce43c769dd47d48eeb0c1f68507"
+          python - <<'PY'
+          import fund100_v6_s1_private_production_ledger_getonly_preflight_v1_0 as p
+          assert p.stopped()
+          assert p.NO_WRITE and p.NO_BROKER and p.NO_LIVE_RELEASE
+          assert p.URL == "https://api.github.com/repos/nicobouch97/fund100-state-private/contents/state/v6_s1_original_legacy_sales.json?ref=main"
+          print("Original source SHA and protected READ-only ledger path PASS")
+          PY
+      - name: Confirm existing private repo identity and read production ledger status THREE GET ONLY
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_private_production_ledger_getonly_preflight_v1_0.py
+      - name: Verify original operator STOP remains
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Private source inspected without production ledger creation or orders.'
