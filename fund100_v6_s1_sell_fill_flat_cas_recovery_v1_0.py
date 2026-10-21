@@ -167,6 +167,16 @@ def plan_completed_sell(*,source,private_genesis,account_binding_sha256,key,
         return _hold("HOLD_ORDER_SUBMISSION_FILL_TIMING_MISMATCH",digest=old_sha)
     if (type(fills) is not list or not fills or len(fills)>=MAX_FILLS):
         return _hold("HOLD_MISSING_OR_UNPAGINATED_SELL_FILL_EVENTS",digest=old_sha)
+    # Detect duplicate FILL IDs on the *whole* supplied page before
+    # interpreting any intermediate partial/quantity status. One bad row
+    # must not be masked by an earlier, less specific HOLD reason.
+    identifiers=[]
+    for item in fills:
+        if type(item) is not dict or type(item.get("id")) is not str or not item["id"]:
+            raise RecoveryStop("FILL ID missing or malformed")
+        identifiers.append(item["id"])
+    if len(set(identifiers))!=len(identifiers):
+        raise RecoveryStop("Duplicate FILL activity ID in original SELL")
     total=Decimal(0)
     seen=set()
     last_time=submitted
