@@ -1,0 +1,42 @@
+name: Fund-100 V6-S1 LOCKED ACWI Live SELL HTTP Candidate (OFFLINE ONLY)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0.py"
+      - "test_fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0.py"
+      - "research_lab/V6_S1_FIRST_LIVE_ACWI_SELL_HTTP_CANDIDATE_LOCKED_PROTOCOL_2026_10_21.md"
+      - ".github/workflows/fund100-v6-s1-locked-acwi-sell-http.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-original-acwi-signed-source-to-fake-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate HMAC prepost head and fake broker HTTPS POST, never LIVE
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q \
+            test_fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0.py \
+            test_fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0.py \
+            test_fund100_v6_s1_frac_live_sell_writer_candidate_v1_0.py \
+            test_fund100_v6_s1_private_git_cas_protocol_v1_0.py
+          test "$(git hash-object fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0.py)" = "2c981254dc79634188a491d5fccaee5d34064f61"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0 as m
+          assert m.TRANSPORT_RELEASED is False
+          assert m.PUBLIC_EXECUTION_ENABLED is False
+          assert m.SEPARATE_SIGNED_V6_LIVE_RELEASE_PRESENT is False
+          assert m.AUTOMATIC_RETRY_RELEASED is False
+          print('Authenticated original signed seq2 shape + simulated broker wire tested; HARD LOCK.')
+          PY
