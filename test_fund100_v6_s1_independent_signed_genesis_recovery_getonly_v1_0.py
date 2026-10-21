@@ -54,7 +54,7 @@ def public_comment(source):
 
 def verify(src=None, comment=None, key=KEY):
     src = signed_genesis() if src is None else src
-    comment = public_comment(src) if comment is None else comment
+    comment = public_comment(src if isinstance(src, dict) and "sha" in src else signed_genesis()) if comment is None else comment
     return r.validate_sources(
         private_source=src, issue_comment=comment,
         public_comment_id=COMMENT_ID, bootstrap_run_id=RUN_ID,
