@@ -1,0 +1,74 @@
+name: Fund-100 V6-S1 Protected Private Repo Read Access (TWO GET; NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_private_state_actions_readonly_probe_v1_0.py"
+      - "test_fund100_v6_s1_private_state_actions_readonly_probe_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-protected-private-readonly-proof.yml"
+      - "research_lab/V6_S1_REAL_PRIVATE_GIT_CAS_SANDBOX_AND_READ_TOKEN_PROBE_2026_10_21.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-s1-protected-private-repo-getonly
+  cancel-in-progress: false
+
+jobs:
+  offline-no-credential-source-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test exact two-GET private repository probe without credentials
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_s1_private_state_actions_readonly_probe_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          test "$(git hash-object fund100_v6_s1_private_state_actions_readonly_probe_v1_0.py)" = "e5553b27a6958f994732b41f533c0744cf2ef5ea"
+          echo 'Synthetic source contract PASS; no private token or Alpaca credentials used.'
+
+  protected-main-private-get-only:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: offline-no-credential-source-contract
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 8
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate unchanged main, STOP, and immutable private two-GET probe
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          test "$(git hash-object fund100_v6_s1_private_state_actions_readonly_probe_v1_0.py)" = "e5553b27a6958f994732b41f533c0744cf2ef5ea"
+          python - <<'PY'
+          import fund100_v6_s1_private_state_actions_readonly_probe_v1_0 as p
+          assert p.NO_LIVE_TRADING and len(p.ALLOW) == 2
+          assert all(u.startswith('https://api.github.com/repos/nicobouch97/fund100-state-private') for u in p.ALLOW)
+          print("Pinned two-GET source, protected main, operator STOP: PASS")
+          PY
+      - name: Authenticate private repo identity and README only (redacted two GET)
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_private_state_actions_readonly_probe_v1_0.py
+      - name: Confirm original operator STOP still applies
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Private read access only; no production CAS, token echo, broker calls, or orders.'
