@@ -125,7 +125,7 @@ def check_initial_reserved(*,source:dict,genesis_public_comment:dict,
         "source_sha":old_sha,
         "original_nonce":w["original_public_genesis_nonce"],
         "account_binding":w["original_live_account_binding_sha256"],
-        "original_qty":format(cas._qty(original_qty),"f"),
+        "original_qty":cas._qty(original_qty),
     }
 
 
