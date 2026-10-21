@@ -42,14 +42,55 @@ jobs:
           test "$(git hash-object fund100_v6_s1_one_shot_private_empty_genesis_bootstrap_v1_0.py)" = "e3f2a2222debd4ca32c9f09ac761df70582f3b44"
           echo 'Fake original account and Git Contents 201/409/422 tests only; no LIVE orders.'
 
-  protected-main-one-time-empty-signed-state:
+  guarded-original-live-four-get:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'INITIALIZE_EMPTY_LEDGER_NO_ORDERS'
     needs: offline-one-shot-source-and-safety-tests
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify original approved broker reader SHA and original STOP
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          test "$FUND100_RISK_LEVEL" = "HIGH"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          test "$(git hash-object fund100_v6_real_live_getonly_transition_readiness_v1_0.py)" = "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2"
+          echo 'Only unchanged previously audited Alpaca GET-only reader is approved.'
+      - name: Authenticate original LIVE four positions (GET only)
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_real_live_getonly_transition_readiness_v1_0.py
+      - name: Verify STOP after original four GETs
+        run: |
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Read-only original broker check complete; zero Alpaca mutation.'
+
+  protected-main-one-time-empty-signed-state:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'INITIALIZE_EMPTY_LEDGER_NO_ORDERS'
+    needs: [offline-one-shot-source-and-safety-tests, guarded-original-live-four-get]
     runs-on: ubuntu-latest
     environment: fund100-live-broker
     timeout-minutes: 10
     permissions:
       contents: read
+      actions: read
       issues: write
     env:
       FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
@@ -71,7 +112,7 @@ jobs:
           test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
           test "$FUND100_RISK_LEVEL" = "HIGH"
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
-          test "$(git hash-object fund100_v6_s1_one_shot_private_empty_genesis_bootstrap_v1_0.py)" = "e3f2a2222debd4ca32c9f09ac761df70582f3b44"
+          test "$(git hash-object fund100_v6_s1_one_shot_private_empty_genesis_bootstrap_v1_0.py)" = "8619bc254bdfa67aa8a89f9ae47d149204aa47f8"
           test "$(git hash-object fund100_v6_real_live_getonly_transition_readiness_v1_0.py)" = "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2"
           test "$(git hash-object fund100_v6_s1_private_git_cas_protocol_v1_0.py)" = "9b9f8917faa21b4157600ac642f80595445a7276"
           test "$(git hash-object research_lab/V6_S1_INITIAL_PUBLIC_LEDGER_GENESIS_WITNESS_2026_10_21.json)" = "b6fd44c4bb0b17bcd906e97c7ca8d6a50cc00a99"
@@ -82,12 +123,10 @@ jobs:
           assert m.NO_ALPACA_ORDER_WRITER and m.NO_PRODUCTION_ORDER_RELEASE
           assert m.ONE_PRIVATE_GENESIS_PUT_MAX == 1
           assert not w.verify()['private_state_genesis_created']
-          print('Signed genesis source, original LIVE reader and STOP verified. NO broker order path.')
+          print('Separated broker preflight complete; this state job has NO Alpaca credentials.')
           PY
-      - name: One authentic LIVE broker four GET then original HMAC private empty genesis + public hash witness
+      - name: Verify same-run authentic original broker job then HMAC EMPTY genesis and public hash witness
         env:
-          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
-          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
           FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
           FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
           FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
