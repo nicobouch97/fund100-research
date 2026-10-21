@@ -224,6 +224,11 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml",
         "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
     ): "fd3a19b18e3f3afa5a73107630239727390ebfb6",
+    # Original account+one FILL activities GET source, exact 5 calls; no writers.
+    (
+        ".github/workflows/fund100-v6-s1-authentic-live-fill-schema-getonly.yml",
+        "fund100_v6_s1_authentic_live_fill_schema_getonly_v1_0.py",
+    ): "c4a18c4f0e9e3f10beaf69aedef13a091f47a6e9",
     # Actual V6-S1 Trading LIVE cash field INVENTORY: original four GET only.
     # Mandatory original account matching, HIGH STOP, all values private.
     (
@@ -415,6 +420,38 @@ def approved_scoped_live_script(
             candidate_path = ROOT / dependency
             if (not candidate_path.is_file()
                 or git_blob_digest(candidate_path) != expected_digest):
+                return False
+
+    if script == "fund100_v6_s1_authentic_live_fill_schema_getonly_v1_0.py":
+        if workflow != ".github/workflows/fund100-v6-s1-authentic-live-fill-schema-getonly.yml":
+            return False
+        if "if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'" not in source:
+            return False
+        if "FUND100_ENABLE_LIVE_READONLY: ${{ 'YES_READ_ONLY_LIVE' }}" in source:
+            return False
+        if "FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE" not in source:
+            return False
+        if "FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}" not in source:
+            return False
+        if "ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}" not in source:
+            return False
+        if "ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}" not in source:
+            return False
+        if "schedule:" in source or "FUND100_LIVE_WRITE_MODE: ENABLED" in source:
+            return False
+        dependencies = {
+            "fund100_alpaca_live_readonly_smoke.py":
+                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+            "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
+                "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
+            "fund100_v6_brokerless_transition_preview_v1_0.py":
+                "a0b4efc660f30395b6cdda104f0eddf63b8a6dd9",
+            "fund100_live_operator_control_v1_0.py":
+                PINNED_PRODUCTION_OPERATOR_MODULE,
+        }
+        for dep, sha in dependencies.items():
+            item = ROOT / dep
+            if not item.is_file() or git_blob_digest(item) != sha:
                 return False
 
     if script == "fund100_v6_s1_real_trading_cash_field_four_get_v1_0.py":
