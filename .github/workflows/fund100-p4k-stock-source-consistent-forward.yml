@@ -1,0 +1,90 @@
+name: Fund-100 P4K Same-Vintage Forward Stock Marks (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_stock_single_vintage_forward_marks_p4k_v1_0.py"
+      - "test_fund100_stock_single_vintage_forward_marks_p4k_v1_0.py"
+      - "research_lab/stocks/P4K_SINGLE_VINTAGE_FORWARD_STOCK_MARK_PROTOCOL_2026_10_21.md"
+      - ".github/workflows/fund100-p4k-stock-source-consistent-forward.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_stock_single_vintage_forward_marks_p4k_v1_0.py"
+      - ".github/workflows/fund100-p4k-stock-source-consistent-forward.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  source-consistent-observed-marks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing research requirements
+        run: python -m pip install -r requirements.txt
+      - name: Prove frozen signal chronology and no-order research
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_stock_single_vintage_forward_marks_p4k_v1_0.py \
+            test_fund100_stock_original_price_vintage_diff_p4j_v1_0.py \
+            test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Read only the exact 17-Oct and 21-Oct original archived snapshots
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          mkdir -p /tmp/p4k-original /tmp/p4k-followup
+          gh run download 39015519726 --repo "$GITHUB_REPOSITORY" \
+            --name fund100-p4g-prospective-stock-price-evidence \
+            --dir /tmp/p4k-original
+          gh run download 39571738927 --repo "$GITHUB_REPOSITORY" \
+            --name fund100-p4g-prospective-stock-price-evidence \
+            --dir /tmp/p4k-followup
+          for stem in /tmp/p4k-original /tmp/p4k-followup; do
+            test -s "$stem/fund100-p4g-snapshot.json"
+            test -s "$stem/fund100-p4g-original-prices.csv"
+          done
+      - name: Calculate NO-TRADE same-vintage adjusted-close comparison
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: |
+          set -euo pipefail
+          python fund100_stock_single_vintage_forward_marks_p4k_v1_0.py \
+            --original-json /tmp/p4k-original/fund100-p4g-snapshot.json \
+            --original-csv /tmp/p4k-original/fund100-p4g-original-prices.csv \
+            --later-json /tmp/p4k-followup/fund100-p4g-snapshot.json \
+            --later-csv /tmp/p4k-followup/fund100-p4g-original-prices.csv \
+            --output /tmp/p4k-single-vintage-mark-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("/tmp/p4k-single-vintage-mark-report.json").read_text())
+          assert report["original_archive_sha_verified"]
+          assert report["original_watchlist"] == ["MSFT","KO","PG"]
+          assert report["original_p4g_run_id"] == 39015519726
+          assert report["later_p4g_run_id"] == 39571738927
+          assert report["source_price_vintage_revisable"]
+          assert report["source_vintage_confirmed_identical_within_entry_exit"]
+          assert not report["independent_alpha_or_expected_profit_proven"]
+          assert not report["trading_authorized"]
+          assert report["broker_requests"] == report["live_orders"] == report["paper_orders"] == 0
+          print("Source-consistent fixed signal research only; no broker calls.")
+          PY
+      - name: Retain metadata and costed observed marks, not raw vendor CSV
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-p4k-authenticated-one-vintage-observed-stock-marks
+          path: /tmp/p4k-single-vintage-mark-report.json
+          retention-days: 90
+          if-no-files-found: error
