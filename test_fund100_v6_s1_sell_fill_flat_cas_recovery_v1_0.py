@@ -278,3 +278,27 @@ def test_no_live_writer_or_private_state_token_or_http_in_reconciliation_module(
                   'FUND100_PRIVATE_STATE_READ_TOKEN',
                   'FUND100_PRIVATE_STATE_WRITE_TOKEN'):
         assert token not in src
+
+def test_authentic_alpaca_fractional_second_utc_timestamps_do_not_false_block():
+    db,a=fixture()
+    a["receipt"]["submitted_at"]="2026-10-21T09:01:00.123Z"
+    a["receipt"]["filled_at"]="2026-10-21T09:02:00.345678Z"
+    a["fills"][0]["transaction_time"]="2026-10-21T09:02:00.345678Z"
+    a["current_snapshot"]["observed_at_utc"]="2026-10-21T09:09:58.500Z"
+    a["now_utc"]="2026-10-21T09:10:00.900Z"
+    rsl=r.plan_completed_sell(**a)
+    assert rsl["stage"]=="SYNTHETIC_SELL_FULL_FILL_FLAT_CAS_PROPOSED_NOT_EXECUTED"
+    safe(rsl)
+
+@pytest.mark.parametrize("stamp",[
+    "2026-10-21T09:01:00.123+01:00",
+    "2026-10-21T09:01:00.1234567Z",
+    "2026-10-21T09:01:00.123456789Z",
+    "2026-10-21T09:01:00z",
+    "2026-10-21T09:01:00",
+])
+def test_ambiguous_or_noncanonical_live_fill_timestamp_never_marks_sale_complete(stamp):
+    db,a=fixture()
+    a["receipt"]["submitted_at"]=stamp
+    with pytest.raises(r.RecoveryStop):
+        r.plan_completed_sell(**a)
