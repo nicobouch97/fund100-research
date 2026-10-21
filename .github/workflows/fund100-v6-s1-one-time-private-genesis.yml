@@ -39,7 +39,7 @@ jobs:
             test_fund100_v6_s1_private_git_cas_protocol_v1_0.py \
             test_fund100_v6_s1_public_genesis_witness_v1_0.py
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
-          test "$(git hash-object fund100_v6_s1_one_shot_private_empty_genesis_bootstrap_v1_0.py)" = "e3f2a2222debd4ca32c9f09ac761df70582f3b44"
+          test "$(git hash-object fund100_v6_s1_one_shot_private_empty_genesis_bootstrap_v1_0.py)" = "8619bc254bdfa67aa8a89f9ae47d149204aa47f8"
           echo 'Fake original account and Git Contents 201/409/422 tests only; no LIVE orders.'
 
   guarded-original-live-four-get:
