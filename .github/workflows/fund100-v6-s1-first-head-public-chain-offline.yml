@@ -1,0 +1,34 @@
+name: Fund-100 V6-S1 Signed First HEAD Public Chain (OFFLINE; NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_first_private_head_external_witness_offline_v1_0.py"
+      - "test_fund100_v6_s1_first_private_head_external_witness_offline_v1_0.py"
+      - "research_lab/V6_S1_EXTERNAL_FIRST_HEAD_CAS_CHAIN_OFFLINE_PROTOCOL_2026_10_21.md"
+      - ".github/workflows/fund100-v6-s1-first-head-public-chain-offline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-signed-first-head-and-external-witness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test fake first signed CAS, stale competing writer and public digest
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q \
+            test_fund100_v6_s1_first_private_head_external_witness_offline_v1_0.py \
+            test_fund100_v6_s1_private_git_cas_protocol_v1_0.py \
+            test_fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py
+          test "$(git hash-object fund100_v6_s1_first_private_head_external_witness_offline_v1_0.py)" = "5dc9c710f2bf3ec99f45f71ec5ab72178bed6db7"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Signed original first-head+external-public-chain rehearsal only. No broker or real private PUT.'
