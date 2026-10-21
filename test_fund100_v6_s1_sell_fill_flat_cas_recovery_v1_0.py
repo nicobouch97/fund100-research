@@ -167,7 +167,7 @@ def test_invalid_or_unanchored_private_sha_rejects_transition():
     ("notional","10","HOLD_ORIGINAL_SELL_RECEIPT_ID_OR_SHAPE_MISMATCH"),
     ("status","partially_filled","HOLD_ORIGINAL_SELL_PARTIAL_OR_TERMINAL_STATUS"),
     ("status","canceled","HOLD_ORIGINAL_SELL_PARTIAL_OR_TERMINAL_STATUS"),
-    ("filled_qty","0.000000001","HOLD_ORIGINAL_SELL_PARTIAL_OR_TERMINAL_STATUS"),
+    ("filled_qty","0.000000001","HOLD_ORDER_FILLED_STATUS_WITH_PARTIAL_QUANTITY"),
     ("qty","0.200000000","HOLD_SUBMITTED_SELL_QUANTITY_DIFFERS"),
 ])
 def test_changed_fill_or_order_receipt_never_marks_sold(field,bad,expected):
