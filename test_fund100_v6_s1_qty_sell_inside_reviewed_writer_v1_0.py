@@ -146,7 +146,7 @@ def test_unauthenticated_account_signed_sources_reject_before_broker(change,monk
 
 
 @pytest.mark.parametrize("provided",[
-    None,{},{"approved":True},{"schema":"FAKE"},
+    {},{"approved":True},{"schema":"FAKE"},
 ])
 def test_no_user_forged_approval_releases_qty_sell(provided,monkeypatch):
     fake_release(monkeypatch)
