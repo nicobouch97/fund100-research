@@ -1,0 +1,215 @@
+{
+  "schema": "FUND100_V7_APPROVED_RESEARCH_PRIORITY_OVERLAY_V1",
+  "as_of_utc": "2026-10-21",
+  "status": "RESEARCH_PRIORITY_QUEUE_NO_TRADE",
+  "source_original_v6_thesis_registry": "research_lab/V6_INVESTMENT_PHILOSOPHY_THESIS_REGISTER_2026_10_19.json",
+  "source_original_v6_thesis_registry_blob_sha1": "1dc9ebec12978f6fdba398894bcae3f37c138917",
+  "source_proposed_v6_high_policy": "research_lab/V6_S1_HIGH_RECONCILED_LIVE_EXECUTION_POLICY_CANDIDATE_2026_10_21.json",
+  "source_proposed_v6_high_policy_blob_sha1": "249c125d7d5f2362b6340f00872bc9a2bf8c6e68",
+  "source_original_v5_live_policy": "live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json",
+  "source_original_v5_live_policy_blob_sha1": "ff20cb4950243c64f4d34b68e6e3170ff6cc9421",
+  "original_live_trial_capital_ceiling_usd": "130.30",
+  "existing_v6_first_acwi_private_intent_workflow_not_proof_of_execution": true,
+  "initial_etf_target_weights_represent_whole_fund_not_separate_etf_sleeve": true,
+  "new_strategy_capital_share_must_come_from_total_reallocation": true,
+  "no_automatic_rebalance_or_live_promotion": true,
+  "original_operator_must_remain_stopped": true,
+  "no_leverage_or_derivative_release": true,
+  "no_broker_requests": true,
+  "no_private_state_writes": true,
+  "portfolio_rebalance_authorized": false,
+  "funded_order_authorized": false,
+  "research_streams": [
+    {
+      "id": "DIRECT_STOCK_QUALITY_MOMENTUM",
+      "priority_tier": 1,
+      "title": "Individual stocks — quality and momentum",
+      "underlying_risk": "EQUITY",
+      "instrument": "US_LISTED_COMMON_SHARES",
+      "mechanism": "QUALITY_MOMENTUM",
+      "evidence_stage": "FORWARD_SOURCE_INSUFFICIENT",
+      "evidence_path": "research_lab/stocks/P4K_FIRST_REAL_AUTHENTIC_FORWARD_MARK_RESULT_2026_10_21.md",
+      "evidence_git_blob_sha1": "d4855a33d44dde24abdde7cfe7eddc903aaa8ccf",
+      "next_gate": "CORPORATE_ACTION_CLEAN_SIGNALS_WITH_PROSPECTIVE_NET_COST_MARKS",
+      "overlaps_with": [
+        "EQUITY_ETF_BETA",
+        "SECTOR_BETA"
+      ],
+      "candidate_whole_fund_capital_share": null,
+      "new_broker_instrument_released": false,
+      "alpha_established": false
+    },
+    {
+      "id": "EQUITY_EARNINGS_AND_EVENTS",
+      "priority_tier": 1,
+      "title": "Event-driven earnings, merger and spin-offs",
+      "underlying_risk": "EQUITY",
+      "instrument": "US_LISTED_COMMON_SHARES",
+      "mechanism": "DATED_EVENT_DRIFT",
+      "evidence_stage": "SOURCE_PROTOCOL_ONLY",
+      "evidence_path": "research_lab/stocks/V6E1_REAL_SEC_EARNINGS_CATALYST_PROTOCOL_2026_10_17.md",
+      "evidence_git_blob_sha1": "072e086d2df18668ee20f26b90ba921b7f7cf2d3",
+      "next_gate": "RECONCILE_PUBLICATION_TIMESTAMPS_ANALYST_VINTAGE_AND_AFTER_COST_POST_EVENT_RETURN",
+      "overlaps_with": [
+        "DIRECT_STOCK_QUALITY_MOMENTUM",
+        "EQUITY_ETF_BETA"
+      ],
+      "candidate_whole_fund_capital_share": null,
+      "new_broker_instrument_released": false,
+      "alpha_established": false
+    },
+    {
+      "id": "EQUITY_FACTOR_ALTERNATIVE_RISK_PREMIA",
+      "priority_tier": 1,
+      "title": "Equity value, quality, profitability and momentum factors",
+      "underlying_risk": "EQUITY",
+      "instrument": "US_EQUITY_OR_LISTED_FACTOR_ETF",
+      "mechanism": "POINT_IN_TIME_FACTOR",
+      "evidence_stage": "SOURCE_PROTOCOL_ONLY",
+      "evidence_path": "research_lab/stocks/P4G_PROSPECTIVE_QUALITY_MOMENTUM_PROTOCOL_2026_10_15.md",
+      "evidence_git_blob_sha1": "3316241eeb33c176908296d559fb2db5c6a72d95",
+      "next_gate": "POINT_IN_TIME_CONSTITUENTS_DELIVESTING_AND_TOTAL_RETURN_CORPORATE_ACTION_REVIEW",
+      "overlaps_with": [
+        "DIRECT_STOCK_QUALITY_MOMENTUM",
+        "EQUITY_ETF_BETA"
+      ],
+      "candidate_whole_fund_capital_share": null,
+      "new_broker_instrument_released": false,
+      "alpha_established": false
+    },
+    {
+      "id": "CRYPTO_TREND_AND_RISK_REGIMES",
+      "priority_tier": 2,
+      "title": "Crypto BTC/ETH trend and risk regimes",
+      "underlying_risk": "CRYPTO",
+      "instrument": "SPOT_OR_LISTED_CRYPTO_EXPOSURE_IF_ELIGIBLE",
+      "mechanism": "MOMENTUM_TREND_VOLATILITY",
+      "evidence_stage": "SOURCE_PROTOCOL_ONLY",
+      "evidence_path": "research_lab/crypto/V6C1_CRYPTO_24_7_TREND_PROTOCOL_2026_10_17.md",
+      "evidence_git_blob_sha1": "78c5e0ea5733ee4905e7434e86e842aea720f77a",
+      "next_gate": "AUTHENTIC_24_7_MARKETS_AND_BROKER_ACCOUNT_ELIGIBILITY_COST_RISK",
+      "overlaps_with": [
+        "HIGH_VOLATILITY_RISK",
+        "EQUITY_GROWTH_RISK"
+      ],
+      "candidate_whole_fund_capital_share": null,
+      "new_broker_instrument_released": false,
+      "alpha_established": false
+    },
+    {
+      "id": "COMMODITY_TREND_AND_CARRY",
+      "priority_tier": 2,
+      "title": "Commodity trend and term-structure carry",
+      "underlying_risk": "COMMODITY",
+      "instrument": "LISTED_COMMODITY_ETP_INITIAL",
+      "mechanism": "TREND_CURVE_CARRY",
+      "evidence_stage": "HISTORICAL_SEC_LOOKTHROUGH_ONLY",
+      "evidence_path": "research_lab/commodities/V6_C11_SEC_FILING_DBC_LOOKTHROUGH_PROTOCOL_2026_10_21.md",
+      "evidence_git_blob_sha1": "32e9770cc0c5b0371866fa5bfbdd8d970d68db9e",
+      "next_gate": "AUTHENTIC_CONTRACT_CURVE_VINTAGE_AND_MICRO_ETP_REALISTIC_COSTS",
+      "overlaps_with": [
+        "XLE_IS_ENERGY_EQUITY_NOT_FUTURES_BETA",
+        "INFLATION_GROWTH_RISK"
+      ],
+      "candidate_whole_fund_capital_share": null,
+      "new_broker_instrument_released": false,
+      "alpha_established": false
+    },
+    {
+      "id": "OPTIONS_AND_VOLATILITY",
+      "priority_tier": 2,
+      "title": "Defined-risk options and volatility structures",
+      "underlying_risk": "VOLATILITY_DERIVATIVES",
+      "instrument": "OPTIONS_IF_ACCOUNT_APPROVED",
+      "mechanism": "DEFINED_RISK_CONVEXITY_VOLATILITY",
+      "evidence_stage": "NEW_NOT_SOURCED",
+      "evidence_path": "research_lab/V7_EVIDENCE_FIRST_RETURN_STRATEGY_PRIORITIES_2026_10_21.md",
+      "evidence_git_blob_sha1": null,
+      "next_gate": "VERIFY_ACCOUNT_PERMISSION_EXPIRY_ASSIGNMENT_MARGINS_AND_MAX_LOSS",
+      "overlaps_with": [
+        "EQUITY_VOLATILITY",
+        "DERIVATIVE_GAP_RISK"
+      ],
+      "candidate_whole_fund_capital_share": null,
+      "new_broker_instrument_released": false,
+      "alpha_established": false
+    },
+    {
+      "id": "LISTED_REITS_AND_INFRASTRUCTURE",
+      "priority_tier": 3,
+      "title": "REITs and listed infrastructure",
+      "underlying_risk": "EQUITY_REAL_ASSETS",
+      "instrument": "LISTED_REIT_OR_INFRASTRUCTURE_EQUITY",
+      "mechanism": "FINANCING_SENSITIVITY_VALUE_MOMENTUM",
+      "evidence_stage": "NEW_NOT_SOURCED",
+      "evidence_path": "research_lab/V7_EVIDENCE_FIRST_RETURN_STRATEGY_PRIORITIES_2026_10_21.md",
+      "evidence_git_blob_sha1": null,
+      "next_gate": "VERIFY_LIQUID_FRACTIONAL_LISTED_ROUTES_AND_RATE_SENSITIVITY",
+      "overlaps_with": [
+        "EQUITY_ETF_BETA",
+        "REAL_RATES"
+      ],
+      "candidate_whole_fund_capital_share": null,
+      "new_broker_instrument_released": false,
+      "alpha_established": false
+    },
+    {
+      "id": "BONDS_CREDIT_AND_RATES",
+      "priority_tier": 3,
+      "title": "Bonds, credit and rates",
+      "underlying_risk": "RATES_CREDIT",
+      "instrument": "LISTED_BOND_ETF_INITIAL",
+      "mechanism": "DURATION_CURVE_CREDIT_REGIME",
+      "evidence_stage": "NEGATIVE_OR_INSUFFICIENT_OOS_EVIDENCE",
+      "evidence_path": "research_lab/bonds/INITIAL_HOLDOUT_REVIEW_2026_10_14.md",
+      "evidence_git_blob_sha1": "584df4d7aadab17d2ad5e7eb05b173b3698d6e07",
+      "next_gate": "TRUE_ECONOMIC_VINTAGE_SCHEDULE_AND_SHY_BENCHMARK_HOLDOUT",
+      "overlaps_with": [
+        "REAL_RATES",
+        "CREDIT_SPREADS",
+        "EQUITY_RISK_OFF"
+      ],
+      "candidate_whole_fund_capital_share": null,
+      "new_broker_instrument_released": false,
+      "alpha_established": false
+    },
+    {
+      "id": "LIQUID_MAJOR_FX",
+      "priority_tier": 4,
+      "title": "Liquid FX major pairs",
+      "underlying_risk": "FX",
+      "instrument": "DEDICATED_FX_BROKER_IF_ELIGIBLE",
+      "mechanism": "CARRY_TREND_RATE_DIFFERENTIAL",
+      "evidence_stage": "BROKER_ROUTE_UNAVAILABLE",
+      "evidence_path": "research_lab/V6_INVESTMENT_PHILOSOPHY_THESIS_REGISTER_2026_10_19.json",
+      "evidence_git_blob_sha1": "1dc9ebec12978f6fdba398894bcae3f37c138917",
+      "next_gate": "BROKER_FINANCING_MARGIN_AND_DATA_VINTAGES_PROVED",
+      "overlaps_with": [
+        "INTEREST_RATE_DIFFERENTIAL",
+        "CURRENCY_RISK"
+      ],
+      "candidate_whole_fund_capital_share": null,
+      "new_broker_instrument_released": false,
+      "alpha_established": false
+    },
+    {
+      "id": "DIRECT_FUTURES_AND_EXCHANGE_DERIVATIVES",
+      "priority_tier": 4,
+      "title": "Direct commodity futures and exchange derivatives",
+      "underlying_risk": "COMMODITY",
+      "instrument": "FUTURES_IF_MARGIN_AND_CONTRACT_FEASIBLE",
+      "mechanism": "TREND_CURVE_CARRY",
+      "evidence_stage": "BROKER_ROUTE_UNAVAILABLE",
+      "evidence_path": "research_lab/commodities/C9_MICROACCOUNT_CME_MARGIN_AND_TRADABLE_INSTRUMENT_ROUTE_2026_10_18.md",
+      "evidence_git_blob_sha1": "2bb4e7a331693b53007b1d02745d743b3741d27e",
+      "next_gate": "EXCHANGE_CONTRACT_SIZE_MARGIN_LIQUIDITY_AND_LIQUIDATION_STRESS",
+      "overlaps_with": [
+        "COMMODITY_TREND_AND_CARRY",
+        "MARGIN_LOSS_RISK"
+      ],
+      "candidate_whole_fund_capital_share": null,
+      "new_broker_instrument_released": false,
+      "alpha_established": false
+    }
+  ]
+}
