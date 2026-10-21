@@ -1,0 +1,61 @@
+name: Fund-100 V6 B4 Issuer-Dated Bond Duration Cross-Asset Research (OFFLINE)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_b4_issuer_bond_duration_crossasset_v1_0.py"
+      - "test_fund100_v6_b4_issuer_bond_duration_crossasset_v1_0.py"
+      - "research_lab/bonds/v6_b4_official_ishares_duration_web_snapshot_2026_10_21.json"
+      - "research_lab/bonds/V6_B4_OFFICIAL_ISHARES_DURATION_FIRST_SNAPSHOT_PROTOCOL_2026_10_21.md"
+      - ".github/workflows/fund100-v6-b4-issuer-bond-duration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-dated-bond-shock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install only pinned research test runner family
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Verify issuer-dated original web transcript and full cross-asset boundary
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_v6_b4_issuer_bond_duration_crossasset_v1_0.py \
+            test_fund100_v6_c12_source_qualified_multi_asset_preflight_v1_0.py \
+            test_fund100_v6_c11_dbc_sec_futures_lookthrough_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Calculate separate nominal Treasury, real TIPS and credit sensitivities
+        run: |
+          set -euo pipefail
+          python fund100_v6_b4_issuer_bond_duration_crossasset_v1_0.py \
+            --decision-date 2026-10-21 > /tmp/fund100-v6-b4-dated-bond-duration.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/fund100-v6-b4-dated-bond-duration.json').read_text())
+          assert r['hypothetical_invested_usd']=='110.00'
+          assert r['hypothetical_cash_usd']=='20.30'
+          assert r['issuer_measure_asof_date']=='2026-10-19'
+          assert r['fixed_original_bond_issuer_snapshot_blob_sha1']=='4fd3e4a28aeab067c2d95328b69e5c4a6ebd9bf0'
+          assert len(r['distinct_bond_driver_duration_dollar_years'])==3
+          assert r['illustrative_joint_up_100bp_each_instrument_own_driver_price_only_usd']=='-2.969600'
+          assert r['original_v6_s1_cash_policy_unchanged']
+          assert not r['new_live_orders_authorized']
+          assert r['broker_requests']==r['paper_orders']==r['live_orders']==0
+          print('Dated issuer-source duration risk research PASS; zero broker orders')
+          PY
+      - name: Preserve descriptive research-only rate-driver report
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v6-b4-issuer-bond-duration-source-risk
+          path: /tmp/fund100-v6-b4-dated-bond-duration.json
+          retention-days: 60
+          if-no-files-found: error
