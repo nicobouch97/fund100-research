@@ -1,0 +1,42 @@
+name: Fund-100 V6-S1 LOCKED ACWI Live SELL HTTP Candidate (OFFLINE ONLY)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0.py"
+      - "test_fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0.py"
+      - "research_lab/V6_S1_FIRST_LIVE_ACWI_SELL_HTTP_CANDIDATE_LOCKED_PROTOCOL_2026_10_21.md"
+      - ".github/workflows/fund100-v6-s1-locked-acwi-sell-http.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-original-acwi-signed-source-to-fake-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate signed prepost and pure ACWI qty SELL / fake receipt, never HTTP
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q \
+            test_fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0.py \
+            test_fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0.py \
+            test_fund100_v6_s1_frac_live_sell_writer_candidate_v1_0.py \
+            test_fund100_v6_s1_private_git_cas_protocol_v1_0.py
+          test "$(git hash-object fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0.py)" = "924b6e00663d652eb7abd0fcbcfc5a445ad83f2f"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0 as m
+          assert m.TRANSPORT_RELEASED is False
+          assert m.PUBLIC_EXECUTION_ENABLED is False
+          assert m.SEPARATE_SIGNED_V6_LIVE_RELEASE_PRESENT is False
+          assert m.AUTOMATIC_RETRY_RELEASED is False
+          print('Authenticated signed seq2 + pure ACWI SELL payload/receipt contract tested; NO NEW HTTP POST.')
+          PY
