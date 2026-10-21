@@ -1,0 +1,102 @@
+name: Fund-100 V6-S1 One-Time Signed EMPTY Production Ledger GENESIS (NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_one_shot_private_empty_genesis_bootstrap_v1_0.py"
+      - "test_fund100_v6_s1_one_shot_private_empty_genesis_bootstrap_v1_0.py"
+      - "research_lab/V6_S1_ONE_TIME_PRIVATE_PRODUCTION_SIGNED_GENESIS_BOOTSTRAP_PROTOCOL_2026_10_21.md"
+      - ".github/workflows/fund100-v6-s1-one-time-private-genesis.yml"
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type INITIALIZE_EMPTY_LEDGER_NO_ORDERS after protected secrets are configured'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-s1-one-time-private-empty-ledger-genesis
+  cancel-in-progress: false
+
+jobs:
+  offline-one-shot-source-and-safety-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test fake GitHub/Alpaca signatures and STOP without credentials
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q \
+            test_fund100_v6_s1_one_shot_private_empty_genesis_bootstrap_v1_0.py \
+            test_fund100_v6_s1_private_git_cas_protocol_v1_0.py \
+            test_fund100_v6_s1_public_genesis_witness_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          test "$(git hash-object fund100_v6_s1_one_shot_private_empty_genesis_bootstrap_v1_0.py)" = "86b4bc5e2cb9aa0a85911ca6d022b263f730eb51"
+          echo 'Fake original account and Git Contents 201/409/422 tests only; no LIVE orders.'
+
+  protected-main-one-time-empty-signed-state:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'INITIALIZE_EMPTY_LEDGER_NO_ORDERS'
+    needs: offline-one-shot-source-and-safety-tests
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+      FUND100_BOOTSTRAP_CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prove exact original main/STOP and pinned private genesis writer source
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$FUND100_BOOTSTRAP_CONFIRMATION" = "INITIALIZE_EMPTY_LEDGER_NO_ORDERS"
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          test "$FUND100_RISK_LEVEL" = "HIGH"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          test "$(git hash-object fund100_v6_s1_one_shot_private_empty_genesis_bootstrap_v1_0.py)" = "86b4bc5e2cb9aa0a85911ca6d022b263f730eb51"
+          test "$(git hash-object fund100_v6_real_live_getonly_transition_readiness_v1_0.py)" = "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2"
+          test "$(git hash-object fund100_v6_s1_private_git_cas_protocol_v1_0.py)" = "9b9f8917faa21b4157600ac642f80595445a7276"
+          test "$(git hash-object research_lab/V6_S1_INITIAL_PUBLIC_LEDGER_GENESIS_WITNESS_2026_10_21.json)" = "b6fd44c4bb0b17bcd906e97c7ca8d6a50cc00a99"
+          python - <<'PY'
+          import fund100_v6_s1_one_shot_private_empty_genesis_bootstrap_v1_0 as m
+          import fund100_v6_s1_public_genesis_witness_v1_0 as w
+          assert m.PRODUCTION_URL == 'https://api.github.com/repos/nicobouch97/fund100-state-private/contents/state/v6_s1_original_legacy_sales.json'
+          assert m.NO_ALPACA_ORDER_WRITER and m.NO_PRODUCTION_ORDER_RELEASE
+          assert m.ONE_PRIVATE_GENESIS_PUT_MAX == 1
+          assert not w.verify()['private_state_genesis_created']
+          assert m.ORIGINAL_BROKER_WORKFLOW_PATH == '.github/workflows/fund100-v6-real-live-getonly-transition.yml'
+          print('Existing protected broker workflow must separately pass on this same main SHA; this job has NO Alpaca credentials.')
+          PY
+      - name: Verify freshly completed EXISTING broker workflow then HMAC EMPTY genesis and public hash witness
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_one_shot_private_empty_genesis_bootstrap_v1_0.py
+      - name: Confirm original operator STOP and no LIVE release after one-shot bootstrap
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'An EMPTY signed private ledger does not authorize brokerage POSTs, BUYs or legacy ETF sales.'
