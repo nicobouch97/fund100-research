@@ -1,0 +1,22 @@
+# V6-S1 — original ACWI broker GET + initial HMAC signed ledger source JOIN (22 Oct 2026)
+
+**Minimum release integration, not another repeat of signed genesis or a funded execution.** An in-memory bridge uses the actual *interfaces* that authenticated seven broker GETs and original signed production ledger use. All CI inputs are synthetic: no Github private tokens, no Alpaca secrets, no broker network, no private state PUT, no fresh LIVE observation in this PR. The real prior protected broker results are not inputs to test; only the existing runtime reader can produce real broker values. The original LIVE operator STOP and broker kill remain engaged; no request to run the storage-only ACWI intent workflow.
+
+## Actual motivating evidence
+
+- Genuine four-GET [39785127282](https://github.com/nicobouch97/fund100-research/actions/runs/39785127282), protected authenticated main, observed four unchanged original ETFs, original account binding, balanced cash/equity and zero open orders on 22 Oct.
+- Genuine seven-GET [39807652211](https://github.com/nicobouch97/fund100-research/actions/runs/39807652211), same real account, found zero existing original deterministic V6 ACWI/EEM/XLV migration order IDs, 3 real 404s **NOT never-POST proof**, zero outstanding open orders.
+- Genuine signed original private seq0 creation [39637082911](https://github.com/nicobouch97/fund100-research/actions/runs/39637082911), separately witnessed HMAC recovery [39638576563](https://github.com/nicobouch97/fund100-research/actions/runs/39638576563). Its Git blob and zero entries stayed unchanged on the next independent current private read. It is NOT a trustworthy new authenticated source just because a caller assembles its fields.
+
+## Exact bridge
+
+- Verify unchanged separate proposed V6 HIGH policy and all six literal-False current reviewed writer locks. No environment-based promotion.
+- Re-run existing original **seven-GET in-memory structural assessment** on the SAME current broker observation, checking exact original account policy binding, unmodified legacy shares, XLE retention, cash/equity coherence, zero open orders and all deterministic client-order-ID GET response categories. Missing/malformed responses/unknown network outcome STOP. Never equate 404 with proof that no earlier POST occurred.
+- Independently validate original **HMAC-signed seq0 private Contents source** against original SHA/public bot issue-8 genesis witness, original live account SHA256 binding and exact account identity. Require sequence 0 and no entries, not hypothetical seq1/seq2; fail closed if state has advanced.
+- Recover original ACWI fractional quantity from the existing source-pinned original bootstrap. Check against current broker observed held shares. Calculate `1.05 × original ACWI qty × broker current_price` in RAM against original **$65 first-sale reviewed gross**. This is merely a conservative illustrative mark, **NOT a protected execution-price bound**. Reject (as a planning halt) market-closed time or a mark above limit.
+- Reuse existing `cas.plan_reserve()` to check an exact signed seq0→seq1 transition **in memory only**, immediately discard it and never expose payload, shares, client IDs, HMAC, private Git SHA or cash to logs/artifacts.
+- Always return `funded_order_submission_authorized=false`, `real_private_Git_PUTs=0`, `real_broker_POSTs=0`; explicitly report that live risk drawdown/volatility, trusted current immutable head-watermark, independent one-owner writer, order-time market bid/ask and operator GO are **NOT** verified. Satisfying this join is necessary preflight engineering, not sufficient authorization.
+
+## Remaining critical path
+
+After credential-free CI + original LIVE static audit PASS, a future separately approved protected live integration must acquire the original signed private source and real broker seven GET in a source-bound session (without secretly putting both Alpaca and private write secrets in an arbitrary unreviewed job); verify fresh account budget, current locked signed HEAD + independent antirollback policy, one-owner cross-run mutex/at-most-once seq1/seq2, all six writer release prerequisites, and obtain an explicit funded-trade GO. No needless second paper forward test or second genesis. A real 404 does not authorize an ACWI sale. The HIGH pilot ceiling remains USD $130.30, XLE stays retained and cash settlement is a later buy gate.
