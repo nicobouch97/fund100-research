@@ -80,7 +80,10 @@ jobs:
           if [ ! -s /tmp/v7-e5-run-pair.env ]; then
             printf '%s\n' '{"schema":"FUND100_V7_E5_ONE_INTERVAL_PINNED_EVENT_FORWARD_MARKS_V1","status":"FEWER_THAN_TWO_SUCCESSFUL_GENUINE_E4_SOURCE_CAPTURES","broker_orders":0,"trading_authorized":false,"paper_authorized":false,"live_authorized":false,"forward_returns_measured":false}' > /tmp/fund100-v7-e5-report.json
           else
+            set -a
             source /tmp/v7-e5-run-pair.env
+            set +a
+            [[ "$BASE_ID" =~ ^[0-9]+$ && "$LATER_ID" =~ ^[0-9]+$ ]] || exit 1
             mkdir -p /tmp/v7-e5-sec /tmp/v7-e5-original /tmp/v7-e5-later
             gh run download "$BASE_ID" -n "fund100-v7-e4-original-SEC-eight-issuers-$BASE_ID" -D /tmp/v7-e5-sec
             gh run download "$BASE_ID" -n "fund100-v7-e4-contemporaneous-PRICE-eight-issuers-$BASE_ID" -D /tmp/v7-e5-original
