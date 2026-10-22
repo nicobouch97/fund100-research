@@ -1,0 +1,54 @@
+name: Fund-100 V6-S1 Original ACWI Broker+Signed Genesis Join (NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_acwi_source_join_preflight_v1_0.py"
+      - "test_fund100_v6_s1_acwi_source_join_preflight_v1_0.py"
+      - "research_lab/V6_S1_ORIGINAL_ACWI_SOURCE_JOINED_PREFLIGHT_PROTOCOL_2026_10_22.md"
+      - ".github/workflows/fund100-v6-s1-acwi-source-joined-preflight.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v6_s1_acwi_source_join_preflight_v1_0.py"
+      - "test_fund100_v6_s1_acwi_source_join_preflight_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-acwi-source-joined-preflight.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  strict-offline-source-join:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Original signed state, broker GET and notional test contracts
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q \
+            test_fund100_v6_s1_acwi_source_join_preflight_v1_0.py \
+            test_fund100_v6_s1_live_original_client_ids_getonly_v1_0.py \
+            test_fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py \
+            test_fund100_v6_s1_private_git_cas_protocol_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Prove no broker or private state mutation release
+        run: |
+          python - <<'PY'
+          import fund100_v6_s1_acwi_source_join_preflight_v1_0 as j
+          import fund100_alpaca_live_writer_candidate_v1_1 as w
+          assert not j.LIVE_EXECUTION_RELEASED
+          assert not j.PRIVATE_STATE_MUTATION_RELEASED
+          for k in ("TRANSPORT_RELEASED","PUBLIC_EXECUTION_ENABLED",
+                    "V6_S1_ACWI_QTY_SELL_TRANSPORT_RELEASED",
+                    "V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED",
+                    "V6_S1_ACWI_FRESH_ACCOUNT_RISK_SOURCE_RELEASED",
+                    "V6_S1_ACWI_EXTERNAL_WATERMARK_RELEASED"):
+              assert getattr(w,k) is False,k
+          print("Source-only ACWI in-memory preflight: no order release or Git writes.")
+          PY
