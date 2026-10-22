@@ -7,7 +7,6 @@ is an instruction to RECONCILE, not send or claim filled/settled positions.
 No network, credentials, HMAC logging, file persistence or executable order.
 """
 from __future__ import annotations
-from hmac import compare_digest
 
 import fund100_v6_s1_private_git_cas_protocol_v1_0 as cas
 import fund100_v6_s1_public_genesis_witness_v1_0 as witness
@@ -28,16 +27,6 @@ NO_ORDER_RELEASE=True
 
 class RecoveryTriageStop(ValueError):
     pass
-
-def _source_id(src):
-    if (type(src) is not dict or src.get("path")!=cas.STATE_PATH
-        or type(src.get("sha")) is not str):
-        raise RecoveryTriageStop("Signed source identity missing")
-    return src["sha"]
-
-def _same_head(a,b):
-    if not compare_digest(_source_id(a),_source_id(b)):
-        raise RecoveryTriageStop("Current signed private HEAD does not match historical proof")
 
 def classify(*, current_source:dict, original_qty:str, key:bytes,
              genesis_comment:dict, broker_lookup:dict,
@@ -109,7 +98,6 @@ def classify(*, current_source:dict, original_qty:str, key:bytes,
                 or type(prepost_proof) is not dict or set(prepost_proof)!={
                     "reserved_source","prepost_comment","prepost_comment_id","prepost_run_id"}):
                 raise RecoveryTriageStop("Original seq2 requires both signed HEAD chains")
-            _same_head(current_source,current_source)
             sources=dict(
                 reserved_source=prepost_proof["reserved_source"],
                 prepost_source=current_source,
