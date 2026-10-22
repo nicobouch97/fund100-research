@@ -148,6 +148,19 @@ def test_head_tampering_must_not_pass_as_owner(mutate):
     with pytest.raises(f.FenceStop):
         f.verify_claimed_owner(**bad)
 
+def test_even_valid_HMAC_claim_cannot_extend_a_forged_old_fence_parent():
+    from json import loads
+    p=setup()
+    fake=FakePrivateContents(p["fence_source"])
+    fake.cas(f.plan_unique_owner(**p))
+    old=loads(b64decode(fake.head["content"],validate=True))
+    old.pop("signature")
+    old["prior_document_sha"]="f"*40
+    old["signature"]=f._seal(old,fx.KEY)
+    fake.head=as_fence(f._canon(old))
+    with pytest.raises(f.FenceStop,match="exact signed initial HEAD"):
+        f.verify_claimed_owner(**verify_args(p,fake))
+
 def test_absent_remote_fence_not_implicitly_initialised():
     p=setup()
     for bad in (None,{"status":404},{}):
