@@ -58,6 +58,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      # The checker authenticates the actual original seven-GET step completion UTC,
+      # not merely the mutable GitHub workflow run updated_at timestamp.
       - name: Authenticate source run's 2 successful jobs on current main under 5 minutes
         run: |
           set -euo pipefail
