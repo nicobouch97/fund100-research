@@ -39,11 +39,17 @@ def _utc(text):
     try: return datetime.fromisoformat(text[:-1]+"+00:00")
     except ValueError:raise HandoffStop("Source UTC timestamp invalid") from None
 
-def _source_job(j):
+def _source_job(j,*,run_created,run_updated,observed):
+    """Date-bound the original *GET step*, not only the GitHub run update."""
     if (type(j) is not dict or j.get("status")!="completed"
         or j.get("conclusion")!="success"
         or type(j.get("steps")) is not list):
         raise HandoffStop("Original protected job not fully successful")
+    started=_utc(j.get("started_at"))
+    completed=_utc(j.get("completed_at"))
+    if (started<run_created or started>completed
+        or completed>run_updated or observed<completed):
+        raise HandoffStop("Protected broker job time inconsistent with original run")
     by_name={}
     for step in j["steps"]:
         if type(step) is not dict or type(step.get("name")) is not str:
@@ -51,10 +57,23 @@ def _source_job(j):
         name=step["name"]
         if name in by_name: raise HandoffStop("Duplicate original step identity")
         by_name[name]=step
+    timeline=[]
     for name in REQUIRED_BROKER_STEPS:
         if name not in by_name or (by_name[name].get("status")!="completed"
                                    or by_name[name].get("conclusion")!="success"):
             raise HandoffStop("Required original GET/STOP step was not successful")
+        step=by_name[name]
+        began=_utc(step.get("started_at"))
+        ended=_utc(step.get("completed_at"))
+        if began<started or ended>completed or began>ended:
+            raise HandoffStop("Original brokerage step observed outside protected job")
+        timeline.append((began,ended))
+    if (timeline[0][1]>timeline[1][0]
+        or timeline[1][1]>timeline[2][0]):
+        raise HandoffStop("Original broker GET must follow source pin and precede STOP")
+    if (observed<timeline[1][1] or
+        observed-timeline[1][1]>timedelta(seconds=MAX_SOURCE_AGE_SECONDS)):
+        raise HandoffStop("Actual original seven-GET completion is stale")
 
 def verify(*, run:dict,jobs:dict,checked_main_sha:str,
            observed_at_utc:str)->dict:
@@ -98,13 +117,14 @@ def verify(*, run:dict,jobs:dict,checked_main_sha:str,
     offline=by_name[OFFLINE_JOB]
     if offline.get("status")!="completed" or offline.get("conclusion")!="success":
         raise HandoffStop("Original broker static credential pin tests not passed")
-    _source_job(by_name[BROKER_JOB])
+    _source_job(by_name[BROKER_JOB],run_created=created,run_updated=updated,observed=observed)
     return {
         "schema":SCHEMA,
         "status":"TWO_PRINCIPAL_SOURCE_HANDOFF_READY_FOR_SEPARATE_SIGNED_READ",
         "original_real_broker_job_authenticated_by_GitHub":True,
         "broker_source_current_main_commit_matched":True,
         "broker_source_within_five_minutes":True,
+        "actual_original_seven_GET_step_freshness_verified":True,
         "original_broker_redacted_three_404_condition_enforced_by_upstream_job":True,
         "broker_404_never_POST_guarantee":False,
         "external_witness_is_immutable_antirollback":False,

@@ -18,3 +18,11 @@
 - Actual production private `state/v6_s1_original_legacy_sales.json` must remain at original HMAC-signed sequence 0 throughout. There is NO new trading authority or LIVE-order attempt. Last official original LIVE cap remains `$130.30` HIGH; XLE is preserved.
 
 **After this stage:** reviewed independent actual order-time risk (mark vs executable close and spread), immutable external state-head watermark/antirollback, cross-run single-writer protocol and explicit V6 signed funded-order GO are still the essential development blockers before the first original ACWI real SELL. Do not blindly unblock any writer flags or submit a post because the account was successfully inspected.
+
+---
+
+## Same-day amendment: the original broker GET step completion is the freshness source
+
+The initial five-minute bound on a workflow run's `updated_at` is not by itself sufficient for a trade-adjacent source handoff: later GitHub bookkeeping can update a workflow after the actual brokerage GETs have gone stale. The next reviewed read-only handoff now also independently verifies the protected job's actual `started_at`/`completed_at` fields and exact three critical step timestamp pairs (source pin, original seven-GET, STOP), requiring their chronological order and bounding the **GET step's own completion timestamp** to <=300 seconds before the second-principal read observation. It rejects forged recent run summaries over aged broker steps, future timestamps, missing job/step timestamps and out-of-order GET/STOP. No sensitive broker data is involved, and it still cannot authorize a funded trade.
+
+This amendment remains in a separate branch while the previously merged main run [39814674795](https://github.com/nicobouch97/fund100-research/actions/runs/39814674795) awaits protected deployment approval. **Do not merge a new main commit before that original source run has either completed/failed or the run will no longer match the frozen source commit**. There is no order-intent write, broker POST, secret change or reason to bypass the protected environment.
