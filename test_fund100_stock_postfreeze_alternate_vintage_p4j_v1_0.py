@@ -31,7 +31,7 @@ def follow(last="2026-10-20",acquired="2026-10-21T08:00:00Z"):
     return {"asof_completed_session":last,"source_acquired_at_utc":acquired}
 
 
-def test_postfreeze-only_two_sessions_are_explicit_alternate_vintage_not_alpha():
+def test_postfreeze_only_two_sessions_are_explicit_alternate_vintage_not_alpha():
     a=p.compare_only_future(frozen(),follow(),prices())
     assert a["schema"]==p.SCHEMA
     assert a["mode"]==p.MODE
