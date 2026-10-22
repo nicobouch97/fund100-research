@@ -22,8 +22,13 @@ def fx():
     }
     broker={
         "name":h.BROKER_JOB,"status":"completed","conclusion":"success",
-        "steps":[{"name":n,"status":"completed","conclusion":"success"}
-                 for n in h.REQUIRED_BROKER_STEPS]
+        "started_at":"2026-10-22T16:24:12Z",
+        "completed_at":"2026-10-22T16:24:23Z",
+        "steps":[{"name":n,"status":"completed","conclusion":"success",
+                  "started_at":began,"completed_at":end}
+                 for n,began,end in zip(h.REQUIRED_BROKER_STEPS,
+                   ("2026-10-22T16:24:14Z","2026-10-22T16:24:17Z","2026-10-22T16:24:20Z"),
+                   ("2026-10-22T16:24:16Z","2026-10-22T16:24:19Z","2026-10-22T16:24:22Z"))]
     }
     offline={"name":h.OFFLINE_JOB,"status":"completed","conclusion":"success",
              "steps":[]}
@@ -35,6 +40,7 @@ def test_exact_two_principal_source_and_redacted_status_only():
     assert x["status"]=="TWO_PRINCIPAL_SOURCE_HANDOFF_READY_FOR_SEPARATE_SIGNED_READ"
     assert x["original_broker_redacted_three_404_condition_enforced_by_upstream_job"]
     assert x["separate_private_HMAC_GET_still_required"]
+    assert x["actual_original_seven_GET_step_freshness_verified"]
     assert not x["orders_authorized"]
     assert not x["broker_404_never_POST_guarantee"]
     assert not x["external_witness_is_immutable_antirollback"]
@@ -103,3 +109,30 @@ def test_no_broker_or_github_network_writer_in_handoff_source():
     assert h.ALPACA_CREDENTIALS_INCLUDED is False
     assert h.PRIVATE_GIT_WRITER_INCLUDED is False
     assert h.FUNDED_TRADING_ENABLED is False
+
+def test_stale_actual_broker_GET_rejected_even_when_run_metadata_recent():
+    b=fx()
+    b["run"]["created_at"]="2026-10-22T16:10:00Z"
+    broker=b["jobs"]["jobs"][1]
+    broker["started_at"]="2026-10-22T16:10:03Z"
+    broker["completed_at"]="2026-10-22T16:10:20Z"
+    for i,step in enumerate(broker["steps"]):
+        step["started_at"]=f"2026-10-22T16:10:{4+i*3:02d}Z"
+        step["completed_at"]=f"2026-10-22T16:10:{5+i*3:02d}Z"
+    # GitHub run summary updated recently, but actual GET was 15m ago.
+    with pytest.raises(h.HandoffStop,match="Actual original seven-GET"):
+        h.verify(**b)
+
+@pytest.mark.parametrize("changed",[
+    lambda b:b["jobs"]["jobs"][1]["steps"][1].update(completed_at=None),
+    lambda b:b["jobs"]["jobs"][1]["steps"][1].update(started_at="2026-10-22T16:24:26Z"),
+    lambda b:b["jobs"]["jobs"][1]["steps"][1].update(completed_at="2026-10-22T16:24:05Z"),
+    lambda b:b["jobs"]["jobs"][1]["steps"][0].update(completed_at="2026-10-22T16:24:20Z"),
+    lambda b:b["jobs"]["jobs"][1].update(started_at="2026-10-22T16:25:00Z"),
+    lambda b:b["jobs"]["jobs"][1].update(completed_at="2026-10-22T16:25:05Z"),
+])
+def test_out_of_order_missing_or_future_true_GET_step_timestamps_fail(changed):
+    b=fx()
+    changed(b)
+    with pytest.raises(h.HandoffStop):
+        h.verify(**b)
