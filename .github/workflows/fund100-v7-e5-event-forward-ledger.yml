@@ -42,6 +42,19 @@ jobs:
             test_fund100_v7_e4_event_signal_observer_v1_0.py \
             test_fund100_v7_e4_sec_event_capture_v1_0.py
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Offline shell syntax check of the scheduled source-pair script
+        run: |
+          python - <<'PY'
+          import subprocess,yaml
+          from pathlib import Path
+          workflow=yaml.safe_load(Path('.github/workflows/fund100-v7-e5-event-forward-ledger.yml').read_text())
+          steps=workflow['jobs']['independent-source-pair']['steps']
+          for step in steps:
+              if 'run' in step:
+                  p=subprocess.run(['bash','-n'],input=step['run'],text=True,capture_output=True)
+                  assert p.returncode==0,p.stderr
+          print('Scheduled read-only source selection and report scripts are valid Bash.')
+          PY
 
   independent-source-pair:
     needs: offline-evidence-contract
