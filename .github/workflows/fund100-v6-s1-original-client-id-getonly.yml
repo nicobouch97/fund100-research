@@ -13,6 +13,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/fund100-v6-s1-original-client-id-getonly.yml"
+      - "research_lab/V6_S1_AUTHENTIC_LIVE_ORIGINAL_CLIENT_IDS_SOURCE_PROTOCOL_2026_10_19.md"
   workflow_dispatch:
 
 permissions:
