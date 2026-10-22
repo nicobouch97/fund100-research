@@ -1,0 +1,177 @@
+name: Fund-100 V7 E5 Independent Earnings Forward Marks (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_e5_event_forward_ledger_v1_0.py'
+      - 'test_fund100_v7_e5_event_forward_ledger_v1_0.py'
+      - 'research_lab/stocks/V7E5_SOURCE_FROZEN_EVENT_FORWARD_MARKS_PROTOCOL_2026_10_22.md'
+      - '.github/workflows/fund100-v7-e5-event-forward-ledger.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_e5_event_forward_ledger_v1_0.py'
+      - 'test_fund100_v7_e5_event_forward_ledger_v1_0.py'
+      - '.github/workflows/fund100-v7-e5-event-forward-ledger.yml'
+  schedule:
+    - cron: '15 11 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: fund100-v7-e5-event-forward-evidence
+  cancel-in-progress: false
+
+jobs:
+  offline-evidence-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt
+      - run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_v7_e5_event_forward_ledger_v1_0.py \
+            test_fund100_v7_e4_event_signal_observer_v1_0.py \
+            test_fund100_v7_e4_sec_event_capture_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Offline shell syntax check of the scheduled source-pair script
+        run: |
+          python - <<'PY'
+          import subprocess,yaml
+          from pathlib import Path
+          workflow=yaml.safe_load(Path('.github/workflows/fund100-v7-e5-event-forward-ledger.yml').read_text())
+          steps=workflow['jobs']['independent-source-pair']['steps']
+          for step in steps:
+              if 'run' in step:
+                  p=subprocess.run(['bash','-n'],input=step['run'],text=True,capture_output=True)
+                  assert p.returncode==0,p.stderr
+          print('Scheduled read-only source selection and report scripts are valid Bash.')
+          PY
+
+  independent-source-pair:
+    needs: offline-evidence-contract
+    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt
+      - name: Choose the newest older source with two subsequent completed price sessions
+        run: |
+          set -euo pipefail
+          gh run list --workflow fund100-v7-e4-daily-sec-event-source.yml \
+            --branch main --limit 40 \
+            --json databaseId,status,conclusion,createdAt > /tmp/v7-e5-capture-runs.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          runs=json.loads(Path('/tmp/v7-e5-capture-runs.json').read_text())
+          ok=sorted((r for r in runs if r['status']=='completed'
+                     and r['conclusion']=='success'),key=lambda x:x['createdAt'])
+          Path('/tmp/v7-e5-eligible-ids.json').write_text(json.dumps({
+              'later':ok[-1]['databaseId'] if ok else None,
+              'prior_newest_first':[r['databaseId'] for r in reversed(ok[:-1])]
+          }))
+          print('Read-only successful original E4 archival runs:',len(ok))
+          PY
+          LATER_ID=$(python -c 'import json;print(json.load(open("/tmp/v7-e5-eligible-ids.json"))["later"] or "")')
+          if [ -n "$LATER_ID" ]; then
+            mkdir -p /tmp/v7-e5-selection-later
+            gh run download "$LATER_ID" -n "fund100-v7-e4-contemporaneous-PRICE-eight-issuers-$LATER_ID" \
+              -D /tmp/v7-e5-selection-later
+            python - <<'PY'
+          from pathlib import Path
+          import fund100_stock_forward_return_ledger_p4h_v1_0 as p4h
+          root=Path('/tmp/v7-e5-selection-later')
+          doc,frame,_=p4h.read_snapshot(root/'fund100-p4g-snapshot.json',
+                                        root/'fund100-p4g-original-prices.csv')
+          print('Later original source observed through',doc['asof_completed_session'])
+          PY
+            for BASE_ID in $(python -c 'import json;print(*json.load(open("/tmp/v7-e5-eligible-ids.json"))["prior_newest_first"])'); do
+              rm -rf /tmp/v7-e5-selection-earlier
+              mkdir -p /tmp/v7-e5-selection-earlier
+              if ! gh run download "$BASE_ID" -n "fund100-v7-e4-contemporaneous-PRICE-eight-issuers-$BASE_ID" -D /tmp/v7-e5-selection-earlier; then
+                echo "Earlier source artifact unavailable; do not construct a return from it."
+                continue
+              fi
+              if python - <<'PY'
+          from pathlib import Path
+          import sys
+          import fund100_stock_forward_return_ledger_p4h_v1_0 as p4h
+          a=Path('/tmp/v7-e5-selection-earlier')
+          b=Path('/tmp/v7-e5-selection-later')
+          _,original,_=p4h.read_snapshot(a/'fund100-p4g-snapshot.json',
+                                        a/'fund100-p4g-original-prices.csv')
+          _,later,_=p4h.read_snapshot(b/'fund100-p4g-snapshot.json',
+                                     b/'fund100-p4g-original-prices.csv')
+          future_count=sum(d>original.index[-1] for d in later.index)
+          print('Completed sessions after this independent original capture:',future_count)
+          sys.exit(0 if future_count>=2 else 1)
+          PY
+              then
+                printf 'BASE_ID=%s\nLATER_ID=%s\n' "$BASE_ID" "$LATER_ID" > /tmp/v7-e5-run-pair.env
+                break
+              fi
+            done
+          fi
+      - name: Preserve explicit insufficient-evidence result or compare source-pinned later marks
+        run: |
+          set -euo pipefail
+          if [ ! -s /tmp/v7-e5-run-pair.env ]; then
+            printf '%s\n' '{"schema":"FUND100_V7_E5_ONE_INTERVAL_PINNED_EVENT_FORWARD_MARKS_V1","status":"FEWER_THAN_TWO_SUCCESSFUL_GENUINE_E4_SOURCE_CAPTURES","broker_orders":0,"trading_authorized":false,"paper_authorized":false,"live_authorized":false,"forward_returns_measured":false}' > /tmp/fund100-v7-e5-report.json
+          else
+            set -a
+            source /tmp/v7-e5-run-pair.env
+            set +a
+            [[ "$BASE_ID" =~ ^[0-9]+$ && "$LATER_ID" =~ ^[0-9]+$ ]] || exit 1
+            mkdir -p /tmp/v7-e5-sec /tmp/v7-e5-original /tmp/v7-e5-later
+            gh run download "$BASE_ID" -n "fund100-v7-e4-original-SEC-eight-issuers-$BASE_ID" -D /tmp/v7-e5-sec
+            gh run download "$BASE_ID" -n "fund100-v7-e4-contemporaneous-PRICE-eight-issuers-$BASE_ID" -D /tmp/v7-e5-original
+            gh run download "$LATER_ID" -n "fund100-v7-e4-contemporaneous-PRICE-eight-issuers-$LATER_ID" -D /tmp/v7-e5-later
+            python fund100_v7_e5_event_forward_ledger_v1_0.py \
+              --sec-dir /tmp/v7-e5-sec \
+              --original-json /tmp/v7-e5-original/fund100-p4g-snapshot.json \
+              --original-csv /tmp/v7-e5-original/fund100-p4g-original-prices.csv \
+              --later-json /tmp/v7-e5-later/fund100-p4g-snapshot.json \
+              --later-csv /tmp/v7-e5-later/fund100-p4g-original-prices.csv \
+              --output /tmp/fund100-v7-e5-report.json
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('/tmp/fund100-v7-e5-report.json')
+          r=json.loads(p.read_text())
+          r['original_GitHub_run_id']=int(__import__('os').environ['BASE_ID']) if 'BASE_ID' in __import__('os').environ else None
+          r['later_GitHub_run_id']=int(__import__('os').environ['LATER_ID']) if 'LATER_ID' in __import__('os').environ else None
+          p.write_text(json.dumps(r,sort_keys=True,indent=2)+'\n')
+          PY
+          fi
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/fund100-v7-e5-report.json').read_text())
+          assert r['schema']=='FUND100_V7_E5_ONE_INTERVAL_PINNED_EVENT_FORWARD_MARKS_V1'
+          assert r['broker_orders']==0 and r['trading_authorized'] is False
+          assert r['paper_authorized'] is False and r['live_authorized'] is False
+          print('E5 source evidence:',r['status'])
+          PY
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-e5-source-bound-forward-report-${{ github.run_id }}
+          path: /tmp/fund100-v7-e5-report.json
+          retention-days: 90
+          if-no-files-found: error

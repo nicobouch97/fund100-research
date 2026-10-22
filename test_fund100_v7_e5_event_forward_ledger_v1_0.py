@@ -1,0 +1,90 @@
+"""Deterministic offline event-source and future-vintage tests, NO network."""
+import copy
+from datetime import timedelta
+import pandas as pd
+import pytest
+
+import fund100_v7_e5_event_forward_ledger_v1_0 as e5
+import fund100_v7_e4_sec_event_capture_v1_0 as e4
+import fund100_stock_quality_momentum_p4g_v1_0 as p4g
+
+def fixtures():
+    dates=pd.bdate_range("2025-10-01","2026-10-23")
+    cols=sorted(set(p4g.FROZEN_P4E_SCORES)|{"SPY","SHY"})
+    data=pd.DataFrame({c:100. for c in cols},index=dates)
+    data.loc["2026-10-21","MSFT"]=103.
+    data.loc["2026-10-22","MSFT"]=105.
+    data.loc["2026-10-23","MSFT"]=106.
+    sec={"schema":e4.SCHEMA,"source_count":8,"all_frozen_issuers_acquired":True,
+         "broker_orders":0,"trading_authorized":False,
+         "capture_complete_utc":"2026-10-22T09:00:00Z",
+         "observed_filings_not_necessarily_new_today":[{
+             "ticker":"MSFT","original_sec_accession":"0000000000-26-000001",
+             "filing_date":"2026-10-19",
+             "sec_submissions_observed_at_utc":"2026-10-22T09:00:00Z",
+             "issuer_event_type":"8-K ITEM 2.02","orders_authorized":False}]}
+    base={"schema":p4g.SCHEMA,"asof_completed_session":"2026-10-21",
+          "source_acquired_at_utc":"2026-10-22T09:01:00Z",
+          "trading_authorized":False,"broker_orders":0}
+    later={"schema":p4g.SCHEMA,"asof_completed_session":"2026-10-23",
+          "source_acquired_at_utc":"2026-10-24T09:01:00Z",
+          "trading_authorized":False,"paper_authorized":False,
+          "live_authorized":False,"broker_orders":0}
+    return sec,base,data.loc[:"2026-10-21"].copy(deep=True),later,data.copy(deep=True)
+
+def evalx(fields=None):
+    s,b,initial,later,full=fixtures()
+    if fields:
+        fields(s,b,initial,later,full)
+    return e5.evaluate(sec_source=s,baseline=b,baseline_prices=initial,
+                       follow=later,follow_prices=full)
+
+def test_frozen_positive_event_uses_first_two_later_rows_only():
+    out=evalx()
+    assert out["pre_entry_qualified_original_events"]==1
+    assert out["status"]=="ONE_INTERVAL_ALTERNATE_OR_MATCHED_VENDOR_RESEARCH_MARKS_NO_FILLS"
+    assert out["model_entry_first_later_session"]=="2026-10-22"
+    assert out["model_exit_second_later_session"]=="2026-10-23"
+    assert out["hypothetical_marks"][0]["one_completed_session_net_stock_minus_gross_SPY"]["35"] < out["hypothetical_marks"][0]["one_completed_session_net_stock_minus_gross_SPY"]["5"]
+    assert not out["trading_authorized"] and not out["actual_live_account_pnl_measured"]
+
+def test_revised_pre_entry_history_cannot_change_frozen_signal():
+    def revise(s,b,initial,later,full):
+        full.loc["2026-10-21","MSFT"]=97.
+    out=evalx(revise)
+    assert not out["original_vendor_historical_rows_unchanged"]
+    assert out["pre_entry_qualified_original_events"]==1
+    assert out["hypothetical_marks"][0]["pre_entry_reaction_original_source"]==.03
+
+def test_original_empty_event_source_stays_no_signal():
+    def remove(s,b,initial,later,full):
+        s["observed_filings_not_necessarily_new_today"]=[]
+    out=evalx(remove)
+    assert out["status"]=="NO_GENUINE_PRE_ENTRY_EARNINGS_SIGNALS"
+    assert not out["hypothetical_marks"]
+
+def test_only_one_new_completed_session_cannot_mark_returns():
+    s,b,initial,later,full=fixtures()
+    full=full.loc[:"2026-10-22"]
+    later["asof_completed_session"]="2026-10-22"
+    later["source_acquired_at_utc"]="2026-10-23T09:00:00Z"
+    out=e5.evaluate(sec_source=s,baseline=b,baseline_prices=initial,
+                    follow=later,follow_prices=full)
+    assert out["status"]=="WAITING_FOR_TWO_COMPLETED_POST_SIGNAL_SESSIONS"
+    assert out["hypothetical_marks"][0]["one_completed_session_net_stock_minus_gross_SPY"] is None
+
+def test_backdated_followup_source_fails_closed():
+    def forged(s,b,initial,later,full):
+        later["source_acquired_at_utc"]="2026-10-22T09:00:00Z"
+    with pytest.raises(e5.ForwardStop):
+        evalx(forged)
+
+def test_future_snapshot_cannot_omit_old_sessions_or_enable_trading():
+    s,b,initial,later,full=fixtures()
+    with pytest.raises(e5.ForwardStop):
+        e5.evaluate(sec_source=s,baseline=b,baseline_prices=initial,
+                    follow=later,follow_prices=full.iloc[15:])
+    later["trading_authorized"]=True
+    with pytest.raises(e5.ForwardStop):
+        e5.evaluate(sec_source=s,baseline=b,baseline_prices=initial,
+                    follow=later,follow_prices=full)
