@@ -1,0 +1,133 @@
+name: Fund-100 V6-S1 Source-Bound Broker then Private HMAC READ (NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_two_principal_readonly_handoff_v1_0.py"
+      - "test_fund100_v6_s1_two_principal_readonly_handoff_v1_0.py"
+      - "research_lab/V6_S1_TWO_PRINCIPAL_LIVE_READONLY_SOURCE_HANDOFF_PROTOCOL_2026_10_22.md"
+      - ".github/workflows/fund100-v6-s1-original-client-id-getonly.yml"
+      - ".github/workflows/fund100-v6-s1-two-principal-readonly-handoff.yml"
+  workflow_run:
+    workflows:
+      - "Fund-100 V6-S1 REAL LIVE Original Client-ID GET only (NO ORDERS)"
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  issues: read
+
+concurrency:
+  group: fund100-v6-s1-original-client-id-to-private-read-handoff
+  cancel-in-progress: false
+
+jobs:
+  offline-source-run-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reject forged stale incomplete skipped or PR-triggered broker provenance
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_s1_two_principal_readonly_handoff_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+
+  protected-fresh-broker-then-independent-private-HMAC:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.event != 'pull_request'
+    needs: offline-source-run-contract
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 12
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Authenticate source run's 2 successful jobs on current main under 5 minutes
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_EVENT_NAME" = 'workflow_run'
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          test "$FUND100_RISK_LEVEL" = 'HIGH'
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" > "$RUNNER_TEMP/fund100-source-run.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/jobs?per_page=100" > "$RUNNER_TEMP/fund100-source-jobs.json"
+          python - <<'PY'
+          import json,os,subprocess
+          from datetime import datetime,timezone
+          from pathlib import Path
+          import fund100_v6_s1_two_principal_readonly_handoff_v1_0 as h
+          root=Path(os.environ['RUNNER_TEMP'])
+          run=json.loads((root/'fund100-source-run.json').read_text())
+          jobs=json.loads((root/'fund100-source-jobs.json').read_text())
+          sha=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          r=h.verify(run=run,jobs=jobs,checked_main_sha=sha,
+                     observed_at_utc=datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
+          assert not r['orders_authorized'] and r['real_broker_POSTs']==0
+          print('Authentic SAME-MAIN seven-GET source completed with original redacted 404 gate; no order permission.')
+          PY
+      - name: Separately read original PRIVATE HMAC and public GENESIS without any broker key
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          test "$FUND100_RISK_LEVEL" = 'HIGH'
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          test "$(git hash-object fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py)" = "a774a67de7b5e0abac0a13f06d744c0c45baf079"
+          test "$(git hash-object fund100_v6_s1_private_git_cas_protocol_v1_0.py)" = "9b9f8917faa21b4157600ac642f80595445a7276"
+          test "$(git hash-object research_lab/V6_S1_INITIAL_PUBLIC_LEDGER_GENESIS_WITNESS_2026_10_21.json)" = "b6fd44c4bb0b17bcd906e97c7ca8d6a50cc00a99"
+          python - <<'PY'
+          import json,os,subprocess
+          from datetime import datetime,timezone
+          from pathlib import Path
+          import fund100_v6_s1_two_principal_readonly_handoff_v1_0 as h
+          import fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0 as r
+          root=Path(os.environ['RUNNER_TEMP'])
+          broker_run=json.loads((root/'fund100-source-run.json').read_text())
+          broker_jobs=json.loads((root/'fund100-source-jobs.json').read_text())
+          main_sha=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          observed=r.runtime(
+              public_comment_id='6321330005',
+              bootstrap_run_id='39637082911',
+              read_token=os.environ['FUND100_PRIVATE_STATE_READ_TOKEN'],
+              hmac_hex=os.environ['FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX'],
+              public_token=os.environ['GITHUB_TOKEN'])
+          assert observed['status']=='GENESIS_CONTENT_AND_PUBLIC_HASH_WITNESS_RECONFIRMED_READONLY'
+          assert observed['private_ledger_sequence']==0
+          assert observed['original_empty_entries_count']==0
+          assert observed['private_genesis_HMAC_signature_and_original_account_binding_verified']
+          assert observed['independent_public_issue8_comment_digest_and_identity_verified']
+          assert observed['private_git_writes']==0 and observed['broker_orders']==0
+          assert observed['independently_immutable_rollback_anchor_proven'] is False
+          h.verify(run=broker_run,jobs=broker_jobs,
+                   checked_main_sha=main_sha,
+                   observed_at_utc=datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
+          print('SUCCESS: current verified original broker seven-GET and separately protected initial HMAC private read, within 5m.')
+          print('No brokerage key available in private read; NO mutation token, trade, external immutable watermark or release.')
+          PY
+      - name: Explicit no-order STOP
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Source-bound cross-principal READ ONLY. Current trade release DISABLED.'
