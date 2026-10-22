@@ -1,0 +1,42 @@
+name: Fund-100 V6-S1 Original Signed ACWI Crash/Restart TRIAGE (NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_original_acwi_restart_triage_offline_v1_0.py"
+      - "test_fund100_v6_s1_original_acwi_restart_triage_offline_v1_0.py"
+      - "research_lab/V6_S1_FIRST_ACWI_SIGNED_RESTART_TRIAGE_PROTOCOL_2026_10_22.md"
+      - ".github/workflows/fund100-v6-s1-acwi-restart-triage-offline.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v6_s1_original_acwi_restart_triage_offline_v1_0.py"
+      - "test_fund100_v6_s1_original_acwi_restart_triage_offline_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-acwi-restart-triage-offline.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  offline-signed-ACWI-restart-negative-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Exact original HMAC seq0 seq1 seq2 and order uncertainty STOP
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q \
+            test_fund100_v6_s1_original_acwi_restart_triage_offline_v1_0.py \
+            test_fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0.py \
+            test_fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Confirm no LIVE credentials or release flag exist in this workflow
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Signed original ACWI restart triage: no GitHub private write secret, brokerage GET or POST, release or order.'
