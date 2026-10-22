@@ -5,7 +5,7 @@ not backdate the 2026-10-22 capture, claim analyst surprises, or produce fills.
 """
 from __future__ import annotations
 from collections import Counter
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 import json
 from pathlib import Path
 
@@ -37,7 +37,7 @@ def evaluate(source:dict, price_report:dict, prices) -> dict:
     price_finished=feed._timestamp(price_report["source_acquired_at_utc"])
     joined=max(sec_finished,price_finished)
     last=data.index[-1].date()
-    if joined.date()<=last or joined.date()>last.replace(year=last.year)+__import__('datetime').timedelta(days=5):
+    if joined.date()<=last or joined.date()>last+timedelta(days=5):
         raise SignalStop("price observations not acquired after latest completed session")
     sessions=[d.date() for d in data.index]
     score_age=(joined.date()-FREEZE).days
