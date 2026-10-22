@@ -77,7 +77,7 @@ def test_future_price_change_matters_while_old_history_change_does_not():
 
 
 @pytest.mark.parametrize("last,received,expected",[
-    ("2026-10-16","2026-10-17T08:00:00Z","NO_POST_FREEZE_ENTRY_SESSION"),
+    ("2026-10-16","2026-10-18T08:00:00Z","NO_POST_FREEZE_ENTRY_SESSION"),
     ("2026-10-19","2026-10-20T08:00:00Z","ENTRY_SESSION_ONLY_NO_FORWARD_RETURN"),
     ("2026-10-20","2026-10-21T08:00:00Z","ALTERNATE_VENDOR_VINTAGE_POST_FREEZE_ONLY_HYPOTHETICAL_MARK"),
 ])
@@ -96,7 +96,7 @@ def test_net_of_cost_marks_monotonic_with_more_friction_and_do_not_infer_cagr():
     assert a["statistical_alpha_or_CAGR_claimed"] is False
     assert a["vendor_dividend_adjustments_independently_verified"] is False
     assert a["exchange_session_completeness_independently_verified"] is False
-    assert a["true_entry_fills_or_spreads_observed"] if "true_entry_fills_or_spreads_observed" in a else True
+    assert all(not r["true_entry_fills_or_spreads_observed"] for r in cases.values())
 
 
 @pytest.mark.parametrize("field,value",[
