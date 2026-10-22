@@ -30,7 +30,7 @@ def fixtures():
           "source_acquired_at_utc":"2026-10-24T09:01:00Z",
           "trading_authorized":False,"paper_authorized":False,
           "live_authorized":False,"broker_orders":0}
-    return sec,base,data.loc[:"2026-10-21"],later,data
+    return sec,base,data.loc[:"2026-10-21"].copy(deep=True),later,data.copy(deep=True)
 
 def evalx(fields=None):
     s,b,initial,later,full=fixtures()
