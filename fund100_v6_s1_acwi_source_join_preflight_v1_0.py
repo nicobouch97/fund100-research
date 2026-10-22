@@ -34,7 +34,7 @@ class SourceJoinStop(ValueError):
 
 def inspect(*, account:dict,positions:list,orders:list,clock:dict,lookups:dict,
             bootstrap:dict,policy:dict,control:dict,
-            observed_at_utc:str,kill_switch:str,risk_level:str,
+            observed_at_utc:str,remotely_stopped:bool,kill_switch:str,risk_level:str,
             private_source:dict,genesis_comment:dict,hmac_hex:str)->dict:
     """Combine *in-memory* original seven broker GETs with signed seq0 sources.
 
@@ -62,7 +62,7 @@ def inspect(*, account:dict,positions:list,orders:list,clock:dict,lookups:dict,
         checked=broker.assess(
             account=account,positions=positions,orders=orders,clock=clock,
             lookups=lookups,bootstrap=bootstrap,policy=policy,control=control,
-            remotely_stopped=True,kill_switch=kill_switch,risk_level=risk_level,
+            remotely_stopped=remotely_stopped,kill_switch=kill_switch,risk_level=risk_level,
             observed_at_utc=observed_at_utc)
         if (checked["original_three_client_ids_not_found_404"]!=3
             or checked["original_three_client_ids_observed"]!=0
