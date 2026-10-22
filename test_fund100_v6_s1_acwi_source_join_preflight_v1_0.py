@@ -70,7 +70,7 @@ def test_over_limit_original_gross_mark_stops(monkeypatch):
 @pytest.mark.parametrize("mutate",[
     lambda b: b["genesis_comment"].update(body="forged"),
     lambda b: b["private_source"].update(sha="0"*40),
-    lambda b: b["hmac_hex"]="10"*32,
+    lambda b: b.update(hmac_hex="10"*32),
     lambda b: b["lookups"]["ACWI"].update(kind=live.LOOKUP_UNKNOWN),
     lambda b: b["orders"].append({"status":"open"}),
     lambda b: b["positions"][0].update(qty="100"),
