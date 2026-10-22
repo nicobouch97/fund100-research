@@ -84,7 +84,7 @@ def synthetic_fence_genesis(*,private_genesis,account_binding_sha256,key)->bytes
 
 def _read(src,*,private_genesis,account_binding_sha256,key):
     try:
-        if (type(src) is not dict or set(src)<{"type","path","encoding","sha","content"}
+        if (type(src) is not dict or not {"type","path","encoding","sha","content"}.issubset(src)
             or src.get("type")!="file" or src.get("path")!=PATH
             or src.get("encoding")!="base64"):
             raise FenceStop("No reviewed original owner fence remote source")
@@ -173,8 +173,8 @@ def plan_unique_owner(*,fence_source,reserved_source,genesis_comment,first_comme
     """In-memory synthetic Git CAS; never submit returned bytes to production."""
     p,bound,proposed=_original_prepost(
         reserved_source=reserved_source,genesis_comment=genesis_comment,
-        first_comment=first_comment,first_comment_id=first_comment,
-        first_comment_id=first_comment_id,first_run_id=first_run_id,
+        first_comment=first_comment,first_comment_id=first_comment_id,
+        first_run_id=first_run_id,
         original_qty=original_qty,key=key)
     oldsha,doc=_read(fence_source,
         private_genesis=p["original_public_genesis_nonce"],
