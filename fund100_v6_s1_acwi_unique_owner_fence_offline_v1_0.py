@@ -118,6 +118,11 @@ def _read(src,*,private_genesis,account_binding_sha256,key):
                 raise FenceStop("Unclaimed original owner fence corrupted")
         else:
             _hex(payload["prior_document_sha"],40,"signed owner fence parent")
+            expected_initial=cas.blob_sha(synthetic_fence_genesis(
+                private_genesis=private_genesis,
+                account_binding_sha256=account_binding_sha256,key=key))
+            if payload["prior_document_sha"]!=expected_initial:
+                raise FenceStop("Claimed owner fence does not extend exact signed initial HEAD")
             claim=payload.get("claim")
             if type(claim) is not dict or set(claim)!={
                 "symbol","owner_workflow_run_id","owner_attempt",
