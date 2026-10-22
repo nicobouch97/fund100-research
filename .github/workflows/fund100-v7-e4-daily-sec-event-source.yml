@@ -1,0 +1,119 @@
+name: Fund-100 V7 E4 Prospective SEC Earnings + T+1 Price Capture (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_e4_sec_event_capture_v1_0.py'
+      - 'test_fund100_v7_e4_sec_event_capture_v1_0.py'
+      - 'fund100_v7_e4_event_signal_observer_v1_0.py'
+      - 'test_fund100_v7_e4_event_signal_observer_v1_0.py'
+      - 'research_lab/stocks/V7E4_AUTOMATED_PROSPECTIVE_EARNINGS_SOURCE_PROTOCOL_2026_10_22.md'
+      - '.github/workflows/fund100-v7-e4-daily-sec-event-source.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_e4_sec_event_capture_v1_0.py'
+      - 'test_fund100_v7_e4_sec_event_capture_v1_0.py'
+      - 'fund100_v7_e4_event_signal_observer_v1_0.py'
+      - 'test_fund100_v7_e4_event_signal_observer_v1_0.py'
+      - '.github/workflows/fund100-v7-e4-daily-sec-event-source.yml'
+  schedule:
+    - cron: '15 9 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v7-e4-prospective-sec-source
+  cancel-in-progress: false
+
+jobs:
+  offline-capture-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install existing research runtime
+        run: python -m pip install -r requirements.txt
+      - name: Exercise SEC source authenticity, no-lookahead and NO BROKER
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_v7_e4_sec_event_capture_v1_0.py \
+            test_fund100_v7_e4_event_signal_observer_v1_0.py \
+            test_fund100_v7_e3_event_source_audit_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+
+  current-observations:
+    needs: offline-capture-contract
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Only main/schedule/explicit dispatch can use the existing SEC identity
+    # secret. Never use any Alpaca environment or funded broker write secrets.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install research runtime
+        run: python -m pip install -r requirements.txt
+      - name: Acquire current original SEC submissions with declared real requester identity
+        env:
+          SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+        run: |
+          set -euo pipefail
+          test -n "${SEC_USER_AGENT}" || (echo 'SEC requester identity secret missing: fail closed' && exit 1)
+          python fund100_v7_e4_sec_event_capture_v1_0.py --output-dir /tmp/fund100-v7-e4-sec
+      - name: Archive original SEC submission bytes FIRST, regardless of later price vendor availability
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-e4-original-SEC-eight-issuers-${{ github.run_id }}
+          path: /tmp/fund100-v7-e4-sec/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Independently obtain T+1 full-session adjusted public price vintage
+        run: |
+          set -euo pipefail
+          python fund100_stock_quality_momentum_p4g_v1_0.py \
+            --output-json /tmp/fund100-v7-e4-prices/fund100-p4g-snapshot.json \
+            --output-prices-csv /tmp/fund100-v7-e4-prices/fund100-p4g-original-prices.csv
+      - name: Archive captured vendor price vintage before any reaction calculation
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-e4-contemporaneous-PRICE-eight-issuers-${{ github.run_id }}
+          path: /tmp/fund100-v7-e4-prices/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Verify both input vintages again and report only eligible past reactions
+        run: |
+          set -euo pipefail
+          python fund100_v7_e4_event_signal_observer_v1_0.py \
+            --sec-dir /tmp/fund100-v7-e4-sec \
+            --price-json /tmp/fund100-v7-e4-prices/fund100-p4g-snapshot.json \
+            --price-csv /tmp/fund100-v7-e4-prices/fund100-p4g-original-prices.csv \
+            --output /tmp/fund100-v7-e4-event-signal-RESEARCH-ONLY.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/fund100-v7-e4-event-signal-RESEARCH-ONLY.json').read_text())
+          assert r['schema']=='FUND100_V7_E4_CONCURRENT_SEC_EARNINGS_REACTION_OBSERVER_V1'
+          assert r['issuer_source_count']==8
+          assert r['forward_post_entry_returns_measured'] is False
+          assert r['statistical_alpha_proven'] is False
+          assert r['broker_orders']==0
+          assert r['live_authorized'] is False and r['paper_authorized'] is False
+          assert not r['trading_authorized']
+          PY
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Archive independent descriptive event evidence report
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-e4-SEC-event-signal-diagnostic-${{ github.run_id }}
+          path: /tmp/fund100-v7-e4-event-signal-RESEARCH-ONLY.json
+          retention-days: 90
+          if-no-files-found: error
