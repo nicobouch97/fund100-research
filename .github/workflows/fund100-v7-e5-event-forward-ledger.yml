@@ -57,7 +57,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements.txt
-      - name: Find two successful main-branch E4 source captures, never PR or failed workflows
+      - name: Choose the newest older source with two subsequent completed price sessions
         run: |
           set -euo pipefail
           gh run list --workflow fund100-v7-e4-daily-sec-event-source.yml \
@@ -69,11 +69,52 @@ jobs:
           runs=json.loads(Path('/tmp/v7-e5-capture-runs.json').read_text())
           ok=sorted((r for r in runs if r['status']=='completed'
                      and r['conclusion']=='success'),key=lambda x:x['createdAt'])
-          Path('/tmp/v7-e5-run-pair.env').write_text(
-              f"BASE_ID={ok[-2]['databaseId']}\nLATER_ID={ok[-1]['databaseId']}\n"
-              if len(ok)>=2 else '')
-          print('Read-only eligible archived source-run count:',len(ok))
+          Path('/tmp/v7-e5-eligible-ids.json').write_text(json.dumps({
+              'later':ok[-1]['databaseId'] if ok else None,
+              'prior_newest_first':[r['databaseId'] for r in reversed(ok[:-1])]
+          }))
+          print('Read-only successful original E4 archival runs:',len(ok))
           PY
+          LATER_ID=$(python -c 'import json;print(json.load(open("/tmp/v7-e5-eligible-ids.json"))["later"] or "")')
+          if [ -n "$LATER_ID" ]; then
+            mkdir -p /tmp/v7-e5-selection-later
+            gh run download "$LATER_ID" -n "fund100-v7-e4-contemporaneous-PRICE-eight-issuers-$LATER_ID" \
+              -D /tmp/v7-e5-selection-later
+            python - <<'PY'
+          from pathlib import Path
+          import fund100_stock_forward_return_ledger_p4h_v1_0 as p4h
+          root=Path('/tmp/v7-e5-selection-later')
+          doc,frame,_=p4h.read_snapshot(root/'fund100-p4g-snapshot.json',
+                                        root/'fund100-p4g-original-prices.csv')
+          print('Later original source observed through',doc['asof_completed_session'])
+          PY
+            for BASE_ID in $(python -c 'import json;print(*json.load(open("/tmp/v7-e5-eligible-ids.json"))["prior_newest_first"])'); do
+              rm -rf /tmp/v7-e5-selection-earlier
+              mkdir -p /tmp/v7-e5-selection-earlier
+              if ! gh run download "$BASE_ID" -n "fund100-v7-e4-contemporaneous-PRICE-eight-issuers-$BASE_ID" -D /tmp/v7-e5-selection-earlier; then
+                echo "Earlier source artifact unavailable; do not construct a return from it."
+                continue
+              fi
+              if python - <<'PY'
+          from pathlib import Path
+          import sys
+          import fund100_stock_forward_return_ledger_p4h_v1_0 as p4h
+          a=Path('/tmp/v7-e5-selection-earlier')
+          b=Path('/tmp/v7-e5-selection-later')
+          _,original,_=p4h.read_snapshot(a/'fund100-p4g-snapshot.json',
+                                        a/'fund100-p4g-original-prices.csv')
+          _,later,_=p4h.read_snapshot(b/'fund100-p4g-snapshot.json',
+                                     b/'fund100-p4g-original-prices.csv')
+          future_count=sum(d>original.index[-1] for d in later.index)
+          print('Completed sessions after this independent original capture:',future_count)
+          sys.exit(0 if future_count>=2 else 1)
+          PY
+              then
+                printf 'BASE_ID=%s\nLATER_ID=%s\n' "$BASE_ID" "$LATER_ID" > /tmp/v7-e5-run-pair.env
+                break
+              fi
+            done
+          fi
       - name: Preserve explicit insufficient-evidence result or compare source-pinned later marks
         run: |
           set -euo pipefail
