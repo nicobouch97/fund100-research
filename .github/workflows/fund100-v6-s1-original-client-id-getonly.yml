@@ -90,7 +90,23 @@ jobs:
           ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
         run: |
           set -euo pipefail
-          python fund100_v6_s1_live_original_client_ids_getonly_v1_0.py
+          # The original pinned reader prints ONLY redacted categorical facts.
+          # A successful run now attests not just a completed GET but also that
+          # no deterministic original V6 client ID was seen in these GETs.
+          redacted_file="$RUNNER_TEMP/fund100-v6-s1-redacted-client-ids.txt"
+          python fund100_v6_s1_live_original_client_ids_getonly_v1_0.py | tee "$redacted_file"
+          grep -Fxq 'original_account_binding_and_all_four_quantities_matched: True' "$redacted_file"
+          grep -Fxq 'original_held_xle_preserved: True' "$redacted_file"
+          grep -Fxq 'open_orders_at_first_four_gets: 0' "$redacted_file"
+          grep -Fxq 'original_three_client_ids_observed: 0' "$redacted_file"
+          grep -Fxq 'original_three_client_ids_not_found_404: 3' "$redacted_file"
+          grep -Fxq 'migration_broker_order_status: NO_MATCHING_V6_IDS_OBSERVED_NOT_NEVER_POST_PROOF' "$redacted_file"
+          grep -Fxq 'broker_get_requests: 7' "$redacted_file"
+          grep -Fxq 'broker_non_get_requests: 0' "$redacted_file"
+          grep -Fxq 'broker_orders_submitted: 0' "$redacted_file"
+          grep -Fxq 'real_order_submission_authorized: False' "$redacted_file"
+          rm -f "$redacted_file"
+          echo 'All seven authentic read-only source statuses match required preflight; 404 NEVER implies an order permit.'
       - name: Preserve original funded account STOP after source read
         run: |
           set -euo pipefail
