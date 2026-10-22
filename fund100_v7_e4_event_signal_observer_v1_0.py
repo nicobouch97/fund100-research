@@ -75,8 +75,8 @@ def evaluate(source:dict, price_report:dict, prices) -> dict:
         else:
             # Source price last session is the second post-event close.
             base=prior[-1]
-            relative=float(data.loc[last,ticker]/data.loc[base,ticker]-1
-                           -(data.loc[last,"SPY"]/data.loc[base,"SPY"]-1))
+            relative=float(data.loc[last.isoformat(),ticker]/data.loc[base.isoformat(),ticker]-1
+                           -(data.loc[last.isoformat(),"SPY"]/data.loc[base.isoformat(),"SPY"]-1))
             state=("OBSERVED_REACTION_OVER_THRESHOLD_NOT_FORWARD_ALPHA"
                    if relative>=REACTION_MIN else "OBSERVED_REACTION_BELOW_THRESHOLD")
         counts[state]+=1
