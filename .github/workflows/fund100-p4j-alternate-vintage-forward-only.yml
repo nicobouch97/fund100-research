@@ -1,0 +1,32 @@
+name: Fund-100 P4J Alternate Vendor Vintage Forward-Only (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_stock_postfreeze_alternate_vintage_p4j_v1_0.py"
+      - "test_fund100_stock_postfreeze_alternate_vintage_p4j_v1_0.py"
+      - "research_lab/stocks/P4J_REVISED_VENDOR_VINTAGE_POST_FREEZE_ONLY_PROTOCOL_2026_10_22.md"
+      - ".github/workflows/fund100-p4j-alternate-vintage-forward-only.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-frozen-watchlist-later-single-vintage-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Preserve original permanent P4I failure semantics and test later-vintage marks
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m pytest -q \
+            test_fund100_stock_postfreeze_alternate_vintage_p4j_v1_0.py \
+            test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Original P4I source revision refusal preserved; independent alternate-vintage P4J research only.'
