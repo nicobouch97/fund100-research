@@ -1,0 +1,72 @@
+name: Fund-100 V7 E3 Pinned SEC and Two-Price Vintage Audit (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_e3_event_source_audit_v1_0.py'
+      - 'test_fund100_v7_e3_event_source_audit_v1_0.py'
+      - 'research_lab/stocks/V7E3_PINNED_EVENT_SOURCE_TIMELINE_2026_10_22.md'
+      - '.github/workflows/fund100-v7-e3-pinned-event-source-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  pinned-real-source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install existing source-verification requirements
+        run: python -m pip install -r requirements.txt
+      - name: Check synthetic no-lookahead cases
+        run: python -m pytest -q test_fund100_v7_e3_event_source_audit_v1_0.py test_fund100_v7_e2_event_forward_return_v1_0.py
+      - name: Download only immutable named original GitHub Actions artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fund100-e3-sec /tmp/fund100-e3-original /tmp/fund100-e3-later
+          gh run download 38756477914 -n fund100-phase4b-real-sec-snapshot-38756477914 -D /tmp/fund100-e3-sec
+          gh run download 39015519726 -n fund100-p4g-prospective-stock-price-evidence -D /tmp/fund100-e3-original
+          gh run download 39750446875 -n fund100-p4g-prospective-stock-price-evidence -D /tmp/fund100-e3-later
+          test -s /tmp/fund100-e3-sec/manifest-and-quality.json
+          test -s /tmp/fund100-e3-original/fund100-p4g-snapshot.json
+          test -s /tmp/fund100-e3-later/fund100-p4g-original-prices.csv
+      - name: Audit authenticated SEC original and two genuinely separate price capture times
+        run: |
+          set -euo pipefail
+          python fund100_v7_e3_event_source_audit_v1_0.py \
+            --sec-original-directory /tmp/fund100-e3-sec \
+            --original-json /tmp/fund100-e3-original/fund100-p4g-snapshot.json \
+            --original-csv /tmp/fund100-e3-original/fund100-p4g-original-prices.csv \
+            --later-json /tmp/fund100-e3-later/fund100-p4g-snapshot.json \
+            --later-csv /tmp/fund100-e3-later/fund100-p4g-original-prices.csv \
+            --output /tmp/fund100-v7-e3-event-audit.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/fund100-v7-e3-event-audit.json').read_text())
+          assert r['schema']=='FUND100_V7_E3_PINNED_SEC_EVENT_SIGNAL_TIMELINE_V1'
+          assert r['original_sec_run_id']==38756477914
+          assert r['original_price_run_id']==39015519726
+          assert r['later_price_run_id']==39750446875
+          assert r['original_price_asof_session']=='2026-10-16'
+          assert r['hypothetical_post_entry_return_calculated'] is False
+          assert r['live_authorized'] is False and r['paper_authorized'] is False
+          assert r['broker_orders']==0 and not r['historical_alpha_proven']
+          print('Real authenticated SOURCE chronology checked; NO BROKER.')
+          PY
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-e3-authentic-event-source-timeline-no-trade
+          path: /tmp/fund100-v7-e3-event-audit.json
+          retention-days: 90
+          if-no-files-found: error
