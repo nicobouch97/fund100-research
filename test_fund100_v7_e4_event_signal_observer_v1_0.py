@@ -10,8 +10,10 @@ def fixtures(price_asof="2026-10-21", filing="2026-10-19",
     dates=pd.bdate_range("2025-10-01",price_asof)
     cols=sorted(set(p4g.FROZEN_P4E_SCORES)|{"SPY","SHY"})
     prices=pd.DataFrame({t:100. for t in cols},index=dates)
-    prices.loc["2026-10-21","MSFT"]=103.
-    prices.loc["2026-10-20","MSFT"]=101.
+    if pd.Timestamp("2026-10-21") in prices.index:
+        prices.loc["2026-10-21","MSFT"]=103.
+    if pd.Timestamp("2026-10-20") in prices.index:
+        prices.loc["2026-10-20","MSFT"]=101.
     source={
         "schema":feed.SCHEMA,
         "source_count":8,"all_frozen_issuers_acquired":True,
