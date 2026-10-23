@@ -8,6 +8,7 @@ No real-money writer, return adapter, settlement cert or orders.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from decimal import Decimal, InvalidOperation
 import os
 
@@ -284,6 +285,27 @@ def runtime()->dict:
 
 def main():
     r=runtime()
+    # The unprivileged downstream workflow cannot authenticate financial
+    # statements from text logs. GitHub Actions gets one source-derived
+    # categorical output from THIS protected seven-GET invocation only.
+    # Never emit raw equity, cash, transfers, risk returns, or order data.
+    output=os.environ.get("GITHUB_OUTPUT")
+    if output is not None:
+        if (os.environ.get("GITHUB_ACTIONS")!="true"
+            or os.environ.get("GITHUB_REF")!="refs/heads/main"
+            or os.environ.get("GITHUB_REPOSITORY")!="nicobouch97/fund100-research"
+            or type(output) is not str or not output.strip()):
+            raise FlowTimingStop("Unapproved Actions risk-evidence handoff")
+        if (type(r.get("actual_s1_6_20_35_risk_verified")) is not bool
+            or r.get("live_buy_sell_authorized") is not False
+            or r.get("broker_get_requests")!=7
+            or r.get("broker_non_get_requests")!=0
+            or r.get("live_orders")!=0):
+            raise FlowTimingStop("Source cannot hand off ambiguous risk evidence")
+        with Path(output).open("a",encoding="ascii") as sink:
+            sink.write("risk_pass="+(
+                "true" if r["actual_s1_6_20_35_risk_verified"] else "false"
+            )+"\\n")
     for name in (
         "schema","original_account_and_legacy_positions_verified",
         "original_xle_target_status","original_cash_floor_status",
