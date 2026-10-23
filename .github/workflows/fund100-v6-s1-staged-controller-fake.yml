@@ -5,6 +5,8 @@ on:
     paths:
       - "fund100_v6_s1_staged_controller_core_v1_0.py"
       - "test_fund100_v6_s1_staged_controller_core_v1_0.py"
+      - "fund100_v6_s1_funding_adjusted_risk_dietz_v1_0.py"
+      - "test_fund100_v6_s1_funding_adjusted_risk_dietz_v1_0.py"
       - "research_lab/V6_S1_CONTROLLER_TWO_PHASE_RESTART_PROTOCOL_2026_10_19.md"
       - ".github/workflows/fund100-v6-s1-staged-controller-fake.yml"
   workflow_dispatch:
@@ -27,6 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest -q test_fund100_v6_s1_staged_controller_core_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_funding_adjusted_risk_dietz_v1_0.py
           python -m pytest -q test_fund100_v6_s1_low_churn_migration_v2_0.py
           python -m pytest -q test_fund100_v6_s1_cash_at_order_no_churn_v1_0.py
       - name: NO broker network, no LIVE user secrets or release

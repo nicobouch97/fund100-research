@@ -170,3 +170,135 @@ def analyze(*,fixture:dict,now_utc:str)->dict:
       "activity_ids_and_transaction_times":None,
       "executable_order_payload":None,
     }
+
+
+def diagnose_one_date_only_transfer(*,fixture:dict,now_utc:str)->dict:
+    """Conservative one-transfer timing *diagnostic*, not a LIVE risk permit.
+
+    Brokerage nontrade date is not assumed to be a transaction timestamp.
+    Consider EVERY sampled close interval and both endpoints of intraday
+    capital weighting. Reject any interval whose other uncompensated daily
+    equity jumps exceed 25%, but keep all still-admissible placements.
+    If multiple placements remain, or any scenario breaches HIGH 6/20/35,
+    report HOLD. Do not infer a real transfer time from settlement date.
+    Does not replace authenticated source completeness or operator approvals.
+    """
+    if (type(fixture) is not dict or fixture.get("schema")!=SCHEMA
+        or fixture.get("mode")!=MODE
+        or fixture.get("authenticated_broker_source") is not False
+        or fixture.get("live_operator_stopped") is not True
+        or fixture.get("broker_kill_switch")!="ENGAGED"
+        or fixture.get("risk_level")!="HIGH"):
+        raise FundingRiskStop("Date-only diagnostic requires synthetic stopped fixture")
+    now=stamp(now_utc)
+    h=fixture.get("portfolio_history")
+    if type(h) is not dict or h.get("timeframe")!="1D":
+        raise FundingRiskStop("No daily broker-shaped history")
+    times=h.get("timestamp"); values=h.get("equity")
+    if (type(times) is not list or type(values) is not list
+        or len(times)!=len(values) or not MIN_POINTS<=len(times)<=MAX_POINTS
+        or any(type(t) is not int or t<=0 for t in times)
+        or any(b<=a or b-a>5*86400 for a,b in zip(times,times[1:]))):
+        raise FundingRiskStop("Daily source incomplete, unordered or implausible")
+    balances=[dec(x,"sampled account equity",positive=True) for x in values]
+    first=datetime.fromtimestamp(times[0],timezone.utc)
+    last=datetime.fromtimestamp(times[-1],timezone.utc)
+    if not 0<=(now-last).total_seconds()<=10*86400:
+        raise FundingRiskStop("Daily source date unverified")
+    start=stamp(fixture.get("nontrade_activity_query_after"))
+    if start>first:
+        raise FundingRiskStop("Nontrade source misses first funded observation")
+    activities=fixture.get("nontrade_activities")
+    if type(activities) is not list or len(activities)>=MAX_ACTIVITY_ROWS:
+        raise FundingRiskStop("Incomplete, unpaged account activity source")
+    seen=set(); flow=None
+    for event in activities:
+        if type(event) is not dict:
+            raise FundingRiskStop("Malformed account activity")
+        ident=event.get("id")
+        typ=event.get("activity_type")
+        if (type(ident) is not str or not ident or ident in seen
+            or type(typ) is not str or not typ or typ!=typ.strip()):
+            raise FundingRiskStop("Missing, duplicated or invalid event identity")
+        seen.add(ident)
+        if typ not in TRANSFER and typ not in OTHER:
+            raise FundingRiskStop("Noncash/unknown transfer cannot be bounded")
+        if typ not in TRANSFER:
+            continue
+        if flow is not None:
+            raise FundingRiskStop("More than one date-only funding transfer needs a distinct model")
+        amount=dec(event.get("net_amount"),"signed nontrade cashflow")
+        if amount*TRANSFER[typ]<=0:
+            raise FundingRiskStop("Signed cashflow conflicts with event type")
+        raw_date=event.get("date")
+        if type(raw_date) is not str:
+            raise FundingRiskStop("Nontrade activity lacks original date")
+        from datetime import date
+        try:
+            dated=date.fromisoformat(raw_date)
+        except ValueError:
+            raise FundingRiskStop("Nontrade activity date unreadable") from None
+        if dated>now.date():
+            raise FundingRiskStop("Future nontrade activity date")
+        if event.get("transaction_time") is not None:
+            raise FundingRiskStop("This diagnostic is solely for date-only sources")
+        flow=amount
+    if flow is None:
+        raise FundingRiskStop("No date-only funding event to analyze")
+    accepted=[]
+    for candidate in range(1,len(balances)):
+        at_extremes=[]
+        for weight in (Decimal(0),Decimal(1)):
+            returns=[];unit=[Decimal(1)]
+            valid=True
+            for i in range(1,len(balances)):
+                a,b=balances[i-1],balances[i]
+                cf=flow if i==candidate else Decimal(0)
+                denominator=a+weight*cf
+                if denominator<=0:
+                    valid=False;break
+                r=(b-a-cf)/denominator
+                if abs(r)>MAX_ADJUSTED_RETURN:
+                    valid=False;break
+                returns.append(r)
+                unit.append(unit[-1]*(Decimal(1)+r))
+            if not valid:
+                continue
+            peak=max(unit)
+            end_dd=Decimal(1)-unit[-1]/peak
+            vol=Decimal(str(stdev([float(v) for v in returns])*sqrt(252)))
+            at_extremes.append({
+                "daily":returns[-1],
+                "current_drawdown":end_dd,
+                "volatility":vol,
+                "threshold_breached":returns[-1]<=MAX_DAILY_LOSS
+                 or end_dd>=MAX_UNIT_DRAWDOWN or vol>MAX_ANNUAL_VOL,
+            })
+        if len(at_extremes)==2:
+            accepted.append(at_extremes)
+    # If no placement satisfies the existing 25% data-quality guard, this
+    # is NOT proof a transfer was zero; source remains ambiguous => HOLD.
+    bounded=len(accepted)==1
+    all_safe=bounded and all(not row["threshold_breached"]
+                             for row in accepted[0])
+    return {
+        "schema":"FUND100_V6_S1_UNTIMED_SINGLE_FUNDING_DIAGNOSTIC_V1",
+        "status":("UNIQUE_CONDITIONALLY_PLAUSIBLE_PLACEMENT_RESEARCH_ONLY"
+                  if bounded else "AMBIGUOUS_OR_INCONSISTENT_SOURCE_HOLD"),
+        "candidate_sampled_intervals":len(balances)-1,
+        "quality_admissible_intervals":len(accepted),
+        "both_intra_interval_timing_extremes_checked":True,
+        "assumes_underlying_true_session_return_within_25pct":True,
+        "conditional_all_scenarios_below_original_HIGH_limits":bool(all_safe),
+        "exact_economic_funding_date_proven":False,
+        "funding_effective_date_inferred_as_fact":False,
+        "original_source_broker_authenticated":False,
+        "nontrade_activity_history_complete_from_API_proven":False,
+        "account_equity_after_last_history_reconciled":False,
+        "real_s1_high_account_risk_approved":False,
+        "live_buy_authorized":False,"live_sell_authorized":False,
+        "broker_requests":0,"broker_orders":0,
+        "private_balance":None,"private_funding_amount":None,
+        "private_funding_date":None,"transaction_id":None,
+        "executable_order_payload":None,
+    }
