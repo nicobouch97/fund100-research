@@ -223,7 +223,7 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
     (
         ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml",
         "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
-    ): "fd3a19b18e3f3afa5a73107630239727390ebfb6",
+    ): "85fab2d95beec37e1bc60c5bf1f95907e245ed8f",
     # Original BUY receipt ↔ actual FILL matching, precisely six GET, no writes.
     (
         ".github/workflows/fund100-v6-s1-real-buy-receipt-fill-six-get.yml",
