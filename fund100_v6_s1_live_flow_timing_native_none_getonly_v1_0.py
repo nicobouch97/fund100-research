@@ -17,6 +17,7 @@ import fund100_v6_brokerless_transition_preview_v1_0 as original
 import fund100_v6_real_live_getonly_transition_readiness_v1_0 as four
 import fund100_v6_s1_live_risk_history_getonly_v1_0 as five
 import fund100_v6_s1_live_private_xle_activity_getonly_v1_0 as six
+import fund100_v6_s1_live_cashflow_risk_bounds_v1_0 as cashrisk
 
 SCHEMA="FUND100_V6_S1_AUTHENTIC_CASHFLOW_TIMING_AND_NATIVE_NONE_SOURCE_V1"
 EXTRA_PARAMS={"period":"1M","timeframe":"1D","cashflow_types":"NONE"}
@@ -165,6 +166,16 @@ def evaluate(*,account:dict,positions:list,orders:list,clock:dict,
     timing=original_cashflow_source(activities)
     count_category=observed_cash_transfer_category(activities,timing)
     none=broker_native_none_source(history,native_none_history)
+    # Original source is already checked above. Sensitivity uses the same
+    # seven authenticated GET objects only, and NEVER authorizes account risk.
+    if (timing=="CASH_TRANSFER_SOURCE_DATE_ONLY_NO_DIETZ"
+        and count_category=="OBSERVED_ONE_CASH_TRANSFER_NOT_TIMING_PROOF"):
+        bounded=cashrisk.inspect(
+            history=history, activities=activities, account=account,
+            observed_at_utc=observed_at_utc)
+    else:
+        bounded={"status":"ONE_DATE_ONLY_FLOW_SOURCE_NOT_APPLICABLE_HOLD",
+                 "one_cashflow_sensitivity_evaluated_in_memory":False}
     return {
        "schema":SCHEMA,
        "source":"PRIVATE_ORIGINAL_SEVEN_GET_SOURCE_QUALIFICATION_ONLY",
@@ -174,6 +185,9 @@ def evaluate(*,account:dict,positions:list,orders:list,clock:dict,
        "original_external_funding_classification":earlier["account_activities_source_status"],
        "cash_transfer_amount_and_timestamp_field_status":timing,
        "observed_cash_transfer_count_class":count_category,
+       "one_month_date_only_cashflow_risk_status":bounded["status"],
+       "one_month_one_cashflow_sensitivity_evaluated_in_memory":
+           bounded["one_cashflow_sensitivity_evaluated_in_memory"],
        "broker_cashflow_types_none_pnl_comparison":none,
        "original_raw_equity_risk_status":earlier["original_raw_risk_history_result"],
        "actual_cashflow_adjusted_dietz_returns_calculated":False,
@@ -250,6 +264,8 @@ def main():
         "original_external_funding_classification",
         "cash_transfer_amount_and_timestamp_field_status",
         "observed_cash_transfer_count_class",
+        "one_month_date_only_cashflow_risk_status",
+        "one_month_one_cashflow_sensitivity_evaluated_in_memory",
         "broker_cashflow_types_none_pnl_comparison",
         "original_raw_equity_risk_status",
         "actual_cashflow_adjusted_dietz_returns_calculated",
