@@ -130,3 +130,64 @@ def test_missing_pre_filing_market_session_is_not_treated_as_valid_base(tmp_path
     result=e2.event_study(m,s,r,data)
     assert result["events_excluded_lack_coverage"]["NONCONSECUTIVE_XNYS_EVENT_WINDOW"]==8
     assert result["positive_reaction_events"]==0
+
+
+def test_same_cash_account_event_economics_are_not_sum_of_independent_bets(tmp_path):
+    result=setup(tmp_path)
+    portfolios=result["shared_cash_portfolio_by_cost_bps"]
+    assert result["portfolio_uses_first_come_25pct_max_four_names"]
+    assert result["portfolio_is_retrospective_close_fill_optimistic_not_alpha"]
+    assert set(portfolios)=={"5","15","35"}
+    for p in portfolios.values():
+        assert p["selected_events"]==1
+        assert p["accepted_entries"]==p["closed_exits"]==1
+        assert p["max_concurrent_names"]==1
+        assert 0<p["max_gross_fraction"]<=.251
+        assert p["min_cash_fraction"]>=0
+        assert p["all_positions_flat_at_final_close"]
+        assert p["first_hypothetical_entry"]>result["all_qualified_event_observations"][0]["second_post_filing_close"]
+        assert p["last_hypothetical_exit"]>p["first_hypothetical_entry"]
+    # The portfolio owns only 25% of a selected issuer, not a fictional
+    # fully-invested position for every observed earnings event.
+    assert (portfolios["5"]["net_portfolio_return_pct"]
+            >portfolios["15"]["net_portfolio_return_pct"]
+            >portfolios["35"]["net_portfolio_return_pct"])
+    assert result["broker_orders"]==0 and not result["live_authorized"]
+
+
+def test_cash_capacity_and_same_issuer_overlap_never_create_leverage(tmp_path):
+    _,csv=price_fixture(tmp_path)
+    prices=pd.read_csv(csv,parse_dates=["Date"]).set_index("Date")
+    # Synthetic five simultaneous valid signals compete for four 25% slots.
+    entry="2026-06-22"
+    exit_day="2026-07-07"
+    assert pd.Timestamp(entry) in prices.index
+    assert pd.Timestamp(exit_day) in prices.index
+    events=[{
+        "ticker":ticker,
+        "original_sec_accession":f"0000000000-26-{i:06d}",
+        "hypothetical_entry_third_close":entry,
+        "hypothetical_exit_after_ten_sessions":exit_day,
+    } for i,ticker in enumerate(("AAPL","MSFT","GOOGL","AMZN","PG"))]
+    result=e2._portfolio_path(events,prices,15)
+    assert result["selected_events"]==5
+    assert result["accepted_entries"]==result["closed_exits"]==4
+    assert result["capacity_skipped"]==1
+    assert result["duplicate_issuer_skipped"]==0
+    assert result["max_concurrent_names"]==4
+    assert result["max_gross_fraction"]<=1.000001
+    assert result["min_cash_fraction"]>=0
+    assert result["all_positions_flat_at_final_close"]
+    same=events[:1]+[{**events[0],"original_sec_accession":"0000000000-26-999999"}]
+    overlap=e2._portfolio_path(same,prices,15)
+    assert overlap["accepted_entries"]==1
+    assert overlap["duplicate_issuer_skipped"]==1
+
+
+def test_zero_signals_have_no_fabricated_portfolio_return(tmp_path):
+    result=setup(tmp_path,event_date="2026-10-15",with_shock=False)
+    for p in result["shared_cash_portfolio_by_cost_bps"].values():
+        assert p["accepted_entries"]==0
+        assert p["net_portfolio_return_pct"] is None
+        assert p["net_spy_buy_hold_return_pct"] is None
+        assert p["all_positions_flat_at_final_close"]
