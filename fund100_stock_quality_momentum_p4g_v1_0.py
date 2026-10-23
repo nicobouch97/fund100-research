@@ -78,6 +78,24 @@ def validate_prices(frame: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def verify_original_nyse_source_sessions(index: pd.DatetimeIndex) -> None:
+    """Fail closed on incomplete original public NYSE source histories.
+
+    This belongs at the real vendor acquisition boundary, NOT in the
+    shared pure price-shape validator: downstream offline studies deliberately
+    construct weekday-only synthetic fixtures that are not original sources.
+    """
+    try:
+        import exchange_calendars as xcals
+        expected = xcals.get_calendar("XNYS").sessions_in_range(
+            index[0], index[-1]
+        ).tz_localize(None).normalize()
+    except Exception as exc:
+        raise P4GStop("Cannot verify complete XNYS source history") from exc
+    if not index.equals(expected):
+        raise P4GStop("Missing or extra XNYS trading sessions in source history")
+
+
 def canonical_price_csv(data: pd.DataFrame) -> str:
     return validate_prices(data).to_csv(
         index=True, index_label="Date", date_format="%Y-%m-%d",
@@ -197,8 +215,11 @@ def public_prices() -> pd.DataFrame:
         out.index = out.index.tz_convert("UTC").tz_localize(None).normalize()
     else:
         out.index = out.index.normalize()
-    # Do not drop/fill missing interior bars; refuse incomplete dataset.
-    return validate_prices(out)
+    # Validate every original NYSE session BEFORE the prospective signal
+    # is evaluated. Shared pure validators remain usable for offline fixtures.
+    validated = validate_prices(out)
+    verify_original_nyse_source_sessions(validated.index)
+    return validated
 
 
 def main() -> None:
