@@ -32,6 +32,12 @@ ACTIVE={"new","accepted","pending_new","partially_filled",
 UNSAFE={"canceled","cancelled","expired","rejected","replaced",
         "pending_replace","suspended","held"}
 CLOCK_AGE=300
+# A rolling broker account-equity circuit breaker, NOT backtest lifetime max-DD.
+RISK_BASIS="BROKER_1M_DAILY_ACCOUNT_EQUITY_PEAK_TO_CURRENT"
+MAX_DAILY_MOVE_WITHOUT_CASHFLOW_PROOF=Decimal("0.25")
+DAILY_LOSS_STOP=Decimal("-0.06")
+ROLLING_1M_ACCOUNT_DRAWDOWN_STOP=Decimal("-0.20")
+REALIZED_ACCOUNT_VOL_STOP=Decimal("0.35")
 TRANSPORT_RELEASED=False
 PUBLIC_EXECUTION_ENABLED=False
 
@@ -135,8 +141,10 @@ def assess(*,snap:dict,now_utc:str)->dict:
         elif "notional" not in row or amount(row["notional"],"original buy notional",positive=True)<MIN_ORDER:
             raise TransitionStop("Invalid earlier buy notional")
     risk=snap.get("risk_metrics")
-    if not isinstance(risk,dict) or set(risk)!={"daily_return","drawdown","annual_volatility"}:
-        raise TransitionStop("Missing combined account-level risk history")
+    if (not isinstance(risk,dict)
+        or set(risk)!={"daily_return","drawdown","annual_volatility","drawdown_basis"}
+        or risk.get("drawdown_basis")!=RISK_BASIS):
+        raise TransitionStop("Missing account-level trailing 1M broker risk basis")
     # Preserve signed returns and drawdown without accepting float repr.
     def signed(k):
         v=risk.get(k)
@@ -147,9 +155,25 @@ def assess(*,snap:dict,now_utc:str)->dict:
         return d
     daily=signed("daily_return");drawdown=signed("drawdown")
     vol=amount(risk["annual_volatility"],"annualized realized vol")
-    if daily<=Decimal("-0.06") or drawdown<=Decimal("-0.20") or vol>Decimal("0.35"):
-        return blocked("BLOCKED_ACCOUNT_RISK_STOP",holdings=holdings,
-                       prior_orders=open_orders)
+    # Reuse the existing LIVE V5 data-quality limit: equity jumps greater than
+    # 25% are not reliable daily investment returns without cashflow evidence.
+    # Reject impossible positive "drawdown", not silently treat it as safe.
+    if (abs(daily)>MAX_DAILY_MOVE_WITHOUT_CASHFLOW_PROOF
+        or drawdown>0 or drawdown<Decimal("-1")):
+        raise TransitionStop("Account returns or trailing 1M drawdown impossible/ambiguous")
+    # Freeze candidates, do not sell holdings, fabricate a risk-reset, or
+    # re-authorise any LIVE trade. Recovery requires separate operator GO.
+    if daily<=DAILY_LOSS_STOP:
+        return blocked("BLOCKED_ACCOUNT_RISK_STOP",reason="DAILY_ACCOUNT_LOSS_6PCT",
+                       holdings=holdings,prior_orders=open_orders)
+    if drawdown<=ROLLING_1M_ACCOUNT_DRAWDOWN_STOP:
+        return blocked("BLOCKED_ACCOUNT_RISK_STOP",
+                       reason="BROKER_TRAILING_1M_ACCOUNT_DRAWDOWN_20PCT",
+                       holdings=holdings,prior_orders=open_orders)
+    if vol>REALIZED_ACCOUNT_VOL_STOP:
+        return blocked("BLOCKED_ACCOUNT_RISK_STOP",
+                       reason="ANNUALIZED_REALIZED_ACCOUNT_VOLATILITY_35PCT",
+                       holdings=holdings,prior_orders=open_orders)
     if any(x["market"]/equity>MAX_SYMBOL for symbol,x in holdings.items() if symbol not in OLD):
         return blocked("BLOCKED_SYMBOL_CONCENTRATION",holdings=holdings,prior_orders=open_orders)
     if gross/equity>MAX_GROSS and not set(holdings)&set(OLD):
