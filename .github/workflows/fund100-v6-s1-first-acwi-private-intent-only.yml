@@ -125,6 +125,8 @@ jobs:
           test "$FUND100_RISK_LEVEL" = "HIGH"
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
           test "$(git hash-object fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py)" = "7802c8f92146d01f33f0cb47d1bdc8b413785d7e"
+          test "$(git hash-object fund100_v6_real_live_getonly_transition_readiness_v1_0.py)" = "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2"
+          test "$(git hash-object .github/workflows/fund100-v6-real-live-getonly-transition.yml)" = "a148b919ab25071dc3872211bb20588c466a1b92"
           test "$(git hash-object live_activation_outputs/v5_002/live_bootstrap_v1_0.json)" = "19557af50e20149470906d22e33ca99753892fb4"
           test "$(git hash-object fund100_v6_s1_private_git_cas_protocol_v1_0.py)" = "9b9f8917faa21b4157600ac642f80595445a7276"
           python - <<'PY'
