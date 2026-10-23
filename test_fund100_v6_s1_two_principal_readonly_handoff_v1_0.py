@@ -149,6 +149,13 @@ def risk_fx():
     jobs[1]["name"]=h.RISK_JOB
     for item,name in zip(jobs[1]["steps"],h.REQUIRED_RISK_STEPS):
         item["name"]=name
+    # The step is skipped on a source-risk HOLD; no numeric return leaks
+    # from the original protected reader or GitHub log into this fixture.
+    jobs[1]["steps"].insert(2,{
+        "name":h.RISK_PASS_STEP,
+        "status":"completed","conclusion":"skipped",
+        "started_at":None,"completed_at":None,
+    })
     return x
 
 
@@ -251,3 +258,52 @@ def test_original_one_workflow_handles_both_broker_sources_no_trading_release():
     assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in s
     assert "ALPACA_LIVE_KEY" not in s
     assert "ALPACA_LIVE_SECRET" not in s
+
+
+def test_protected_pass_marker_reaches_signed_genesis_join_without_trade_release():
+    x=risk_fx()
+    marker=next(z for z in x["jobs"]["jobs"][1]["steps"]
+                if z["name"]==h.RISK_PASS_STEP)
+    marker.update(status="completed",conclusion="success",
+                  started_at="2026-10-22T16:24:19Z",
+                  completed_at="2026-10-22T16:24:20Z")
+    source=h.verify_any_source(**x)
+    assert source["source_verified_postfunding_6_20_35"] is True
+    joined=h.join_current_risk_and_signed_genesis(
+        source=source,genesis=signed_empty_genesis())
+    assert joined["postfunding_account_6_20_35_read_evidence"] is True
+    assert joined["risk_source_approved_for_live_orders"] is False
+    assert joined["orders_authorized"] is False
+
+
+@pytest.mark.parametrize("tamper",[
+    "missing","duplicate","failed","uncompleted",
+    "before_source","after_stop","unknown_conclusion",
+])
+def test_untrusted_account_risk_pass_step_is_not_allowed_into_signed_handoff(tamper):
+    x=risk_fx()
+    steps=x["jobs"]["jobs"][1]["steps"]
+    index=next(i for i,z in enumerate(steps) if z["name"]==h.RISK_PASS_STEP)
+    marker=steps[index]
+    if tamper=="missing":steps.pop(index)
+    elif tamper=="duplicate":steps.append(dict(marker))
+    elif tamper=="failed":marker["conclusion"]="failure"
+    elif tamper=="uncompleted":marker["status"]="in_progress"
+    elif tamper=="unknown_conclusion":marker["conclusion"]="neutral"
+    elif tamper=="before_source":
+        marker.update(conclusion="success",started_at="2026-10-22T16:24:15Z",
+                      completed_at="2026-10-22T16:24:16Z")
+    elif tamper=="after_stop":
+        marker.update(conclusion="success",started_at="2026-10-22T16:24:23Z",
+                      completed_at="2026-10-22T16:24:24Z")
+    with pytest.raises(h.HandoffStop):
+        h.verify_any_source(**x)
+
+
+def test_skipped_real_risk_step_is_an_explicit_false_not_certification():
+    result=h.verify_any_source(**risk_fx())
+    assert result["source_verified_postfunding_6_20_35"] is False
+    joined=h.join_current_risk_and_signed_genesis(
+        source=result,genesis=signed_empty_genesis())
+    assert joined["postfunding_account_6_20_35_read_evidence"] is False
+    assert joined["orders_authorized"] is False
