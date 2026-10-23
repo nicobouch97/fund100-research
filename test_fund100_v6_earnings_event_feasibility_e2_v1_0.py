@@ -148,6 +148,10 @@ def test_same_cash_account_event_economics_are_not_sum_of_independent_bets(tmp_p
         assert p["max_gross_fraction"]<=1.000001
         assert p["min_cash_fraction"]>=0
         assert p["all_positions_flat_at_final_close"]
+        assert p["matched_spy_control_accepted_entries"]==p["accepted_entries"]
+        assert p["matched_spy_control_closed_exits"]==p["closed_exits"]
+        assert p["matched_spy_control_max_gross_fraction"]<=1.000001
+        assert p["net_spy_matched_schedule_return_pct"] is not None
         assert p["first_hypothetical_entry"]>result["all_qualified_event_observations"][0]["second_post_filing_close"]
         assert p["last_hypothetical_exit"]>p["first_hypothetical_entry"]
     # The portfolio owns only 25% of a selected issuer, not a fictional
@@ -181,6 +185,9 @@ def test_cash_capacity_and_same_issuer_overlap_never_create_leverage(tmp_path):
     assert result["max_entry_budget_fraction"]<=.25
     assert result["max_gross_fraction"]<=1.000001
     assert result["min_cash_fraction"]>=0
+    assert result["matched_spy_control_accepted_entries"]==4
+    assert result["matched_spy_control_closed_exits"]==4
+    assert result["matched_spy_control_max_gross_fraction"]<=1.000001
     assert result["all_positions_flat_at_final_close"]
     same=events[:1]+[{**events[0],"original_sec_accession":"0000000000-26-999999"}]
     overlap=e2._portfolio_path(same,prices,15)
@@ -194,4 +201,38 @@ def test_zero_signals_have_no_fabricated_portfolio_return(tmp_path):
         assert p["accepted_entries"]==0
         assert p["net_portfolio_return_pct"] is None
         assert p["net_spy_buy_hold_return_pct"] is None
+        assert p["net_spy_matched_schedule_return_pct"] is None
+        assert p["portfolio_minus_matched_spy_net_percentage_points"] is None
+        assert p["matched_spy_control_accepted_entries"]==0
         assert p["all_positions_flat_at_final_close"]
+
+
+def test_spy_matched_schedule_removes_idle_cash_false_alpha():
+    # Identical stock and SPY prices: a 25%-invested stock portfolio
+    # cannot be called a losing stock picker merely because SPY is 100% invested.
+    dates=pd.to_datetime(["2026-10-19","2026-10-20","2026-10-21","2026-10-22"])
+    bars=pd.DataFrame({"AAPL":[100,105,110,115],
+                       "SPY":[100,105,110,115]},index=dates)
+    event={"ticker":"AAPL","original_sec_accession":"0000000000-26-000001",
+           "hypothetical_entry_third_close":"2026-10-19",
+           "hypothetical_exit_after_ten_sessions":"2026-10-22"}
+    r=e2._portfolio_path([event],bars,15)
+    assert r["matched_spy_control_accepted_entries"]==1
+    assert r["matched_spy_control_closed_exits"]==1
+    assert r["matched_spy_control_cash_limited_entries"]==0
+    assert r["portfolio_minus_matched_spy_net_percentage_points"]==0
+    assert r["net_spy_matched_schedule_return_pct"]==r["net_portfolio_return_pct"]
+    assert r["net_spy_buy_hold_return_pct"]>r["net_portfolio_return_pct"]
+
+
+def test_spy_matched_schedule_detects_real_stock_selection_loss():
+    dates=pd.to_datetime(["2026-10-19","2026-10-20","2026-10-21","2026-10-22"])
+    bars=pd.DataFrame({"AAPL":[100,99,98,95],
+                       "SPY":[100,101,102,105]},index=dates)
+    event={"ticker":"AAPL","original_sec_accession":"0000000000-26-000001",
+           "hypothetical_entry_third_close":"2026-10-19",
+           "hypothetical_exit_after_ten_sessions":"2026-10-22"}
+    r=e2._portfolio_path([event],bars,15)
+    assert r["portfolio_minus_matched_spy_net_percentage_points"]<0
+    assert r["matched_spy_control_max_gross_fraction"]<=.251
+    assert r["matched_spy_control_accepted_entries"]==r["matched_spy_control_closed_exits"]==1
