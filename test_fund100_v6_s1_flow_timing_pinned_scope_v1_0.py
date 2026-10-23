@@ -62,3 +62,12 @@ def test_existing_writer_and_synthetic_dietz_never_get_live_creds_from_source_jo
                   "fund100_alpaca_live_writer_candidate_v1_1.py"):
         assert (FLOW,other) not in audit.PINNED_LIVE_CREDENTIAL_JOBS
         assert not audit.approved_scoped_live_script(FLOW,other,yml())
+
+
+def test_helper_source_changes_trigger_existing_seven_get_on_main():
+    body=yml()
+    assert body.count('      - "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py"') == 2
+    assert body.count('      - "test_fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py"') == 1
+    assert "python -m pytest -q test_fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py" in body
+    assert '  workflow_dispatch:' in body
+    assert "authentic-private-seven-get:" in body
