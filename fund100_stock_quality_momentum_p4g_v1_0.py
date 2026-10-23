@@ -64,6 +64,18 @@ def validate_prices(frame: pd.DataFrame) -> pd.DataFrame:
         or any(x != x.normalize() for x in idx)
         or len(idx) < LOOKBACK + 1):
         raise P4GStop("Incomplete, unordered or undated session histories.")
+    # A missing NYSE bar must not silently turn the predeclared 63/126
+    # *session* lookbacks into longer, incomparable calendar windows.
+    # Reject unexpected weekend/holiday bars as well; do not fill prices.
+    try:
+        import exchange_calendars as xcals
+        expected = xcals.get_calendar("XNYS").sessions_in_range(
+            idx[0], idx[-1]
+        ).tz_localize(None).normalize()
+    except Exception as exc:
+        raise P4GStop("Cannot verify complete XNYS source history") from exc
+    if not idx.equals(expected):
+        raise P4GStop("Missing or extra XNYS trading sessions in source history")
     if any(not pd.api.types.is_numeric_dtype(frame[c]) for c in allowed):
         raise P4GStop("Only genuine finite numeric prices are acceptable.")
     ordered = sorted(allowed)
