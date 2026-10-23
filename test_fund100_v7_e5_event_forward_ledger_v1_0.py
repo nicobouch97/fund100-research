@@ -131,3 +131,63 @@ def test_source_provenance_flags_and_capture_window_fail_closed(source,key,value
         (b if source=="baseline" else later)[key]=value
     with pytest.raises(e5.ForwardStop):
         evalx(tamper)
+
+
+def _source_pinned_report(*,source="a",price="b",later="c"):
+    report=evalx()
+    report.update({
+        "SEC_manifest_file_SHA256":source*64,
+        "original_price_report_SHA256":price*64,
+        "later_price_report_SHA256":later*64,
+        "original_price_csv_SHA256":"d"*64,
+        "later_price_csv_SHA256":"e"*64,
+    })
+    return report
+
+
+def test_all_eligible_original_captures_are_counted_and_repeated_filing_deduped():
+    first=_source_pinned_report()
+    second=_source_pinned_report(source="f",price="1")
+    out=e5.aggregate_reports([first,second])
+    assert out["original_captures_evaluated"]==2
+    assert out["unique_original_filing_entry_events"]==1
+    assert out["duplicate_event_rows_removed"]==1
+    assert out["modelled_one_session_stock_minus_untraded_SPY_by_one_way_cost_bps"]["15"]["observations"]==1
+    assert out["no_cross_event_independence_or_multiple_testing_claim"]
+    assert not out["statistically_significant_alpha_proven"]
+    assert not out["trading_authorized"]
+
+
+def test_distinct_original_event_identity_increases_cohort_sample_size():
+    first=_source_pinned_report()
+    second=_source_pinned_report(source="f",price="1")
+    second["hypothetical_marks"][0]["original_sec_accession"]="0000000000-26-000002"
+    out=e5.aggregate_reports([first,second])
+    assert out["unique_original_filing_entry_events"]==2
+    assert out["duplicate_event_rows_removed"]==0
+    assert out["modelled_one_session_stock_minus_untraded_SPY_by_one_way_cost_bps"]["5"]["observations"]==2
+
+
+def test_all_no_signal_captures_produce_empty_descriptive_cohort():
+    report=_source_pinned_report()
+    report["hypothetical_marks"]=[]
+    report["pre_entry_qualified_original_events"]=0
+    report["status"]="NO_GENUINE_PRE_ENTRY_EARNINGS_SIGNALS"
+    out=e5.aggregate_reports([report])
+    assert out["status"]=="NO_SOURCE_QUALIFIED_FORWARD_EVENTS"
+    assert out["unique_original_filing_entry_events"]==0
+    assert out["modelled_one_session_stock_minus_untraded_SPY_by_one_way_cost_bps"]["35"]["descriptive_mean_excess_pct"] is None
+
+
+@pytest.mark.parametrize("tamper",[
+    lambda reports:reports[1].__setitem__("later_price_report_SHA256","9"*64),
+    lambda reports:reports[1]["hypothetical_marks"][0]["one_completed_session_net_stock_minus_gross_SPY"].__setitem__("15",0.25),
+    lambda reports:reports[0].__setitem__("trading_authorized",True),
+    lambda reports:reports[0].__setitem__("original_price_report_SHA256","not-a-digest"),
+    lambda reports:reports[1].__setitem__("SEC_manifest_file_SHA256",reports[0]["SEC_manifest_file_SHA256"]),
+])
+def test_cohort_rejects_mixed_vintage_conflicting_event_or_untrusted_source(tamper):
+    reports=[_source_pinned_report(),_source_pinned_report(source="f",price="1")]
+    tamper(reports)
+    with pytest.raises(e5.ForwardStop):
+        e5.aggregate_reports(reports)
