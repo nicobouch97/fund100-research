@@ -20,6 +20,7 @@ import fund100_v6_r1_vs_s1_historical_comparison_v1_0 as s1
 import fund100_v6_fast_launch_vol_regime_l1_v1_0 as l1
 import fund100_v6_quarterly_concentrated_trend_r2_v1_0 as r2
 import fund100_v6_four_model_selection_uncertainty_v1_0 as selection
+import fund100_v6_four_model_walkforward_selector_v1_0 as adaptive
 
 SCHEMA="FUND100_V6_FOUR_EXISTING_STRATEGIES_COMMON_HISTORY_ECONOMICS_V1"
 MODELS=("S1_HIGH_FIXED_SECTORS","R1_WEEKLY_RELATIVE_MOMENTUM",
@@ -201,8 +202,11 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
         raise EconomicsStop("HIGH historic risk screen/source status drifted")
     output={}
     uncertainty={}
+    causal_switching={}
     for cost in COSTS:
         frames=_all_paths(data,cost)
+        causal_switching[str(cost)] = adaptive.evaluate(
+            frames, switch_side_cost_bps=cost)
         windows={}
         uncertainty_windows={}
         for label,start in WINDOWS.items():
@@ -235,6 +239,9 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
         "market_spread_fills_tax_and_foreign_exchange_not_modelled":True,
         "evaluated_models":output,
         "joint_four_model_selection_uncertainty":uncertainty,
+        "causal_quarterly_model_switching_exploratory":causal_switching,
+        "meta_selection_rule_predeclared_not_parameter_optimized":True,
+        "meta_selector_not_independent_holdout_or_live_strategy":True,
         "selection_adjustment_only_within_four_original_models":True,
         "selection_bootstrap_does_not_correct_prior_strategy_search":True,
         "strategy_promoted_for_funded_trading":None,
