@@ -80,6 +80,51 @@ def unfunded_prefix_case():
     return d
 
 
+def initial_funding_case():
+    d=unfunded_prefix_case()
+    # Real-origin-shaped hypothesis: deposit booking date is first funded
+    # session, after an authentic pre-funding empty prefix.
+    d["activities"][0]["date"]="2026-10-12"
+    d["history"]["equity"]=[None,0.0,100.0,100.0,100.0,100.0,100.0,100.0]
+    d["account"]["last_equity"]="100"
+    d["account"]["equity"]="100"
+    return d
+
+
+def test_initial_cash_deposit_as_first_funded_close_is_a_hypothesis_not_alpha():
+    r=check(initial_funding_case())
+    assert r["status"]=="INITIAL_FUNDING_MAY_BE_IN_FIRST_FUNDED_CLOSE_RESEARCH_ONLY"
+    assert r["unfunded_history_prefix_observed"]
+    assert r["one_cashflow_sensitivity_evaluated_in_memory"]
+    assert not r["broker_actual_economic_transfer_time_verified"]
+    assert not r["s1_high_risk_approved"]
+    assert not r["live_buy_sell_authorized"]
+
+
+def test_booking_after_first_funded_close_cannot_be_placed_at_baseline():
+    d=initial_funding_case()
+    d["activities"][0]["date"]="2026-10-14"
+    r=check(d)
+    assert r["status"]=="NO_QUALITY_ADMISSIBLE_PLACEMENT_HOLD"
+
+
+def test_initial_funding_hypothesis_still_enforces_true_daily_loss_stop():
+    d=initial_funding_case()
+    d["history"]["equity"][-1]=90.0
+    d["account"]["last_equity"]="90"
+    d["account"]["equity"]="90"
+    r=check(d)
+    assert r["status"]=="HIGH_RISK_BREACH_POSSIBLE_HOLD"
+    assert not r["s1_high_risk_approved"]
+
+
+def test_no_unfunded_prefix_means_no_inception_reinterpretation():
+    d=dataset(["100","100","100","100","100","100"],flow="100")
+    d["activities"][0]["date"]="2026-10-12"
+    r=check(d)
+    assert r["status"]=="NO_QUALITY_ADMISSIBLE_PLACEMENT_HOLD"
+
+
 def test_unfunded_null_and_zero_prefix_are_not_market_returns():
     d=unfunded_prefix_case()
     result=check(d)
