@@ -75,7 +75,7 @@ def test_real_frozen_prices_comparison_uses_same_unmodified_benchmark():
     result=compare.compare(prices,source_sha256=source)
     assert result["status"]=="HISTORICAL_ALREADY_INSPECTED_COMPARISON_NO_STRATEGY_PROMOTION"
     assert result["same_original_benchmark_prices"]
-    assert result["same_first_trade_decision_date"]>= "2014-01-01"
+    assert result["market_source_first"]<=result["same_first_trade_decision_date"]<="2014-01-01"
     assert result["shared_one_way_cost_bps"]==[5,15,35]
     assert not result["live_authorized"] and not result["paper_authorized"]
     assert result["selected_winner_or_live_strategy"] is None
