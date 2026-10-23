@@ -135,7 +135,7 @@ def test_missing_pre_filing_market_session_is_not_treated_as_valid_base(tmp_path
 def test_same_cash_account_event_economics_are_not_sum_of_independent_bets(tmp_path):
     result=setup(tmp_path)
     portfolios=result["shared_cash_portfolio_by_cost_bps"]
-    assert result["portfolio_uses_first_come_25pct_max_four_names"]
+    assert result["portfolio_uses_first_come_25pct_entry_budget_four_slots"]
     assert result["portfolio_is_retrospective_close_fill_optimistic_not_alpha"]
     assert set(portfolios)=={"5","15","35"}
     for p in portfolios.values():
