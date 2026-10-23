@@ -39,3 +39,24 @@ risk assessment are needed before any promotion discussion.
 
 The original USD 130.30 ceiling, operator STOP, ENGAGED kill switch,
 LIVE release locks and holdings are untouched. No PAPER or LIVE orders.
+
+## Fixed four-sleeve economic comparator (24 October 2026)
+
+To distinguish any benefit of the quarterly *selector* from simply owning
+the four existing strategies, report a **predeclared 25%-per-model,
+buy-and-hold synthetic sleeve blend** alongside ACWI. The comparator
+starts at the same first eligible quarterly close after 252 completed
+training returns. It holds cash before that date, pays one 5/15/35bp
+synthetic entry side on the whole capital at inception, then retains
+fixed sleeve units (weights drift; no quarterly rebalancing). Each
+original model NAV already embeds its own transaction costs. Both
+selector and comparator earn no new-sleeve return until after entry.
+
+Report the blend's CAGR and maximum drawdown and selector-minus-blend
+CAGR in all existing 2014/2020/2023 windows and cost scenarios.
+No additional model parameters, optimized blend weights, hindsight
+rebalancing, order code or strategy promotion. This comparator is a
+**synthetic model-of-models accounting reference**, not executable
+holdings replication; overlapping ETF transactions, spreads and
+market impact remain unverified. All histories were already inspected.
+A favorable selector-versus-blend result would still NOT prove alpha.

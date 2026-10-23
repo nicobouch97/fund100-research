@@ -83,6 +83,33 @@ def _lagged_choice(benchmark: np.ndarray, navs: dict, t: int) -> str:
     return min(eligible)[1] if eligible else CASH
 
 
+def _fixed_equal_model_blend(dates: pd.DatetimeIndex, navs: dict,
+                             cost_bps: int) -> np.ndarray:
+    """A precommitted, no-rebalance, four-sleeve comparator.
+
+    Invest 25% in each original *costed* model at the same first eligible
+    quarterly close as the selector. Hold sleeve units thereafter; original
+    model turnover remains embedded in its NAV. Pay one synthetic entry
+    side on total capital. No hindsight weights or intra-sleeve replication.
+    """
+    first = next((
+        t for t in range(TRAINING_RETURNS + 1, len(dates))
+        if dates[t].to_period("Q") != dates[t - 1].to_period("Q")
+    ), None)
+    if first is None:
+        raise WalkforwardStop("No eligible quarterly comparator entry")
+    out = np.full(len(dates), 100.0)
+    entry_capital = 100.0 * (1 - cost_bps / 10000)
+    for t in range(first, len(dates)):
+        out[t] = entry_capital * sum(
+            float(navs[model][t] / navs[model][first])
+            for model in MODELS
+        ) / len(MODELS)
+    if not np.isfinite(out).all() or (out <= 0).any():
+        raise WalkforwardStop("Invalid fixed four-model comparator NAV")
+    return out
+
+
 def _window_metrics(frame: pd.DataFrame, start: str) -> dict:
     view = frame.loc[start:]
     if len(view) < 260:
@@ -92,9 +119,11 @@ def _window_metrics(frame: pd.DataFrame, start: str) -> dict:
         raise WalkforwardStop("Invalid historical duration")
     wealth = view["selector_nav"]
     bench = view["acwi_nav"]
+    blend = view["equal_model_blend_nav"]
     daily = wealth.pct_change(fill_method=None).dropna()
     annual = (wealth.iloc[-1] / wealth.iloc[0]) ** (1 / years) - 1
     baseline = (bench.iloc[-1] / bench.iloc[0]) ** (1 / years) - 1
+    blend_annual = (blend.iloc[-1] / blend.iloc[0]) ** (1 / years) - 1
     return {
         "first_session": view.index[0].date().isoformat(),
         "last_session": view.index[-1].date().isoformat(),
@@ -102,6 +131,11 @@ def _window_metrics(frame: pd.DataFrame, start: str) -> dict:
         "historical_selector_cagr_pct": round(float(100 * annual), 4),
         "historical_acwi_cagr_pct": round(float(100 * baseline), 4),
         "historical_excess_cagr_pp": round(float(100 * (annual - baseline)), 4),
+        "historical_equal_model_blend_cagr_pct": round(float(100 * blend_annual), 4),
+        "historical_selector_minus_equal_blend_cagr_pp": round(
+            float(100 * (annual - blend_annual)), 4),
+        "historical_equal_blend_max_drawdown_pct": round(
+            float(100 * (blend / blend.cummax() - 1).min()), 4),
         "historical_selector_max_drawdown_pct": round(
             float(100 * (wealth / wealth.cummax() - 1).min()), 4),
         "historical_selector_annual_volatility_pct": round(
@@ -127,6 +161,7 @@ def evaluate(paths: dict, *, switch_side_cost_bps: int) -> dict:
     if type(switch_side_cost_bps) is not int or switch_side_cost_bps not in SIDE_COST_BPS:
         raise WalkforwardStop("Only original 5/15/35bps cost scenarios allowed")
     dates, benchmark, navs = _verified_paths(paths)
+    blend = _fixed_equal_model_blend(dates, navs, switch_side_cost_bps)
     chosen = CASH
     capital = 100.0
     rows = []
@@ -153,6 +188,7 @@ def evaluate(paths: dict, *, switch_side_cost_bps: int) -> dict:
         rows.append({
             "date": date, "selector_nav": capital,
             "acwi_nav": 100.0 * float(benchmark[t] / benchmark[0]),
+            "equal_model_blend_nav": float(blend[t]),
             "held_during_session": held,
             "chosen_after_close": chosen,
             "quarterly_decision_after_close": new_choice,
@@ -169,6 +205,10 @@ def evaluate(paths: dict, *, switch_side_cost_bps: int) -> dict:
         "model_paths_already_net_of_original_costs": True,
         "extra_switch_cost_bps_each_side": switch_side_cost_bps,
         "cash_yield_assumed_zero": True,
+        "equal_model_blend_is_fixed_25pct_per_model_at_first_eligible_quarter": True,
+        "equal_model_blend_rebalances_after_entry": False,
+        "equal_model_blend_one_synthetic_entry_side_charged": True,
+        "equal_model_blend_uses_only_original_costed_model_paths": True,
         "historical_model_risk_screens_not_live_controls": True,
         "synthetic_model_sleeve_replication_not_verified": True,
         "historical_universe_and_models_already_inspected": True,

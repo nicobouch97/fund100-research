@@ -88,3 +88,53 @@ def test_real_frozen_four_model_source_still_not_live_or_independent_holdout():
     assert report["comparison_windows"].keys() == w.START_WINDOWS.keys()
     assert sha == original.FROZEN_FILE_SHA256
     assert all(v["sessions"] >= 260 for v in report["comparison_windows"].values())
+
+
+def test_equal_model_comparator_starts_at_same_first_eligible_quarter_close():
+    p = paths()
+    dates, _, navs = w._verified_paths(p)
+    t = next(i for i in range(w.TRAINING_RETURNS + 1, len(dates))
+             if dates[i].to_period("Q") != dates[i - 1].to_period("Q"))
+    blend = w._fixed_equal_model_blend(dates, navs, 15)
+    assert np.all(blend[:t] == 100.0)  # no pre-eligibility advantage
+    assert blend[t] == pytest.approx(100 * (1 - 15 / 10000))
+    next_day = 100 * (1 - 15 / 10000) * sum(
+        navs[m][t + 1] / navs[m][t] for m in w.MODELS
+    ) / 4
+    assert blend[t + 1] == pytest.approx(next_day)
+    # No quarterly rebalancing or repeated entry cost.
+    later = t + 150
+    expected = 100 * (1 - 15 / 10000) * sum(
+        navs[m][later] / navs[m][t] for m in w.MODELS
+    ) / 4
+    assert blend[later] == pytest.approx(expected)
+
+
+def test_equal_blend_is_fixed_and_cannot_reweight_using_future_winners():
+    original = paths()
+    dates, _, navs = w._verified_paths(original)
+    a = w._fixed_equal_model_blend(dates, navs, 5)
+    future = paths()
+    t = 800
+    future[w.MODELS[2]].iloc[t:, 0] *= 1.05
+    _, _, modified = w._verified_paths(future)
+    b = w._fixed_equal_model_blend(dates, modified, 5)
+    np.testing.assert_array_equal(a[:t], b[:t])
+    assert b[t] > a[t]
+    report = w.evaluate(original, switch_side_cost_bps=15)
+    window = report["comparison_windows"]["since_2020"]
+    assert "historical_selector_minus_equal_blend_cagr_pp" in window
+    assert "historical_equal_blend_max_drawdown_pct" in window
+    assert report["equal_model_blend_rebalances_after_entry"] is False
+    assert report["equal_model_blend_one_synthetic_entry_side_charged"]
+
+
+def test_fixed_blend_is_nontrivial_benchmark_when_selector_stays_cash():
+    p = paths()
+    for frame in p.values():
+        frame["nav"] = 100 * (1.0001 ** np.arange(len(frame)))
+    report = w.evaluate(p, switch_side_cost_bps=15)
+    window = report["comparison_windows"]["since_2020"]
+    assert window["historical_selector_cagr_pct"] == 0.0
+    assert window["historical_equal_model_blend_cagr_pct"] > 0
+    assert window["historical_selector_minus_equal_blend_cagr_pp"] < 0
