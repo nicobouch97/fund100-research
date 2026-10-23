@@ -66,5 +66,6 @@ jobs:
           path: |
             /tmp/fund100-v6-r1-exploratory.json
             /tmp/fund100-v6-r1-vs-s1.json
+            /tmp/fund100-v6-existing-four.json
           retention-days: 90
           if-no-files-found: error
