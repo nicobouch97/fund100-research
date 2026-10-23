@@ -27,6 +27,28 @@ class SingleVintageStop(ValueError):
     pass
 
 
+def _verified_future_sessions(cutoff: pd.Timestamp, index: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    """Verify every post-selection NYSE session, not just the first.
+
+    A missing interior vendor row must not turn a multi-day move into a
+    falsely shorter holding interval. Holidays and shortened sessions are
+    handled by the exchange calendar; there is no interpolation.
+    """
+    observed = index[index > cutoff]
+    if len(observed) == 0:
+        return observed
+    try:
+        import exchange_calendars as xcals
+        expected = xcals.get_calendar("XNYS").sessions_in_range(
+            cutoff + pd.Timedelta(days=1), index[-1]
+        ).tz_localize(None).normalize()
+    except Exception as exc:
+        raise SingleVintageStop("Cannot verify post-freeze XNYS sessions") from exc
+    if not observed.equals(expected):
+        raise SingleVintageStop("Missing or extra post-freeze XNYS sessions")
+    return observed
+
+
 def _observation_clock(raw: object) -> datetime:
     if not isinstance(raw, str):
         raise SingleVintageStop("Missing timestamp on captured source")
@@ -78,7 +100,7 @@ def window_mark(*, anchor: dict, later_doc: dict, later_prices: pd.DataFrame,
         or revision.get("extra_baseline_sessions") != 0
         or revision.get("no_forward_return_calculated") is not True):
         raise SingleVintageStop("Unreconciled original historical sessions")
-    future = data.index[data.index > cutoff]
+    future = _verified_future_sessions(cutoff, data.index)
     if len(future) and future[0] != FIRST_ENTRY:
         raise SingleVintageStop("Original first post-freeze entry session was lost")
     entry = future[0].date().isoformat() if len(future) else None
@@ -91,6 +113,7 @@ def window_mark(*, anchor: dict, later_doc: dict, later_prices: pd.DataFrame,
         "source_metric": "AS_CAPTURED_ADJUSTED_CLOSE_RETURN_MARK",
         "source_price_vintage_revisable": True,
         "source_vintage_confirmed_identical_within_entry_exit": True,
+        "all_post_selection_xnys_sessions_verified": True,
         "historical_source_prefix_status": revision["comparison_status"],
         "historical_prefix_can_differ_without_fabricating_returns": True,
         "original_signal_asof_completed_session": p4i.FIRST_CUTOFF,
@@ -146,7 +169,14 @@ def window_mark(*, anchor: dict, later_doc: dict, later_prices: pd.DataFrame,
 
 def evaluate(original_json: Path, original_csv: Path,
              followup_json: Path, followup_csv: Path,
-             anchor_path: Path = p4i.ANCHOR_FILE) -> dict:
+             anchor_path: Path = p4i.ANCHOR_FILE,
+             *, later_run_id: int = p4j.FOLLOWUP_RUN,
+             later_artifact_id: int = p4j.FOLLOWUP_ARTIFACT) -> dict:
+    if (type(later_run_id) is not int or type(later_artifact_id) is not int
+        or later_run_id <= 0 or later_artifact_id <= 0
+        or later_run_id == p4j.ORIGINAL_RUN
+        or later_artifact_id == p4j.ORIGINAL_ARTIFACT):
+        raise SingleVintageStop("Invalid independent later GitHub run/artifact identity")
     anchor, anchor_sha = p4i.read_anchor(anchor_path)
     # Authentic archive hash and signal checks never weakened from P4I.
     verified = p4i.verify_first_archive(anchor, original_json, original_csv)
@@ -175,8 +205,9 @@ def evaluate(original_json: Path, original_csv: Path,
             "original_artifact_fingerprint_verified"],
         "original_json_sha256": original_json_sha,
         "original_csv_sha256": old["canonical_price_csv_sha256"],
-        "later_p4g_run_id": p4j.FOLLOWUP_RUN,
-        "later_p4g_artifact_id": p4j.FOLLOWUP_ARTIFACT,
+        "later_p4g_run_id": later_run_id,
+        "later_p4g_artifact_id": later_artifact_id,
+        "later_run_artifact_identity_verified_by_caller_workflow": True,
         "later_json_sha256": later_json_sha,
         "later_canonical_csv_sha256": later["canonical_price_csv_sha256"],
         "old_vendor_adjustments_source_identical": (
@@ -191,9 +222,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     for item in ("original-json", "original-csv", "later-json", "later-csv", "output"):
         parser.add_argument("--" + item, type=Path, required=True)
+    parser.add_argument("--later-run-id", type=int, default=p4j.FOLLOWUP_RUN)
+    parser.add_argument("--later-artifact-id", type=int, default=p4j.FOLLOWUP_ARTIFACT)
     args = parser.parse_args()
     report = evaluate(
-        args.original_json, args.original_csv, args.later_json, args.later_csv)
+        args.original_json, args.original_csv, args.later_json, args.later_csv,
+        later_run_id=args.later_run_id, later_artifact_id=args.later_artifact_id)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     print("P4K_WINDOW", report["status"])
