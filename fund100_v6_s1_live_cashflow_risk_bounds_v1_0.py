@@ -26,7 +26,11 @@ class SourceRejected(ValueError):
     pass
 
 def _decimal(raw):
-    if type(raw) not in (str, int, Decimal):
+    # The Alpaca portfolio-history equity array contains JSON numbers,
+    # normally decoded as finite Python floats. Decimal(str(float)) preserves
+    # its provided decimal display, rather than exposing binary float noise.
+    # Keep booleans, nulls, malformed strings and NaN/Infinity disallowed.
+    if type(raw) not in (str, int, float, Decimal):
         raise SourceRejected("private financial source invalid")
     try:
         v = Decimal(str(raw))
