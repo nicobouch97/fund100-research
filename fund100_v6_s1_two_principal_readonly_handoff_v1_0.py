@@ -49,7 +49,7 @@ def _utc(text):
     try: return datetime.fromisoformat(text[:-1]+"+00:00")
     except ValueError:raise HandoffStop("Source UTC timestamp invalid") from None
 
-def _source_job(j,*,run_created,run_updated,observed):
+def _source_job(j,*,run_created,run_updated,observed,required_steps=REQUIRED_BROKER_STEPS):
     """Date-bound the original *GET step*, not only the GitHub run update."""
     if (type(j) is not dict or j.get("status")!="completed"
         or j.get("conclusion")!="success"
@@ -68,7 +68,7 @@ def _source_job(j,*,run_created,run_updated,observed):
         if name in by_name: raise HandoffStop("Duplicate original step identity")
         by_name[name]=step
     timeline=[]
-    for name in REQUIRED_BROKER_STEPS:
+    for name in required_steps:
         if name not in by_name or (by_name[name].get("status")!="completed"
                                    or by_name[name].get("conclusion")!="success"):
             raise HandoffStop("Required original GET/STOP step was not successful")
@@ -200,13 +200,9 @@ def verify_current_risk_source(*, run:dict, jobs:dict,
         raise HandoffStop("Original risk source had unsuccessful offline checks")
     # Reuse the original independently tested exact three-step timestamp
     # verifier while binding to the risk reader's different immutable steps.
-    original_steps=REQUIRED_BROKER_STEPS
-    try:
-        globals()["REQUIRED_BROKER_STEPS"]=REQUIRED_RISK_STEPS
-        _source_job(by_name[RISK_JOB],run_created=created,
-                    run_updated=updated,observed=observed)
-    finally:
-        globals()["REQUIRED_BROKER_STEPS"]=original_steps
+    _source_job(by_name[RISK_JOB],run_created=created,
+                run_updated=updated,observed=observed,
+                required_steps=REQUIRED_RISK_STEPS)
     return {
         "schema":SCHEMA,
         "status":"CURRENT_RISK_SOURCE_STOP_READY_FOR_PRIVATE_HMAC_READ",
