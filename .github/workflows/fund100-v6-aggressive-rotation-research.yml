@@ -10,7 +10,10 @@ on:
       - "fund100_v6_existing_four_model_economics_v1_0.py"
       - "test_fund100_v6_existing_four_model_economics_v1_0.py"
       - "fund100_v6_four_model_selection_uncertainty_v1_0.py"
+      - "fund100_v6_four_model_walkforward_selector_v1_0.py"
+      - "test_fund100_v6_four_model_walkforward_selector_v1_0.py"
       - "test_fund100_v6_four_model_selection_uncertainty_v1_0.py"
+      - "research_lab/challengers/V6_FOUR_MODEL_CAUSAL_SWITCHING_2026_10_23.md"
       - "research_lab/challengers/V6_ACTIVE_AGGRESSIVE_RESET_2026_10_15.md"
       - ".github/workflows/fund100-v6-aggressive-rotation-research.yml"
   workflow_dispatch:
@@ -32,7 +35,7 @@ jobs:
       - name: Test aggressive concentration, no-lookahead and no-order gates
         run: |
           set -euo pipefail
-          python -m pytest -q test_fund100_v6_aggressive_rotation_research_v1_0.py test_fund100_v6_r1_vs_s1_historical_comparison_v1_0.py test_fund100_v6_existing_four_model_economics_v1_0.py test_fund100_v6_four_model_selection_uncertainty_v1_0.py
+          python -m pytest -q test_fund100_v6_aggressive_rotation_research_v1_0.py test_fund100_v6_r1_vs_s1_historical_comparison_v1_0.py test_fund100_v6_existing_four_model_economics_v1_0.py test_fund100_v6_four_model_selection_uncertainty_v1_0.py test_fund100_v6_four_model_walkforward_selector_v1_0.py
       - name: Compare real frozen historical source at 5,15,35 basis points
         run: |
           set -euo pipefail
@@ -61,6 +64,19 @@ jobs:
         run: |
           set -euo pipefail
           python fund100_v6_existing_four_model_economics_v1_0.py --frozen-prices research_lab/frozen_history_v2.csv --output /tmp/fund100-v6-existing-four.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("/tmp/fund100-v6-existing-four.json").read_text())
+          assert set(d["causal_quarterly_model_switching_exploratory"]) == {"5","15","35"}
+          assert d["meta_selector_not_independent_holdout_or_live_strategy"]
+          assert d["strategy_promoted_for_funded_trading"] is None
+          assert d["real_broker_orders"] == 0
+          for x in d["causal_quarterly_model_switching_exploratory"].values():
+              assert not x["independent_out_of_sample_alpha_proven"]
+              assert x["paper_or_live_orders"] == 0
+          print("Causal four-model selector evaluated on historical source; no trading.")
+          PY
       - name: Store reproducible historical review
         uses: actions/upload-artifact@v4
         with:
