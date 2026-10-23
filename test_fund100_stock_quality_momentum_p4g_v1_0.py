@@ -5,14 +5,21 @@ from copy import deepcopy
 import numpy as np
 import pandas as pd
 import pytest
+import exchange_calendars as xcals
 
 import fund100_stock_quality_momentum_p4g_v1_0 as p4g
 
 CAPTURE = "2026-10-16T03:30:00Z"
 
 
+def nyse_sessions(end, periods):
+    calendar = xcals.get_calendar("XNYS")
+    start = pd.Timestamp(end) - pd.Timedelta(days=periods * 3)
+    return calendar.sessions_in_range(start, pd.Timestamp(end))[-periods:].tz_localize(None)
+
+
 def prices():
-    idx = pd.bdate_range(end="2026-10-15", periods=160)
+    idx = nyse_sessions("2026-10-15", 160)
     t = np.arange(len(idx), dtype=float)
     # Completely synthetic deterministic varied positive series.
     growth = {
@@ -55,7 +62,7 @@ def test_missing_quality_never_upgrades_momentum_winner_to_approved():
 def test_refuse_pre_cohort_research_and_same_day_bars():
     f=prices()
     older=f.copy()
-    older.index=pd.bdate_range(end="2026-10-14",periods=len(older))
+    older.index=nyse_sessions("2026-10-14",len(older))
     with pytest.raises(p4g.P4GStop,match="post-freeze"):
         run(older)
     with pytest.raises(p4g.P4GStop,match="post-freeze"):
@@ -66,7 +73,7 @@ def test_refuse_stale_or_future_bar_series():
     with pytest.raises(p4g.P4GStop,match="stale"):
         run(prices(),acquired="2026-10-26T03:30:00Z")
     f=prices()
-    f.index=pd.bdate_range(end="2026-10-19",periods=len(f))
+    f.index=nyse_sessions("2026-10-19",len(f))
     with pytest.raises(p4g.P4GStop):
         run(f)
 
@@ -142,3 +149,28 @@ def test_synthetic_source_not_authenticated_or_future_utility():
     assert not r["corporate_action_total_return_independently_verified"]
     assert r["unavailable_analyst_revision_feed"] is True
     assert r["source_class"]=="REVISABLE_PUBLIC_YFINANCE_ADJUSTED_CLOSE"
+
+
+def test_refuse_missing_interior_nyse_session_even_with_sufficient_history():
+    f = prices()
+    # This used to silently stretch both lookback horizons by one session.
+    f = f.drop(index=f.index[-75])
+    assert len(f) > p4g.LOOKBACK
+    with pytest.raises(p4g.P4GStop, match="Missing or extra XNYS"):
+        run(f)
+
+
+@pytest.mark.parametrize("unexpected", ["2026-10-10", "2026-09-07"])
+def test_refuse_extra_weekend_or_exchange_holiday_row(unexpected):
+    f = prices()
+    # A vendor row on Saturday or Labor Day cannot count as an NYSE session.
+    f.loc[pd.Timestamp(unexpected)] = f.iloc[-10]
+    f = f.sort_index()
+    with pytest.raises(p4g.P4GStop, match="Missing or extra XNYS"):
+        run(f)
+
+
+def test_real_exchange_holidays_are_not_required_as_price_bars():
+    f = prices()
+    assert pd.Timestamp("2026-09-07") not in f.index
+    assert run(f)["price_source_sessions"] == len(f)
