@@ -131,7 +131,20 @@ def _read(history, activities, account, observed_at_utc):
     possible_inception = bool(
         unfunded_prefix and flow > 0 and booking_date <= first_funded_date
     )
-    return equity, flow, unfunded_prefix, possible_inception, current
+    # Alpaca nontrade "date" may represent the booking/settlement date;
+    # even a BEFORE relationship is NOT an economic timestamp, an
+    # authenticated return, or permission to trade. Only a categorical
+    # comparison of already-fetched private date values is published.
+    boundary = (
+        "NO_PRE_FUNDING_PREFIX_TO_ANCHOR"
+        if not unfunded_prefix else
+        "BOOKED_BEFORE_FIRST_FUNDED_SAMPLE_DATE"
+        if booking_date < first_funded_date else
+        "BOOKED_ON_FIRST_FUNDED_SAMPLE_DATE"
+        if booking_date == first_funded_date else
+        "BOOKED_AFTER_FIRST_FUNDED_SAMPLE_DATE"
+    )
+    return equity, flow, unfunded_prefix, possible_inception, current, boundary
 
 def _scenario(values, flow, at, weight, current):
     unit = Decimal(1)
@@ -174,8 +187,9 @@ def inspect(*, history, activities, account, observed_at_utc):
     failure = "NONE"
     evaluated = False
     unfunded_prefix = False
+    boundary = "SOURCE_NOT_QUALIFIED"
     try:
-        values, flow, unfunded_prefix, possible_inception, current = _read(
+        values, flow, unfunded_prefix, possible_inception, current, boundary = _read(
             history, activities, account, observed_at_utc
         )
         evaluated = True
@@ -237,6 +251,7 @@ def inspect(*, history, activities, account, observed_at_utc):
         "source_rejection_category": failure,
         "one_cashflow_sensitivity_evaluated_in_memory": evaluated,
         "unfunded_history_prefix_observed": unfunded_prefix,
+        "initial_cashflow_booking_vs_first_funded_sample": boundary,
         "broker_actual_economic_transfer_time_verified": False,
         "daily_equity_risk_authorized": False,
         "drawdown_risk_authorized": False,
