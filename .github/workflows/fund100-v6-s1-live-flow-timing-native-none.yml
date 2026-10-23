@@ -99,12 +99,22 @@ jobs:
           print('SHA-pinned GET-only financial source reader PASS.')
           PY
       - name: Query actual private funding timing and native NONE series (SEVEN GET ONLY)
+        id: risk_source
         env:
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
           ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
         run: |
           set -euo pipefail
           python fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py
+      # This independent step conclusion is visible to the separate HMAC
+      # workflow via the GitHub Jobs API. No portfolio bytes leave source.
+      - name: Confirm source-verified postfunding HIGH account risk (NO RELEASE)
+        if: steps.risk_source.outputs.risk_pass == 'true'
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Account 6/20/35 source verified; LIVE risk-and-order release remains disabled.'
       - name: Confirm original STOP remains disabled
         run: |
           set -euo pipefail
