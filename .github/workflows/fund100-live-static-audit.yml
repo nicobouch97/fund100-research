@@ -20,6 +20,8 @@ on:
       - "test_fund100_stock_quality_momentum_p4g_v1_0.py"
       - "fund100_stock_single_vintage_forward_marks_p4k_v1_0.py"
       - "test_fund100_stock_single_vintage_forward_marks_p4k_v1_0.py"
+      - "fund100_v6_four_model_walkforward_selector_v1_0.py"
+      - "test_fund100_v6_four_model_walkforward_selector_v1_0.py"
       - "fund100_v6_existing_four_model_economics_v1_0.py"
       - "test_fund100_v6_existing_four_model_economics_v1_0.py"
       - "fund100_v6_earnings_event_feasibility_e2_v1_0.py"
