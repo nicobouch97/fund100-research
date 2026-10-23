@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: 'Type RECORD_ACWI_INTENT_NO_ORDERS after a fresh successful manual original LIVE four GET on main'
+        description: 'Type RECORD_ACWI_INTENT_NO_ORDERS to refresh the original read-only four GET and record ONE signed ACWI intent (NO BROKER ORDER)'
         required: true
         type: string
 
@@ -42,9 +42,54 @@ jobs:
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
           echo 'Simulated Git writes only, no Alpaca credential or LIVE order.'
 
-  protected-main-one-original-ACWI-intent-NO-orders:
+  refresh-original-four-get-readonly:
+    # Only the explicitly confirmed main dispatch can start the existing
+    # original LIVE GET workflow. This separate job has NO Alpaca secrets,
+    # NO private-state tokens or HMAC keys, and NEVER runs on PR/push.
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'RECORD_ACWI_INTENT_NO_ORDERS'
     needs: offline-original-signed-ACWI-intent-transport-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Refresh original protected FOUR GET on exact main SHA (NO ORDERS)
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
+          # Dispatch only the already approved ORIGINAL four-GET workflow.
+          # A new broker source run, not an old successful one, is required.
+          started="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          gh api -X POST "repos/$GITHUB_REPOSITORY/actions/workflows/fund100-v6-real-live-getonly-transition.yml/dispatches" -f ref=main
+          deadline=$((SECONDS+660))
+          success=no
+          while (( SECONDS < deadline )); do
+            run="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/fund100-v6-real-live-getonly-transition.yml/runs?branch=main&event=workflow_dispatch&per_page=20" --jq '.workflow_runs | map(select(.head_sha == "'"$GITHUB_SHA"'" and .created_at >= "'"$started"'")) | sort_by(.created_at,.id) | last // empty' || true)"
+            if [[ -n "$run" ]]; then
+              # Source qualification in the storage writer independently
+              # rechecks SAME SHA, completion time and exact GET job steps.
+              observed="$(jq -r '.conclusion // ""' <<< "$run")"
+              status="$(jq -r '.status // ""' <<< "$run")"
+              if [[ "$status" == completed ]]; then
+                test "$observed" = success
+                success=yes
+                break
+              fi
+            fi
+            sleep 10
+          done
+          test "$success" = yes
+          echo 'Original source-refreshed account four-GET passed; zero broker writes.'
+          
+  protected-main-one-original-ACWI-intent-NO-orders:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'RECORD_ACWI_INTENT_NO_ORDERS'
+    needs: [offline-original-signed-ACWI-intent-transport-contract, refresh-original-four-get-readonly]
     runs-on: ubuntu-latest
     environment: fund100-live-broker
     timeout-minutes: 10
@@ -82,7 +127,7 @@ jobs:
           assert p.ONE_PRIVATE_INTENT_PUT_MAX == 1
           print('Protected one ACWI original intent path inspected; NO broker orders.')
           PY
-      - name: Read latest successful unchanged original broker four-GET then record one HMAC signed ACWI INTENT
+      - name: Verify just refreshed original protected four-GET and record one HMAC signed ACWI INTENT
         env:
           FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
           FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
