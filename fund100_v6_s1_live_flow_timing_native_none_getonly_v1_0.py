@@ -305,7 +305,7 @@ def main():
         with Path(output).open("a",encoding="ascii") as sink:
             sink.write("risk_pass="+(
                 "true" if r["actual_s1_6_20_35_risk_verified"] else "false"
-            )+"\\n")
+            )+"\n")
     for name in (
         "schema","original_account_and_legacy_positions_verified",
         "original_xle_target_status","original_cash_floor_status",
