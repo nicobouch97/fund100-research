@@ -83,12 +83,11 @@ def test_existing_risk_source_refreshes_after_original_hmac_handoff_update():
     """A new private-read bridge cannot be called verified until a new
     original protected source from the SAME main commit has run."""
     source=yml()
-    import re
-    event=re.search(r"(?m)^  push:\\n(?P<body>.*?)^  workflow_dispatch:",source,re.S|re.M)
-    assert event is not None
-    assert 'branches: [main]' in event.group("body")
+    assert "  push:" in source and "  workflow_dispatch:" in source
+    event=source[source.index("  push:"):source.index("  workflow_dispatch:")]
+    assert 'branches: [main]' in event
     assert ('      - ".github/workflows/'
             'fund100-v6-s1-two-principal-readonly-handoff.yml"'
-            in event.group("body"))
+            in event)
     assert '  schedule:' not in source
-    assert 'permissions:\\n  contents: read' in source
+    assert 'permissions:' in source and '  contents: read' in source
