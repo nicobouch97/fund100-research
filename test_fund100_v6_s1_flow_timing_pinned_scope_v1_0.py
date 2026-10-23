@@ -6,7 +6,7 @@ import audit_fund100_live_boundary as audit
 ROOT=Path(__file__).resolve().parent
 FLOW=".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml"
 SCRIPT="fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
-PIN="18e5965ee108557f48ee7e298f7960bea7cecdaa"
+PIN="52fb4a95f51bead9af48a9b64fcabc7c9fd7b3ae"
 
 def yml():return (ROOT/FLOW).read_text()
 
@@ -91,3 +91,19 @@ def test_existing_risk_source_refreshes_after_original_hmac_handoff_update():
             in event)
     assert '  schedule:' not in source
     assert 'permissions:' in source and '  contents: read' in source
+
+
+def test_original_protected_risk_boolean_handoff_must_remain_conditional():
+    workflow=yml()
+    assert "id: risk_source" in workflow
+    assert "if: steps.risk_source.outputs.risk_pass == 'true'" in workflow
+    assert "Confirm source-verified postfunding HIGH account risk (NO RELEASE)" in workflow
+    assert audit.approved_scoped_live_script(FLOW,SCRIPT,workflow)
+    for change in (
+        workflow.replace("id: risk_source","id: untrusted_source"),
+        workflow.replace("if: steps.risk_source.outputs.risk_pass == 'true'",
+                         "if: always()"),
+        workflow.replace("Confirm source-verified postfunding HIGH account risk (NO RELEASE)",
+                         "Claim release unconditionally"),
+    ):
+        assert not audit.approved_scoped_live_script(FLOW,SCRIPT,change)
