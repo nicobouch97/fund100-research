@@ -223,7 +223,7 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
     (
         ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml",
         "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
-    ): "18e5965ee108557f48ee7e298f7960bea7cecdaa",
+    ): "52fb4a95f51bead9af48a9b64fcabc7c9fd7b3ae",
     # Original BUY receipt ↔ actual FILL matching, precisely six GET, no writes.
     (
         ".github/workflows/fund100-v6-s1-real-buy-receipt-fill-six-get.yml",
@@ -395,6 +395,17 @@ def approved_scoped_live_script(
     if script == "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py":
         if workflow != ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml":
             return False
+        # The separate HMAC principal authenticates this *conditional*
+        # step in the reviewed seven-GET job, not an unverified log string.
+        # A missing/always-green indicator revokes the LIVE key scope.
+        for evidence in (
+            "id: risk_source",
+            "if: steps.risk_source.outputs.risk_pass == 'true'",
+            "Confirm source-verified postfunding HIGH account risk (NO RELEASE)",
+            "python fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
+        ):
+            if evidence not in source:
+                return False
         if "if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'" not in source:
             return False
         if "FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE" not in source:
