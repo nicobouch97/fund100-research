@@ -17,6 +17,16 @@ REPO="nicobouch97/fund100-research"
 BROKER_WORKFLOW_ID=389825871
 BROKER_WORKFLOW_PATH=".github/workflows/fund100-v6-s1-original-client-id-getonly.yml"
 BROKER_WORKFLOW_NAME="Fund-100 V6-S1 REAL LIVE Original Client-ID GET only (NO ORDERS)"
+RISK_WORKFLOW_ID=389731134
+RISK_WORKFLOW_PATH=".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml"
+RISK_WORKFLOW_NAME="Fund-100 V6-S1 LIVE Funding Timing and NONE History Seven GET (NO ORDERS)"
+RISK_JOB="authentic-private-seven-get"
+RISK_OFFLINE_JOB="nontrading-source-and-scope-fixtures"
+REQUIRED_RISK_STEPS=(
+    "Check credential eligibility only for reviewed exact seven-GET source",
+    "Query actual private funding timing and native NONE series (SEVEN GET ONLY)",
+    "Confirm original STOP remains disabled",
+)
 BROKER_JOB="genuine-private-live-client-id-read"
 OFFLINE_JOB="original-safety-and-credential-boundary-tests"
 REQUIRED_BROKER_STEPS=(
@@ -137,4 +147,130 @@ def verify(*, run:dict,jobs:dict,checked_main_sha:str,
         "orders_authorized":False,
         "private_head":None,"account_ID":None,
         "shares":None,"client_order_ids":None,"order_payload":None,
+    }
+
+
+def verify_current_risk_source(*, run:dict, jobs:dict,
+                               checked_main_sha:str, observed_at_utc:str)->dict:
+    """Authenticate protected original READ+controller STOP workflow metadata.
+
+    Actual categorization is executed within the source-pinned broker job.
+    This handoff cannot read/rededuce private broker raw return values; a
+    successful upstream run proves only its required nontrading STOP, not
+    independent cashflow-adjusted account risk or order authorization.
+    """
+    if (type(run) is not dict or type(jobs) is not dict
+        or type(checked_main_sha) is not str
+        or re.fullmatch(r"[a-f0-9]{40}",checked_main_sha) is None):
+        raise HandoffStop("Original risk-source metadata malformed")
+    if (run.get("repository",{}).get("full_name")!=REPO
+        or run.get("head_repository",{}).get("full_name")!=REPO
+        or run.get("workflow_id")!=RISK_WORKFLOW_ID
+        or run.get("path")!=RISK_WORKFLOW_PATH
+        or run.get("name")!=RISK_WORKFLOW_NAME
+        or run.get("head_branch")!="main"
+        or run.get("head_sha")!=checked_main_sha
+        or run.get("event") not in ("push","workflow_dispatch")
+        or run.get("status")!="completed" or run.get("conclusion")!="success"
+        or type(run.get("id")) is not int or run["id"]<=0
+        or type(run.get("run_attempt")) is not int
+        or run["run_attempt"]<1):
+        raise HandoffStop("Wrong protected original seven-GET risk-source run")
+    created=_utc(run.get("created_at"))
+    updated=_utc(run.get("updated_at"))
+    observed=_utc(observed_at_utc)
+    if (updated<created or observed<updated
+        or observed-updated>timedelta(seconds=MAX_SOURCE_AGE_SECONDS)
+        or updated-created>timedelta(minutes=20)):
+        raise HandoffStop("Broker risk-source stale or inconsistent")
+    if (type(jobs.get("jobs")) is not list
+        or jobs.get("total_count")!=2 or len(jobs["jobs"])!=2):
+        raise HandoffStop("Original risk-source job set incomplete")
+    by_name={}
+    for j in jobs["jobs"]:
+        if type(j) is not dict or type(j.get("name")) is not str
+            or j["name"] in by_name):
+            raise HandoffStop("Original risk-source job identities invalid")
+        by_name[j["name"]]=j
+    if set(by_name)!={RISK_OFFLINE_JOB,RISK_JOB}:
+        raise HandoffStop("Original risk-source expected jobs missing")
+    offline=by_name[RISK_OFFLINE_JOB]
+    if (offline.get("status")!="completed"
+        or offline.get("conclusion")!="success"):
+        raise HandoffStop("Original risk source had unsuccessful offline checks")
+    # Reuse the original independently tested exact three-step timestamp
+    # verifier while binding to the risk reader's different immutable steps.
+    original_steps=REQUIRED_BROKER_STEPS
+    try:
+        globals()["REQUIRED_BROKER_STEPS"]=REQUIRED_RISK_STEPS
+        _source_job(by_name[RISK_JOB],run_created=created,
+                    run_updated=updated,observed=observed)
+    finally:
+        globals()["REQUIRED_BROKER_STEPS"]=original_steps
+    return {
+        "schema":SCHEMA,
+        "status":"CURRENT_RISK_SOURCE_STOP_READY_FOR_PRIVATE_HMAC_READ",
+        "original_broker_risk_controller_job_authenticated_by_GitHub":True,
+        "same_main_SHA_and_fresh_GET_step_verified":True,
+        "upstream_controller_stop_ran_successfully":True,
+        "complete_private_HMAC_verified":False,
+        "cashflow_adjusted_1M_account_risk_approved":False,
+        "separate_private_HMAC_GET_still_required":True,
+        "signed_ledger_future_head_release_present":False,
+        "real_broker_GETs_by_this_handoff":0,
+        "real_broker_POSTs":0,"real_private_Git_PUTs":0,
+        "orders_authorized":False,
+        "private_head":None,"account_ID":None,"broker_order_payload":None,
+    }
+
+
+def verify_any_source(*, run:dict, jobs:dict, checked_main_sha:str,
+                      observed_at_utc:str)->dict:
+    """Accept either reviewed original broker evidence, never arbitrary jobs."""
+    if type(run) is not dict:
+        raise HandoffStop("Missing original source run")
+    if run.get("workflow_id")==RISK_WORKFLOW_ID:
+        return verify_current_risk_source(
+            run=run,jobs=jobs,checked_main_sha=checked_main_sha,
+            observed_at_utc=observed_at_utc)
+    return verify(
+        run=run,jobs=jobs,checked_main_sha=checked_main_sha,
+        observed_at_utc=observed_at_utc)
+
+
+def join_current_risk_and_signed_genesis(*, source:dict, genesis:dict)->dict:
+    """Join metadata-authenticated stopped risk run and HMAC-signed seq0.
+
+    Only the caller operating inside the protected two-principal workflow
+    authenticates both sources. Caller-provided dicts elsewhere are NOT
+    authenticated evidence. The signed genesis has no order reservation.
+    """
+    if (type(source) is not dict
+        or source.get("schema")!=SCHEMA
+        or source.get("status")!="CURRENT_RISK_SOURCE_STOP_READY_FOR_PRIVATE_HMAC_READ"
+        or source.get("same_main_SHA_and_fresh_GET_step_verified") is not True
+        or source.get("upstream_controller_stop_ran_successfully") is not True
+        or source.get("orders_authorized") is not False
+        or type(genesis) is not dict
+        or genesis.get("status")!="GENESIS_CONTENT_AND_PUBLIC_HASH_WITNESS_RECONFIRMED_READONLY"
+        or genesis.get("private_genesis_HMAC_signature_and_original_account_binding_verified") is not True
+        or genesis.get("independent_public_issue8_comment_digest_and_identity_verified") is not True
+        or genesis.get("private_ledger_sequence")!=0
+        or genesis.get("original_empty_entries_count")!=0
+        or genesis.get("private_git_writes")!=0
+        or genesis.get("broker_orders")!=0
+        or genesis.get("independently_immutable_rollback_anchor_proven") is not False):
+        raise HandoffStop("Original source and HMAC genesis do not reconcile")
+    return {
+        "schema":SCHEMA,
+        "status":"STOPPED_REAL_RISK_AND_SIGNED_EMPTY_LEDGER_READS_JOINED",
+        "source_and_signed_genesis_proven_in_same_protected_workflow":True,
+        "risk_source_approved_for_live_orders":False,
+        "signed_ledger_has_real_post_reservation":False,
+        "immutable_future_rollback_anchor_verified":False,
+        "source_to_ledger_order_identity_reconciled":False,
+        "staged_controller_trade_release":False,
+        "orders_authorized":False,
+        "broker_POSTs":0,"private_Git_PUTs":0,
+        "private_account_data":None,"private_signed_ledger":None,
     }
