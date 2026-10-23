@@ -63,7 +63,7 @@ jobs:
           print("Immutable original 17 Oct price and selected issuer fingerprints:",sha)
           PY
       - name: While original artifact still exists, independently verify anchors against its REAL bytes
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
           set -euo pipefail
           actual="$(gh api /repos/nicobouch97/fund100-research/actions/runs/39015519726/artifacts \
@@ -99,12 +99,14 @@ jobs:
             --dir /tmp/fund100-p4i-followup
           echo "eligible=true" >> "${GITHUB_OUTPUT}"
           echo "PROSPECTIVE_INPUT_RUN=${next}"
-      - name: Compare ONLY post-freeze closes, after both-sided friction; FAIL on restated old prices
+      - name: Use ORIGINAL pinned price archive for historical prefix; STOP material restatements
         if: steps.followup.outputs.eligible == 'true'
         run: |
           set -euo pipefail
           python fund100_stock_forward_permanent_anchor_p4i_v1_0.py \
             --anchor research_lab/stocks/P4I_PERMANENT_2026_10_17_SOURCE_ANCHOR.json \
+            --original-json /tmp/fund100-p4i-original/fund100-p4g-snapshot.json \
+            --original-csv /tmp/fund100-p4i-original/fund100-p4g-original-prices.csv \
             --followup-json /tmp/fund100-p4i-followup/fund100-p4g-snapshot.json \
             --followup-csv /tmp/fund100-p4i-followup/fund100-p4g-original-prices.csv \
             --output /tmp/fund100-p4i-anchored-prospective-result.json
@@ -116,6 +118,9 @@ jobs:
           assert r["frozen_baseline_session"]=="2026-10-16"
           assert r["original_frozen_watchlist"]==["MSFT","KO","PG"]
           assert r["overlapping_original_adjusted_prices_sha_verified"]
+          assert r["original_17_oct_archive_verified_before_forward_calculation"]
+          assert r["revised_overlap_prices_used_for_pnl"] is False
+          assert r["observed_overlap_vendor_relative_jitter"] <= 5e-7
           assert not r["prior_history_used_for_strategy_pnl"]
           assert not r["period_cagr_or_statistical_alpha_inferred"]
           assert r["broker_orders"]==0
