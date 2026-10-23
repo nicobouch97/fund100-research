@@ -183,6 +183,7 @@ def aggregate_reports(reports:list[dict])->dict:
             or r.get("original_signal_is_never_reranked_from_later_snapshot") is not True
             or r.get("returns_same_later_vendor_vintage_only") is not True
             or r.get("stock_entry_and_exit_costs_compounded_exactly") is not True
+            or r.get("independent_market_session_calendar_verified") is not True
             or r.get("costs_bps_each_side")!=list(COSTS_BPS)):
             raise ForwardStop("Event source or research-only contract changed")
         later=(r["later_price_report_SHA256"],r.get("later_price_asof"),
