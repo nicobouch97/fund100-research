@@ -6,7 +6,7 @@ import audit_fund100_live_boundary as audit
 ROOT=Path(__file__).resolve().parent
 FLOW=".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml"
 SCRIPT="fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
-PIN="fd3a19b18e3f3afa5a73107630239727390ebfb6"
+PIN="85fab2d95beec37e1bc60c5bf1f95907e245ed8f"
 
 def yml():return (ROOT/FLOW).read_text()
 
