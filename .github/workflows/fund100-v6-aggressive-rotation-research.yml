@@ -28,7 +28,7 @@ jobs:
       - name: Test aggressive concentration, no-lookahead and no-order gates
         run: |
           set -euo pipefail
-          python -m pytest -q test_fund100_v6_aggressive_rotation_research_v1_0.py
+          python -m pytest -q test_fund100_v6_aggressive_rotation_research_v1_0.py test_fund100_v6_r1_vs_s1_historical_comparison_v1_0.py
       - name: Compare real frozen historical source at 5,15,35 basis points
         run: |
           set -euo pipefail
