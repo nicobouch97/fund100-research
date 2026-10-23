@@ -193,6 +193,13 @@ def test_all_eligible_original_captures_are_counted_and_repeated_filing_deduped(
     assert not out["trading_authorized"]
 
 
+def test_cohort_refuses_legacy_reports_without_verified_market_sessions():
+    report=_source_pinned_report()
+    report["independent_market_session_calendar_verified"]=False
+    with pytest.raises(e5.ForwardStop,match="research-only contract"):
+        e5.aggregate_reports([report])
+
+
 def test_distinct_original_event_identity_increases_cohort_sample_size():
     first=_source_pinned_report()
     second=_source_pinned_report(source="f",price="1")
