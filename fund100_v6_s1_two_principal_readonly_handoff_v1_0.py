@@ -21,6 +21,7 @@ RISK_WORKFLOW_ID=389731134
 RISK_WORKFLOW_PATH=".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml"
 RISK_WORKFLOW_NAME="Fund-100 V6-S1 LIVE Funding Timing and NONE History Seven GET (NO ORDERS)"
 RISK_JOB="authentic-private-seven-get"
+RISK_PASS_STEP="Confirm source-verified postfunding HIGH account risk (NO RELEASE)"
 RISK_OFFLINE_JOB="nontrading-source-and-scope-fixtures"
 REQUIRED_RISK_STEPS=(
     "Check credential eligibility only for reviewed exact seven-GET source",
@@ -203,12 +204,34 @@ def verify_current_risk_source(*, run:dict, jobs:dict,
     _source_job(by_name[RISK_JOB],run_created=created,
                 run_updated=updated,observed=observed,
                 required_steps=REQUIRED_RISK_STEPS)
+    # The source reader writes a boolean into its own protected step output.
+    # A conditional Actions step exposes only success vs skipped; validate
+    # its exact identity and ordering, never parse unauthenticated logs.
+    steps=by_name[RISK_JOB]["steps"]
+    matches=[step for step in steps if (
+        type(step) is dict and step.get("name")==RISK_PASS_STEP)]
+    if len(matches)!=1:
+        raise HandoffStop("Missing exact protected account-risk pass step")
+    marker=matches[0]
+    conclusion=marker.get("conclusion")
+    if (marker.get("status")!="completed"
+        or conclusion not in ("success","skipped")):
+        raise HandoffStop("Original account-risk step not final")
+    if conclusion=="success":
+        begin=_utc(marker.get("started_at"))
+        end=_utc(marker.get("completed_at"))
+        if (begin>end or begin<_utc(next(step for step in steps
+             if step["name"]==REQUIRED_RISK_STEPS[1])["completed_at"])
+            or end>_utc(next(step for step in steps
+             if step["name"]==REQUIRED_RISK_STEPS[2])["started_at"])):
+            raise HandoffStop("Original account-risk pass step not between GET and STOP")
     return {
         "schema":SCHEMA,
         "status":"CURRENT_RISK_SOURCE_STOP_READY_FOR_PRIVATE_HMAC_READ",
         "original_broker_risk_controller_job_authenticated_by_GitHub":True,
         "same_main_SHA_and_fresh_GET_step_verified":True,
         "upstream_controller_stop_ran_successfully":True,
+        "source_verified_postfunding_6_20_35":conclusion=="success",
         "complete_private_HMAC_verified":False,
         "cashflow_adjusted_1M_account_risk_approved":False,
         "separate_private_HMAC_GET_still_required":True,
@@ -246,6 +269,7 @@ def join_current_risk_and_signed_genesis(*, source:dict, genesis:dict)->dict:
         or source.get("status")!="CURRENT_RISK_SOURCE_STOP_READY_FOR_PRIVATE_HMAC_READ"
         or source.get("same_main_SHA_and_fresh_GET_step_verified") is not True
         or source.get("upstream_controller_stop_ran_successfully") is not True
+        or type(source.get("source_verified_postfunding_6_20_35")) is not bool
         or source.get("orders_authorized") is not False
         or type(genesis) is not dict
         or genesis.get("status")!="GENESIS_CONTENT_AND_PUBLIC_HASH_WITNESS_RECONFIRMED_READONLY"
@@ -262,6 +286,8 @@ def join_current_risk_and_signed_genesis(*, source:dict, genesis:dict)->dict:
         "status":"STOPPED_REAL_RISK_AND_SIGNED_EMPTY_LEDGER_READS_JOINED",
         "source_and_signed_genesis_proven_in_same_protected_workflow":True,
         "risk_source_approved_for_live_orders":False,
+        "postfunding_account_6_20_35_read_evidence":
+            source["source_verified_postfunding_6_20_35"],
         "signed_ledger_has_real_post_reservation":False,
         "immutable_future_rollback_anchor_verified":False,
         "source_to_ledger_order_identity_reconciled":False,
