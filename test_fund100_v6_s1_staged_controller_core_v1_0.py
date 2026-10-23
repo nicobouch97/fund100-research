@@ -311,3 +311,52 @@ def test_missing_all_in_fee_quotes_are_rejected_exactly_when_buy_stage_arrives()
     x["hypothetical_fee_buffers_usd"]={"XLK":"0.10"}
     with pytest.raises(c.TransitionStop):
         c.assess(snap=x,now_utc=NOW)
+
+
+def test_original_protected_live_broker_report_routes_to_staged_stop_without_synthetic_candidate():
+    from test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 import scenario
+    from fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 import evaluate
+    actual_shape=evaluate(**scenario())
+    out=c.assess_stopped_live_readiness(source_report=actual_shape)
+    assert out["stage"]=="BLOCKED_UNPROVEN_CASHFLOW_ADJUSTED_1M_ACCOUNT_RISK"
+    assert out["candidate_instruction"] is None
+    assert out["new_live_order_release"] is False
+    assert out["live_seven_get_report_shape_checked"]
+    assert out["live_broker_source_authenticated_by_this_pure_module"] is False
+    assert out["broker_requests"]==out["broker_order_posts"]==0
+
+
+@pytest.mark.parametrize("change",[
+    {"broker_get_requests":6},{"broker_get_requests":True},
+    {"broker_non_get_requests":1},{"live_orders":1},
+    {"live_buy_sell_authorized":True},
+    {"actual_sale_proceeds_t_plus_one_settled":True},
+    {"actual_cashflow_adjusted_dietz_returns_calculated":True},
+    {"source":"IN_MEMORY_FAKE_BROKER_ONLY"},
+    {"one_month_date_only_cashflow_risk_status":None},
+])
+def test_live_staged_routing_rejects_broker_provenance_or_order_change(change):
+    from test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 import scenario
+    from fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 import evaluate
+    source=evaluate(**scenario())
+    source.update(change)
+    with pytest.raises(c.TransitionStop):
+        c.assess_stopped_live_readiness(source_report=source)
+
+
+def test_even_claimed_live_account_risk_pass_cannot_bypass_missing_ledger_join():
+    from test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 import scenario
+    from fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 import evaluate
+    source=evaluate(**scenario())
+    source["actual_s1_6_20_35_risk_verified"]=True
+    out=c.assess_stopped_live_readiness(source_report=source)
+    assert out["stage"]=="BLOCKED_NO_INDEPENDENT_SIGNED_LEDGER_AND_SETTLEMENT_JOIN"
+    assert out["candidate_instruction"] is None and not out["new_live_order_release"]
+
+
+def test_staged_live_path_does_not_accept_real_account_values_as_simulation():
+    from test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 import scenario
+    from fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 import evaluate
+    source=evaluate(**scenario())
+    with pytest.raises(c.TransitionStop):
+        c.assess(snap=source,now_utc=NOW)
