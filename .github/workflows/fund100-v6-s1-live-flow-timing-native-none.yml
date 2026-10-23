@@ -7,6 +7,8 @@ on:
       - "test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       - "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py"
       - "test_fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py"
+      - "fund100_v6_s1_staged_controller_core_v1_0.py"
+      - "test_fund100_v6_s1_staged_controller_core_v1_0.py"
       - "test_fund100_v6_s1_flow_timing_pinned_scope_v1_0.py"
       - "audit_fund100_live_boundary.py"
       - "research_lab/V6_S1_REAL_SOURCE_CASHFLOW_TIMING_AND_NATIVE_NONE_PROTOCOL_2026_10_19.md"
@@ -16,6 +18,7 @@ on:
     paths:
       - "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       - "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py"
+      - "fund100_v6_s1_staged_controller_core_v1_0.py"
       - ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml"
   workflow_dispatch:
 
@@ -42,6 +45,7 @@ jobs:
           set -euo pipefail
           python -m pytest -q test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py
           python -m pytest -q test_fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_staged_controller_core_v1_0.py
           python -m pytest -q test_fund100_v6_s1_flow_timing_pinned_scope_v1_0.py
           python -m pytest -q test_fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py
           python -m pytest -q test_fund100_v6_s1_funding_adjusted_risk_dietz_v1_0.py
