@@ -332,3 +332,50 @@ def test_invalid_or_incomplete_activity_does_not_leak_booking_relation():
     report=check(src)
     assert report["initial_cashflow_booking_vs_first_funded_sample"]==(
         "SOURCE_NOT_QUALIFIED")
+
+
+def test_strictly_prior_booked_seed_proves_only_postfunding_account_risk_stops():
+    d=initial_funding_case()
+    d["activities"][0]["date"]="2026-10-11"
+    r=check(d)
+    assert r["status"]=="INITIAL_FUNDING_MAY_BE_IN_FIRST_FUNDED_CLOSE_RESEARCH_ONLY"
+    assert r["initial_cashflow_booking_vs_first_funded_sample"]==(
+        "BOOKED_BEFORE_FIRST_FUNDED_SAMPLE_DATE")
+    assert r["strictly_postfunding_account_6_20_35_source_verified"] is True
+    assert r["broker_actual_economic_transfer_time_verified"] is False
+    assert r["s1_high_risk_approved"] is False
+    assert r["live_buy_sell_authorized"] is False
+
+
+def test_same_day_inception_cannot_qualify_complete_funded_account_risk():
+    r=check(initial_funding_case())
+    assert r["initial_cashflow_booking_vs_first_funded_sample"]==(
+        "BOOKED_ON_FIRST_FUNDED_SAMPLE_DATE")
+    assert r["strictly_postfunding_account_6_20_35_source_verified"] is False
+
+
+def test_prior_6pct_loss_in_funded_window_requires_restart_even_if_recovered():
+    d=initial_funding_case()
+    d["activities"][0]["date"]="2026-10-11"
+    d["history"]["equity"]=[None,0,100,100,93,100,100,100]
+    r=check(d)
+    assert r["status"]=="HIGH_RISK_BREACH_POSSIBLE_HOLD"
+    assert r["strictly_postfunding_account_6_20_35_source_verified"] is False
+
+
+@pytest.mark.parametrize("change",["current_loss","large_jump","later_booking","unsupported_activity"])
+def test_strict_prior_risk_source_does_not_promote_unqualified_inputs(change):
+    d=initial_funding_case()
+    d["activities"][0]["date"]="2026-10-11"
+    if change=="current_loss":
+        d["account"]["equity"]="94"
+    elif change=="large_jump":
+        d["account"]["equity"]="160"
+    elif change=="later_booking":
+        d["activities"][0]["date"]="2026-10-13"
+    elif change=="unsupported_activity":
+        d["activities"].append({"id":"unsupported","activity_type":"ACATC"})
+    r=check(d)
+    assert r["strictly_postfunding_account_6_20_35_source_verified"] is False
+    assert not r["s1_high_risk_approved"]
+    assert not r["live_buy_sell_authorized"]
