@@ -237,3 +237,44 @@ def test_spy_matched_schedule_detects_real_stock_selection_loss():
     # Initial 25% allocation can drift above 25% as SPY rises; no leverage.
     assert .25<r["matched_spy_control_max_gross_fraction"]<1
     assert r["matched_spy_control_accepted_entries"]==r["matched_spy_control_closed_exits"]==1
+
+
+def test_same_close_sale_proceeds_are_unavailable_until_next_nyse_session():
+    # A full cash account cannot finance a fifth entry with today's sale.
+    # Receivables still count in NAV and the same constraint applies to SPY.
+    dates=pd.to_datetime(["2026-10-19","2026-10-20","2026-10-21",
+                          "2026-10-22","2026-10-23","2026-10-26"])
+    tickers=("AAPL","MSFT","GOOGL","AMZN","PG","KO","SPY")
+    bars=pd.DataFrame({t:[100.0]*len(dates) for t in tickers},index=dates)
+    def event(ticker,entry,exit_day,i):
+        return {"ticker":ticker,"original_sec_accession":f"0000000000-26-{i:06d}",
+                "hypothetical_entry_third_close":entry,
+                "hypothetical_exit_after_ten_sessions":exit_day}
+    initial=[event(t,"2026-10-19","2026-10-21" if t=="AAPL"
+                   else "2026-10-26",i)
+             for i,t in enumerate(tickers[:4])]
+    # Same-close PG must be skipped, but KO may use settled proceeds Thursday.
+    events=initial+[event("PG","2026-10-21","2026-10-26",5),
+                    event("KO","2026-10-22","2026-10-26",6)]
+    result=e2._portfolio_path(events,bars,15)
+    assert result["selected_events"]==6
+    assert result["accepted_entries"]==result["closed_exits"]==5
+    assert result["settlement_limited_entries"]==1
+    assert result["capacity_skipped"]==1
+    assert result["max_concurrent_names"]==4
+    assert result["min_cash_fraction"]>=0
+    assert result["matched_spy_control_accepted_entries"]==5
+    assert result["matched_spy_control_closed_exits"]==5
+    assert result["unsettled_sale_proceeds_at_final_close_fraction"]>0
+    assert result["matched_spy_unsettled_at_final_close_fraction"]>0
+    assert result["portfolio_minus_matched_spy_net_percentage_points"]==0
+    assert result["all_positions_flat_at_final_close"]
+
+
+def test_zero_event_portfolio_has_no_unsettled_cash_metric():
+    dates=pd.to_datetime(["2026-10-19","2026-10-20"])
+    bars=pd.DataFrame({"SPY":[100.,101.]},index=dates)
+    r=e2._portfolio_path([],bars,15)
+    assert r["settlement_limited_entries"]==0
+    assert r["unsettled_sale_proceeds_at_final_close_fraction"] is None
+    assert r["matched_spy_unsettled_at_final_close_fraction"] is None
