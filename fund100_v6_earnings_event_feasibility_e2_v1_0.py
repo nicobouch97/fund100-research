@@ -64,7 +64,10 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
 
     First-come (entry date, ticker, accession) allocation, 25% of NAV per
     issuer AT ENTRY (weights may drift), four simultaneous positions, and exact entry/exit cost debits.
-    SPY buy/hold uses the SAME entry/exit dates and both-sided fees.
+    Report both a continuously invested SPY comparator over the total window
+    and a separate cash-constrained SPY control that mirrors every accepted
+    stock entry/exit, target entry NAV fraction, and both-sided fees. The
+    latter tests stock selection without mistaking idle cash for stock alpha.
     """
     if cost_bps not in COSTS:
         raise e1.SourceStop("Unregistered event portfolio transaction cost")
@@ -77,6 +80,12 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
             "min_cash_fraction":None,"net_portfolio_return_pct":None,
             "net_spy_buy_hold_return_pct":None,
             "portfolio_minus_spy_net_percentage_points":None,
+            "net_spy_matched_schedule_return_pct":None,
+            "portfolio_minus_matched_spy_net_percentage_points":None,
+            "matched_spy_control_accepted_entries":0,
+            "matched_spy_control_closed_exits":0,
+            "matched_spy_control_cash_limited_entries":0,
+            "matched_spy_control_max_gross_fraction":0.0,
             "max_portfolio_drawdown_pct":None,
             "all_positions_flat_at_final_close":True,
         }
@@ -103,6 +112,13 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
     fee=cost_bps/10_000
     cash=1.0
     holdings={}  # ticker -> (fractional shares, exit date)
+    # Independent no-margin SPY cash book, entered/exited ONLY when a stock
+    # signal is actually accepted. A benchmark position is keyed by ticker
+    # so overlapping same-issuer signals cannot create phantom exposure.
+    control_cash=1.0
+    control_holdings={}
+    control_accepted=control_closed=control_cash_limited=0
+    control_max_gross=0.0
     accepted=closed=capacity_skipped=duplicate_skipped=0
     max_names=0
     max_gross=0.0
@@ -113,15 +129,23 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
     max_drawdown=0.0
     for stamp,row in market.iterrows():
         day=stamp.date()
+        spy_price=float(row["SPY"])
         # EXIT first: released cash may fund a new signal at this close.
         for ticker,(qty,exit_day) in list(holdings.items()):
             if exit_day==day:
                 cash+=qty*float(row[ticker])*(1-fee)
                 del holdings[ticker]
                 closed+=1
+                control_qty,control_exit=control_holdings.pop(ticker)
+                if control_exit!=exit_day:
+                    raise e1.SourceStop("Matched SPY exit chronology diverged")
+                control_cash+=control_qty*spy_price*(1-fee)
+                control_closed+=1
         nav_before=cash+sum(q*float(row[t]) for t,(q,_) in holdings.items())
-        if nav_before<=0:
-            raise e1.SourceStop("Event portfolio has nonpositive NAV")
+        control_nav_before=control_cash+sum(
+            q*spy_price for q,_ in control_holdings.values())
+        if nav_before<=0 or control_nav_before<=0:
+            raise e1.SourceStop("Event or matched SPY portfolio has nonpositive NAV")
         for ticker,accession,exit_day in sorted(by_date.get(day,[])):
             if ticker in holdings:
                 duplicate_skipped+=1
@@ -138,9 +162,26 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
             cash-=budget*(1+fee)
             holdings[ticker]=(qty,exit_day)
             accepted+=1
+            # The SPY counterfactual takes the same accepted trade dates
+            # and target fraction of ITS OWN pre-entry NAV. Never borrow
+            # if SPY and stock returns have caused cash to drift apart.
+            control_target=budget/nav_before*control_nav_before
+            control_budget=min(control_target,control_cash/(1+fee))
+            if control_budget<=1e-10:
+                raise e1.SourceStop("Matched SPY has no cash for accepted entry")
+            if control_budget+1e-10<control_target:
+                control_cash_limited+=1
+            control_cash-=control_budget*(1+fee)
+            control_holdings[ticker]=(control_budget/spy_price,exit_day)
+            control_accepted+=1
         nav=cash+sum(q*float(row[t]) for t,(q,_) in holdings.items())
-        if nav<=0 or cash < -1e-9:
-            raise e1.SourceStop("Event portfolio violated no-margin budget")
+        control_nav=control_cash+sum(
+            q*spy_price for q,_ in control_holdings.values())
+        if (nav<=0 or cash < -1e-9 or control_nav<=0
+            or control_cash < -1e-9 or set(holdings)!=set(control_holdings)):
+            raise e1.SourceStop("Event or matched SPY violated cash/position parity")
+        control_gross=sum(q*spy_price for q,_ in control_holdings.values())/control_nav
+        control_max_gross=max(control_max_gross,control_gross)
         gross=sum(q*float(row[t]) for t,(q,_) in holdings.items())/nav
         max_gross=max(max_gross,gross)
         if holdings:
@@ -150,8 +191,9 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
         min_cash=min(min_cash,max(0.0,cash)/nav)
         peak=max(peak,nav)
         max_drawdown=max(max_drawdown,1-nav/peak)
-    if holdings or accepted!=closed:
-        raise e1.SourceStop("Unreconciled historical event positions")
+    if (holdings or control_holdings or accepted!=closed
+        or control_accepted!=control_closed or accepted!=control_accepted):
+        raise e1.SourceStop("Unreconciled stock or matched SPY positions")
     spy_start=float(data.loc[pd.Timestamp(first),"SPY"])
     spy_end=float(data.loc[pd.Timestamp(last),"SPY"])
     spy_final=(spy_end/spy_start)*(1-fee)/(1+fee)
@@ -170,6 +212,13 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
         "net_portfolio_return_pct":round(100*(nav-1),5),
         "net_spy_buy_hold_return_pct":round(100*(spy_final-1),5),
         "portfolio_minus_spy_net_percentage_points":round(100*(nav-spy_final),5),
+        "net_spy_matched_schedule_return_pct":round(100*(control_nav-1),5),
+        "portfolio_minus_matched_spy_net_percentage_points":
+            round(100*(nav-control_nav),5),
+        "matched_spy_control_accepted_entries":control_accepted,
+        "matched_spy_control_closed_exits":control_closed,
+        "matched_spy_control_cash_limited_entries":control_cash_limited,
+        "matched_spy_control_max_gross_fraction":round(control_max_gross,6),
         "max_portfolio_drawdown_pct":round(-100*max_drawdown,5),
         "all_positions_flat_at_final_close":True,
     }
