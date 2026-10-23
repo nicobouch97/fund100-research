@@ -25,11 +25,14 @@ def fixtures():
              "issuer_event_type":"8-K ITEM 2.02","orders_authorized":False}]}
     base={"schema":p4g.SCHEMA,"asof_completed_session":"2026-10-21",
           "source_acquired_at_utc":"2026-10-22T09:01:00Z",
-          "trading_authorized":False,"broker_orders":0}
+          "trading_authorized":False,"paper_authorized":False,
+          "live_authorized":False,"future_performance_observations":0,
+          "broker_orders":0}
     later={"schema":p4g.SCHEMA,"asof_completed_session":"2026-10-23",
           "source_acquired_at_utc":"2026-10-24T09:01:00Z",
           "trading_authorized":False,"paper_authorized":False,
-          "live_authorized":False,"broker_orders":0}
+          "live_authorized":False,"future_performance_observations":0,
+          "broker_orders":0}
     return sec,base,data.loc[:"2026-10-21"].copy(deep=True),later,data.copy(deep=True)
 
 def evalx(fields=None):
@@ -88,3 +91,43 @@ def test_future_snapshot_cannot_omit_old_sessions_or_enable_trading():
     with pytest.raises(e5.ForwardStop):
         e5.evaluate(sec_source=s,baseline=b,baseline_prices=initial,
                     follow=later,follow_prices=full)
+
+def test_round_trip_costs_compound_exactly_on_actual_one_session_stock_return():
+    out=evalx()
+    row=out["hypothetical_marks"][0]
+    gross_stock=106/105-1
+    gross_spy=0
+    for bps in e5.COSTS_BPS:
+        expected=(1+gross_stock)*(1-bps/10000)**2-1-gross_spy
+        actual=row["one_completed_session_net_stock_minus_gross_SPY"][str(bps)]
+        assert actual==pytest.approx(round(expected,10),abs=1e-11)
+    assert out["stock_entry_and_exit_costs_compounded_exactly"]
+    assert out["SPY_is_untraded_gross_benchmark"]
+    assert out["broker_orders"]==0 and out["live_authorized"] is False
+
+
+def test_exact_cost_on_negative_stock_return_with_positive_spy_benchmark():
+    def fall(s,b,initial,later,full):
+        full.loc["2026-10-23","MSFT"]=104.
+        full.loc["2026-10-23","SPY"]=101.
+    out=evalx(fall)
+    gross_stock=104/105-1
+    gross_spy=0.01
+    for bps in e5.COSTS_BPS:
+        actual=out["hypothetical_marks"][0]["one_completed_session_net_stock_minus_gross_SPY"][str(bps)]
+        assert actual==pytest.approx(round((1+gross_stock)*(1-bps/10000)**2-1-gross_spy,10))
+
+
+@pytest.mark.parametrize("source,key,value",[
+    ("baseline","paper_authorized",True),
+    ("baseline","live_authorized",True),
+    ("baseline","future_performance_observations",1),
+    ("later","future_performance_observations",1),
+    ("later","source_acquired_at_utc","2026-10-23T22:00:00Z"),
+    ("later","source_acquired_at_utc","2026-11-10T09:01:00Z"),
+])
+def test_source_provenance_flags_and_capture_window_fail_closed(source,key,value):
+    def tamper(s,b,initial,later,full):
+        (b if source=="baseline" else later)[key]=value
+    with pytest.raises(e5.ForwardStop):
+        evalx(tamper)

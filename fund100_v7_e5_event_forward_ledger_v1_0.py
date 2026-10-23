@@ -39,13 +39,19 @@ def evaluate(*, sec_source:dict, baseline:dict, baseline_prices:pd.DataFrame,
         later_stamp=sec._timestamp(follow["source_acquired_at_utc"])
     except (ValueError,KeyError,TypeError) as exc:
         raise ForwardStop("original/followup source capture time invalid") from exc
-    if (follow.get("schema")!=p4g.SCHEMA
+    if (baseline.get("paper_authorized") is not False
+        or baseline.get("live_authorized") is not False
+        or baseline.get("future_performance_observations")!=0
+        or follow.get("schema")!=p4g.SCHEMA
         or follow.get("broker_orders")!=0
         or follow.get("trading_authorized") is not False
         or follow.get("paper_authorized") is not False
         or follow.get("live_authorized") is not False
+        or follow.get("future_performance_observations")!=0
         or follow.get("asof_completed_session")!=later.index[-1].date().isoformat()
         or later_stamp<=first_stamp
+        or later_stamp.date()<=later.index[-1].date()
+        or (later_stamp.date()-later.index[-1].date()).days>5
         or len(first)==0
         or not first.index.isin(later.index).all()):
         raise ForwardStop("later price source not independently dated, complete or research-only")
@@ -77,12 +83,15 @@ def evaluate(*, sec_source:dict, baseline:dict, baseline_prices:pd.DataFrame,
                 raise ForwardStop("forward entry/exit or source capture chronology invalid")
             gross_stock=float(later.loc[exit_,ticker]/later.loc[entry,ticker]-1)
             gross_spy=float(later.loc[exit_,"SPY"]/later.loc[entry,"SPY"]-1)
+            # Match P4K's exact multiplicative entry/exit cost model.
+            # SPY is an UNTRADED gross benchmark, not a second net position.
             obs.update({
                 "status":"REVISED_OR_MATCHED_VENDOR_VINTAGE_HYPOTHETICAL_ONE_INTERVAL_MARK",
                 "hypothetical_entry_close":entry.date().isoformat(),
                 "hypothetical_exit_close":exit_.date().isoformat(),
                 "one_completed_session_net_stock_minus_gross_SPY":{
-                    str(b):round(gross_stock-gross_spy-2*b/10000,10) for b in COSTS_BPS},
+                    str(b):round((1+gross_stock)*(1-b/10000)**2-1-gross_spy,10)
+                    for b in COSTS_BPS},
                 "stock_gross":round(gross_stock,10),
                 "SPY_gross":round(gross_spy,10),
             })
@@ -109,6 +118,8 @@ def evaluate(*, sec_source:dict, baseline:dict, baseline_prices:pd.DataFrame,
         "pre_entry_qualified_original_events":len(candidates),
         "observed_events":len(original["events"]),
         "costs_bps_each_side":list(COSTS_BPS),
+        "stock_entry_and_exit_costs_compounded_exactly":True,
+        "SPY_is_untraded_gross_benchmark":True,
         "hypothetical_marks":results,
         "original_signal_is_never_reranked_from_later_snapshot":True,
         "returns_same_later_vendor_vintage_only":True,
