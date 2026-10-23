@@ -188,7 +188,7 @@ def verify_current_risk_source(*, run:dict, jobs:dict,
         raise HandoffStop("Original risk-source job set incomplete")
     by_name={}
     for j in jobs["jobs"]:
-        if type(j) is not dict or type(j.get("name")) is not str
+        if (type(j) is not dict or type(j.get("name")) is not str
             or j["name"] in by_name):
             raise HandoffStop("Original risk-source job identities invalid")
         by_name[j["name"]]=j
