@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 
 import fund100_stock_forward_return_ledger_p4h_v1_0 as p4h
 import fund100_stock_quality_momentum_p4g_v1_0 as p4g
@@ -82,6 +83,50 @@ def verify_first_archive(anchor:dict,original_json:Path,original_csv:Path)->dict
         "frozen_original_json_sha256":digest,
         "original_archive_retrieved_and_revalidated":True,
     }
+
+
+# Tolerance is intentionally tighter than 0.00005% and covers observed
+# sub-micro-level Yahoo adjusted-price precision shifts only. ORIGINAL bytes
+# remain hash-pinned and are ALWAYS used for the 17 October baseline.
+MAX_ORIGINAL_VINTAGE_RELATIVE_JITTER=5e-7
+
+
+def reconcile_original_vintage(anchor:dict,original:pd.DataFrame,
+                               later:pd.DataFrame)->tuple[pd.DataFrame,float]:
+    """Keep SHA-pinned original historic prices; append ONLY new source rows.
+
+    Caller must validate BOTH original immutable JSON/CSV archive and the
+    independent recent full source snapshot before this source-only transform.
+    """
+    cutoff=pd.Timestamp(anchor["frozen_asof_completed_market_session"])
+    historic=original.loc[:cutoff]
+    overlap=later.loc[:cutoff]
+    if (historic.empty or historic.index[-1]!=cutoff
+        or not historic.index.is_unique or not historic.index.is_monotonic_increasing
+        or not later.index.is_unique or not later.index.is_monotonic_increasing
+        or not historic.index.equals(overlap.index)
+        or list(historic.columns)!=list(later.columns)
+        or any(not pd.api.types.is_numeric_dtype(historic[c])
+               or not pd.api.types.is_numeric_dtype(later[c])
+               for c in historic.columns)):
+        raise AnchorStop("FAIL_CLOSED_SOURCE_REVISION: missing or rearranged frozen vintage.")
+    expected=anchor["original_p4g_canonical_price_csv_sha256"]
+    if sha256(p4g.canonical_price_csv(historic).encode("utf8")).hexdigest()!=expected:
+        raise AnchorStop("FAIL_CLOSED_SOURCE_REVISION: original immutable vintage invalid.")
+    first=historic.to_numpy(dtype=float)
+    second=overlap.to_numpy(dtype=float)
+    if (not np.isfinite(first).all() or not np.isfinite(second).all()
+        or (first<=0).any() or (second<=0).any()):
+        raise AnchorStop("FAIL_CLOSED_SOURCE_REVISION: source equity price not positive/finite.")
+    maximum=float(np.abs(second/first-1).max())
+    if maximum>MAX_ORIGINAL_VINTAGE_RELATIVE_JITTER:
+        raise AnchorStop("FAIL_CLOSED_SOURCE_REVISION: real historical vendor restatement.")
+    # NEW series' pre-freeze portion is NEVER used to calculate return.
+    post=later.loc[later.index>cutoff]
+    joined=pd.concat([historic,post],axis=0)
+    if not joined.index.is_unique or not joined.index.is_monotonic_increasing:
+        raise AnchorStop("FAIL_CLOSED_SOURCE_REVISION: overlapping or unordered new sessions.")
+    return joined,maximum
 
 
 def anchored_forward(anchor:dict,follow:dict,prices:pd.DataFrame)->dict:
@@ -162,15 +207,23 @@ def anchored_forward(anchor:dict,follow:dict,prices:pd.DataFrame)->dict:
     return rows
 
 
-def evaluate(anchor_path:Path,followup_json:Path,followup_csv:Path)->dict:
+def evaluate(anchor_path:Path,followup_json:Path,followup_csv:Path,
+             *,original_json:Path,original_csv:Path)->dict:
     anchor,anchor_sha=read_anchor(anchor_path)
+    verify_first_archive(anchor,original_json,original_csv)
+    _,original_frame,_=p4h.read_snapshot(original_json,original_csv)
     follow,frame,report_sha=p4h.read_snapshot(followup_json,followup_csv)
-    r=anchored_forward(anchor,follow,frame)
+    joined,maximum=reconcile_original_vintage(anchor,original_frame,frame)
+    r=anchored_forward(anchor,follow,joined)
     r["frozen_anchor_file_sha256"]=anchor_sha
     r["later_source_capture_utc"]=follow["source_acquired_at_utc"]
     r["later_original_p4g_json_sha256"]=report_sha
     r["later_original_p4g_csv_sha256"]=follow["canonical_price_csv_sha256"]
-    r["source_status"]="SUCCESS_VERIFIED_ORIGINAL_PREFIX" # no implication of returns
+    r["original_17_oct_archive_verified_before_forward_calculation"]=True
+    r["revised_overlap_prices_used_for_pnl"]=False
+    r["original_vintage_max_allowed_relative_jitter"]=MAX_ORIGINAL_VINTAGE_RELATIVE_JITTER
+    r["observed_overlap_vendor_relative_jitter"]=maximum
+    r["source_status"]="SUCCESS_VERIFIED_EXACT_ORIGINAL_PREFIX_PRECISION_ONLY_FOLLOWUP"
     return r
 
 
@@ -186,7 +239,13 @@ def main()->None:
     if bool(a.original_json)!=bool(a.original_csv):
         raise AnchorStop("Must supply both original source files, or neither.")
     anchor,anchor_sha=read_anchor(a.anchor)
-    if a.original_json:
+    if a.followup_json or a.followup_csv:
+        if not (a.followup_json and a.followup_csv
+                and a.original_json and a.original_csv):
+            raise AnchorStop("Forward calculation requires original plus later authenticated archives.")
+        out=evaluate(a.anchor,a.followup_json,a.followup_csv,
+                     original_json=a.original_json,original_csv=a.original_csv)
+    elif a.original_json:
         out={
             "schema":SCHEMA,
             "status":"ORIGINAL_17_OCT_PRICE_ARCHIVE_SHA_VERIFIED",
@@ -195,9 +254,7 @@ def main()->None:
             "broker_orders":0,"live_authorized":False,
         }
     else:
-        if not a.followup_json or not a.followup_csv:
-            raise AnchorStop("Provide authentic later JSON and price CSV.")
-        out=evaluate(a.anchor,a.followup_json,a.followup_csv)
+        raise AnchorStop("Provide original authenticated JSON and price CSV.")
     a.output.parent.mkdir(parents=True,exist_ok=True)
     a.output.write_text(json.dumps(out,indent=2,sort_keys=True)+"\n")
     print("P4I FORWARD SOURCE STATUS",out["status"],"ORDERS",out["broker_orders"])
