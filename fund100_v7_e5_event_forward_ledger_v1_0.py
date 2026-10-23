@@ -27,6 +27,26 @@ SIGNAL_STATUS="OBSERVED_REACTION_OVER_THRESHOLD_NOT_FORWARD_ALPHA"
 class ForwardStop(ValueError):
     pass
 
+def verified_forward_sessions(original_last:pd.Timestamp, later_index:pd.DatetimeIndex):
+    """Require actual consecutive XNYS sessions, not merely consecutive vendor rows.
+
+    A missing exchange session must never be silently labelled a one-session
+    investment return. XNYS includes exchange holidays and unscheduled closures.
+    """
+    import exchange_calendars as xcals
+    try:
+        sessions=xcals.get_calendar("XNYS").sessions_in_range(
+            original_last,later_index[-1])
+    except (ValueError,IndexError,TypeError) as exc:
+        raise ForwardStop("Unable to authenticate XNYS session range") from exc
+    observed=later_index[later_index>original_last]
+    if (len(sessions)==0 or sessions[0]!=original_last
+        or sessions[-1]!=later_index[-1]
+        or not observed.equals(sessions[1:])):
+        raise ForwardStop("Missing, nontrading or unordered post-signal XNYS sessions")
+    return (observed[0] if len(observed)>=1 else None,
+            observed[1] if len(observed)>=2 else None)
+
 def evaluate(*, sec_source:dict, baseline:dict, baseline_prices:pd.DataFrame,
              follow:dict, follow_prices:pd.DataFrame) -> dict:
     """Pure evaluation; production *must* read and authenticate every artifact."""
@@ -59,11 +79,10 @@ def evaluate(*, sec_source:dict, baseline:dict, baseline_prices:pd.DataFrame,
     prefix_identical=bool(prefix.equals(first))
     base_prefix_sha=sha256(p4g.canonical_price_csv(first).encode("utf-8")).hexdigest()
     late_prefix_sha=sha256(p4g.canonical_price_csv(prefix).encode("utf-8")).hexdigest()
-    next_dates=later.index[later.index>first.index[-1]]
-    # Always choose the FIRST two later completed sessions; later runs cannot
-    # choose an attractive exit date from multiple opportunities.
-    entry=next_dates[0] if len(next_dates)>=1 else None
-    exit_=next_dates[1] if len(next_dates)>=2 else None
+    # Enforce an independent XNYS exchange calendar: consecutive vendor rows
+    # alone do not prove consecutive trading sessions (missing-day bias).
+    # Always use the FIRST two exchange sessions; no exit-date selection.
+    entry,exit_=verified_forward_sessions(first.index[-1],later.index)
     candidates=[e for e in original["events"] if e["status"]==SIGNAL_STATUS]
     results=[]
     for item in candidates:
@@ -124,7 +143,7 @@ def evaluate(*, sec_source:dict, baseline:dict, baseline_prices:pd.DataFrame,
         "original_signal_is_never_reranked_from_later_snapshot":True,
         "returns_same_later_vendor_vintage_only":True,
         "spread_and_trade_fills_verified":False,
-        "independent_market_session_calendar_verified":False,
+        "independent_market_session_calendar_verified":True,
         "statistically_significant_alpha_proven":False,
         "actual_live_account_pnl_measured":False,
         "private_state_mutations":0,"broker_http_requests":0,
