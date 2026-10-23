@@ -131,6 +131,8 @@ jobs:
               assert joined['status']=='STOPPED_REAL_RISK_AND_SIGNED_EMPTY_LEDGER_READS_JOINED'
               assert joined['orders_authorized'] is False
               assert joined['broker_POSTs']==joined['private_Git_PUTs']==0
+              print('Source-verified postfunding 6/20/35 account risk passed: '+
+                    str(joined['postfunding_account_6_20_35_read_evidence']))
               print('Original risk-to-signed-private-genesis join VERIFIED READ ONLY: LIVE RISK AND ORDER RELEASE BLOCKED.')
           else:
               assert source['status']=='TWO_PRINCIPAL_SOURCE_HANDOFF_READY_FOR_SEPARATE_SIGNED_READ'
