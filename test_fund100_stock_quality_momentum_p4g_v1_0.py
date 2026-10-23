@@ -157,7 +157,7 @@ def test_refuse_missing_interior_nyse_session_even_with_sufficient_history():
     f = f.drop(index=f.index[-75])
     assert len(f) > p4g.LOOKBACK
     with pytest.raises(p4g.P4GStop, match="Missing or extra XNYS"):
-        run(f)
+        p4g.verify_original_nyse_source_sessions(f.index)
 
 
 @pytest.mark.parametrize("unexpected", ["2026-10-10", "2026-09-07"])
@@ -167,10 +167,21 @@ def test_refuse_extra_weekend_or_exchange_holiday_row(unexpected):
     f.loc[pd.Timestamp(unexpected)] = f.iloc[-10]
     f = f.sort_index()
     with pytest.raises(p4g.P4GStop, match="Missing or extra XNYS"):
-        run(f)
+        p4g.verify_original_nyse_source_sessions(f.index)
 
 
 def test_real_exchange_holidays_are_not_required_as_price_bars():
     f = prices()
     assert pd.Timestamp("2026-09-07") not in f.index
+    p4g.verify_original_nyse_source_sessions(f.index)
     assert run(f)["price_source_sessions"] == len(f)
+
+
+def test_real_public_source_ingestion_rejects_missing_nyse_bar(monkeypatch):
+    f = prices().drop(index=prices().index[-75])
+    # Same MultiIndex Close/ticker shape returned by the public provider.
+    vendor = pd.concat({"Close": f}, axis=1)
+    import yfinance as yf
+    monkeypatch.setattr(yf, "download", lambda **kwargs: vendor)
+    with pytest.raises(p4g.P4GStop, match="Missing or extra XNYS"):
+        p4g.public_prices()
