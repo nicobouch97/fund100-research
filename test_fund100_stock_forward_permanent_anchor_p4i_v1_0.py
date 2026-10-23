@@ -152,3 +152,84 @@ def test_no_future_original_session_or_trading_permissions():
     assert not r["paper_authorized"] and not r["trading_authorized"]
     assert r["source_rights_beyond_existing_vendor_research_not_inferred"]
     assert not r["independent_vintage_dividends_and_fills_verified"]
+
+
+def test_tiny_later_vendor_precision_drift_uses_only_exact_original_source():
+    original=artificial_price_data("2026-10-16")
+    later=artificial_price_data("2026-10-22")
+    anchor=anchor_for_synthetic(original)
+    # Three original historic observations undergo small vendor jitter.
+    later.loc["2026-09-30","MSFT"]*=1+2e-7
+    later.loc["2026-10-16","KO"]*=1-3e-7
+    later.loc["2026-07-02","SPY"]*=1+4e-7
+    joined,maximum=p4i.reconcile_original_vintage(anchor,original,later)
+    pd.testing.assert_frame_equal(joined.loc[:pd.Timestamp("2026-10-16")],original)
+    assert len(joined.loc["2026-10-19":])==4
+    assert 3e-7<=maximum<=p4i.MAX_ORIGINAL_VINTAGE_RELATIVE_JITTER
+    result=p4i.anchored_forward(anchor,followup(
+        asof="2026-10-22",received="2026-10-23T07:00:00Z"),joined)
+    assert result["future_return_observations"]==3
+    assert result["post_freeze_entry_session"]=="2026-10-19"
+    assert result["original_baseline_price_csv_sha256"]==anchor[
+        "original_p4g_canonical_price_csv_sha256"]
+    assert not result["paper_authorized"] and not result["live_authorized"]
+
+
+@pytest.mark.parametrize("symbol,date,multiplier",[
+    ("MSFT","2026-08-10",1.000002),
+    ("SPY","2026-10-16",1.000001),
+    ("PG","2026-10-12",0.999998),
+    ("SHY","2026-07-22",1.000002),
+])
+def test_material_vendor_revision_cannot_be_reclassified_as_precision(
+    symbol,date,multiplier
+):
+    original=artificial_price_data("2026-10-16")
+    later=artificial_price_data("2026-10-22")
+    anchor=anchor_for_synthetic(original)
+    later.loc[date,symbol]*=multiplier
+    with pytest.raises(p4i.AnchorStop,match="FAIL_CLOSED_SOURCE_REVISION"):
+        p4i.reconcile_original_vintage(anchor,original,later)
+
+
+@pytest.mark.parametrize("alter",[
+    "drop_baseline","drop_historical_session","new_symbol",
+    "reorder_columns","wrong_immutable_original","nonpositive_price",
+])
+def test_original_snapshot_shape_or_authority_never_relaxed(alter):
+    original=artificial_price_data("2026-10-16")
+    later=artificial_price_data("2026-10-22")
+    anchor=anchor_for_synthetic(original)
+    if alter=="drop_baseline":
+        later=later.drop(pd.Timestamp("2026-10-16"))
+    elif alter=="drop_historical_session":
+        later=later.drop(pd.Timestamp("2026-09-28"))
+    elif alter=="new_symbol":
+        later["TICKER"]=1.
+    elif alter=="reorder_columns":
+        later=later[sorted(later.columns)]
+    elif alter=="wrong_immutable_original":
+        original.loc["2026-10-16","MSFT"]*=1.01
+    elif alter=="nonpositive_price":
+        later.loc["2026-10-20","KO"]=-1.
+    with pytest.raises(p4i.AnchorStop,match="FAIL_CLOSED_SOURCE_REVISION"):
+        p4i.reconcile_original_vintage(anchor,original,later)
+
+
+def test_zero_future_observations_preserves_truth_not_fake_return():
+    original=artificial_price_data("2026-10-16")
+    a=anchor_for_synthetic(original)
+    joined,diff=p4i.reconcile_original_vintage(a,original,original.copy())
+    assert diff==0
+    result=p4i.anchored_forward(a,followup(
+        asof="2026-10-16",received="2026-10-18T07:00:00Z"),joined)
+    assert result["status"]=="NO_POST_FREEZE_ENTRY_SESSION"
+    assert result["costed_return_scenarios"] is None
+
+
+def test_forward_only_path_requires_original_source_pair():
+    import inspect
+    params=inspect.signature(p4i.evaluate).parameters
+    assert params["original_json"].default is inspect.Parameter.empty
+    assert params["original_csv"].default is inspect.Parameter.empty
+    assert p4i.MAX_ORIGINAL_VINTAGE_RELATIVE_JITTER==5e-7
