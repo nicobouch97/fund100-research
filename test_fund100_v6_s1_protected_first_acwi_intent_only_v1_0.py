@@ -282,3 +282,55 @@ def test_offline_source_contains_no_alpaca_keys_or_live_order_transport():
         assert forbidden not in script
     assert m.NO_BROKER_NETWORK and m.NO_LIVE_ORDER_RELEASE
     assert not m.GIT_HEAD_ADVANCE_HARD_RELEASED
+
+
+def test_one_confirmation_automatically_refreshes_original_read_only_four_get():
+    """No second user dispatch; no creation of a new brokerage workflow."""
+    from pathlib import Path
+    yml=Path(".github/workflows/fund100-v6-s1-first-acwi-private-intent-only.yml").read_text()
+    a=yml.index("  refresh-original-four-get-readonly:")
+    b=yml.index("  protected-main-one-original-ACWI-intent-NO-orders:",a)
+    refresh=yml[a:b]
+    assert "github.event_name == 'workflow_dispatch'" in refresh
+    assert "github.ref == 'refs/heads/main'" in refresh
+    assert "inputs.confirmation == 'RECORD_ACWI_INTENT_NO_ORDERS'" in refresh
+    assert "needs: offline-original-signed-ACWI-intent-transport-contract" in refresh
+    assert "actions: write" in refresh
+    assert "contents: read" in refresh
+    assert "gh api -X POST" in refresh
+    assert "fund100-v6-real-live-getonly-transition.yml/dispatches" in refresh
+    assert "-f ref=main" in refresh
+    assert "fund100-v6-real-live-getonly-transition.yml/runs?" in refresh
+    assert '.head_sha == "' in refresh
+    assert ".created_at >=" in refresh
+    assert '"$success" = yes' in refresh
+    for forbidden in ("FUND100_PRIVATE_STATE_READ_TOKEN",
+                      "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN",
+                      "FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX",
+                      "ALPACA_LIVE_KEY","ALPACA_LIVE_SECRET",
+                      "environment: fund100-live-broker",
+                      "api.alpaca.markets"):
+        assert forbidden not in refresh
+    # User-controlled confirmation is passed as an env value, NEVER used
+    # as interpolated executable shell text.
+    run=refresh.split("        run: |",1)[1]
+    assert "${{" not in run
+    assert 'test "$FUND100_FIRST_INTENT_CONFIRM"' in run
+
+
+def test_one_confirmed_storage_writer_waits_for_actual_succeeded_source():
+    from pathlib import Path
+    yml=Path(".github/workflows/fund100-v6-s1-first-acwi-private-intent-only.yml").read_text()
+    writer=yml.split("  protected-main-one-original-ACWI-intent-NO-orders:",1)[1]
+    assert "needs: [offline-original-signed-ACWI-intent-transport-contract, refresh-original-four-get-readonly]" in writer
+    assert "if: github.event_name == 'workflow_dispatch'" in writer
+    assert "inputs.confirmation == 'RECORD_ACWI_INTENT_NO_ORDERS'" in writer
+    assert 'test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"' in writer
+    assert 'test "$FUND100_RISK_LEVEL" = "HIGH"' in writer
+    assert "fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py" in writer
+    assert "ALPACA_LIVE_KEY" not in writer and "ALPACA_LIVE_SECRET" not in writer
+    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" in writer
+    assert "fund100_v6_real_live_getonly_transition_readiness_v1_0.py" in writer
+    assert "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2" in writer
+    assert "a148b919ab25071dc3872211bb20588c466a1b92" in writer
+    assert "Live order" not in writer
