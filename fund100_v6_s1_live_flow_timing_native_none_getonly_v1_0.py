@@ -179,7 +179,8 @@ def evaluate(*,account:dict,positions:list,orders:list,clock:dict,
                  "source_rejection_category":"NOT_APPLICABLE",
                  "one_cashflow_sensitivity_evaluated_in_memory":False,
                  "initial_cashflow_booking_vs_first_funded_sample":
-                     "SOURCE_NOT_QUALIFIED"}
+                     "SOURCE_NOT_QUALIFIED",
+                 "strictly_postfunding_account_6_20_35_source_verified":False}
     report = {
        "schema":SCHEMA,
        "source":"PRIVATE_ORIGINAL_SEVEN_GET_SOURCE_QUALIFICATION_ONLY",
@@ -200,7 +201,10 @@ def evaluate(*,account:dict,positions:list,orders:list,clock:dict,
        "original_raw_equity_risk_status":earlier["original_raw_risk_history_result"],
        "actual_cashflow_adjusted_dietz_returns_calculated":False,
        "broker_native_none_is_validated_true_strategy_return":False,
-       "actual_s1_6_20_35_risk_verified":False,
+       # Sufficient strictly postfunded account returns are not a
+       # time-weighted strategy performance or an operator/trader GO.
+       "actual_s1_6_20_35_risk_verified":
+           bounded["strictly_postfunding_account_6_20_35_source_verified"],
        "actual_sale_proceeds_t_plus_one_settled":False,
        "live_buy_sell_authorized":False,
        "broker_get_requests":7,"broker_non_get_requests":0,"live_orders":0,
@@ -209,10 +213,14 @@ def evaluate(*,account:dict,positions:list,orders:list,clock:dict,
        "private_pnl_series":None,"broker_order_payload":None,
     }
     stage=staged.assess_stopped_live_readiness(source_report=report)
+    expected_stage=(
+        "BLOCKED_NO_INDEPENDENT_SIGNED_LEDGER_AND_SETTLEMENT_JOIN"
+        if bounded["strictly_postfunding_account_6_20_35_source_verified"]
+        else "BLOCKED_UNPROVEN_CASHFLOW_ADJUSTED_1M_ACCOUNT_RISK")
     if (stage["candidate_instruction"] is not None
         or stage["new_live_order_release"] is not False
         or stage["broker_order_posts"] != 0
-        or stage["stage"] != "BLOCKED_UNPROVEN_CASHFLOW_ADJUSTED_1M_ACCOUNT_RISK"):
+        or stage["stage"] != expected_stage):
         raise FlowTimingStop("Original staged source risk block must remain stopped")
     report["staged_v6_live_source_readiness"]=stage["stage"]
     report["staged_controller_verified_full_private_order_ledger"]=False

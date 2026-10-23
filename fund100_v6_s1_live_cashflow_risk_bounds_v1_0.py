@@ -176,7 +176,9 @@ def _scenario(values, flow, at, weight, current):
         return None
     current_drawdown = 1-live_unit/max(peak,live_unit)
     volatility = Decimal(str(stdev([float(r) for r in daily])*sqrt(252)))
-    return (daily[-1] <= DAILY_STOP
+    # An earlier >=6% account-loss stop must never silently self-reset
+    # merely because the latest day recovered. Restart needs separate GO.
+    return (any(r <= DAILY_STOP for r in daily)
             or live_return <= DAILY_STOP
             or current_drawdown >= DRAWDOWN_STOP
             or volatility > VOL_STOP)
@@ -188,6 +190,7 @@ def inspect(*, history, activities, account, observed_at_utc):
     evaluated = False
     unfunded_prefix = False
     boundary = "SOURCE_NOT_QUALIFIED"
+    postfunded_risk_proven = False
     try:
         values, flow, unfunded_prefix, possible_inception, current, boundary = _read(
             history, activities, account, observed_at_utc
@@ -212,6 +215,20 @@ def inspect(*, history, activities, account, observed_at_utc):
                 continue
             valid_windows += 1
             possibly_breached |= left or right
+        # A single CSD booked on a PREVIOUS calendar day, plus a
+        # genuine empty-equity prefix, no later nontrade transfers and
+        # reconciled consecutive positive funded closes, permits computing
+        # account-level investment return risk strictly AFTER first funded
+        # close without knowing the intraday seed cashflow time. This is
+        # NOT a strategy alpha return, a Dietz calculation, risk release
+        # for future orders, or a proof of immutable signed order state.
+        #
+        # Requiring EXACTLY one qualified scenario also protects against
+        # a plausible postfunding transfer placement being silently ignored.
+        if (boundary=="BOOKED_BEFORE_FIRST_FUNDED_SAMPLE_DATE"
+            and qualified_inception and valid_windows==1
+            and not possibly_breached):
+            postfunded_risk_proven = True
         if not valid_windows:
             category = "NO_QUALITY_ADMISSIBLE_PLACEMENT_HOLD"
         elif possibly_breached:
@@ -252,6 +269,8 @@ def inspect(*, history, activities, account, observed_at_utc):
         "one_cashflow_sensitivity_evaluated_in_memory": evaluated,
         "unfunded_history_prefix_observed": unfunded_prefix,
         "initial_cashflow_booking_vs_first_funded_sample": boundary,
+        "strictly_postfunding_account_6_20_35_source_verified":
+            postfunded_risk_proven,
         "broker_actual_economic_transfer_time_verified": False,
         "daily_equity_risk_authorized": False,
         "drawdown_risk_authorized": False,
