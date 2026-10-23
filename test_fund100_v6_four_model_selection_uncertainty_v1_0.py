@@ -83,7 +83,7 @@ def test_reversed_dates_and_unreviewed_bootstrap_parameters_stop():
     for kw in ({"replications":0},{"replications":2001},
                {"block_mean":1},{"block_mean":200},{"seed":True}):
         with pytest.raises(s.SelectionStop):
-            s.evaluate(identical_paths(),"2020-01-01",replications=199,**kw)
+            s.evaluate(identical_paths(),"2020-01-01",**dict({"replications":199},**kw))
 
 
 def test_original_real_frozen_models_all_costs_15bps_reuse_without_new_signals():
