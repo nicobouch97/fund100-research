@@ -68,16 +68,21 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
     and a separate cash-constrained SPY control that mirrors every accepted
     stock entry/exit, target entry NAV fraction, and both-sided fees. The
     latter tests stock selection without mistaking idle cash for stock alpha.
+    Equity sale proceeds settle T+1: a sale at today's close cannot fund
+    another purchase at the same close. Receivables remain part of NAV.
     """
     if cost_bps not in COSTS:
         raise e1.SourceStop("Unregistered event portfolio transaction cost")
     if not events:
         return {
             "selected_events":0,"accepted_entries":0,"closed_exits":0,
-            "capacity_skipped":0,"duplicate_issuer_skipped":0,
+            "capacity_skipped":0,"settlement_limited_entries":0,
+            "duplicate_issuer_skipped":0,
             "max_concurrent_names":0,"max_gross_fraction":0.0,
             "max_entry_budget_fraction":0.0,"max_drifted_name_fraction":0.0,
-            "min_cash_fraction":None,"net_portfolio_return_pct":None,
+            "min_cash_fraction":None,
+            "unsettled_sale_proceeds_at_final_close_fraction":None,
+            "net_portfolio_return_pct":None,
             "net_spy_buy_hold_return_pct":None,
             "portfolio_minus_spy_net_percentage_points":None,
             "net_spy_matched_schedule_return_pct":None,
@@ -86,6 +91,7 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
             "matched_spy_control_closed_exits":0,
             "matched_spy_control_cash_limited_entries":0,
             "matched_spy_control_max_gross_fraction":0.0,
+            "matched_spy_unsettled_at_final_close_fraction":None,
             "max_portfolio_drawdown_pct":None,
             "all_positions_flat_at_final_close":True,
         }
@@ -111,15 +117,17 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
         raise e1.SourceStop("No complete event portfolio return horizon")
     fee=cost_bps/10_000
     cash=1.0
+    unsettled=[]  # (next trading session or None, sale receivable)
     holdings={}  # ticker -> (fractional shares, exit date)
     # Independent no-margin SPY cash book, entered/exited ONLY when a stock
     # signal is actually accepted. A benchmark position is keyed by ticker
     # so overlapping same-issuer signals cannot create phantom exposure.
     control_cash=1.0
+    control_unsettled=[]
     control_holdings={}
     control_accepted=control_closed=control_cash_limited=0
     control_max_gross=0.0
-    accepted=closed=capacity_skipped=duplicate_skipped=0
+    accepted=closed=capacity_skipped=duplicate_skipped=settlement_limited=0
     max_names=0
     max_gross=0.0
     max_entry_budget=0.0
@@ -127,23 +135,31 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
     min_cash=1.0
     peak=1.0
     max_drawdown=0.0
-    for stamp,row in market.iterrows():
+    for i,(stamp,row) in enumerate(market.iterrows()):
         day=stamp.date()
         spy_price=float(row["SPY"])
-        # EXIT first: released cash may fund a new signal at this close.
+        # Settle yesterday's sales before trading. A sale at today's close
+        # releases a position slot, but NOT spendable cash until next session.
+        cash+=sum(v for due,v in unsettled if due is not None and due<=day)
+        unsettled=[(due,v) for due,v in unsettled if due is None or due>day]
+        control_cash+=sum(v for due,v in control_unsettled if due is not None and due<=day)
+        control_unsettled=[(due,v) for due,v in control_unsettled if due is None or due>day]
+        next_session=market.index[i+1].date() if i+1<len(market) else None
+        # Exit first for position capacity, with proceeds locked until T+1.
         for ticker,(qty,exit_day) in list(holdings.items()):
             if exit_day==day:
-                cash+=qty*float(row[ticker])*(1-fee)
+                unsettled.append((next_session,qty*float(row[ticker])*(1-fee)))
                 del holdings[ticker]
                 closed+=1
                 control_qty,control_exit=control_holdings.pop(ticker)
                 if control_exit!=exit_day:
                     raise e1.SourceStop("Matched SPY exit chronology diverged")
-                control_cash+=control_qty*spy_price*(1-fee)
+                control_unsettled.append((next_session,control_qty*spy_price*(1-fee)))
                 control_closed+=1
-        nav_before=cash+sum(q*float(row[t]) for t,(q,_) in holdings.items())
-        control_nav_before=control_cash+sum(
-            q*spy_price for q,_ in control_holdings.values())
+        nav_before=(cash+sum(v for _,v in unsettled)
+                    +sum(q*float(row[t]) for t,(q,_) in holdings.items()))
+        control_nav_before=(control_cash+sum(v for _,v in control_unsettled)
+                            +sum(q*spy_price for q,_ in control_holdings.values()))
         if nav_before<=0 or control_nav_before<=0:
             raise e1.SourceStop("Event or matched SPY portfolio has nonpositive NAV")
         for ticker,accession,exit_day in sorted(by_date.get(day,[])):
@@ -156,6 +172,8 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
             budget=min(PORTFOLIO_MAX_NAME_FRACTION*nav_before,cash/(1+fee))
             if budget<=1e-10:
                 capacity_skipped+=1
+                if unsettled:
+                    settlement_limited+=1
                 continue
             max_entry_budget=max(max_entry_budget,budget/nav_before)
             qty=budget/float(row[ticker])
@@ -174,9 +192,10 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
             control_cash-=control_budget*(1+fee)
             control_holdings[ticker]=(control_budget/spy_price,exit_day)
             control_accepted+=1
-        nav=cash+sum(q*float(row[t]) for t,(q,_) in holdings.items())
-        control_nav=control_cash+sum(
-            q*spy_price for q,_ in control_holdings.values())
+        nav=(cash+sum(v for _,v in unsettled)
+             +sum(q*float(row[t]) for t,(q,_) in holdings.items()))
+        control_nav=(control_cash+sum(v for _,v in control_unsettled)
+                     +sum(q*spy_price for q,_ in control_holdings.values()))
         if (nav<=0 or cash < -1e-9 or control_nav<=0
             or control_cash < -1e-9 or set(holdings)!=set(control_holdings)):
             raise e1.SourceStop("Event or matched SPY violated cash/position parity")
@@ -201,12 +220,14 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
         "selected_events":len(events),
         "accepted_entries":accepted,"closed_exits":closed,
         "capacity_skipped":capacity_skipped,
+        "settlement_limited_entries":settlement_limited,
         "duplicate_issuer_skipped":duplicate_skipped,
         "max_concurrent_names":max_names,
         "max_gross_fraction":round(max_gross,6),
         "max_entry_budget_fraction":round(max_entry_budget,6),
         "max_drifted_name_fraction":round(max_drifted_name,6),
         "min_cash_fraction":round(min_cash,6),
+        "unsettled_sale_proceeds_at_final_close_fraction":round(sum(v for _,v in unsettled)/nav,6),
         "first_hypothetical_entry":first.isoformat(),
         "last_hypothetical_exit":last.isoformat(),
         "net_portfolio_return_pct":round(100*(nav-1),5),
@@ -219,6 +240,7 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
         "matched_spy_control_closed_exits":control_closed,
         "matched_spy_control_cash_limited_entries":control_cash_limited,
         "matched_spy_control_max_gross_fraction":round(control_max_gross,6),
+        "matched_spy_unsettled_at_final_close_fraction":round(sum(v for _,v in control_unsettled)/control_nav,6),
         "max_portfolio_drawdown_pct":round(-100*max_drawdown,5),
         "all_positions_flat_at_final_close":True,
     }
@@ -407,7 +429,8 @@ def main():
               "net SPY full-investment pct",portfolio["net_spy_buy_hold_return_pct"],
               "net SPY matched-entry pct",portfolio["net_spy_matched_schedule_return_pct"],
               "stock minus matched SPY pp",portfolio["portfolio_minus_matched_spy_net_percentage_points"],
-              "capacity skipped",portfolio["capacity_skipped"])
+              "capacity skipped",portfolio["capacity_skipped"],
+              "T+1 settlement limited",portfolio["settlement_limited_entries"])
     print("Decision:",result["economic_status"])
     print("Retrospective survivor-biased event statistics; NO REAL TRADES.")
 
