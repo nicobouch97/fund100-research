@@ -62,9 +62,25 @@ def _read(history, activities, account, observed_at_utc):
         or not 0 <= (now.astimezone(timezone.utc)-last).total_seconds() <= 10*86400
         or first.date() < date(2026, 9, 1)):
         raise SourceRejected("uncovered or stale account window")
-    equity = [_decimal(x) for x in vals]
-    if any(x <= 0 for x in equity):
-        raise SourceRejected("invalid account equity")
+    # Match the existing authenticated portfolio-history reader: before the
+    # account is funded, Alpaca can supply null/zero daily equity. These are
+    # NOT investable returns. Never allow a missing/zero/negative observation
+    # after the first strictly positive funded close, or negative pre-funding.
+    equity = []
+    unfunded_prefix = False
+    for raw in vals:
+        if raw is None and not equity:
+            unfunded_prefix = True
+            continue
+        x = _decimal(raw)
+        if x <= 0:
+            if equity or x < 0:
+                raise SourceRejected("invalid account equity")
+            unfunded_prefix = True
+            continue
+        equity.append(x)
+    if len(equity) < 6:
+        raise SourceRejected("insufficient funded equity observations")
     # Alpaca's last_equity is yesterday's close, not necessarily the
     # most recent intraday portfolio-history row. Refuse a mismatched source
     # rather than treating current intraday cash as a sampled close.
@@ -105,7 +121,7 @@ def _read(history, activities, account, observed_at_utc):
         flow = amount
     if flow is None:
         raise SourceRejected("no dated transfer")
-    return equity, flow
+    return equity, flow, unfunded_prefix
 
 def _scenario(values, flow, at, weight):
     unit = Decimal(1)
@@ -134,8 +150,9 @@ def inspect(*, history, activities, account, observed_at_utc):
     category = "SOURCE_NOT_QUALIFIED_HOLD"
     failure = "NONE"
     evaluated = False
+    unfunded_prefix = False
     try:
-        values, flow = _read(history, activities, account, observed_at_utc)
+        values, flow, unfunded_prefix = _read(history, activities, account, observed_at_utc)
         evaluated = True
         valid_windows = 0
         possibly_breached = False
@@ -162,6 +179,7 @@ def inspect(*, history, activities, account, observed_at_utc):
             "invalid observation time": "UNUSABLE_OBSERVATION_TIME",
             "uncovered or stale account window": "HISTORY_WINDOW_OR_FRESHNESS",
             "invalid account equity": "EQUITY_FIELDS_UNUSABLE",
+            "insufficient funded equity observations": "INSUFFICIENT_FUNDED_HISTORY",
             "last broker close not reconciled": "LATEST_ACCOUNT_CLOSE_MISMATCH",
             "bad activity": "ACTIVITY_ID_OR_TYPE_INVALID",
             "unknown, asset, or multiple transfers": "UNSUPPORTED_OR_MULTIPLE_TRANSFERS",
@@ -181,6 +199,7 @@ def inspect(*, history, activities, account, observed_at_utc):
         "status": category,
         "source_rejection_category": failure,
         "one_cashflow_sensitivity_evaluated_in_memory": evaluated,
+        "unfunded_history_prefix_observed": unfunded_prefix,
         "broker_actual_economic_transfer_time_verified": False,
         "daily_equity_risk_authorized": False,
         "drawdown_risk_authorized": False,

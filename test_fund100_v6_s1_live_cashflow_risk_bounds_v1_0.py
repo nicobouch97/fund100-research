@@ -71,6 +71,51 @@ def test_live_reader_receives_float_equity_without_broker_trade():
     assert r["live_buy_sell_authorized"] is False
 
 
+def unfunded_prefix_case():
+    d=dataset()
+    d["history"]["timestamp"]=[
+        int((START+timedelta(days=i-2)).timestamp()) for i in range(8)
+    ]
+    d["history"]["equity"]=[None,0.0,100.0,200.0,200.0,200.0,200.0,200.0]
+    return d
+
+
+def test_unfunded_null_and_zero_prefix_are_not_market_returns():
+    d=unfunded_prefix_case()
+    result=check(d)
+    assert result["unfunded_history_prefix_observed"] is True
+    assert result["one_cashflow_sensitivity_evaluated_in_memory"] is True
+    assert result["status"]=="ONE_CONDITIONALLY_SAFE_TIMING_RESEARCH_ONLY"
+    assert not result["s1_high_risk_approved"]
+
+
+@pytest.mark.parametrize("post_funding_gap",[None,0.0,-1.0])
+def test_post_funding_missing_zero_negative_equity_still_halts(post_funding_gap):
+    d=unfunded_prefix_case()
+    d["history"]["equity"][4]=post_funding_gap
+    r=check(d)
+    assert r["status"]=="SOURCE_NOT_QUALIFIED_HOLD"
+    assert r["source_rejection_category"] in (
+        "EQUITY_FIELDS_UNUSABLE","PRIVATE_FINANCIAL_FIELD_UNUSABLE")
+    assert not r["one_cashflow_sensitivity_evaluated_in_memory"]
+
+
+def test_negative_prefunding_history_is_not_silently_discarded():
+    d=unfunded_prefix_case()
+    d["history"]["equity"][1]=-1.0
+    r=check(d)
+    assert r["status"]=="SOURCE_NOT_QUALIFIED_HOLD"
+    assert r["source_rejection_category"]=="EQUITY_FIELDS_UNUSABLE"
+
+
+def test_only_five_funded_observations_cannot_certify_risk():
+    d=unfunded_prefix_case()
+    d["history"]["equity"][2]=0.0
+    r=check(d)
+    assert r["status"]=="SOURCE_NOT_QUALIFIED_HOLD"
+    assert r["source_rejection_category"]=="INSUFFICIENT_FUNDED_HISTORY"
+
+
 def test_one_100_deposit_can_explain_apparent_100pct_raw_jump():
     result=check(dataset())
     assert result["status"]=="ONE_CONDITIONALLY_SAFE_TIMING_RESEARCH_ONLY"
