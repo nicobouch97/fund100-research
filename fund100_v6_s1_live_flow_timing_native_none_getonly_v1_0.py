@@ -177,7 +177,9 @@ def evaluate(*,account:dict,positions:list,orders:list,clock:dict,
     else:
         bounded={"status":"ONE_DATE_ONLY_FLOW_SOURCE_NOT_APPLICABLE_HOLD",
                  "source_rejection_category":"NOT_APPLICABLE",
-                 "one_cashflow_sensitivity_evaluated_in_memory":False}
+                 "one_cashflow_sensitivity_evaluated_in_memory":False,
+                 "initial_cashflow_booking_vs_first_funded_sample":
+                     "SOURCE_NOT_QUALIFIED"}
     report = {
        "schema":SCHEMA,
        "source":"PRIVATE_ORIGINAL_SEVEN_GET_SOURCE_QUALIFICATION_ONLY",
@@ -192,6 +194,8 @@ def evaluate(*,account:dict,positions:list,orders:list,clock:dict,
            bounded["source_rejection_category"],
        "one_month_one_cashflow_sensitivity_evaluated_in_memory":
            bounded["one_cashflow_sensitivity_evaluated_in_memory"],
+       "initial_cashflow_booking_vs_first_funded_sample":
+           bounded["initial_cashflow_booking_vs_first_funded_sample"],
        "broker_cashflow_types_none_pnl_comparison":none,
        "original_raw_equity_risk_status":earlier["original_raw_risk_history_result"],
        "actual_cashflow_adjusted_dietz_returns_calculated":False,
@@ -281,6 +285,7 @@ def main():
         "one_month_date_only_cashflow_risk_status",
         "one_month_cashflow_source_rejection_category",
         "one_month_one_cashflow_sensitivity_evaluated_in_memory",
+        "initial_cashflow_booking_vs_first_funded_sample",
         "broker_cashflow_types_none_pnl_comparison",
         "original_raw_equity_risk_status",
         "actual_cashflow_adjusted_dietz_returns_calculated",

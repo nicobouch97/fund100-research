@@ -197,3 +197,20 @@ def test_genuine_source_shape_is_joined_to_original_staged_controller_stop():
     assert r["broker_get_requests"]==7
     assert r["live_orders"]==r["broker_non_get_requests"]==0
     assert "SIM-v6s1-" not in str(r)
+
+
+
+def test_original_seven_get_only_surfaces_categorical_funding_calendar_relation():
+    out=q.evaluate(**scenario())
+    assert out["initial_cashflow_booking_vs_first_funded_sample"] in (
+        "BOOKED_BEFORE_FIRST_FUNDED_SAMPLE_DATE",
+        "BOOKED_ON_FIRST_FUNDED_SAMPLE_DATE",
+        "BOOKED_AFTER_FIRST_FUNDED_SAMPLE_DATE",
+        "NO_PRE_FUNDING_PREFIX_TO_ANCHOR",
+        "SOURCE_NOT_QUALIFIED")
+    assert out["actual_s1_6_20_35_risk_verified"] is False
+    assert out["staged_v6_live_source_readiness"]==(
+        "BLOCKED_UNPROVEN_CASHFLOW_ADJUSTED_1M_ACCOUNT_RISK")
+    assert out["broker_get_requests"]==7
+    assert out["broker_non_get_requests"]==out["live_orders"]==0
+    assert "2026-10-12" not in str(out)

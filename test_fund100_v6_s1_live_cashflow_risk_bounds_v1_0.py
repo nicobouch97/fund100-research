@@ -294,3 +294,41 @@ def test_stopped_live_observer_can_embed_safe_status_with_unmodified_seven_get_c
     assert r["broker_get_requests"]==7 and r["broker_non_get_requests"]==0
     assert "FAKE-1" not in str(r)
     assert "110.00" not in str(r)
+
+
+def test_initial_cashflow_booking_calendar_relation_is_category_only():
+    same=check(initial_funding_case())
+    assert same["initial_cashflow_booking_vs_first_funded_sample"]==(
+        "BOOKED_ON_FIRST_FUNDED_SAMPLE_DATE")
+    earlier=initial_funding_case()
+    earlier["activities"][0]["date"]="2026-10-11"
+    before=check(earlier)
+    assert before["initial_cashflow_booking_vs_first_funded_sample"]==(
+        "BOOKED_BEFORE_FIRST_FUNDED_SAMPLE_DATE")
+    later=initial_funding_case()
+    later["activities"][0]["date"]="2026-10-13"
+    after=check(later)
+    assert after["initial_cashflow_booking_vs_first_funded_sample"]==(
+        "BOOKED_AFTER_FIRST_FUNDED_SAMPLE_DATE")
+    # NONE is a transfer-time proof, risk approval or trading permission.
+    for report in (same,before,after):
+        assert not report["broker_actual_economic_transfer_time_verified"]
+        assert not report["s1_high_risk_approved"]
+        assert not report["live_buy_sell_authorized"]
+        assert "2026-10-11" not in str(report)
+        assert "2026-10-12" not in str(report)
+
+
+def test_no_prefunded_baseline_is_explicit_not_implicit_before_funded():
+    src=dataset(values=["100","200","200","200","200","200"])
+    report=check(src)
+    assert report["initial_cashflow_booking_vs_first_funded_sample"]==(
+        "NO_PRE_FUNDING_PREFIX_TO_ANCHOR")
+
+
+def test_invalid_or_incomplete_activity_does_not_leak_booking_relation():
+    src=initial_funding_case()
+    src["activities"][0].pop("date")
+    report=check(src)
+    assert report["initial_cashflow_booking_vs_first_funded_sample"]==(
+        "SOURCE_NOT_QUALIFIED")
