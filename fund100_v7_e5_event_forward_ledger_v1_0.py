@@ -132,6 +132,114 @@ def evaluate(*, sec_source:dict, baseline:dict, baseline_prices:pd.DataFrame,
         "trading_authorized":False
     }
 
+
+def aggregate_reports(reports:list[dict])->dict:
+    """Aggregate ALL source-qualified E4 captures, not just the newest eligible one.
+
+    One later archived price vintage is shared across the cohort. Repeated
+    observations of the same public filing/entry are counted ONCE. The
+    aggregate is descriptive and never a model-selection or trading signal.
+    """
+    from statistics import mean, median
+    if type(reports) is not list or len(reports)>40:
+        raise ForwardStop("Expected at most forty independently archived E4 captures")
+    source_ids=set()
+    later_source=None
+    unique={}
+    revised=0
+    for r in reports:
+        if type(r) is not dict or r.get("schema")!=SCHEMA:
+            raise ForwardStop("Unverified event-forward report")
+        for name in ("SEC_manifest_file_SHA256","original_price_report_SHA256",
+                     "later_price_report_SHA256","original_price_csv_SHA256",
+                     "later_price_csv_SHA256"):
+            v=r.get(name)
+            if type(v) is not str or len(v)!=64 or any(c not in "0123456789abcdef" for c in v):
+                raise ForwardStop("Source artifact hash missing or malformed")
+        if (r.get("broker_orders")!=0 or r.get("broker_http_requests")!=0
+            or r.get("private_state_mutations")!=0
+            or r.get("paper_authorized") is not False
+            or r.get("live_authorized") is not False
+            or r.get("trading_authorized") is not False
+            or r.get("original_signal_is_never_reranked_from_later_snapshot") is not True
+            or r.get("returns_same_later_vendor_vintage_only") is not True
+            or r.get("stock_entry_and_exit_costs_compounded_exactly") is not True
+            or r.get("costs_bps_each_side")!=list(COSTS_BPS)):
+            raise ForwardStop("Event source or research-only contract changed")
+        later=(r["later_price_report_SHA256"],r.get("later_price_asof"),
+               r.get("later_price_capture"))
+        if later_source is None:
+            later_source=later
+        elif later_source!=later:
+            raise ForwardStop("Mixed later price vintages cannot be pooled")
+        source=(r["SEC_manifest_file_SHA256"],r["original_price_report_SHA256"])
+        if source in source_ids:
+            raise ForwardStop("Same original capture supplied twice")
+        source_ids.add(source)
+        rows=r.get("hypothetical_marks")
+        if (type(rows) is not list
+            or len(rows)!=r.get("pre_entry_qualified_original_events")
+            or r.get("status") not in (
+                "NO_GENUINE_PRE_ENTRY_EARNINGS_SIGNALS",
+                "ONE_INTERVAL_ALTERNATE_OR_MATCHED_VENDOR_RESEARCH_MARKS_NO_FILLS")):
+            raise ForwardStop("Inconsistent original event cohort")
+        if r.get("original_vendor_historical_rows_unchanged") is False:
+            revised+=1
+        for row in rows:
+            if (type(row) is not dict
+                or row.get("status")!="REVISED_OR_MATCHED_VENDOR_VINTAGE_HYPOTHETICAL_ONE_INTERVAL_MARK"
+                or row.get("broker_fills_verified") is not False
+                or row.get("orders_authorized") is not False
+                or row.get("hypothetical_entry_close")!=r.get("model_entry_first_later_session")
+                or row.get("hypothetical_exit_close")!=r.get("model_exit_second_later_session")):
+                raise ForwardStop("Non-forward or unqualified event return")
+            costs=row.get("one_completed_session_net_stock_minus_gross_SPY")
+            if (type(costs) is not dict
+                or set(costs)!={str(b) for b in COSTS_BPS}
+                or any(type(v) not in (float,int) or not -2<v<2
+                       for v in costs.values())):
+                raise ForwardStop("Incomplete or invalid costed event returns")
+            key=(row.get("ticker"),row.get("original_sec_accession"),
+                 row.get("hypothetical_entry_close"))
+            if any(type(x) is not str or not x for x in key):
+                raise ForwardStop("Original event identity missing")
+            if key in unique:
+                prior=unique[key]
+                if (prior["hypothetical_exit_close"]!=row["hypothetical_exit_close"]
+                    or prior["one_completed_session_net_stock_minus_gross_SPY"]!=costs):
+                    raise ForwardStop("Conflicting duplicate original event marks")
+            else:
+                unique[key]=row
+    rows=list(unique.values())
+    costed={}
+    for b in COSTS_BPS:
+        values=[float(r["one_completed_session_net_stock_minus_gross_SPY"][str(b)])
+                for r in rows]
+        costed[str(b)]={
+            "observations":len(values),
+            "descriptive_mean_excess_pct":round(100*mean(values),5) if values else None,
+            "descriptive_median_excess_pct":round(100*median(values),5) if values else None,
+            "descriptive_positive_fraction":round(sum(x>0 for x in values)/len(values),5)
+                if values else None,
+        }
+    return {
+        "schema":"FUND100_V7_E5_ALL_ELIGIBLE_E4_CAPTURES_DEDUPLICATED_COHORT_V1",
+        "status":"DESCRIPTIVE_SOURCE_PINNED_EVENTS_NOT_ALPHA"
+            if rows else "NO_SOURCE_QUALIFIED_FORWARD_EVENTS",
+        "original_captures_evaluated":len(reports),
+        "unique_original_filing_entry_events":len(rows),
+        "duplicate_event_rows_removed":sum(len(r["hypothetical_marks"]) for r in reports)-len(rows),
+        "captures_with_vendor_prefix_revisions":revised,
+        "one_common_later_price_vintage":later_source is not None,
+        "modelled_one_session_stock_minus_untraded_SPY_by_one_way_cost_bps":costed,
+        "no_cross_event_independence_or_multiple_testing_claim":True,
+        "not_a_survivorship_safe_universe":True,
+        "statistically_significant_alpha_proven":False,
+        "strategy_promoted_for_live":False,
+        "broker_orders":0,"broker_http_requests":0,"private_state_mutations":0,
+        "paper_authorized":False,"live_authorized":False,"trading_authorized":False,
+    }
+
 def real_sources(sec_dir:Path,baseline_json:Path,baseline_csv:Path,
                  later_json:Path,later_csv:Path)->dict:
     # Exactly original raw SEC bytes and original price captures are
