@@ -73,6 +73,7 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
             "selected_events":0,"accepted_entries":0,"closed_exits":0,
             "capacity_skipped":0,"duplicate_issuer_skipped":0,
             "max_concurrent_names":0,"max_gross_fraction":0.0,
+            "max_entry_budget_fraction":0.0,"max_drifted_name_fraction":0.0,
             "min_cash_fraction":None,"net_portfolio_return_pct":None,
             "net_spy_buy_hold_return_pct":None,
             "portfolio_minus_spy_net_percentage_points":None,
@@ -105,6 +106,8 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
     accepted=closed=capacity_skipped=duplicate_skipped=0
     max_names=0
     max_gross=0.0
+    max_entry_budget=0.0
+    max_drifted_name=0.0
     min_cash=1.0
     peak=1.0
     max_drawdown=0.0
@@ -130,6 +133,7 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
             if budget<=1e-10:
                 capacity_skipped+=1
                 continue
+            max_entry_budget=max(max_entry_budget,budget/nav_before)
             qty=budget/float(row[ticker])
             cash-=budget*(1+fee)
             holdings[ticker]=(qty,exit_day)
@@ -139,6 +143,9 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
             raise e1.SourceStop("Event portfolio violated no-margin budget")
         gross=sum(q*float(row[t]) for t,(q,_) in holdings.items())/nav
         max_gross=max(max_gross,gross)
+        if holdings:
+            max_drifted_name=max(max_drifted_name,max(
+                q*float(row[t])/nav for t,(q,_) in holdings.items()))
         max_names=max(max_names,len(holdings))
         min_cash=min(min_cash,max(0.0,cash)/nav)
         peak=max(peak,nav)
@@ -155,6 +162,8 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
         "duplicate_issuer_skipped":duplicate_skipped,
         "max_concurrent_names":max_names,
         "max_gross_fraction":round(max_gross,6),
+        "max_entry_budget_fraction":round(max_entry_budget,6),
+        "max_drifted_name_fraction":round(max_drifted_name,6),
         "min_cash_fraction":round(min_cash,6),
         "first_hypothetical_entry":first.isoformat(),
         "last_hypothetical_exit":last.isoformat(),
