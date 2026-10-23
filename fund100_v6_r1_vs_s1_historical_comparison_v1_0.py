@@ -32,7 +32,7 @@ NO_LIVE_TRADE_RELEASE=True
 class ComparisonStop(ValueError):
     pass
 
-def policy(path:S1_POLICY.__class__=S1_POLICY)->tuple[dict,str]:
+def policy(path:Path=S1_POLICY)->tuple[dict,str]:
     content=path.read_bytes()
     try:
         d=json.loads(content)
