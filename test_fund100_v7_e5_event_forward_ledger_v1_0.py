@@ -184,7 +184,7 @@ def test_all_no_signal_captures_produce_empty_descriptive_cohort():
     lambda reports:reports[1]["hypothetical_marks"][0]["one_completed_session_net_stock_minus_gross_SPY"].__setitem__("15",0.25),
     lambda reports:reports[0].__setitem__("trading_authorized",True),
     lambda reports:reports[0].__setitem__("original_price_report_SHA256","not-a-digest"),
-    lambda reports:reports[1].__setitem__("SEC_manifest_file_SHA256",reports[0]["SEC_manifest_file_SHA256"]),
+    lambda reports:reports[1].update({"SEC_manifest_file_SHA256":reports[0]["SEC_manifest_file_SHA256"],"original_price_report_SHA256":reports[0]["original_price_report_SHA256"]}),
 ])
 def test_cohort_rejects_mixed_vintage_conflicting_event_or_untrusted_source(tamper):
     reports=[_source_pinned_report(),_source_pinned_report(source="f",price="1")]
