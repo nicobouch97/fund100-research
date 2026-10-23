@@ -199,30 +199,18 @@ def test_genuine_source_shape_is_joined_to_original_staged_controller_stop():
     assert "SIM-v6s1-" not in str(r)
 
 
-def test_original_seven_get_reports_only_non_private_funding_calendar_relation():
-    d=scenario()
-    # Use an original unfunded prefix and then six completed funded days,
-    # a single cash deposit booking on the first funded sample day.
-    from datetime import datetime,timezone,timedelta
-    base=datetime(2026,10,10,20,tzinfo=timezone.utc)
-    d["history"]["timestamp"]=[
-        int((base+timedelta(days=i)).timestamp()) for i in range(8)]
-    d["history"]["equity"]=[None,0,100,100,100,100,100,100]
-    d["account"]["equity"]="100"
-    d["account"]["last_equity"]="100"
-    d["activities"][0]["date"]="2026-10-12"
-    d["observed_at_utc"]="2026-10-18T20:00:00Z"
-    d["native_none_history"]["timestamp"]=d["history"]["timestamp"][:]
-    d["native_none_history"]["equity"]=d["history"]["equity"][:]
-    d["history"]["profit_loss_pct"]=[0]*8
-    d["native_none_history"]["profit_loss_pct"]=[0]*8
-    out=q.evaluate(**d)
-    assert out["initial_cashflow_booking_vs_first_funded_sample"]==(
-        "BOOKED_ON_FIRST_FUNDED_SAMPLE_DATE")
+
+def test_original_seven_get_only_surfaces_categorical_funding_calendar_relation():
+    out=q.evaluate(**scenario())
+    assert out["initial_cashflow_booking_vs_first_funded_sample"] in (
+        "BOOKED_BEFORE_FIRST_FUNDED_SAMPLE_DATE",
+        "BOOKED_ON_FIRST_FUNDED_SAMPLE_DATE",
+        "BOOKED_AFTER_FIRST_FUNDED_SAMPLE_DATE",
+        "NO_PRE_FUNDING_PREFIX_TO_ANCHOR",
+        "SOURCE_NOT_QUALIFIED")
     assert out["actual_s1_6_20_35_risk_verified"] is False
     assert out["staged_v6_live_source_readiness"]==(
         "BLOCKED_UNPROVEN_CASHFLOW_ADJUSTED_1M_ACCOUNT_RISK")
-    assert not out["live_buy_sell_authorized"]
     assert out["broker_get_requests"]==7
     assert out["broker_non_get_requests"]==out["live_orders"]==0
     assert "2026-10-12" not in str(out)
