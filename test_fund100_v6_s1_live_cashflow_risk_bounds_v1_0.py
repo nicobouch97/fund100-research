@@ -89,6 +89,18 @@ def test_bad_broker_sources_hold_closed(corrupt):
         d["activities"][0]["date"]="2026-11-01"
     assert check(d)["status"]=="SOURCE_NOT_QUALIFIED_HOLD"
 
+def test_source_failure_reason_is_from_safe_whitelist_only():
+    d=dataset()
+    d["account"]["last_equity"]="180"
+    result=check(d)
+    assert result["source_rejection_category"]=="LATEST_ACCOUNT_CLOSE_MISMATCH"
+    d=dataset()
+    d["activities"][0].pop("date")
+    result=check(d)
+    assert result["source_rejection_category"]=="BOOKING_DATE_MISSING"
+    assert "PRIVATE-EVENT" not in str(result)
+
+
 def test_missing_enough_equity_series_holds_instead_of_risk_approval():
     d=dataset()
     d["history"]["timestamp"]=d["history"]["timestamp"][:4]

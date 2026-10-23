@@ -175,6 +175,7 @@ def evaluate(*,account:dict,positions:list,orders:list,clock:dict,
             observed_at_utc=observed_at_utc)
     else:
         bounded={"status":"ONE_DATE_ONLY_FLOW_SOURCE_NOT_APPLICABLE_HOLD",
+                 "source_rejection_category":"NOT_APPLICABLE",
                  "one_cashflow_sensitivity_evaluated_in_memory":False}
     return {
        "schema":SCHEMA,
@@ -186,6 +187,8 @@ def evaluate(*,account:dict,positions:list,orders:list,clock:dict,
        "cash_transfer_amount_and_timestamp_field_status":timing,
        "observed_cash_transfer_count_class":count_category,
        "one_month_date_only_cashflow_risk_status":bounded["status"],
+       "one_month_cashflow_source_rejection_category":
+           bounded["source_rejection_category"],
        "one_month_one_cashflow_sensitivity_evaluated_in_memory":
            bounded["one_cashflow_sensitivity_evaluated_in_memory"],
        "broker_cashflow_types_none_pnl_comparison":none,
@@ -265,6 +268,7 @@ def main():
         "cash_transfer_amount_and_timestamp_field_status",
         "observed_cash_transfer_count_class",
         "one_month_date_only_cashflow_risk_status",
+        "one_month_cashflow_source_rejection_category",
         "one_month_one_cashflow_sensitivity_evaluated_in_memory",
         "broker_cashflow_types_none_pnl_comparison",
         "original_raw_equity_risk_status",

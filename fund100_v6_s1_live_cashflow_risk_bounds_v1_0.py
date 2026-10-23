@@ -128,6 +128,7 @@ def _scenario(values, flow, at, weight):
 def inspect(*, history, activities, account, observed_at_utc):
     """Return fixed public labels only; even all-safe hypotheses are NOT clearance."""
     category = "SOURCE_NOT_QUALIFIED_HOLD"
+    failure = "NONE"
     evaluated = False
     try:
         values, flow = _read(history, activities, account, observed_at_utc)
@@ -149,11 +150,32 @@ def inspect(*, history, activities, account, observed_at_utc):
             category = "MULTIPLE_PLAUSIBLE_TIMINGS_HOLD"
         else:
             category = "ONE_CONDITIONALLY_SAFE_TIMING_RESEARCH_ONLY"
-    except (SourceRejected, OverflowError, ValueError, TypeError, ZeroDivisionError):
-        pass
+    except SourceRejected as exc:
+        # Whitelist categories only; never leak broker strings or amounts.
+        reason = {
+            "incomplete source": "ACTIVITY_PAGE_OR_SOURCE_SHAPE",
+            "invalid sampled closes": "UNUSABLE_DAILY_EQUITY_SERIES",
+            "invalid observation time": "UNUSABLE_OBSERVATION_TIME",
+            "uncovered or stale account window": "HISTORY_WINDOW_OR_FRESHNESS",
+            "invalid account equity": "EQUITY_FIELDS_UNUSABLE",
+            "last broker close not reconciled": "LATEST_ACCOUNT_CLOSE_MISMATCH",
+            "bad activity": "ACTIVITY_ID_OR_TYPE_INVALID",
+            "unknown, asset, or multiple transfers": "UNSUPPORTED_OR_MULTIPLE_TRANSFERS",
+            "bad transfer amount": "TRANSFER_AMOUNT_INVALID",
+            "timestamped source needs separate exact-time path": "TIMESTAMPED_SOURCE_NOT_HANDLED",
+            "no original booking date": "BOOKING_DATE_MISSING",
+            "bad original booking date": "BOOKING_DATE_INVALID",
+            "outside verified activity source": "BOOKING_DATE_OUTSIDE_OBSERVATION",
+            "no dated transfer": "NO_TRANSFER_FOUND",
+            "private financial source invalid": "PRIVATE_FINANCIAL_FIELD_UNUSABLE",
+        }.get(str(exc), "UNCLASSIFIED_INVALID_SOURCE")
+        failure = reason
+    except (OverflowError, ValueError, TypeError, ZeroDivisionError):
+        failure = "INVALID_FINANCIAL_CALCULATION"
     return {
         "schema": STATUS_SCHEMA,
         "status": category,
+        "source_rejection_category": failure,
         "one_cashflow_sensitivity_evaluated_in_memory": evaluated,
         "broker_actual_economic_transfer_time_verified": False,
         "daily_equity_risk_authorized": False,
