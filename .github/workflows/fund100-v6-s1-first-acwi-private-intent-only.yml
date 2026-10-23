@@ -39,6 +39,10 @@ jobs:
             test_fund100_v6_s1_private_git_cas_protocol_v1_0.py \
             test_fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py
           test "$(git hash-object fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py)" = "7802c8f92146d01f33f0cb47d1bdc8b413785d7e"
+          # Both existing four-GET artifacts are source pinned: no new broker
+          # endpoint or changed account validator can be dispatch-authorized.
+          test "$(git hash-object fund100_v6_real_live_getonly_transition_readiness_v1_0.py)" = "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2"
+          test "$(git hash-object .github/workflows/fund100-v6-real-live-getonly-transition.yml)" = "a148b919ab25071dc3872211bb20588c466a1b92"
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
           echo 'Simulated Git writes only, no Alpaca credential or LIVE order.'
 
@@ -63,6 +67,9 @@ jobs:
           test "$GITHUB_REF" = "refs/heads/main"
           test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
           [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
+          # No checkout or production/private storage rights exist in this
+          # unprivileged dispatcher. Main-only confirmed source selection.
+          test "${{ inputs.confirmation }}" = "RECORD_ACWI_INTENT_NO_ORDERS"
           # Dispatch only the already approved ORIGINAL four-GET workflow.
           # A new broker source run, not an old successful one, is required.
           started="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
@@ -86,7 +93,7 @@ jobs:
           done
           test "$success" = yes
           echo 'Original source-refreshed account four-GET passed; zero broker writes.'
-          
+
   protected-main-one-original-ACWI-intent-NO-orders:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'RECORD_ACWI_INTENT_NO_ORDERS'
     needs: [offline-original-signed-ACWI-intent-transport-contract, refresh-original-four-get-readonly]
