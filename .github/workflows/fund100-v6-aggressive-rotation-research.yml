@@ -7,6 +7,8 @@ on:
       - "test_fund100_v6_aggressive_rotation_research_v1_0.py"
       - "fund100_v6_r1_vs_s1_historical_comparison_v1_0.py"
       - "test_fund100_v6_r1_vs_s1_historical_comparison_v1_0.py"
+      - "fund100_v6_existing_four_model_economics_v1_0.py"
+      - "test_fund100_v6_existing_four_model_economics_v1_0.py"
       - "research_lab/challengers/V6_ACTIVE_AGGRESSIVE_RESET_2026_10_15.md"
       - ".github/workflows/fund100-v6-aggressive-rotation-research.yml"
   workflow_dispatch:
@@ -28,7 +30,7 @@ jobs:
       - name: Test aggressive concentration, no-lookahead and no-order gates
         run: |
           set -euo pipefail
-          python -m pytest -q test_fund100_v6_aggressive_rotation_research_v1_0.py test_fund100_v6_r1_vs_s1_historical_comparison_v1_0.py
+          python -m pytest -q test_fund100_v6_aggressive_rotation_research_v1_0.py test_fund100_v6_r1_vs_s1_historical_comparison_v1_0.py test_fund100_v6_existing_four_model_economics_v1_0.py
       - name: Compare real frozen historical source at 5,15,35 basis points
         run: |
           set -euo pipefail
@@ -53,6 +55,10 @@ jobs:
           set -euo pipefail
           python fund100_v6_r1_vs_s1_historical_comparison_v1_0.py --frozen-prices-csv research_lab/frozen_history_v2.csv --output-json /tmp/fund100-v6-r1-vs-s1.json
           python -c "import json; from pathlib import Path; d=json.loads(Path('/tmp/fund100-v6-r1-vs-s1.json').read_text()); assert d['status']=='HISTORICAL_ALREADY_INSPECTED_COMPARISON_NO_STRATEGY_PROMOTION' and d['broker_orders']==0 and d['selected_winner_or_live_strategy'] is None"
+      - name: Four-original-model economics and HIGH drawdown screen
+        run: |
+          set -euo pipefail
+          python fund100_v6_existing_four_model_economics_v1_0.py --frozen-prices research_lab/frozen_history_v2.csv --output /tmp/fund100-v6-existing-four.json
       - name: Store reproducible historical review
         uses: actions/upload-artifact@v4
         with:
@@ -60,5 +66,6 @@ jobs:
           path: |
             /tmp/fund100-v6-r1-exploratory.json
             /tmp/fund100-v6-r1-vs-s1.json
+            /tmp/fund100-v6-existing-four.json
           retention-days: 90
           if-no-files-found: error
