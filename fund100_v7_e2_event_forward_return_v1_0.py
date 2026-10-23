@@ -25,7 +25,11 @@ def evaluate(event: dict, sessions: list[dict], cost_bps=(5, 15, 35)) -> dict:
     filing = date.fromisoformat(event["filing_date"])
     sec_at = utc(event["sec_acquired_at_utc"])
     price_at = utc(event["price_acquired_at_utc"])
-    rows = sorted(sessions, key=lambda r: r["session"])
+    # Never silently reorder source observations: doing so hides vendor/source
+    # defects and can invalidate point-in-time event chronology.
+    if type(sessions) is not list or any(type(row) is not dict for row in sessions):
+        raise EvidenceStop("sessions must be an ordered source list")
+    rows = sessions
     dates = [date.fromisoformat(r["session"]) for r in rows]
     if dates != sorted(set(dates)) or len(rows) < 5:
         raise EvidenceStop("duplicate, unordered or insufficient sessions")
