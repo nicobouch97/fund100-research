@@ -47,3 +47,23 @@ remains broader historical point-in-time issuer membership, independently
 audited corporate actions and delistings, authentic dated quality/revisions
 and a credible cost-aware strategy benchmark. All LIVE capital, operator
 STOP, environment kill switch and trading release controls remain unchanged.
+
+## 23 October 2026 — same-vintage path downside, no strategy change
+
+For each eligible frozen-selection forward window, P4K now also measures the
+**gross daily buy-and-hold wealth path** of the original three stocks, the
+frozen six-stock comparison, SPY and the three-stock portfolio relative to SPY.
+All path points start at the original 19 October *post-selection* close, use
+only actual verified intervening NYSE sessions, and come from the same later
+archived source vintage. The study reports worst observed session return,
+maximum observed peak-to-trough drawdown and positive-session counts. It does
+not interpolate prices, rebalance the names, change the frozen selection or
+claim intraday execution. One entry close without a later mark produces no
+risk statistics. The 5/15/35bp entry/exit cost scenarios remain separate:
+path downside is explicitly **gross**, not an after-cost NAV drawdown.
+
+A few sessions cannot justify annualized volatility, Sharpe ratios, risk
+significance, predictive alpha or automatic strategy promotion. This is
+research-only downside diagnostics, not a wider issuer universe or evidence
+of a durable trading edge. No LIVE/PAPER order capability or risk permissions
+are introduced.

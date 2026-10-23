@@ -62,6 +62,34 @@ def _observation_clock(raw: object) -> datetime:
     return v
 
 
+def _gross_buy_hold_wealth_path(
+    prices: pd.DataFrame, first: int, final: int, names: list[str]
+) -> list[float]:
+    """Entry-equal-weight, never-rebalanced mark path; no intraday fill claim."""
+    return [
+        sum(float(prices[s].iloc[j] / prices[s].iloc[first]) for s in names)
+        / len(names)
+        for j in range(first, final + 1)
+    ]
+
+
+def _path_downside(wealth: list[float]) -> dict:
+    """Observed gross downside only; no annualization from a tiny sample."""
+    peak = wealth[0]
+    worst_drawdown = 0.0
+    for value in wealth:
+        peak = max(peak, value)
+        worst_drawdown = min(worst_drawdown, value / peak - 1.0)
+    daily = [wealth[i] / wealth[i - 1] - 1.0
+             for i in range(1, len(wealth))]
+    return {
+        "gross_max_drawdown_pct": round(100 * worst_drawdown, 6),
+        "gross_worst_session_return_pct": round(100 * min(daily), 6),
+        "positive_session_count": sum(v > 0 for v in daily),
+        "observed_return_intervals": len(daily),
+    }
+
+
 def window_mark(*, anchor: dict, later_doc: dict, later_prices: pd.DataFrame,
                 revision: dict) -> dict:
     """Pure source-consistent window; caller must separately authenticate bytes."""
@@ -135,6 +163,7 @@ def window_mark(*, anchor: dict, later_doc: dict, later_prices: pd.DataFrame,
         "trading_authorized": False,
         "paper_orders": 0, "live_orders": 0, "broker_requests": 0,
         "costed_mark_percent": None,
+        "gross_path_downside": None,
     }
     if len(future) < 2:
         return report
@@ -146,6 +175,25 @@ def window_mark(*, anchor: dict, later_doc: dict, later_prices: pd.DataFrame,
         "frozen_equal_six": p4h._gross_return(
             data, first, final, p4i.REFERENCE_COHORT),
         "spy": p4h._gross_return(data, first, final, ["SPY"]),
+    }
+    # Every daily point is an independently observed completed-session close
+    # from the SAME later source vintage. Do not use pre-selection history.
+    wealth = {
+        "frozen_three": _gross_buy_hold_wealth_path(
+            data, first, final, p4i.FROZEN_WATCHLIST),
+        "frozen_equal_six": _gross_buy_hold_wealth_path(
+            data, first, final, p4i.REFERENCE_COHORT),
+        "spy": _gross_buy_hold_wealth_path(data, first, final, ["SPY"]),
+    }
+    relative = [a / b for a, b in zip(wealth["frozen_three"], wealth["spy"])]
+    report["gross_path_downside"] = {
+        "source": "SAME_LATER_VINTAGE_COMPLETED_CLOSES_GROSS_BUY_HOLD",
+        "daily_observations": len(future),
+        "no_annualization_or_significance": True,
+        "frozen_three": _path_downside(wealth["frozen_three"]),
+        "frozen_equal_six": _path_downside(wealth["frozen_equal_six"]),
+        "spy": _path_downside(wealth["spy"]),
+        "frozen_three_relative_to_spy": _path_downside(relative),
     }
     costed = {}
     for bps in SIDE_COST_BPS:
