@@ -92,6 +92,7 @@ def fixed_backtest(raw:pd.DataFrame,*,cost_bps:int)->pd.DataFrame:
             "one_way_turnover":turnover,"gross_equity_exposure":gross,
             "cash_weight":max(0.0,1-gross),
             "rebalance_session":traded,
+            "signal_day":t==start or month_changed,
             "below_five_percent_cash":t>=start and 1-gross<CASH_FLOOR-1e-9})
     return pd.DataFrame.from_records(records).set_index("date")
 
