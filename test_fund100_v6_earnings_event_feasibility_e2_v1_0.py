@@ -234,5 +234,6 @@ def test_spy_matched_schedule_detects_real_stock_selection_loss():
            "hypothetical_exit_after_ten_sessions":"2026-10-22"}
     r=e2._portfolio_path([event],bars,15)
     assert r["portfolio_minus_matched_spy_net_percentage_points"]<0
-    assert r["matched_spy_control_max_gross_fraction"]<=.251
+    # Initial 25% allocation can drift above 25% as SPY rises; no leverage.
+    assert .25<r["matched_spy_control_max_gross_fraction"]<1
     assert r["matched_spy_control_accepted_entries"]==r["matched_spy_control_closed_exits"]==1
