@@ -19,6 +19,7 @@ import fund100_v6_aggressive_rotation_research_v1_0 as r1
 import fund100_v6_r1_vs_s1_historical_comparison_v1_0 as s1
 import fund100_v6_fast_launch_vol_regime_l1_v1_0 as l1
 import fund100_v6_quarterly_concentrated_trend_r2_v1_0 as r2
+import fund100_v6_four_model_selection_uncertainty_v1_0 as selection
 
 SCHEMA="FUND100_V6_FOUR_EXISTING_STRATEGIES_COMMON_HISTORY_ECONOMICS_V1"
 MODELS=("S1_HIGH_FIXED_SECTORS","R1_WEEKLY_RELATIVE_MOMENTUM",
@@ -199,9 +200,11 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
         or policy.get("execution_authorized") is not False):
         raise EconomicsStop("HIGH historic risk screen/source status drifted")
     output={}
+    uncertainty={}
     for cost in COSTS:
         frames=_all_paths(data,cost)
         windows={}
+        uncertainty_windows={}
         for label,start in WINDOWS.items():
             windows[label]={
                 name:_metrics(frame,start,drawdown_guard=.20,vol_guard=.35)
@@ -209,7 +212,9 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
             }
             if len({m["first_session"] for m in windows[label].values()})!=1:
                 raise EconomicsStop("Historical start dates are inconsistent")
+            uncertainty_windows[label]=selection.evaluate(frames,start)
         output[str(cost)]=windows
+        uncertainty[str(cost)]=uncertainty_windows
     return {
         "schema":SCHEMA,
         "status":"ORIGINAL_MODELS_COMPARABLE_HISTORICAL_NOT_INDEPENDENT_NOT_LIVE",
@@ -229,6 +234,9 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
         "historical_HAC_interval_does_not_correct_model_selection_bias":True,
         "market_spread_fills_tax_and_foreign_exchange_not_modelled":True,
         "evaluated_models":output,
+        "joint_four_model_selection_uncertainty":uncertainty,
+        "selection_adjustment_only_within_four_original_models":True,
+        "selection_bootstrap_does_not_correct_prior_strategy_search":True,
         "strategy_promoted_for_funded_trading":None,
         "authorised_live_orders":False,
         "operator_switch_changed":False,
