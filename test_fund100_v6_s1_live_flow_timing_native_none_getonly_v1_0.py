@@ -186,3 +186,14 @@ def test_count_class_does_not_change_original_seven_get_scoped_contract():
     assert out["broker_non_get_requests"]==0
     assert out["live_orders"]==0
     assert out["actual_cashflow_adjusted_dietz_returns_calculated"] is False
+
+
+def test_genuine_source_shape_is_joined_to_original_staged_controller_stop():
+    r=q.evaluate(**scenario())
+    assert r["staged_v6_live_source_readiness"]==(
+        "BLOCKED_UNPROVEN_CASHFLOW_ADJUSTED_1M_ACCOUNT_RISK")
+    assert r["staged_controller_verified_full_private_order_ledger"] is False
+    assert r["staged_controller_produced_executable_order"] is False
+    assert r["broker_get_requests"]==7
+    assert r["live_orders"]==r["broker_non_get_requests"]==0
+    assert "SIM-v6s1-" not in str(r)
