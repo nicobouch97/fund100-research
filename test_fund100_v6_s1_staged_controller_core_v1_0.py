@@ -20,7 +20,8 @@ def fixture():
       },
       "open_orders":0,"order_history":{},
       "independent_t_plus_one_settlement_proven":False,
-      "risk_metrics":{"daily_return":"0.002","drawdown":"-0.02","annual_volatility":"0.18"},
+      "risk_metrics":{"daily_return":"0.002","drawdown":"-0.02","annual_volatility":"0.18",
+                      "drawdown_basis":c.RISK_BASIS},
       "hypothetical_fee_buffers_usd":{"XLK":"0.10","XLE":"0.10","IWM":"0.10"},
     }
 
@@ -183,6 +184,69 @@ def test_existing_order_never_automatically_reposted_after_unsafe_status(bad):
 def test_portfolio_stop_halts_all_candidate_orders(metric,val):
     x=fixture();x["risk_metrics"][metric]=val
     assert c.assess(snap=x,now_utc=NOW)["stage"]=="BLOCKED_ACCOUNT_RISK_STOP"
+
+@pytest.mark.parametrize("metric,value",[
+    ("daily_return","0.251"), ("daily_return","-0.251"),
+    ("drawdown","0.01"), ("drawdown","-1.01"),
+    ("drawdown","Infinity"), ("daily_return","-Infinity"),
+    ("annual_volatility","-0.01"),
+])
+def test_ambiguous_or_impossible_account_risk_fails_closed(metric,value):
+    x=fixture()
+    x["risk_metrics"][metric]=value
+    with pytest.raises(c.TransitionStop):
+        c.assess(snap=x,now_utc=NOW)
+
+
+@pytest.mark.parametrize("wrong",[
+    "LIFETIME_BACKTEST_MAX_DRAWDOWN",
+    "PORTFOLIO_1Y_PEAK_TO_TROUGH",
+    "UNADJUSTED_BROKER_1M_HISTORY",
+    "BROKER_1M_DAILY_ACCOUNT_EQUITY_PEAK_TO_CURRENT_WRONG",
+    "",None,True,
+])
+def test_backtest_drawdown_cannot_substitute_for_account_circuit_breaker(wrong):
+    x=fixture()
+    x["risk_metrics"]["drawdown_basis"]=wrong
+    with pytest.raises(c.TransitionStop,match="trailing 1M"):
+        c.assess(snap=x,now_utc=NOW)
+
+
+def test_missing_risk_timeframe_is_not_assumed():
+    x=fixture()
+    del x["risk_metrics"]["drawdown_basis"]
+    with pytest.raises(c.TransitionStop,match="trailing 1M"):
+        c.assess(snap=x,now_utc=NOW)
+
+
+@pytest.mark.parametrize("field,value,expected_reason",[
+    ("daily_return","-0.060","DAILY_ACCOUNT_LOSS_6PCT"),
+    ("drawdown","-0.200","BROKER_TRAILING_1M_ACCOUNT_DRAWDOWN_20PCT"),
+    ("annual_volatility","0.351","ANNUALIZED_REALIZED_ACCOUNT_VOLATILITY_35PCT"),
+])
+def test_risk_stop_reason_is_specific_but_never_liquidates_or_autorestarts(
+    field,value,expected_reason
+):
+    x=fixture()
+    x["risk_metrics"][field]=value
+    out=c.assess(snap=x,now_utc=NOW)
+    assert out["stage"]=="BLOCKED_ACCOUNT_RISK_STOP"
+    assert out["reason"]==expected_reason
+    assert out["candidate_instruction"] is None
+    assert_no_broker(out)
+
+
+def test_20pct_lifetime_historical_drawdown_not_automatically_1month_breach():
+    # The new source label states that THIS metric is a 1M broker-account
+    # reading; full-history strategy DD is a different statistic.
+    x=fixture()
+    x["risk_metrics"]["drawdown"]="-0.19"
+    x["risk_metrics"]["daily_return"]="-0.059"
+    x["risk_metrics"]["annual_volatility"]="0.35"
+    out=c.assess(snap=x,now_utc=NOW)
+    assert out["stage"]=="SYNTHETIC_CANDIDATE_LEGACY_SELL_NO_TRANSPORT"
+    assert_no_broker(out)
+
 
 def test_xle_above_original_target_is_review_not_forced_xle_sell():
     x=fixture()
