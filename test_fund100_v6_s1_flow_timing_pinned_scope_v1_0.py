@@ -6,7 +6,7 @@ import audit_fund100_live_boundary as audit
 ROOT=Path(__file__).resolve().parent
 FLOW=".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml"
 SCRIPT="fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
-PIN="85fab2d95beec37e1bc60c5bf1f95907e245ed8f"
+PIN="50a5ca0e61b2ad12d7ff2476c20e699247ae07ff"
 
 def yml():return (ROOT/FLOW).read_text()
 
@@ -46,6 +46,7 @@ def test_scheduled_job_or_any_write_mode_not_approved():
     "fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py",
     "fund100_live_portfolio_risk_v1_0.py",
     "fund100_live_operator_control_v1_0.py",
+    "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py",
 ])
 def test_changed_reader_or_original_dependencies_revokes_access(monkeypatch,name):
     orig=audit.git_blob_digest
