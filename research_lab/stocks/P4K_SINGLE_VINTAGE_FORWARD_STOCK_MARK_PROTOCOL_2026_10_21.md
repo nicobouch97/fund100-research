@@ -16,3 +16,34 @@ Purpose: restore verifiable **observed** post-selection stock-price comparisons 
 
 ## Next engineering decision
 P4K may allow research to continue without waiting months of PAPER observations. It does NOT fix market-vintage quality or prove profitability. Eventually prefer exchange-authenticated or first-seen independent close/total-return feeds for cross-asset strategy selection. The central multi-asset allocator must not treat this exploratory result as proven asset-class advantage.
+
+
+## 23 October 2026 — rolling, source-consistent forward marks (research only)
+
+The initial one-session 19–20 October 2026 result remains a frozen historic
+observation, not a standing estimate of performance. The existing P4K engine
+now accepts the GitHub run/artifact IDs of a later, original P4G price capture.
+The read-only P4K workflow selects the **newest completed scheduled P4G run on
+main, regardless of observed return**; if that run failed or its expected
+artifact is unavailable, the study fails closed instead of choosing a better
+or older result. The original 17 October archive and selection are still
+hash-verified, never re-ranked. The later as-captured adjusted-price CSV
+provides both 19 October entry and the latest completed-session exit; no
+original/later adjusted-price vintages are spliced into a return.
+
+All intervening sessions are checked against the actual XNYS exchange
+calendar, including holidays. Missing market sessions or extra nontrading
+dates invalidate the entire mark; they cannot quietly inflate or shorten
+holding-period returns. The report records the actual source run and artifact
+IDs, observed completed sessions and 5/15/35bp-per-side cumulative marks
+against matched-cost SPY and the frozen six-name equal-weight reference.
+It does **not** compound separate daily round trips, report annualised alpha,
+or claim original execution prices were tradable. A future failed scheduled
+capture cannot be silently replaced with a convenient earlier winner.
+
+This is one *frozen cohort*, not an expanding survivorship-safe universe or
+a tested self-improving stock strategy. The next substantive research gate
+remains broader historical point-in-time issuer membership, independently
+audited corporate actions and delistings, authentic dated quality/revisions
+and a credible cost-aware strategy benchmark. All LIVE capital, operator
+STOP, environment kill switch and trading release controls remain unchanged.

@@ -146,3 +146,44 @@ def test_code_never_has_network_or_private_order_transport():
                       "/v2/orders", "FUND100_PRIVATE_STATE_READ_TOKEN",
                       "ALPACA_LIVE_KEY", "place_order(", "GH_TOKEN"):
         assert forbidden not in code
+
+
+def test_multiple_real_xnys_sessions_extend_frozen_selection_without_reranking():
+    a,d,p,v=newer("2026-10-23",capture="2026-10-24T08:00:00Z")
+    out=k.window_mark(anchor=a,later_doc=d,later_prices=p,revision=v)
+    assert out["status"]=="OBSERVED_SAME_VINTAGE_ADJUSTED_CLOSE_WINDOW"
+    assert out["post_selection_entry_close_session"]=="2026-10-19"
+    assert out["post_selection_exit_mark_session"]=="2026-10-23"
+    assert out["actual_new_sessions_in_later_source"]==5
+    assert out["forward_observations"]==4
+    assert out["all_post_selection_xnys_sessions_verified"]
+    assert out["original_watchlist"]==["MSFT","KO","PG"]
+    assert not out["trading_authorized"]
+
+
+def test_missing_interior_market_session_never_looks_like_valid_longer_holding():
+    a,d,p,v=newer("2026-10-23",capture="2026-10-24T08:00:00Z")
+    p=p.drop(pd.Timestamp("2026-10-21"))
+    with pytest.raises(k.SingleVintageStop,match="XNYS sessions"):
+        k.window_mark(anchor=a,later_doc=d,later_prices=p,revision=v)
+
+
+def test_weekend_row_never_becomes_fictitious_forward_session():
+    a,d,p,v=newer("2026-10-23",capture="2026-10-25T08:00:00Z")
+    p.loc[pd.Timestamp("2026-10-24")]=p.iloc[-1]
+    p=p.sort_index()
+    d["asof_completed_session"]="2026-10-24"
+    with pytest.raises(k.SingleVintageStop,match="XNYS sessions"):
+        k.window_mark(anchor=a,later_doc=d,later_prices=p,revision=v)
+
+
+def test_nyse_holiday_absence_is_not_misclassified_as_missing_vendor_data():
+    a,d,p,_=newer("2026-11-27",capture="2026-11-28T08:00:00Z")
+    p=p.drop(pd.Timestamp("2026-11-26"))  # Thanksgiving NYSE closure
+    v={"comparison_status":"EXACT_PREFIX_PRESERVED",
+       "missing_original_sessions":0,"extra_baseline_sessions":0,
+       "no_forward_return_calculated":True}
+    out=k.window_mark(anchor=a,later_doc=d,later_prices=p,revision=v)
+    assert out["post_selection_exit_mark_session"]=="2026-11-27"
+    assert out["all_post_selection_xnys_sessions_verified"]
+    assert out["forward_observations"]>20

@@ -13,6 +13,9 @@ on:
       - "fund100_stock_single_vintage_forward_marks_p4k_v1_0.py"
       - ".github/workflows/fund100-p4k-stock-source-consistent-forward.yml"
   workflow_dispatch:
+  schedule:
+    # After P4G's scheduled overnight US close capture, with delay allowance.
+    - cron: "30 12 * * 2-6"
 
 permissions:
   contents: read
@@ -39,8 +42,8 @@ jobs:
             test_fund100_stock_original_price_vintage_diff_p4j_v1_0.py \
             test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
-      - name: Read only the exact 17-Oct and 21-Oct original archived snapshots
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      - name: Read original frozen archive and newest scheduled completed P4G capture
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
@@ -48,15 +51,55 @@ jobs:
           gh run download 39015519726 --repo "$GITHUB_REPOSITORY" \
             --name fund100-p4g-prospective-stock-price-evidence \
             --dir /tmp/p4k-original
-          gh run download 39571738927 --repo "$GITHUB_REPOSITORY" \
+          # Selection is chronological and unconditional on observed returns:
+          # newest completed scheduled P4G run must succeed, or FAIL CLOSED.
+          gh api -X GET "repos/$GITHUB_REPOSITORY/actions/runs?event=schedule&per_page=100" \
+            > /tmp/p4k-scheduled-runs.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          runs=json.loads(Path("/tmp/p4k-scheduled-runs.json").read_text())["workflow_runs"]
+          matches=sorted(
+              (r for r in runs if
+               r["path"]==".github/workflows/fund100-p4g-stock-forward-observer.yml"
+               and r["head_branch"]=="main" and r["event"]=="schedule"
+               and r["status"]=="completed"),
+              key=lambda r:(r["created_at"],r["id"]),reverse=True)
+          if not matches:
+              raise SystemExit("No completed scheduled P4G source: FAIL CLOSED")
+          chosen=matches[0]
+          if (chosen["conclusion"]!="success"
+              or chosen["created_at"]<="2026-10-20T00:00:00Z"):
+              raise SystemExit("Newest scheduled P4G source failed or predates first forward mark")
+          Path("/tmp/p4k-later-run-id").write_text(str(chosen["id"]))
+          print("Latest chronological scheduled P4G run:",chosen["id"])
+          PY
+          source_run="$(cat /tmp/p4k-later-run-id)"
+          gh api -X GET "repos/$GITHUB_REPOSITORY/actions/runs/$source_run/artifacts" \
+            > /tmp/p4k-artifacts.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          rows=json.loads(Path("/tmp/p4k-artifacts.json").read_text())["artifacts"]
+          found=[a for a in rows
+                 if a["name"]=="fund100-p4g-prospective-stock-price-evidence"
+                 and not a["expired"] and a["size_in_bytes"]>0]
+          if len(found)!=1:
+              raise SystemExit("Exactly one genuine nonexpired P4G source artifact required")
+          Path("/tmp/p4k-later-artifact-id").write_text(str(found[0]["id"]))
+          print("Authenticated GitHub source artifact:",found[0]["id"])
+          PY
+          gh run download "$source_run" --repo "$GITHUB_REPOSITORY" \
             --name fund100-p4g-prospective-stock-price-evidence \
             --dir /tmp/p4k-followup
           for stem in /tmp/p4k-original /tmp/p4k-followup; do
             test -s "$stem/fund100-p4g-snapshot.json"
             test -s "$stem/fund100-p4g-original-prices.csv"
           done
+          echo "P4K_LATER_RUN_ID=$source_run" >> "$GITHUB_ENV"
+          echo "P4K_LATER_ARTIFACT_ID=$(cat /tmp/p4k-later-artifact-id)" >> "$GITHUB_ENV"
       - name: Calculate NO-TRADE same-vintage adjusted-close comparison
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
         run: |
           set -euo pipefail
           python fund100_stock_single_vintage_forward_marks_p4k_v1_0.py \
@@ -64,15 +107,22 @@ jobs:
             --original-csv /tmp/p4k-original/fund100-p4g-original-prices.csv \
             --later-json /tmp/p4k-followup/fund100-p4g-snapshot.json \
             --later-csv /tmp/p4k-followup/fund100-p4g-original-prices.csv \
+            --later-run-id "$P4K_LATER_RUN_ID" \
+            --later-artifact-id "$P4K_LATER_ARTIFACT_ID" \
             --output /tmp/p4k-single-vintage-mark-report.json
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
           report=json.loads(Path("/tmp/p4k-single-vintage-mark-report.json").read_text())
           assert report["original_archive_sha_verified"]
           assert report["original_watchlist"] == ["MSFT","KO","PG"]
           assert report["original_p4g_run_id"] == 39015519726
-          assert report["later_p4g_run_id"] == 39571738927
+          assert report["later_p4g_run_id"] == int(os.environ["P4K_LATER_RUN_ID"])
+          assert report["later_p4g_artifact_id"] == int(os.environ["P4K_LATER_ARTIFACT_ID"])
+          assert report["all_post_selection_xnys_sessions_verified"]
+          assert report["later_source_asof_session"] >= "2026-10-21"
+          assert report["actual_new_sessions_in_later_source"] >= 3
           assert report["source_price_vintage_revisable"]
           assert report["source_vintage_confirmed_identical_within_entry_exit"]
           assert not report["independent_alpha_or_expected_profit_proven"]
@@ -81,10 +131,10 @@ jobs:
           print("Source-consistent fixed signal research only; no broker calls.")
           PY
       - name: Retain metadata and costed observed marks, not raw vendor CSV
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
         uses: actions/upload-artifact@v4
         with:
-          name: fund100-p4k-authenticated-one-vintage-observed-stock-marks
+          name: fund100-p4k-latest-scheduled-source-consistent-forward-marks
           path: /tmp/p4k-single-vintage-mark-report.json
           retention-days: 90
           if-no-files-found: error
