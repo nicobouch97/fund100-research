@@ -19,6 +19,9 @@ on:
       - "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       - "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py"
       - "fund100_v6_s1_staged_controller_core_v1_0.py"
+      # A reviewed source-to-HMAC handoff change needs a fresh, main-only
+      # genuine seven-GET source run before workflow_run can verify it.
+      - ".github/workflows/fund100-v6-s1-two-principal-readonly-handoff.yml"
       - ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml"
   workflow_dispatch:
 

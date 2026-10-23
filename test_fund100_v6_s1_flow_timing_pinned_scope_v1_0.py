@@ -77,3 +77,17 @@ def test_helper_source_changes_trigger_existing_seven_get_on_main():
 def test_original_staged_controller_dependency_covered_by_existing_scope():
     assert 'fund100_v6_s1_staged_controller_core_v1_0.py' in yml()
     assert 'python -m pytest -q test_fund100_v6_s1_staged_controller_core_v1_0.py' in yml()
+
+
+def test_existing_risk_source_refreshes_after_original_hmac_handoff_update():
+    """A new private-read bridge cannot be called verified until a new
+    original protected source from the SAME main commit has run."""
+    source=yml()
+    assert "  push:" in source and "  workflow_dispatch:" in source
+    event=source[source.index("  push:"):source.index("  workflow_dispatch:")]
+    assert 'branches: [main]' in event
+    assert ('      - ".github/workflows/'
+            'fund100-v6-s1-two-principal-readonly-handoff.yml"'
+            in event)
+    assert '  schedule:' not in source
+    assert 'permissions:' in source and '  contents: read' in source
