@@ -223,7 +223,7 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
     (
         ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml",
         "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
-    ): "3bbf60a6092c37ac65b8c0340d08f5132fc3a6b7",
+    ): "5dc618aacb2abc20dc36e3ea130e26e48c2f30b0",
     # Original BUY receipt ↔ actual FILL matching, precisely six GET, no writes.
     (
         ".github/workflows/fund100-v6-s1-real-buy-receipt-fill-six-get.yml",
@@ -418,6 +418,8 @@ def approved_scoped_live_script(
                 "cea00b694b52e3ad1835305796608684c765e8e4",
             "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py":
                 "77bcf39e4b667f95d161ff54bc8a279604469ebe",
+            "fund100_v6_s1_staged_controller_core_v1_0.py":
+                "f84a1638b2eae47a14f01569eebacd78ba458cf7",
             "fund100_live_portfolio_risk_v1_0.py":
                 PINNED_PRODUCTION_PORTFOLIO_MODULE,
             "fund100_live_operator_control_v1_0.py":

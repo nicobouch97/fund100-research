@@ -90,6 +90,49 @@ def blocked(state,*,reason=None,candidate=None,holdings=None,prior_orders=0):
         "broker_order_posts":0,
     }
 
+def assess_stopped_live_readiness(*, source_report: dict) -> dict:
+    """Join the original seven-GET redacted source to staged STOP routing.
+
+    This is an input-shape/risk-blocker decision, NOT evidence authentication
+    by this pure module and NOT the synthetic order planner. Never accepts
+    quantities, portfolio equity, private tokens, or executable instructions.
+    Broker GET provenance belongs exclusively to the pinned protected reader.
+    """
+    if (type(source_report) is not dict
+        or source_report.get("schema")
+            != "FUND100_V6_S1_AUTHENTIC_CASHFLOW_TIMING_AND_NATIVE_NONE_SOURCE_V1"
+        or source_report.get("source")
+            != "PRIVATE_ORIGINAL_SEVEN_GET_SOURCE_QUALIFICATION_ONLY"
+        or source_report.get("original_account_and_legacy_positions_verified") is not True
+        or type(source_report.get("broker_get_requests")) is not int
+        or source_report["broker_get_requests"] != 7
+        or source_report.get("broker_non_get_requests") != 0
+        or source_report.get("live_orders") != 0
+        or source_report.get("live_buy_sell_authorized") is not False
+        or source_report.get("actual_sale_proceeds_t_plus_one_settled") is not False
+        or source_report.get("actual_cashflow_adjusted_dietz_returns_calculated") is not False
+        or type(source_report.get("actual_s1_6_20_35_risk_verified")) is not bool):
+        raise TransitionStop("Unverified or changed stopped LIVE seven-GET source")
+    category=source_report.get("one_month_date_only_cashflow_risk_status")
+    reason=source_report.get("one_month_cashflow_source_rejection_category")
+    if type(category) is not str or type(reason) is not str:
+        raise TransitionStop("Unclassified 1M LIVE account-risk provenance")
+    # Even conditionally admissible inception funding is NOT the exact
+    # broker transaction timing evidence needed to authorize a strategy.
+    # This function has NO independent signed order-ledger, order settlement
+    # or separately released HIGH risk source. It MUST NOT emit an order.
+    if source_report["actual_s1_6_20_35_risk_verified"] is not True:
+        stage="BLOCKED_UNPROVEN_CASHFLOW_ADJUSTED_1M_ACCOUNT_RISK"
+    else:
+        stage="BLOCKED_NO_INDEPENDENT_SIGNED_LEDGER_AND_SETTLEMENT_JOIN"
+    report=blocked(stage)
+    report["live_seven_get_report_shape_checked"]=True
+    report["live_broker_source_authenticated_by_this_pure_module"]=False
+    report["private_signed_production_ledger_joined"]=False
+    report["cashflow_sensitivity_is_live_risk_release"]=False
+    return report
+
+
 def assess(*,snap:dict,now_utc:str)->dict:
     p=previous.policy()  # source-locked V2 draft + original V1 policy
     if p["may_place_buy_orders"] is not False or p["may_place_sell_orders"] is not False:

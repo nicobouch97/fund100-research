@@ -18,6 +18,7 @@ import fund100_v6_real_live_getonly_transition_readiness_v1_0 as four
 import fund100_v6_s1_live_risk_history_getonly_v1_0 as five
 import fund100_v6_s1_live_private_xle_activity_getonly_v1_0 as six
 import fund100_v6_s1_live_cashflow_risk_bounds_v1_0 as cashrisk
+import fund100_v6_s1_staged_controller_core_v1_0 as staged
 
 SCHEMA="FUND100_V6_S1_AUTHENTIC_CASHFLOW_TIMING_AND_NATIVE_NONE_SOURCE_V1"
 EXTRA_PARAMS={"period":"1M","timeframe":"1D","cashflow_types":"NONE"}
@@ -177,7 +178,7 @@ def evaluate(*,account:dict,positions:list,orders:list,clock:dict,
         bounded={"status":"ONE_DATE_ONLY_FLOW_SOURCE_NOT_APPLICABLE_HOLD",
                  "source_rejection_category":"NOT_APPLICABLE",
                  "one_cashflow_sensitivity_evaluated_in_memory":False}
-    return {
+    report = {
        "schema":SCHEMA,
        "source":"PRIVATE_ORIGINAL_SEVEN_GET_SOURCE_QUALIFICATION_ONLY",
        "original_account_and_legacy_positions_verified":True,
@@ -203,6 +204,16 @@ def evaluate(*,account:dict,positions:list,orders:list,clock:dict,
        "private_activity_ids_dates_amounts":None,
        "private_pnl_series":None,"broker_order_payload":None,
     }
+    stage=staged.assess_stopped_live_readiness(source_report=report)
+    if (stage["candidate_instruction"] is not None
+        or stage["new_live_order_release"] is not False
+        or stage["broker_order_posts"] != 0
+        or stage["stage"] != "BLOCKED_UNPROVEN_CASHFLOW_ADJUSTED_1M_ACCOUNT_RISK"):
+        raise FlowTimingStop("Original staged source risk block must remain stopped")
+    report["staged_v6_live_source_readiness"]=stage["stage"]
+    report["staged_controller_verified_full_private_order_ledger"]=False
+    report["staged_controller_produced_executable_order"]=False
+    return report
 
 
 def runtime()->dict:
@@ -274,6 +285,7 @@ def main():
         "original_raw_equity_risk_status",
         "actual_cashflow_adjusted_dietz_returns_calculated",
         "actual_s1_6_20_35_risk_verified",
+        "staged_v6_live_source_readiness",
         "actual_sale_proceeds_t_plus_one_settled","live_buy_sell_authorized",
         "broker_get_requests","broker_non_get_requests","live_orders",
     ):
