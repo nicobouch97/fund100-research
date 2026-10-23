@@ -9,6 +9,8 @@ on:
       - "test_fund100_v6_r1_vs_s1_historical_comparison_v1_0.py"
       - "fund100_v6_existing_four_model_economics_v1_0.py"
       - "test_fund100_v6_existing_four_model_economics_v1_0.py"
+      - "fund100_v6_four_model_selection_uncertainty_v1_0.py"
+      - "test_fund100_v6_four_model_selection_uncertainty_v1_0.py"
       - "research_lab/challengers/V6_ACTIVE_AGGRESSIVE_RESET_2026_10_15.md"
       - ".github/workflows/fund100-v6-aggressive-rotation-research.yml"
   workflow_dispatch:
@@ -30,7 +32,7 @@ jobs:
       - name: Test aggressive concentration, no-lookahead and no-order gates
         run: |
           set -euo pipefail
-          python -m pytest -q test_fund100_v6_aggressive_rotation_research_v1_0.py test_fund100_v6_r1_vs_s1_historical_comparison_v1_0.py test_fund100_v6_existing_four_model_economics_v1_0.py
+          python -m pytest -q test_fund100_v6_aggressive_rotation_research_v1_0.py test_fund100_v6_r1_vs_s1_historical_comparison_v1_0.py test_fund100_v6_existing_four_model_economics_v1_0.py test_fund100_v6_four_model_selection_uncertainty_v1_0.py
       - name: Compare real frozen historical source at 5,15,35 basis points
         run: |
           set -euo pipefail
