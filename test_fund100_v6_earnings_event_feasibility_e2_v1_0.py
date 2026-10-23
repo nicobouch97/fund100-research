@@ -73,3 +73,60 @@ def test_reacting_stock_can_lose_further_from_entry_with_transaction_cost(tmp_pa
     # No claim that the 8% price jump itself was an achievable post-entry gain.
     assert row["ten_session_stock_gross_pct"]<2
     assert result["economic_status"]!="LIVE_APPROVED"
+
+
+def test_same_event_window_controls_expose_incremental_signal_economics(tmp_path):
+    result=setup(tmp_path)
+    controls=result["matched_event_controls_by_cost_bps"]
+    assert result["real_xnys_event_horizons_verified"]
+    assert result["controls_added_post_hoc_not_independent_holdout"]
+    for bps in ("5","15","35"):
+        selected=result["results_by_one_way_transaction_cost_bps"][bps]
+        below=controls[bps]["below_threshold_filing_control"]
+        all_filings=controls[bps]["all_filing_unconditional_control"]
+        assert selected["event_count"]==1
+        assert below["event_count"]==7
+        assert all_filings["event_count"]==8
+        # In this synthetic fixture the signal jump happens before entry.
+        # It must not manufacture an advantage over otherwise identical names.
+        assert abs(controls[bps]["selected_minus_below_threshold_mean_pp"])<0.001
+    assert not result["live_authorized"] and not result["paper_authorized"]
+
+
+def test_missing_real_exchange_session_excludes_entire_event_window(tmp_path):
+    source=sec_fixture(tmp_path,event_date="2026-06-16")
+    report,csv=price_fixture(tmp_path)
+    prices=pd.read_csv(csv,parse_dates=["Date"]).set_index("Date")
+    # 18 June 2026 is a genuine NYSE session; 19 June is Juneteenth.
+    assert pd.Timestamp("2026-06-18") in prices.index
+    assert pd.Timestamp("2026-06-19") not in prices.index
+    prices=prices.drop(pd.Timestamp("2026-06-18"))
+    contents=p4g.canonical_price_csv(prices)
+    csv.write_text(contents)
+    snapshot=json.loads(report.read_text())
+    snapshot["canonical_price_csv_sha256"]=hashlib.sha256(contents.encode()).hexdigest()
+    report.write_text(json.dumps(snapshot))
+    m,s=e1.original_sec_sources(source)
+    r,data=e1.original_price_source(report,csv)
+    result=e2.event_study(m,s,r,data)
+    assert result["events_excluded_lack_coverage"]["NONCONSECUTIVE_XNYS_EVENT_WINDOW"]==8
+    assert result["individual_original_sec_earnings_events_checked"]==0
+    assert result["positive_reaction_events"]==0
+
+
+def test_missing_pre_filing_market_session_is_not_treated_as_valid_base(tmp_path):
+    source=sec_fixture(tmp_path,event_date="2026-06-16")
+    report,csv=price_fixture(tmp_path)
+    prices=pd.read_csv(csv,parse_dates=["Date"]).set_index("Date")
+    assert pd.Timestamp("2026-06-15") in prices.index
+    prices=prices.drop(pd.Timestamp("2026-06-15"))
+    contents=p4g.canonical_price_csv(prices)
+    csv.write_text(contents)
+    snapshot=json.loads(report.read_text())
+    snapshot["canonical_price_csv_sha256"]=hashlib.sha256(contents.encode()).hexdigest()
+    report.write_text(json.dumps(snapshot))
+    m,s=e1.original_sec_sources(source)
+    r,data=e1.original_price_source(report,csv)
+    result=e2.event_study(m,s,r,data)
+    assert result["events_excluded_lack_coverage"]["NONCONSECUTIVE_XNYS_EVENT_WINDOW"]==8
+    assert result["positive_reaction_events"]==0
