@@ -187,3 +187,44 @@ def test_nyse_holiday_absence_is_not_misclassified_as_missing_vendor_data():
     assert out["post_selection_exit_mark_session"]=="2026-11-27"
     assert out["all_post_selection_xnys_sessions_verified"]
     assert out["forward_observations"]>20
+
+
+def test_gross_downside_tracks_only_post_selection_completed_sessions():
+    a,d,p,v=newer("2026-10-23",capture="2026-10-24T08:00:00Z")
+    out=k.window_mark(anchor=a,later_doc=d,later_prices=p,revision=v)
+    risk=out["gross_path_downside"]
+    assert risk["source"]=="SAME_LATER_VINTAGE_COMPLETED_CLOSES_GROSS_BUY_HOLD"
+    assert risk["daily_observations"]==5
+    assert risk["no_annualization_or_significance"] is True
+    for group in ("frozen_three","frozen_equal_six","spy",
+                  "frozen_three_relative_to_spy"):
+        assert risk[group]["observed_return_intervals"]==4
+        assert risk[group]["gross_max_drawdown_pct"]<=0
+        assert risk[group]["gross_worst_session_return_pct"]<100
+        assert 0<=risk[group]["positive_session_count"]<=4
+    entry=p.index.get_loc(pd.Timestamp("2026-10-19"))
+    final=p.index.get_loc(pd.Timestamp("2026-10-23"))
+    path=k._gross_buy_hold_wealth_path(p,entry,final,i.FROZEN_WATCHLIST)
+    assert path[0]==pytest.approx(1.0)
+    assert path[-1]-1==pytest.approx(
+        sum(p[s].iloc[final]/p[s].iloc[entry]
+            for s in i.FROZEN_WATCHLIST)/len(i.FROZEN_WATCHLIST)-1)
+
+
+def test_downside_detects_temporary_stock_crash_and_active_drawdown():
+    a,d,p,v=newer("2026-10-23",capture="2026-10-24T08:00:00Z")
+    p.loc[pd.Timestamp("2026-10-21"),"MSFT"]*=0.75
+    out=k.window_mark(anchor=a,later_doc=d,later_prices=p,revision=v)
+    risk=out["gross_path_downside"]
+    assert risk["frozen_three"]["gross_max_drawdown_pct"] < -1
+    assert risk["frozen_three"]["gross_worst_session_return_pct"] < -1
+    assert risk["frozen_three_relative_to_spy"]["gross_max_drawdown_pct"] < -1
+    assert risk["frozen_three"]["observed_return_intervals"]==4
+    assert not out["independent_alpha_or_expected_profit_proven"]
+
+
+def test_one_post_selection_close_has_no_invented_risk_statistics():
+    a,d,p,v=newer("2026-10-19",capture="2026-10-20T08:00:00Z")
+    out=k.window_mark(anchor=a,later_doc=d,later_prices=p,revision=v)
+    assert out["gross_path_downside"] is None
+    assert out["costed_mark_percent"] is None
