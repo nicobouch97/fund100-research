@@ -37,6 +37,8 @@ def test_source_exact_original_prices_full_four_models_three_costs():
     assert report["evaluated_models"].keys()=={"5","15","35"}
     assert report["strategy_promoted_for_funded_trading"] is None
     assert report["real_broker_orders"]==0
+    assert set(report["causal_quarterly_model_switching_exploratory"]) == {"5","15","35"}
+    assert report["meta_selector_not_independent_holdout_or_live_strategy"]
     for cost,windows in report["evaluated_models"].items():
         assert windows.keys()==e.WINDOWS.keys()
         for name,values in windows.items():
