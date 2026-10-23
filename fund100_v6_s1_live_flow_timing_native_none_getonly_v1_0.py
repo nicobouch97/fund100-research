@@ -77,6 +77,45 @@ def original_cashflow_source(activities:list)->str:
     return "NO_EXTERNAL_TRANSFER_DETECTED_IN_WINDOW"
 
 
+
+def observed_cash_transfer_category(activities:list,source_status:str)->str:
+    """Only zero/one/multiple observed transfer category, never account data.
+
+    This is the fixed nontrade query's observed page since 2026-09-01.
+    A unique observed cash transfer is NOT proven to be the only one in the
+    complete LIVE account lifetime or in the 1M equity window.
+    """
+    if (type(activities) is not list or len(activities)>=100
+        or source_status=="PAGINATION_INCOMPLETE"):
+        return "OBSERVED_FUNDING_PAGE_INCOMPLETE_HOLD"
+    if source_status in (
+        "CASH_AMOUNT_SOURCE_INVALID",
+        "NONCASH_OR_UNKNOWN_TRANSFER_REQUIRES_VALUATION_REVIEW",
+    ):
+        return "OBSERVED_FUNDING_TYPE_OR_AMOUNT_UNTRUSTED_HOLD"
+    if source_status not in (
+        "CASH_TRANSFER_SOURCE_DATE_ONLY_NO_DIETZ",
+        "CASH_TRANSFER_AMOUNT_AND_TRANSACTION_TIME_FIELDS_PRESENT_UNRECONCILED",
+        "NO_EXTERNAL_TRANSFER_DETECTED_IN_WINDOW",
+    ):
+        return "OBSERVED_FUNDING_UNKNOWN_SOURCE_HOLD"
+    cash=0
+    for row in activities:
+        if type(row) is not dict:
+            return "OBSERVED_FUNDING_UNKNOWN_SOURCE_HOLD"
+        kind=row.get("activity_type")
+        if kind in ("CSD","CSW"):
+            cash+=1
+        elif kind in six.TRANSFER_TYPES or kind not in six.KNOWN_OTHER_NONTRADE_TYPES:
+            return "OBSERVED_FUNDING_TYPE_OR_AMOUNT_UNTRUSTED_HOLD"
+    if cash==0:
+        return "OBSERVED_ZERO_CASH_TRANSFERS_NOT_LIFETIME_PROOF"
+    if cash==1:
+        return "OBSERVED_ONE_CASH_TRANSFER_NOT_TIMING_PROOF"
+    return "OBSERVED_MULTIPLE_CASH_TRANSFERS_SINGLE_FLOW_MODEL_INAPPLICABLE"
+
+
+
 def broker_native_none_source(original_history:dict,none_history:dict)->str:
     """Compare source semantics without leaking equities or asserting cash flow adjustment."""
     if not isinstance(original_history,dict) or not isinstance(none_history,dict):
@@ -124,6 +163,7 @@ def evaluate(*,account:dict,positions:list,orders:list,clock:dict,
         or earlier.get("live_trade_permitted") is not False):
         raise FlowTimingStop("Previous original six read-only checks changed")
     timing=original_cashflow_source(activities)
+    count_category=observed_cash_transfer_category(activities,timing)
     none=broker_native_none_source(history,native_none_history)
     return {
        "schema":SCHEMA,
@@ -133,6 +173,7 @@ def evaluate(*,account:dict,positions:list,orders:list,clock:dict,
        "original_cash_floor_status":earlier["current_original_cash_floor_status"],
        "original_external_funding_classification":earlier["account_activities_source_status"],
        "cash_transfer_amount_and_timestamp_field_status":timing,
+       "observed_cash_transfer_count_class":count_category,
        "broker_cashflow_types_none_pnl_comparison":none,
        "original_raw_equity_risk_status":earlier["original_raw_risk_history_result"],
        "actual_cashflow_adjusted_dietz_returns_calculated":False,
@@ -208,6 +249,7 @@ def main():
         "original_xle_target_status","original_cash_floor_status",
         "original_external_funding_classification",
         "cash_transfer_amount_and_timestamp_field_status",
+        "observed_cash_transfer_count_class",
         "broker_cashflow_types_none_pnl_comparison",
         "original_raw_equity_risk_status",
         "actual_cashflow_adjusted_dietz_returns_calculated",

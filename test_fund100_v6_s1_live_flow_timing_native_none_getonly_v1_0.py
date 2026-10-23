@@ -128,3 +128,61 @@ def test_only_existing_seven_get_source_no_order_transport():
     for forbidden in ('method="POST"','method="DELETE"',
                       'requests.post(', 'submit_'+'authorized_order_batch('):
         assert forbidden not in src
+
+
+def test_only_one_observed_cashflow_categorised_without_customer_data():
+    d=scenario()
+    out=q.evaluate(**d)
+    assert out["observed_cash_transfer_count_class"]==(
+        "OBSERVED_ONE_CASH_TRANSFER_NOT_TIMING_PROOF")
+    assert out["actual_s1_6_20_35_risk_verified"] is False
+    for private in ("FAKE-1","110.00","SYNTHETIC-ACCOUNT-ID"):
+        assert private not in str(out)
+
+
+def test_multiple_observed_cashflows_block_single_transfer_method():
+    d=scenario()
+    d["activities"].append({"id":"PRIVATE-B",
+        "activity_type":"CSW","net_amount":"-30.00","date":"2026-10-12"})
+    out=q.evaluate(**d)
+    assert out["observed_cash_transfer_count_class"]==(
+        "OBSERVED_MULTIPLE_CASH_TRANSFERS_SINGLE_FLOW_MODEL_INAPPLICABLE")
+    assert not out["live_buy_sell_authorized"]
+    for private in ("PRIVATE-B","30.00","2026-10-12"):
+        assert private not in str(out)
+
+
+def test_no_cash_transfer_in_queried_page_is_not_account_lifetime_proof():
+    d=scenario()
+    d["activities"]=[{"id":"PRIVATE-D","activity_type":"DIV"}]
+    out=q.evaluate(**d)
+    assert out["observed_cash_transfer_count_class"]==(
+        "OBSERVED_ZERO_CASH_TRANSFERS_NOT_LIFETIME_PROOF")
+    assert not out["actual_s1_6_20_35_risk_verified"]
+
+
+@pytest.mark.parametrize("a,expected",[
+    ([{"id":"PRIVATE-Z","activity_type":"JNL"}],
+     "OBSERVED_FUNDING_TYPE_OR_AMOUNT_UNTRUSTED_HOLD"),
+    ([{"id":"PRIVATE-Z","activity_type":"CSD","net_amount":"bad"}],
+     "OBSERVED_FUNDING_TYPE_OR_AMOUNT_UNTRUSTED_HOLD"),
+    ([{"id":"PRIVATE-Z","activity_type":"MYSTERY"}],
+     "OBSERVED_FUNDING_TYPE_OR_AMOUNT_UNTRUSTED_HOLD"),
+    ([{"id":str(i),"activity_type":"DIV"} for i in range(100)],
+     "OBSERVED_FUNDING_PAGE_INCOMPLETE_HOLD"),
+])
+def test_ambiguous_cash_activity_scope_stays_hold(a,expected):
+    d=scenario();d["activities"]=a
+    out=q.evaluate(**d)
+    assert out["observed_cash_transfer_count_class"]==expected
+    assert not out["live_buy_sell_authorized"]
+
+
+def test_count_class_does_not_change_original_seven_get_scoped_contract():
+    assert q.PATHS[-2:]==(
+        "/v2/account/activities","/v2/account/portfolio/history")
+    out=q.evaluate(**scenario())
+    assert out["broker_get_requests"]==7
+    assert out["broker_non_get_requests"]==0
+    assert out["live_orders"]==0
+    assert out["actual_cashflow_adjusted_dietz_returns_calculated"] is False

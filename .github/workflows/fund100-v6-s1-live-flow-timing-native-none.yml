@@ -12,6 +12,7 @@ on:
   push:
     branches: [main]
     paths:
+      - "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       - ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml"
   workflow_dispatch:
 
