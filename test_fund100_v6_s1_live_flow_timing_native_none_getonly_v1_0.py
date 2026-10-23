@@ -242,3 +242,50 @@ def test_source_proven_strict_prefunding_window_still_cannot_create_live_order()
     assert r["broker_get_requests"]==7
     assert r["broker_non_get_requests"]==r["live_orders"]==0
     assert "FAKE-1" not in str(r)
+
+
+@pytest.mark.parametrize("risk_pass",[False,True])
+def test_original_reader_hands_off_exact_one_categorical_risk_boolean(
+        risk_pass, monkeypatch, tmp_path, capsys):
+    from copy import deepcopy
+    report=deepcopy(q.evaluate(**scenario()))
+    report["actual_s1_6_20_35_risk_verified"]=risk_pass
+    monkeypatch.setattr(q,"runtime",lambda:report)
+    output=tmp_path/"source-step-output.txt"
+    monkeypatch.setenv("GITHUB_OUTPUT",str(output))
+    monkeypatch.setenv("GITHUB_ACTIONS","true")
+    monkeypatch.setenv("GITHUB_REF","refs/heads/main")
+    monkeypatch.setenv("GITHUB_REPOSITORY","nicobouch97/fund100-research")
+    q.main()
+    assert output.read_text()==("risk_pass=true\n" if risk_pass else "risk_pass=false\n")
+    assert "FAKE-1" not in output.read_text()
+    assert "110.00" not in output.read_text()
+    assert "SYNTHETIC-ACCOUNT-ID" not in output.read_text()
+    assert "risk_pass=" not in capsys.readouterr().out
+
+
+def test_risk_step_output_unavailable_outside_protected_main(monkeypatch,tmp_path):
+    report=q.evaluate(**scenario())
+    monkeypatch.setattr(q,"runtime",lambda:report)
+    target=tmp_path/"private-output.txt"
+    monkeypatch.setenv("GITHUB_OUTPUT",str(target))
+    monkeypatch.setenv("GITHUB_ACTIONS","true")
+    monkeypatch.setenv("GITHUB_REF","refs/pull/42/merge")
+    monkeypatch.setenv("GITHUB_REPOSITORY","nicobouch97/fund100-research")
+    with pytest.raises(q.FlowTimingStop):
+        q.main()
+    assert not target.exists()
+
+
+def test_protected_output_never_written_when_seven_get_evidence_inconsistent(monkeypatch,tmp_path):
+    report=q.evaluate(**scenario())
+    report["broker_non_get_requests"]=1
+    monkeypatch.setattr(q,"runtime",lambda:report)
+    target=tmp_path/"private-output.txt"
+    monkeypatch.setenv("GITHUB_OUTPUT",str(target))
+    monkeypatch.setenv("GITHUB_ACTIONS","true")
+    monkeypatch.setenv("GITHUB_REF","refs/heads/main")
+    monkeypatch.setenv("GITHUB_REPOSITORY","nicobouch97/fund100-research")
+    with pytest.raises(q.FlowTimingStop):
+        q.main()
+    assert not target.exists()
