@@ -131,9 +131,9 @@ def _read(history, activities, account, observed_at_utc):
     possible_inception = bool(
         unfunded_prefix and flow > 0 and booking_date <= first_funded_date
     )
-    return equity, flow, unfunded_prefix, possible_inception
+    return equity, flow, unfunded_prefix, possible_inception, current
 
-def _scenario(values, flow, at, weight):
+def _scenario(values, flow, at, weight, current):
     unit = Decimal(1)
     peak = unit
     daily = []
@@ -150,9 +150,22 @@ def _scenario(values, flow, at, weight):
             return None
         peak = max(peak,unit)
         daily.append(r)
+    # The last completed 1D history equity is reconciled to Alpaca
+    # account.last_equity above. Current account.equity may be intraday:
+    # stop on today's raw account loss and current peak-to-now drawdown,
+    # not just on the most recent finished daily bar. Do NOT promote raw
+    # account P&L to cashflow-adjusted, authenticated trade authority.
+    live_return = current / values[-1] - Decimal(1)
+    if abs(live_return) > MAX_INTERVAL_RETURN:
+        return None
+    live_unit = unit*(Decimal(1)+live_return)
+    if live_unit <= 0:
+        return None
+    current_drawdown = 1-live_unit/max(peak,live_unit)
     volatility = Decimal(str(stdev([float(r) for r in daily])*sqrt(252)))
     return (daily[-1] <= DAILY_STOP
-            or 1-unit/peak >= DRAWDOWN_STOP
+            or live_return <= DAILY_STOP
+            or current_drawdown >= DRAWDOWN_STOP
             or volatility > VOL_STOP)
 
 def inspect(*, history, activities, account, observed_at_utc):
@@ -162,7 +175,7 @@ def inspect(*, history, activities, account, observed_at_utc):
     evaluated = False
     unfunded_prefix = False
     try:
-        values, flow, unfunded_prefix, possible_inception = _read(
+        values, flow, unfunded_prefix, possible_inception, current = _read(
             history, activities, account, observed_at_utc
         )
         evaluated = True
@@ -173,14 +186,14 @@ def inspect(*, history, activities, account, observed_at_utc):
             # Unlike injecting an already-invested initial deposit into a
             # future daily return, this hypothesis starts at first funded
             # close. It is a sensitivity only, never proof of transfer time.
-            result = _scenario(values,Decimal(0),0,Decimal(0))
+            result = _scenario(values,Decimal(0),0,Decimal(0),current)
             if result is not None:
                 qualified_inception = True
                 valid_windows += 1
                 possibly_breached |= result
         for at in range(1,len(values)):
-            left = _scenario(values,flow,at,Decimal(0))
-            right = _scenario(values,flow,at,Decimal(1))
+            left = _scenario(values,flow,at,Decimal(0),current)
+            right = _scenario(values,flow,at,Decimal(1),current)
             if left is None or right is None:
                 continue
             valid_windows += 1

@@ -108,6 +108,47 @@ def test_booking_after_first_funded_close_cannot_be_placed_at_baseline():
     assert r["status"]=="NO_QUALITY_ADMISSIBLE_PLACEMENT_HOLD"
 
 
+def test_current_intraday_loss_cannot_hide_behind_safe_funded_history():
+    d=initial_funding_case()
+    d["account"]["equity"]="94.00"
+    r=check(d)
+    assert r["status"]=="HIGH_RISK_BREACH_POSSIBLE_HOLD"
+    assert not r["s1_high_risk_approved"]
+
+
+def test_current_intraday_loss_just_below_stop_does_not_cause_fake_release():
+    d=initial_funding_case()
+    d["account"]["equity"]="94.01"
+    r=check(d)
+    assert r["status"]=="INITIAL_FUNDING_MAY_BE_IN_FIRST_FUNDED_CLOSE_RESEARCH_ONLY"
+    assert not r["daily_equity_risk_authorized"]
+    assert not r["live_buy_sell_authorized"]
+
+
+def test_current_equity_large_jump_is_unqualified_without_flow_timing():
+    d=initial_funding_case()
+    d["account"]["equity"]="160"
+    r=check(d)
+    assert r["status"]=="NO_QUALITY_ADMISSIBLE_PLACEMENT_HOLD"
+    assert r["one_cashflow_sensitivity_evaluated_in_memory"]
+    assert not r["s1_high_risk_approved"]
+
+
+def test_current_account_drawdown_uses_peak_not_only_yesterdays_close():
+    d=initial_funding_case()
+    # Earlier funded broker close reached 120; latest completed close is
+    # 110, then current mark declines to 95. Overall current drawdown
+    # exceeds 20% even though today's change is under 6%? No:
+    # 95/110 is a >6% daily fall. Instead test a 120 peak, latest
+    # 101.5 and current 95.5 (~5.91% today, >20% from peak).
+    d["history"]["equity"]=[None,0.0,100.0,120.0,108.0,104.0,102.0,101.5]
+    d["account"]["last_equity"]="101.5"
+    d["account"]["equity"]="95.5"
+    r=check(d)
+    assert r["status"]=="HIGH_RISK_BREACH_POSSIBLE_HOLD"
+    assert not r["drawdown_risk_authorized"]
+
+
 def test_initial_funding_hypothesis_still_enforces_true_daily_loss_stop():
     d=initial_funding_case()
     d["history"]["equity"][-1]=90.0
