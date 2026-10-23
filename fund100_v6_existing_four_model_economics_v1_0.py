@@ -50,8 +50,8 @@ def _normalized(label:str,path:pd.DataFrame)->pd.DataFrame:
         raise EconomicsStop("Original strategy backtest changed reporting contract") from None
     out.columns=["nav","benchmark","turnover","gross","cash"]
     if (out.index.has_duplicates or not out.index.is_monotonic_increasing
-        or not isinstance(out.index,pd.DatetimeIndex)
-        or out.isna().any().any()):
+        or not isinstance(out.index,pd.DatetimeIndex) or out.index.tz is not None
+        or not np.isfinite(out.to_numpy(dtype=float)).all()):
         raise EconomicsStop("Original NAV dates/values invalid")
     if ((out["nav"]<=0).any() or (out["benchmark"]<=0).any()
         or (out["turnover"]<0).any()
@@ -78,6 +78,75 @@ def _all_paths(prices:pd.DataFrame,cost:int):
                                rtol=1e-11,atol=1e-8)):
             raise EconomicsStop("Four independent models disagree about benchmark history")
     return result
+
+def _beta_attribution(path:pd.DataFrame)->dict:
+    """Descriptive same-session OLS, not a forward alpha estimate or strategy.
+
+    Newey-West/Bartlett 5-session HAC confidence interval describes historical
+    residual uncertainty, NOT data-snooping or parameter-selection uncertainty.
+    Uses original already-inspected price history, no risk-free cash return.
+    """
+    if (not isinstance(path,pd.DataFrame) or len(path)<260
+        or not {"nav","benchmark"}<=set(path)):
+        raise EconomicsStop("Risk attribution needs full original NAV/benchmark")
+    if (not np.isfinite(path[["nav","benchmark"]].to_numpy(dtype=float)).all()
+        or (path[["nav","benchmark"]]<=0).any().any()):
+        raise EconomicsStop("Nonfinite or nonpositive strategy/benchmark NAV")
+    r=path["nav"].pct_change(fill_method=None).iloc[1:].to_numpy(dtype=float)
+    b=path["benchmark"].pct_change(fill_method=None).iloc[1:].to_numpy(dtype=float)
+    if (not np.isfinite(r).all() or not np.isfinite(b).all()
+        or (r<=-1).any() or (b<=-1).any()):
+        raise EconomicsStop("Invalid same-session daily returns")
+    active=r-b
+    te=float(np.std(active,ddof=1)*np.sqrt(252))
+    info=(float(np.mean(active)*252/te) if te>1e-12 else None)
+    base={
+        "method":"HISTORICAL_SAME_SESSION_DAILY_OLS_HAC5_NOT_PREDICTIVE",
+        "risk_free_cash_return_assumed_zero":True,
+        "already_inspected_history_no_independent_holdout":True,
+        "tracking_error_annual_pct":round(te*100,4),
+        "historical_active_information_ratio":round(info,4) if info is not None else None,
+        "benchmark_beta":None,
+        "arithmetic_beta_adjusted_alpha_annual_pct":None,
+        "historical_alpha_HAC5_95pct_interval_annual_pct":None,
+        "historical_market_R_squared":None,
+        "alpha_significance_not_a_promotion_rule":True,
+    }
+    if float(np.std(b,ddof=1))<1e-8:
+        return dict(base,regression_status="BENCHMARK_VARIANCE_TOO_LOW_UNIDENTIFIABLE")
+    n=len(r)
+    X=np.column_stack((np.ones(n),b))
+    xtx=X.T@X
+    if not np.isfinite(xtx).all() or np.linalg.cond(xtx)>1e12:
+        return dict(base,regression_status="ILL_CONDITIONED_BENCHMARK_UNIDENTIFIABLE")
+    coeff=np.linalg.solve(xtx,X.T@r)
+    residual=r-X@coeff
+    xu=X*residual[:,None]
+    # Sandwich Newey-West HAC, 5 trading-day lags with Bartlett weights.
+    meat=xu.T@xu
+    for lag in range(1,6):
+        cross=xu[lag:].T@xu[:-lag]
+        meat+=(1-lag/6)*(cross+cross.T)
+    inv=np.linalg.inv(xtx)
+    cov=inv@meat@inv
+    se_alpha=float(np.sqrt(max(0.0,cov[0,0])))
+    alpha=float(coeff[0])*252
+    interval=[round((alpha-1.96*252*se_alpha)*100,4),
+              round((alpha+1.96*252*se_alpha)*100,4)]
+    variance_r=float(np.var(r,ddof=1))
+    r2=(1-float(np.var(residual,ddof=1))/variance_r
+        if variance_r>1e-18 else None)
+    values=[alpha,coeff[1],se_alpha,*(interval)]
+    if not np.isfinite(values).all() or (r2 is not None and not np.isfinite(r2)):
+        raise EconomicsStop("Nonfinite risk-adjusted research statistic")
+    return dict(base,
+        regression_status="HISTORICAL_DESCRIPTIVE_ONLY",
+        benchmark_beta=round(float(coeff[1]),4),
+        arithmetic_beta_adjusted_alpha_annual_pct=round(alpha*100,4),
+        historical_alpha_HAC5_95pct_interval_annual_pct=interval,
+        historical_market_R_squared=round(max(0.0,min(1.0,r2)),4)
+            if r2 is not None else None)
+
 
 def _metrics(path:pd.DataFrame,begin:str,*,drawdown_guard:float,vol_guard:float):
     view=path.loc[begin:]
@@ -115,6 +184,7 @@ def _metrics(path:pd.DataFrame,begin:str,*,drawdown_guard:float,vol_guard:float)
             bool(dd.min()<-drawdown_guard-1e-10),
         "exceeds_historical_HIGH_35pct_volatility_screen":
             bool(vol>vol_guard+1e-10),
+        "descriptive_beta_adjusted_attribution":_beta_attribution(view),
         "historical_screen_is_NOT_broker_halt_or_trade_instruction":True,
     }
 
@@ -155,6 +225,8 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
         "no_additional_strategy_parameter_search":True,
         "historical_20pct_peak_drawdown_screen_is_NOT_live_stop":True,
         "original_sector_95pct_allocation_not_mutated":True,
+        "risk_adjusted_attribution_is_historical_not_forward_alpha":True,
+        "historical_HAC_interval_does_not_correct_model_selection_bias":True,
         "market_spread_fills_tax_and_foreign_exchange_not_modelled":True,
         "evaluated_models":output,
         "strategy_promoted_for_funded_trading":None,
