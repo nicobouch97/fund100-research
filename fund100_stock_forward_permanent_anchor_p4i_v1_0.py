@@ -115,8 +115,9 @@ def reconcile_original_vintage(anchor:dict,original:pd.DataFrame,
         raise AnchorStop("FAIL_CLOSED_SOURCE_REVISION: original immutable vintage invalid.")
     first=historic.to_numpy(dtype=float)
     second=overlap.to_numpy(dtype=float)
-    if (not np.isfinite(first).all() or not np.isfinite(second).all()
-        or (first<=0).any() or (second<=0).any()):
+    all_later=later.to_numpy(dtype=float)
+    if (not np.isfinite(first).all() or not np.isfinite(all_later).all()
+        or (first<=0).any() or (all_later<=0).any()):
         raise AnchorStop("FAIL_CLOSED_SOURCE_REVISION: source equity price not positive/finite.")
     maximum=float(np.abs(second/first-1).max())
     if maximum>MAX_ORIGINAL_VINTAGE_RELATIVE_JITTER:
