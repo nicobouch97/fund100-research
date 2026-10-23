@@ -59,3 +59,39 @@ def test_forged_source_promotions_refused():
     s,p,data=fixtures()
     s["trading_authorized"]=True
     with pytest.raises(e4.SignalStop):e4.evaluate(s,p,data)
+
+
+def test_missing_post_filing_vendor_session_never_becomes_a_two_day_signal():
+    source,price,data=fixtures(
+        price_asof="2026-10-22",
+        sec_capture="2026-10-23T09:00:00Z",
+        price_capture="2026-10-23T09:01:00Z",
+    )
+    # Three genuine NYSE sessions followed Monday's filing (20, 21, 22),
+    # but only two remain in the vendor source. Previously this could be
+    # misclassified as a two-session prospective earnings reaction.
+    data=data.drop(pd.Timestamp("2026-10-20"))
+    data.loc["2026-10-22","MSFT"]=104.
+    with pytest.raises(e4.SignalStop,match="XNYS post-filing sessions"):
+        e4.evaluate(source,price,data)
+
+
+def test_missing_second_session_is_source_failure_not_waiting_for_data():
+    source,price,data=fixtures()
+    data=data.drop(pd.Timestamp("2026-10-20"))
+    with pytest.raises(e4.SignalStop,match="XNYS post-filing sessions"):
+        e4.evaluate(source,price,data)
+
+
+def test_thanksgiving_closure_is_not_a_missing_market_session():
+    source,price,data=fixtures(
+        price_asof="2026-11-30", filing="2026-11-25",
+        sec_capture="2026-12-01T09:00:00Z",
+        price_capture="2026-12-01T09:01:00Z",
+    )
+    # Thanksgiving Thursday is closed; Friday (short session) and
+    # Monday are both valid XNYS sessions.
+    data=data.drop(pd.Timestamp("2026-11-26"))
+    result=e4.evaluate(source,price,data)
+    assert result["events"][0]["status"]=="OBSERVED_REACTION_BELOW_THRESHOLD"
+    assert result["events"][0]["second_post_filing_completed_session"]=="2026-11-30"
