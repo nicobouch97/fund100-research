@@ -99,3 +99,61 @@ def test_models_cannot_emit_broker_credential_or_order():
     for blocked in ("ALPACA_LIVE_KEY","ALPACA_LIVE_SECRET",
                     "urlopen(","requests.post(","submit_live_original_acwi_sell("):
         assert blocked not in code
+
+
+def test_historical_same_session_beta_and_alpha_are_not_future_predictions():
+    idx=pd.bdate_range("2020-01-02",periods=380)
+    t=np.arange(len(idx)-1,dtype=float)
+    bench_daily=.0005+.004*np.sin(t/7)+.001*np.cos(t/11)
+    model_daily=.0001+.5*bench_daily
+    bench=100*np.cumprod(np.r_[1.,1+bench_daily])
+    nav=100*np.cumprod(np.r_[1.,1+model_daily])
+    frame=pd.DataFrame({"nav":nav,"benchmark":bench},index=idx)
+    v=e._beta_attribution(frame)
+    assert v["regression_status"]=="HISTORICAL_DESCRIPTIVE_ONLY"
+    assert abs(v["benchmark_beta"]-.5)<.0001
+    assert abs(v["arithmetic_beta_adjusted_alpha_annual_pct"]-2.52)<.0001
+    assert v["historical_market_R_squared"]==1.
+    low,high=v["historical_alpha_HAC5_95pct_interval_annual_pct"]
+    assert low<=2.52<=high
+    assert v["tracking_error_annual_pct"]>0
+    assert v["alpha_significance_not_a_promotion_rule"]
+    assert v["already_inspected_history_no_independent_holdout"]
+
+
+def test_flat_benchmark_does_not_fabricate_zero_beta_or_alpha():
+    idx=pd.bdate_range("2020-01-02",periods=300)
+    frame=pd.DataFrame({"nav":np.linspace(100,110,len(idx)),
+                        "benchmark":np.full(len(idx),100.)},index=idx)
+    v=e._beta_attribution(frame)
+    assert v["regression_status"]=="BENCHMARK_VARIANCE_TOO_LOW_UNIDENTIFIABLE"
+    assert v["benchmark_beta"] is None
+    assert v["arithmetic_beta_adjusted_alpha_annual_pct"] is None
+    assert v["historical_alpha_HAC5_95pct_interval_annual_pct"] is None
+    assert v["historical_market_R_squared"] is None
+
+
+def test_nonfinite_nav_is_rejected_not_misranked_as_excess_return():
+    raw=e.s1.fixed_backtest(fake_prices(),cost_bps=15)
+    raw.iloc[1,raw.columns.get_loc("v6_nav")]=float("inf")
+    with pytest.raises(e.EconomicsStop,match="NAV dates/values"):
+        e._normalized(e.MODELS[0],raw)
+
+
+def test_four_existing_models_report_beta_with_explicit_no_promotion():
+    prices,source=r1.load_frozen(Path("research_lab/frozen_history_v2.csv"))
+    result=e.evaluate(prices,source_sha=source)
+    assert result["risk_adjusted_attribution_is_historical_not_forward_alpha"]
+    assert result["historical_HAC_interval_does_not_correct_model_selection_bias"]
+    assert result["strategy_promoted_for_funded_trading"] is None
+    for cost,windows in result["evaluated_models"].items():
+        for window,models in windows.items():
+            for name,metric in models.items():
+                r=metric["descriptive_beta_adjusted_attribution"]
+                assert r["method"]=="HISTORICAL_SAME_SESSION_DAILY_OLS_HAC5_NOT_PREDICTIVE"
+                assert r["regression_status"]=="HISTORICAL_DESCRIPTIVE_ONLY"
+                assert -3<r["benchmark_beta"]<5
+                assert r["historical_alpha_HAC5_95pct_interval_annual_pct"][0]<=r["arithmetic_beta_adjusted_alpha_annual_pct"]<=r["historical_alpha_HAC5_95pct_interval_annual_pct"][1]
+                assert r["tracking_error_annual_pct"]>=0
+                assert r["alpha_significance_not_a_promotion_rule"]
+    assert result["real_broker_orders"]==0
