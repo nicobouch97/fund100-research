@@ -207,7 +207,7 @@ def evaluate(original_json: Path, original_csv: Path,
         "original_csv_sha256": old["canonical_price_csv_sha256"],
         "later_p4g_run_id": later_run_id,
         "later_p4g_artifact_id": later_artifact_id,
-        "later_run_artifact_identity_verified_by_caller_workflow": True,
+        "later_run_artifact_identity_supplied_by_caller_not_proved_in_pure_module": True,
         "later_json_sha256": later_json_sha,
         "later_canonical_csv_sha256": later["canonical_price_csv_sha256"],
         "old_vendor_adjustments_source_identical": (
