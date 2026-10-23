@@ -54,3 +54,22 @@ def test_weak_signal_is_not_a_trade():
     r[3]["stock_close"]=100
     out=evaluate(e,r)
     assert out["status"]=="NO_SIGNAL" and not out["orders_authorized"]
+
+def test_out_of_order_source_sessions_are_rejected_not_silently_sorted():
+    event, rows = sample()
+    rows[2], rows[3] = rows[3], rows[2]
+    with pytest.raises(EvidenceStop, match="duplicate, unordered"):
+        evaluate(event, rows)
+
+
+def test_duplicate_source_session_is_rejected():
+    event, rows = sample()
+    rows[2] = dict(rows[1])
+    with pytest.raises(EvidenceStop, match="duplicate, unordered"):
+        evaluate(event, rows)
+
+
+def test_invalid_source_container_is_rejected():
+    event, rows = sample()
+    with pytest.raises(EvidenceStop, match="ordered source list"):
+        evaluate(event, tuple(rows))
