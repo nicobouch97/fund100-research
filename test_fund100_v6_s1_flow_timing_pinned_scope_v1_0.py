@@ -6,7 +6,7 @@ import audit_fund100_live_boundary as audit
 ROOT=Path(__file__).resolve().parent
 FLOW=".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml"
 SCRIPT="fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
-PIN="3bbf60a6092c37ac65b8c0340d08f5132fc3a6b7"
+PIN="5dc618aacb2abc20dc36e3ea130e26e48c2f30b0"
 
 def yml():return (ROOT/FLOW).read_text()
 
@@ -47,6 +47,7 @@ def test_scheduled_job_or_any_write_mode_not_approved():
     "fund100_live_portfolio_risk_v1_0.py",
     "fund100_live_operator_control_v1_0.py",
     "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py",
+    "fund100_v6_s1_staged_controller_core_v1_0.py",
 ])
 def test_changed_reader_or_original_dependencies_revokes_access(monkeypatch,name):
     orig=audit.git_blob_digest
@@ -71,3 +72,8 @@ def test_helper_source_changes_trigger_existing_seven_get_on_main():
     assert "python -m pytest -q test_fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py" in body
     assert '  workflow_dispatch:' in body
     assert "authentic-private-seven-get:" in body
+
+
+def test_original_staged_controller_dependency_covered_by_existing_scope():
+    assert 'fund100_v6_s1_staged_controller_core_v1_0.py' in yml()
+    assert 'python -m pytest -q test_fund100_v6_s1_staged_controller_core_v1_0.py' in yml()
