@@ -404,7 +404,9 @@ def main():
     for bps,portfolio in result["shared_cash_portfolio_by_cost_bps"].items():
         print("Shared-cash portfolio",bps,"bps/side accepted",portfolio["accepted_entries"],
               "net return pct",portfolio["net_portfolio_return_pct"],
-              "net SPY pct",portfolio["net_spy_buy_hold_return_pct"],
+              "net SPY full-investment pct",portfolio["net_spy_buy_hold_return_pct"],
+              "net SPY matched-entry pct",portfolio["net_spy_matched_schedule_return_pct"],
+              "stock minus matched SPY pp",portfolio["portfolio_minus_matched_spy_net_percentage_points"],
               "capacity skipped",portfolio["capacity_skipped"])
     print("Decision:",result["economic_status"])
     print("Retrospective survivor-biased event statistics; NO REAL TRADES.")
