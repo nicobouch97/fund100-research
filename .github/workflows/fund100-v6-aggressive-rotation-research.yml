@@ -7,6 +7,8 @@ on:
       - "test_fund100_v6_aggressive_rotation_research_v1_0.py"
       - "fund100_v6_r1_vs_s1_historical_comparison_v1_0.py"
       - "test_fund100_v6_r1_vs_s1_historical_comparison_v1_0.py"
+      - "fund100_v6_existing_four_model_economics_v1_0.py"
+      - "test_fund100_v6_existing_four_model_economics_v1_0.py"
       - "research_lab/challengers/V6_ACTIVE_AGGRESSIVE_RESET_2026_10_15.md"
       - ".github/workflows/fund100-v6-aggressive-rotation-research.yml"
   workflow_dispatch:
