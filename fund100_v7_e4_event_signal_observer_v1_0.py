@@ -9,6 +9,9 @@ from datetime import date, datetime, timezone, timedelta
 import json
 from pathlib import Path
 
+import exchange_calendars as xcals
+import pandas as pd
+
 import fund100_stock_quality_momentum_p4g_v1_0 as p4g
 import fund100_stock_forward_return_ledger_p4h_v1_0 as p4h
 import fund100_v7_e4_sec_event_capture_v1_0 as feed
@@ -20,6 +23,28 @@ MAX_SCORE_AGE_DAYS=90
 
 class SignalStop(ValueError):
     pass
+
+
+def verify_post_filing_sessions(filed: date, last: date, observed: list[date]) -> None:
+    """Verify the SEC reaction horizon against actual XNYS sessions.
+
+    A missing vendor row must not turn three real sessions into an apparent
+    two-session post-earnings reaction. Exchange holidays and half-days are
+    handled by the exchange calendar rather than weekday arithmetic.
+    """
+    try:
+        expected = [
+            session.date()
+            for session in xcals.get_calendar("XNYS").sessions_in_range(
+                pd.Timestamp(filed), pd.Timestamp(last)
+            )
+            if session.date() > filed
+        ]
+    except (ValueError, TypeError, IndexError) as exc:
+        raise SignalStop("Cannot verify XNYS post-filing market sessions") from exc
+    if observed != expected:
+        raise SignalStop("Missing, extra or unordered XNYS post-filing sessions")
+
 
 def evaluate(source:dict, price_report:dict, prices) -> dict:
     if (source.get("schema")!=feed.SCHEMA
@@ -59,6 +84,11 @@ def evaluate(source:dict, price_report:dict, prices) -> dict:
             raise SignalStop("SEC event source identity/time invalid")
         subsequent=[d for d in sessions if d>filed]
         prior=[d for d in sessions if d<filed]
+        # The original pre-entry reaction also needs real session continuity.
+        # E5 independently verifies the later entry/exit sessions.
+        if (FREEZE<=filed<=last and score_age<=MAX_SCORE_AGE_DAYS
+            and p4g.FROZEN_P4E_SCORES[ticker] is not None):
+            verify_post_filing_sessions(filed,last,subsequent)
         relative=None
         if score_age>MAX_SCORE_AGE_DAYS:
             state="STALE_ORIGINAL_FROZEN_QUALITY_REQUIRES_REFRESH"
