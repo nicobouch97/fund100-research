@@ -142,7 +142,10 @@ def test_same_cash_account_event_economics_are_not_sum_of_independent_bets(tmp_p
         assert p["selected_events"]==1
         assert p["accepted_entries"]==p["closed_exits"]==1
         assert p["max_concurrent_names"]==1
-        assert 0<p["max_gross_fraction"]<=.251
+        assert 0<p["max_entry_budget_fraction"]<=.25
+        # Price drift can increase exposure after a compliant 25% entry.
+        assert p["max_drifted_name_fraction"]>=p["max_entry_budget_fraction"]
+        assert p["max_gross_fraction"]<=1.000001
         assert p["min_cash_fraction"]>=0
         assert p["all_positions_flat_at_final_close"]
         assert p["first_hypothetical_entry"]>result["all_qualified_event_observations"][0]["second_post_filing_close"]
@@ -175,6 +178,7 @@ def test_cash_capacity_and_same_issuer_overlap_never_create_leverage(tmp_path):
     assert result["capacity_skipped"]==1
     assert result["duplicate_issuer_skipped"]==0
     assert result["max_concurrent_names"]==4
+    assert result["max_entry_budget_fraction"]<=.25
     assert result["max_gross_fraction"]<=1.000001
     assert result["min_cash_fraction"]>=0
     assert result["all_positions_flat_at_final_close"]
