@@ -214,3 +214,31 @@ def test_original_seven_get_only_surfaces_categorical_funding_calendar_relation(
     assert out["broker_get_requests"]==7
     assert out["broker_non_get_requests"]==out["live_orders"]==0
     assert "2026-10-12" not in str(out)
+
+
+def test_source_proven_strict_prefunding_window_still_cannot_create_live_order():
+    from datetime import datetime, timezone, timedelta
+    d=scenario()
+    observed=datetime.fromisoformat(d["observed_at_utc"].replace("Z","+00:00"))
+    first=observed-timedelta(days=9)
+    timestamps=[int((first+timedelta(days=i)).timestamp()) for i in range(8)]
+    equity=d["account"]["equity"]
+    d["history"]["timestamp"]=timestamps[:]
+    d["native_none_history"]["timestamp"]=timestamps[:]
+    d["history"]["equity"]=[None,0]+[equity]*6
+    d["native_none_history"]["equity"]=[None,0]+[equity]*6
+    d["history"]["profit_loss_pct"]=[0]*8
+    d["native_none_history"]["profit_loss_pct"]=[0]*8
+    d["activities"][0]["date"]=(first+timedelta(days=1)).date().isoformat()
+    r=q.evaluate(**d)
+    assert r["initial_cashflow_booking_vs_first_funded_sample"]==(
+        "BOOKED_BEFORE_FIRST_FUNDED_SAMPLE_DATE")
+    assert r["actual_s1_6_20_35_risk_verified"] is True
+    assert r["actual_cashflow_adjusted_dietz_returns_calculated"] is False
+    assert r["staged_v6_live_source_readiness"]==(
+        "BLOCKED_NO_INDEPENDENT_SIGNED_LEDGER_AND_SETTLEMENT_JOIN")
+    assert r["staged_controller_produced_executable_order"] is False
+    assert r["live_buy_sell_authorized"] is False
+    assert r["broker_get_requests"]==7
+    assert r["broker_non_get_requests"]==r["live_orders"]==0
+    assert "FAKE-1" not in str(r)
