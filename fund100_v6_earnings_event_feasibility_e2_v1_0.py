@@ -49,6 +49,132 @@ def _complete_xnys_event_window(filing:dt.date, preceding:dt.date,
     return bool(prior and preceding==prior[-1] and following==subsequent)
 
 
+
+# A realized event is NOT the return on an investable fund: overlapping
+# signals compete for the same cash. This descriptive simulation preserves
+# the precommitted third-close entry and ten-session exit. It does not use
+# future prices to choose which events qualify; fills at the exact close are
+# optimistic, cash earns zero, and spread/impact beyond fixed fees are absent.
+PORTFOLIO_MAX_NAMES=4
+PORTFOLIO_MAX_NAME_FRACTION=.25
+
+
+def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
+    """Retrospective, long-only, shared-cash event portfolio; no broker path.
+
+    First-come (entry date, ticker, accession) allocation, 25% of NAV per
+    issuer AT ENTRY (weights may drift), four simultaneous positions, and exact entry/exit cost debits.
+    SPY buy/hold uses the SAME entry/exit dates and both-sided fees.
+    """
+    if cost_bps not in COSTS:
+        raise e1.SourceStop("Unregistered event portfolio transaction cost")
+    if not events:
+        return {
+            "selected_events":0,"accepted_entries":0,"closed_exits":0,
+            "capacity_skipped":0,"duplicate_issuer_skipped":0,
+            "max_concurrent_names":0,"max_gross_fraction":0.0,
+            "max_entry_budget_fraction":0.0,"max_drifted_name_fraction":0.0,
+            "min_cash_fraction":None,"net_portfolio_return_pct":None,
+            "net_spy_buy_hold_return_pct":None,
+            "portfolio_minus_spy_net_percentage_points":None,
+            "max_portfolio_drawdown_pct":None,
+            "all_positions_flat_at_final_close":True,
+        }
+    by_date={}
+    seen=set()
+    dates={x.date() for x in data.index}
+    for event in events:
+        ticker=event["ticker"]
+        accession=event["original_sec_accession"]
+        entry=dt.date.fromisoformat(event["hypothetical_entry_third_close"])
+        exit_day=dt.date.fromisoformat(event["hypothetical_exit_after_ten_sessions"])
+        if (ticker not in data.columns or ticker=="SPY"
+            or (ticker,accession) in seen or entry not in dates
+            or exit_day not in dates or entry>=exit_day):
+            raise e1.SourceStop("Invalid selected event portfolio schedule")
+        seen.add((ticker,accession))
+        by_date.setdefault(entry,[]).append((ticker,accession,exit_day))
+    first=min(by_date)
+    last=max(dt.date.fromisoformat(
+        e["hypothetical_exit_after_ten_sessions"]) for e in events)
+    market=data.loc[pd.Timestamp(first):pd.Timestamp(last)]
+    if len(market)<2:
+        raise e1.SourceStop("No complete event portfolio return horizon")
+    fee=cost_bps/10_000
+    cash=1.0
+    holdings={}  # ticker -> (fractional shares, exit date)
+    accepted=closed=capacity_skipped=duplicate_skipped=0
+    max_names=0
+    max_gross=0.0
+    max_entry_budget=0.0
+    max_drifted_name=0.0
+    min_cash=1.0
+    peak=1.0
+    max_drawdown=0.0
+    for stamp,row in market.iterrows():
+        day=stamp.date()
+        # EXIT first: released cash may fund a new signal at this close.
+        for ticker,(qty,exit_day) in list(holdings.items()):
+            if exit_day==day:
+                cash+=qty*float(row[ticker])*(1-fee)
+                del holdings[ticker]
+                closed+=1
+        nav_before=cash+sum(q*float(row[t]) for t,(q,_) in holdings.items())
+        if nav_before<=0:
+            raise e1.SourceStop("Event portfolio has nonpositive NAV")
+        for ticker,accession,exit_day in sorted(by_date.get(day,[])):
+            if ticker in holdings:
+                duplicate_skipped+=1
+                continue
+            if len(holdings)>=PORTFOLIO_MAX_NAMES:
+                capacity_skipped+=1
+                continue
+            budget=min(PORTFOLIO_MAX_NAME_FRACTION*nav_before,cash/(1+fee))
+            if budget<=1e-10:
+                capacity_skipped+=1
+                continue
+            max_entry_budget=max(max_entry_budget,budget/nav_before)
+            qty=budget/float(row[ticker])
+            cash-=budget*(1+fee)
+            holdings[ticker]=(qty,exit_day)
+            accepted+=1
+        nav=cash+sum(q*float(row[t]) for t,(q,_) in holdings.items())
+        if nav<=0 or cash < -1e-9:
+            raise e1.SourceStop("Event portfolio violated no-margin budget")
+        gross=sum(q*float(row[t]) for t,(q,_) in holdings.items())/nav
+        max_gross=max(max_gross,gross)
+        if holdings:
+            max_drifted_name=max(max_drifted_name,max(
+                q*float(row[t])/nav for t,(q,_) in holdings.items()))
+        max_names=max(max_names,len(holdings))
+        min_cash=min(min_cash,max(0.0,cash)/nav)
+        peak=max(peak,nav)
+        max_drawdown=max(max_drawdown,1-nav/peak)
+    if holdings or accepted!=closed:
+        raise e1.SourceStop("Unreconciled historical event positions")
+    spy_start=float(data.loc[pd.Timestamp(first),"SPY"])
+    spy_end=float(data.loc[pd.Timestamp(last),"SPY"])
+    spy_final=(spy_end/spy_start)*(1-fee)/(1+fee)
+    return {
+        "selected_events":len(events),
+        "accepted_entries":accepted,"closed_exits":closed,
+        "capacity_skipped":capacity_skipped,
+        "duplicate_issuer_skipped":duplicate_skipped,
+        "max_concurrent_names":max_names,
+        "max_gross_fraction":round(max_gross,6),
+        "max_entry_budget_fraction":round(max_entry_budget,6),
+        "max_drifted_name_fraction":round(max_drifted_name,6),
+        "min_cash_fraction":round(min_cash,6),
+        "first_hypothetical_entry":first.isoformat(),
+        "last_hypothetical_exit":last.isoformat(),
+        "net_portfolio_return_pct":round(100*(nav-1),5),
+        "net_spy_buy_hold_return_pct":round(100*(spy_final-1),5),
+        "portfolio_minus_spy_net_percentage_points":round(100*(nav-spy_final),5),
+        "max_portfolio_drawdown_pct":round(-100*max_drawdown,5),
+        "all_positions_flat_at_final_close":True,
+    }
+
+
 def event_study(sec_manifest:dict, submissions:dict, p4g_snapshot:dict, prices:pd.DataFrame)->dict:
     """Actual original SEC filing dates; strictly historical exploratory event horizons."""
     report=e1.evaluate(sec_manifest=sec_manifest,submissions=submissions,
@@ -184,6 +310,11 @@ def event_study(sec_manifest:dict, submissions:dict, p4g_snapshot:dict, prices:p
         "positive_reaction_issuers":issuer_count,
         "results_by_one_way_transaction_cost_bps":summary,
         "matched_event_controls_by_cost_bps":controls,
+        "shared_cash_portfolio_by_cost_bps":{
+            str(bps):_portfolio_path(selected,data,bps) for bps in COSTS
+        },
+        "portfolio_uses_first_come_25pct_entry_budget_four_slots":True,
+        "portfolio_is_retrospective_close_fill_optimistic_not_alpha":True,
         "controls_added_post_hoc_not_independent_holdout":True,
         "real_xnys_event_horizons_verified":True,
         "minimum_research_coverage":MIN_EVENTS,
@@ -221,6 +352,11 @@ def main():
     for bps,m in result["results_by_one_way_transaction_cost_bps"].items():
         print(bps,"bps/side event excess pct-points: median",m["median_net_excess_percentage_points"],
               "mean",m["mean_net_excess_percentage_points"],"hit share",m["positive_net_excess_event_fraction"])
+    for bps,portfolio in result["shared_cash_portfolio_by_cost_bps"].items():
+        print("Shared-cash portfolio",bps,"bps/side accepted",portfolio["accepted_entries"],
+              "net return pct",portfolio["net_portfolio_return_pct"],
+              "net SPY pct",portfolio["net_spy_buy_hold_return_pct"],
+              "capacity skipped",portfolio["capacity_skipped"])
     print("Decision:",result["economic_status"])
     print("Retrospective survivor-biased event statistics; NO REAL TRADES.")
 
