@@ -33,6 +33,44 @@ def check(fixture):
     assert "2026-10-13" not in str(result)
     return result
 
+def test_actual_json_number_equity_and_activity_fields_are_accepted_without_float_roundtrips():
+    d=dataset()
+    # Alpaca's history values are JSON numbers; its other account fields
+    # may be decimal strings. Decode finite JSON numbers, never treat
+    # floats or their textual representations as an account authorization.
+    d["history"]["equity"]=[100.0,200.0,200.0,200.0,200.0,200.0]
+    d["account"]["last_equity"]=200.0
+    d["activities"][0]["net_amount"]=100.0
+    r=check(d)
+    assert r["status"]=="ONE_CONDITIONALLY_SAFE_TIMING_RESEARCH_ONLY"
+    assert r["source_rejection_category"]=="NONE"
+    assert not r["s1_high_risk_approved"]
+    assert not r["live_buy_sell_authorized"]
+
+
+@pytest.mark.parametrize("value",[True,False,None,float("nan"),float("inf"),
+                                  float("-inf"),"NaN","Infinity","bad"])
+def test_json_number_coercion_rejects_nonfinite_bool_missing_and_malformed(value):
+    d=dataset()
+    d["history"]["equity"][1]=value
+    r=check(d)
+    assert r["status"]=="SOURCE_NOT_QUALIFIED_HOLD"
+    assert r["source_rejection_category"]=="PRIVATE_FINANCIAL_FIELD_UNUSABLE"
+
+
+def test_live_reader_receives_float_equity_without_broker_trade():
+    from test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 import scenario
+    import fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 as reader
+    d=scenario()
+    d["history"]["equity"]=[float(x) for x in d["history"]["equity"]]
+    d["activities"][0]["date"]="2026-10-13"
+    r=reader.evaluate(**d)
+    assert r["broker_get_requests"]==7
+    assert r["broker_non_get_requests"]==r["live_orders"]==0
+    assert r["actual_s1_6_20_35_risk_verified"] is False
+    assert r["live_buy_sell_authorized"] is False
+
+
 def test_one_100_deposit_can_explain_apparent_100pct_raw_jump():
     result=check(dataset())
     assert result["status"]=="ONE_CONDITIONALLY_SAFE_TIMING_RESEARCH_ONLY"
