@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import exchange_calendars as xcals
 import pytest
 
 import fund100_v6_sec_earnings_catalyst_e1_v1_0 as e1
@@ -15,7 +16,10 @@ import fund100_stock_sec_source_p4b_v1_0 as sec
 
 
 def prices(asof="2026-10-21",shock=True):
-    ix=pd.bdate_range(end=asof,periods=269)
+    # Model real NYSE sessions, not pandas weekdays (which include holidays).
+    end=pd.Timestamp(asof)
+    ix=xcals.get_calendar('XNYS').sessions_in_range(
+        end-pd.Timedelta(days=500),end)[-269:]
     t=np.arange(len(ix),dtype=float)
     base={}
     for symbol in sorted(set(p4g.FROZEN_P4E_SCORES)|{"SPY","SHY"}):
