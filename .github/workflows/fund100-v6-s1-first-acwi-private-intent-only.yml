@@ -59,6 +59,7 @@ jobs:
       actions: write
     env:
       GH_TOKEN: ${{ github.token }}
+      FUND100_FIRST_INTENT_CONFIRM: ${{ inputs.confirmation }}
     steps:
       - name: Refresh original protected FOUR GET on exact main SHA (NO ORDERS)
         run: |
@@ -69,7 +70,7 @@ jobs:
           [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
           # No checkout or production/private storage rights exist in this
           # unprivileged dispatcher. Main-only confirmed source selection.
-          test "${{ inputs.confirmation }}" = "RECORD_ACWI_INTENT_NO_ORDERS"
+          test "$FUND100_FIRST_INTENT_CONFIRM" = "RECORD_ACWI_INTENT_NO_ORDERS"
           # Dispatch only the already approved ORIGINAL four-GET workflow.
           # A new broker source run, not an old successful one, is required.
           started="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
