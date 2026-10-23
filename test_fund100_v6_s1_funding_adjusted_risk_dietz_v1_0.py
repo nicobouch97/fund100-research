@@ -180,3 +180,121 @@ def test_account_risk_estimator_has_no_broker_or_environment_access():
                    "ALPACA_LIVE_KEY","submit_"+"authorized_order_batch(",
                    "os.environ","getenv(", "/v2/orders"):
         assert banned not in s
+
+
+def undated_fixture():
+    d=fixture()
+    d["nontrade_activities"][0].pop("transaction_time")
+    return d
+
+def test_date_only_original_deposit_no_fabricated_timestamp_or_release():
+    d=undated_fixture()
+    r=f.diagnose_one_date_only_transfer(fixture=d,now_utc=NOW)
+    assert r["status"]=="UNIQUE_CONDITIONALLY_PLAUSIBLE_PLACEMENT_RESEARCH_ONLY"
+    assert r["quality_admissible_intervals"]==1
+    assert r["conditional_all_scenarios_below_original_HIGH_limits"] is True
+    assert not r["exact_economic_funding_date_proven"]
+    assert not r["funding_effective_date_inferred_as_fact"]
+    assert not r["original_source_broker_authenticated"]
+    assert not r["real_s1_high_account_risk_approved"]
+    assert not r["live_buy_authorized"] and not r["live_sell_authorized"]
+    assert r["broker_orders"]==r["broker_requests"]==0
+    for private in ("FAKE-CSD-1","100.00","2026-10-15"):
+        assert private not in str(r)
+
+def test_date_only_cashflow_followed_by_real_loss_still_halts():
+    d=undated_fixture()
+    d["portfolio_history"]["equity"]=["100","200","200","200","200","188"]
+    r=f.diagnose_one_date_only_transfer(fixture=d,now_utc=NOW)
+    assert r["quality_admissible_intervals"]==1
+    assert r["conditional_all_scenarios_below_original_HIGH_limits"] is False
+    assert r["real_s1_high_account_risk_approved"] is False
+
+def test_date_only_deposit_plus_big_drawdown_does_not_hide_account_loss():
+    d=undated_fixture()
+    d["portfolio_history"]["equity"]=["100","200","200","200","200","160"]
+    r=f.diagnose_one_date_only_transfer(fixture=d,now_utc=NOW)
+    assert r["quality_admissible_intervals"]==1
+    assert not r["conditional_all_scenarios_below_original_HIGH_limits"]
+
+def test_date_only_withdrawal_not_a_fake_negative_market_return():
+    d=undated_fixture()
+    d["nontrade_activities"][0]["activity_type"]="CSW"
+    d["nontrade_activities"][0]["net_amount"]="-50.00"
+    d["portfolio_history"]["equity"]=["100","50","50","50","50","50"]
+    r=f.diagnose_one_date_only_transfer(fixture=d,now_utc=NOW)
+    assert r["quality_admissible_intervals"]==1
+    assert r["conditional_all_scenarios_below_original_HIGH_limits"]
+    assert not r["live_sell_authorized"]
+
+def test_date_only_small_flow_has_many_plausible_intervals_no_approval():
+    d=undated_fixture()
+    d["nontrade_activities"][0]["net_amount"]="1.00"
+    d["portfolio_history"]["equity"]=["100","101","101","101","101","101"]
+    r=f.diagnose_one_date_only_transfer(fixture=d,now_utc=NOW)
+    assert r["status"]=="AMBIGUOUS_OR_INCONSISTENT_SOURCE_HOLD"
+    assert r["quality_admissible_intervals"]>1
+    assert not r["conditional_all_scenarios_below_original_HIGH_limits"]
+
+def test_date_only_unexplained_huge_equity_jump_not_assumed_to_be_solved():
+    d=undated_fixture()
+    d["nontrade_activities"][0]["net_amount"]="20.00"
+    r=f.diagnose_one_date_only_transfer(fixture=d,now_utc=NOW)
+    assert r["quality_admissible_intervals"]==0
+    assert r["status"]=="AMBIGUOUS_OR_INCONSISTENT_SOURCE_HOLD"
+    assert not r["real_s1_high_account_risk_approved"]
+
+@pytest.mark.parametrize("change",[
+    {"mode":"TRADING_LIVE"},
+    {"authenticated_broker_source":True},
+    {"live_operator_stopped":False},
+    {"broker_kill_switch":"DISENGAGED"},
+    {"risk_level":"LOW"},
+])
+def test_date_only_source_never_crosses_a_live_boundary(change):
+    d=undated_fixture();d.update(change)
+    with pytest.raises(f.FundingRiskStop):
+        f.diagnose_one_date_only_transfer(fixture=d,now_utc=NOW)
+
+@pytest.mark.parametrize("event_bad",[
+    {"date":"2026-11-01"},
+    {"date":"2026-10-14T10:00:00Z"},
+    {"date":None},
+    {"date":"bad-date"},
+    {"net_amount":"-100.00"},
+    {"net_amount":"Infinity"},
+    {"net_amount":"NaN"},
+    {"activity_type":"JNL"},
+    {"activity_type":"UNRECOGNIZED"},
+    {"transaction_time":"2026-10-13T19:00:00Z"},
+])
+def test_date_only_bad_funding_evidence_fails_closed(event_bad):
+    d=undated_fixture()
+    d["nontrade_activities"][0].update(event_bad)
+    with pytest.raises(f.FundingRiskStop):
+        f.diagnose_one_date_only_transfer(fixture=d,now_utc=NOW)
+
+def test_date_only_two_cashflows_need_separate_research_not_silent_netting():
+    d=undated_fixture()
+    d["nontrade_activities"].append(
+        {"id":"FAKE-WITHDRAW","activity_type":"CSW",
+         "net_amount":"-20","date":"2026-10-14"})
+    with pytest.raises(f.FundingRiskStop,match="More than one"):
+        f.diagnose_one_date_only_transfer(fixture=d,now_utc=NOW)
+
+def test_date_only_incomplete_history_and_unfunded_capital_block():
+    d=undated_fixture()
+    d["nontrade_activity_query_after"]="2026-10-15T00:00:00Z"
+    with pytest.raises(f.FundingRiskStop):
+        f.diagnose_one_date_only_transfer(fixture=d,now_utc=NOW)
+    d=undated_fixture()
+    d["portfolio_history"]["equity"][0]="0"
+    with pytest.raises(f.FundingRiskStop):
+        f.diagnose_one_date_only_transfer(fixture=d,now_utc=NOW)
+
+def test_date_only_diagnostic_uses_no_real_secrets_or_network():
+    s=Path(f.__file__).read_text()
+    assert 'def diagnose_one_date_only_transfer' in s
+    for banned in ("urlopen(","requests.post(","ALPACA_LIVE_KEY",
+                   "ALPACA_LIVE_SECRET","os.environ","getenv("):
+        assert banned not in s
