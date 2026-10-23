@@ -100,9 +100,10 @@ def window_mark(*, anchor: dict, later_doc: dict, later_prices: pd.DataFrame,
         or revision.get("extra_baseline_sessions") != 0
         or revision.get("no_forward_return_calculated") is not True):
         raise SingleVintageStop("Unreconciled original historical sessions")
-    future = _verified_future_sessions(cutoff, data.index)
+    future = data.index[data.index > cutoff]
     if len(future) and future[0] != FIRST_ENTRY:
         raise SingleVintageStop("Original first post-freeze entry session was lost")
+    future = _verified_future_sessions(cutoff, data.index)
     entry = future[0].date().isoformat() if len(future) else None
     end = future[-1].date().isoformat() if len(future) > 1 else None
     report = {
