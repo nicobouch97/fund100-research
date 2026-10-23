@@ -417,7 +417,7 @@ def approved_scoped_live_script(
             "fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py":
                 "cea00b694b52e3ad1835305796608684c765e8e4",
             "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py":
-                "df6a77015d2f6eb1e5a10f87388af5277e2abaa5",
+                "13ef885eaa84185fc2893233f87f58b7c602afe3",
             "fund100_live_portfolio_risk_v1_0.py":
                 PINNED_PRODUCTION_PORTFOLIO_MODULE,
             "fund100_live_operator_control_v1_0.py":
