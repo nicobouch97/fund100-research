@@ -136,3 +136,118 @@ def test_out_of_order_missing_or_future_true_GET_step_timestamps_fail(changed):
     changed(b)
     with pytest.raises(h.HandoffStop):
         h.verify(**b)
+
+
+def risk_fx():
+    x=fx()
+    run=x["run"]
+    run["workflow_id"]=h.RISK_WORKFLOW_ID
+    run["path"]=h.RISK_WORKFLOW_PATH
+    run["name"]=h.RISK_WORKFLOW_NAME
+    jobs=x["jobs"]["jobs"]
+    jobs[0]["name"]=h.RISK_OFFLINE_JOB
+    jobs[1]["name"]=h.RISK_JOB
+    for item,name in zip(jobs[1]["steps"],h.REQUIRED_RISK_STEPS):
+        item["name"]=name
+    return x
+
+
+def signed_empty_genesis():
+    return {
+        "status":"GENESIS_CONTENT_AND_PUBLIC_HASH_WITNESS_RECONFIRMED_READONLY",
+        "private_genesis_HMAC_signature_and_original_account_binding_verified":True,
+        "independent_public_issue8_comment_digest_and_identity_verified":True,
+        "private_ledger_sequence":0,
+        "original_empty_entries_count":0,
+        "private_git_writes":0,
+        "broker_orders":0,
+        "independently_immutable_rollback_anchor_proven":False,
+    }
+
+
+def test_current_main_risk_broker_and_independent_signed_genesis_join_stays_stopped():
+    src=h.verify_any_source(**risk_fx())
+    assert src["status"]=="CURRENT_RISK_SOURCE_STOP_READY_FOR_PRIVATE_HMAC_READ"
+    assert src["same_main_SHA_and_fresh_GET_step_verified"]
+    assert not src["cashflow_adjusted_1M_account_risk_approved"]
+    result=h.join_current_risk_and_signed_genesis(
+        source=src,genesis=signed_empty_genesis())
+    assert result["status"]=="STOPPED_REAL_RISK_AND_SIGNED_EMPTY_LEDGER_READS_JOINED"
+    assert result["source_and_signed_genesis_proven_in_same_protected_workflow"]
+    assert not result["orders_authorized"]
+    assert result["broker_POSTs"]==result["private_Git_PUTs"]==0
+    assert result["private_account_data"] is result["private_signed_ledger"] is None
+
+
+@pytest.mark.parametrize("field,value",[
+    ("workflow_id",h.BROKER_WORKFLOW_ID),
+    ("head_sha","b"*40),("event","pull_request"),
+    ("head_branch","attacker-branch"),("conclusion","failure"),
+    ("path","falsified-source.yml"),
+])
+def test_risk_source_rejects_other_run_provenance(field,value):
+    x=risk_fx();x["run"][field]=value
+    with pytest.raises(h.HandoffStop):
+        h.verify_any_source(**x)
+
+
+@pytest.mark.parametrize("bad",[
+    "missing-step","failed-step","swapped-step","duplicate-job",
+    "failed-offline","stale-step","extra-job",
+])
+def test_risk_handoff_requires_original_protected_step_evidence(bad):
+    x=risk_fx()
+    broker=x["jobs"]["jobs"][1]
+    if bad=="missing-step":
+        broker["steps"].pop(1)
+    elif bad=="failed-step":
+        broker["steps"][1]["conclusion"]="skipped"
+    elif bad=="swapped-step":
+        broker["steps"][1]["name"]="Submit Alpaca order"
+    elif bad=="duplicate-job":
+        x["jobs"]["jobs"][0]["name"]=h.RISK_JOB
+    elif bad=="failed-offline":
+        x["jobs"]["jobs"][0]["conclusion"]="failure"
+    elif bad=="stale-step":
+        broker["steps"][1]["completed_at"]="2026-10-22T16:17:19Z"
+    elif bad=="extra-job":
+        x["jobs"]["total_count"]=3
+    with pytest.raises(h.HandoffStop):
+        h.verify_any_source(**x)
+
+
+@pytest.mark.parametrize("change",[
+    {"private_ledger_sequence":1},
+    {"original_empty_entries_count":1},
+    {"private_genesis_HMAC_signature_and_original_account_binding_verified":False},
+    {"independent_public_issue8_comment_digest_and_identity_verified":False},
+    {"private_git_writes":1},
+    {"broker_orders":1},
+    {"independently_immutable_rollback_anchor_proven":True},
+    {"status":"UNVERIFIED_SIGNATURE"},
+])
+def test_private_signed_ledger_or_anchor_unproved_blocks_risk_join(change):
+    g=signed_empty_genesis();g.update(change)
+    with pytest.raises(h.HandoffStop):
+        h.join_current_risk_and_signed_genesis(
+            source=h.verify_any_source(**risk_fx()),genesis=g)
+
+
+def test_old_order_client_id_handoff_unchanged_and_cannot_fake_risk_join():
+    original=h.verify_any_source(**fx())
+    assert original["status"]=="TWO_PRINCIPAL_SOURCE_HANDOFF_READY_FOR_SEPARATE_SIGNED_READ"
+    with pytest.raises(h.HandoffStop):
+        h.join_current_risk_and_signed_genesis(
+            source=original,genesis=signed_empty_genesis())
+
+
+def test_original_one_workflow_handles_both_broker_sources_no_trading_release():
+    from pathlib import Path
+    s=Path(".github/workflows/fund100-v6-s1-two-principal-readonly-handoff.yml").read_text()
+    assert h.RISK_WORKFLOW_NAME in s
+    assert h.BROKER_WORKFLOW_NAME in s
+    assert s.count("h.verify_any_source(")==2
+    assert "h.join_current_risk_and_signed_genesis(" in s
+    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in s
+    assert "ALPACA_LIVE_KEY" not in s
+    assert "ALPACA_LIVE_SECRET" not in s
