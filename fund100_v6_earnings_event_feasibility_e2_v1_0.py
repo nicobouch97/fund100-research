@@ -63,7 +63,7 @@ def _portfolio_path(events:list[dict], data:pd.DataFrame, cost_bps:int)->dict:
     """Retrospective, long-only, shared-cash event portfolio; no broker path.
 
     First-come (entry date, ticker, accession) allocation, 25% of NAV per
-    issuer, four simultaneous positions, and exact entry/exit cost debits.
+    issuer AT ENTRY (weights may drift), four simultaneous positions, and exact entry/exit cost debits.
     SPY buy/hold uses the SAME entry/exit dates and both-sided fees.
     """
     if cost_bps not in COSTS:
@@ -304,7 +304,7 @@ def event_study(sec_manifest:dict, submissions:dict, p4g_snapshot:dict, prices:p
         "shared_cash_portfolio_by_cost_bps":{
             str(bps):_portfolio_path(selected,data,bps) for bps in COSTS
         },
-        "portfolio_uses_first_come_25pct_max_four_names":True,
+        "portfolio_uses_first_come_25pct_entry_budget_four_slots":True,
         "portfolio_is_retrospective_close_fill_optimistic_not_alpha":True,
         "controls_added_post_hoc_not_independent_holdout":True,
         "real_xnys_event_horizons_verified":True,
