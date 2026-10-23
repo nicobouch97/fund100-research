@@ -81,6 +81,9 @@ def _read(history, activities, account, observed_at_utc):
         equity.append(x)
     if len(equity) < 6:
         raise SourceRejected("insufficient funded equity observations")
+    first_funded_date = datetime.fromtimestamp(
+        times[len(vals)-len(equity)], timezone.utc
+    ).date()
     # Alpaca's last_equity is yesterday's close, not necessarily the
     # most recent intraday portfolio-history row. Refuse a mismatched source
     # rather than treating current intraday cash as a sampled close.
@@ -90,6 +93,7 @@ def _read(history, activities, account, observed_at_utc):
         or abs(equity[-1]-prev_close) > Decimal(".01")):
         raise SourceRejected("last broker close not reconciled")
     flow = None
+    booking_date = None
     seen = set()
     for item in activities:
         if type(item) is not dict:
@@ -119,9 +123,15 @@ def _read(history, activities, account, observed_at_utc):
         if booking > now.date() or booking < date(2026,9,1):
             raise SourceRejected("outside verified activity source")
         flow = amount
+        booking_date = booking
     if flow is None:
         raise SourceRejected("no dated transfer")
-    return equity, flow, unfunded_prefix
+    # An initial deposit MAY be incorporated before the first positive
+    # broker account close. Booking DATE alone does not establish when.
+    possible_inception = bool(
+        unfunded_prefix and flow > 0 and booking_date <= first_funded_date
+    )
+    return equity, flow, unfunded_prefix, possible_inception
 
 def _scenario(values, flow, at, weight):
     unit = Decimal(1)
@@ -152,10 +162,22 @@ def inspect(*, history, activities, account, observed_at_utc):
     evaluated = False
     unfunded_prefix = False
     try:
-        values, flow, unfunded_prefix = _read(history, activities, account, observed_at_utc)
+        values, flow, unfunded_prefix, possible_inception = _read(
+            history, activities, account, observed_at_utc
+        )
         evaluated = True
         valid_windows = 0
         possibly_breached = False
+        qualified_inception = False
+        if possible_inception:
+            # Unlike injecting an already-invested initial deposit into a
+            # future daily return, this hypothesis starts at first funded
+            # close. It is a sensitivity only, never proof of transfer time.
+            result = _scenario(values,Decimal(0),0,Decimal(0))
+            if result is not None:
+                qualified_inception = True
+                valid_windows += 1
+                possibly_breached |= result
         for at in range(1,len(values)):
             left = _scenario(values,flow,at,Decimal(0))
             right = _scenario(values,flow,at,Decimal(1))
@@ -169,6 +191,8 @@ def inspect(*, history, activities, account, observed_at_utc):
             category = "HIGH_RISK_BREACH_POSSIBLE_HOLD"
         elif valid_windows != 1:
             category = "MULTIPLE_PLAUSIBLE_TIMINGS_HOLD"
+        elif qualified_inception:
+            category = "INITIAL_FUNDING_MAY_BE_IN_FIRST_FUNDED_CLOSE_RESEARCH_ONLY"
         else:
             category = "ONE_CONDITIONALLY_SAFE_TIMING_RESEARCH_ONLY"
     except SourceRejected as exc:
