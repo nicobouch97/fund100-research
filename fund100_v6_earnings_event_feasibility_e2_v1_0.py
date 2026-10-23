@@ -12,6 +12,7 @@ from pathlib import Path
 from statistics import mean, median
 
 import pandas as pd
+import exchange_calendars as xcals
 
 import fund100_v6_sec_earnings_catalyst_e1_v1_0 as e1
 import fund100_stock_quality_momentum_p4g_v1_0 as p4g
@@ -27,6 +28,25 @@ SIGNAL_THRESHOLD=.02
 COSTS=(5,15,35)
 MIN_EVENTS=24
 MIN_ISSUERS=6
+
+
+def _complete_xnys_event_window(filing:dt.date, preceding:dt.date,
+                                following:list[dt.date])->bool:
+    """Only actual consecutive exchange sessions count toward the event horizon.
+
+    The filing DATE is excluded even if it was a market session, because
+    the original SEC capture does not prove when on that date news arrived.
+    """
+    if not following:
+        return False
+    cal=xcals.get_calendar("XNYS")
+    prior=[x.date() for x in cal.sessions_in_range(
+        pd.Timestamp(filing-dt.timedelta(days=10)),pd.Timestamp(filing))
+        if x.date()<filing]
+    subsequent=[x.date() for x in cal.sessions_in_range(
+        pd.Timestamp(filing),pd.Timestamp(following[-1]))
+        if x.date()>filing]
+    return bool(prior and preceding==prior[-1] and following==subsequent)
 
 
 def event_study(sec_manifest:dict, submissions:dict, p4g_snapshot:dict, prices:pd.DataFrame)->dict:
@@ -53,6 +73,13 @@ def event_study(sec_manifest:dict, submissions:dict, p4g_snapshot:dict, prices:p
                 exclusions["INCOMPLETE_FUTURE_TEN_SESSION_HOLD"]+=1
                 continue
             base=prior[-1]
+            # A missing price row, extra holiday row or nonconsecutive NYSE
+            # session cannot silently alter the two-day signal or ten-day hold.
+            if not _complete_xnys_event_window(
+                date,sessions[base],
+                [sessions[i] for i in future[:EXIT_FOLLOWING_IDX+1]]):
+                exclusions["NONCONSECUTIVE_XNYS_EVENT_WINDOW"]+=1
+                continue
             second=future[N_FOLLOWING_TO_SIGNAL-1]
             entry=future[ENTER_FOLLOWING_IDX]
             exit_idx=future[EXIT_FOLLOWING_IDX]
@@ -88,16 +115,42 @@ def event_study(sec_manifest:dict, submissions:dict, p4g_snapshot:dict, prices:p
         raise e1.SourceStop("Duplicate historical SEC 8-K accession counted.")
     selected=sorted((r for r in events if r["qualifies_positive_catalyst_signal"]),
                     key=lambda x:(x["hypothetical_entry_third_close"],x["ticker"],x["original_sec_accession"]))
-    summary={}
+    def summarize(cohort):
+        result={}
+        for bps in COSTS:
+            key=str(bps)
+            values=[x["net_spy_relative_percentage_points_by_one_way_cost_bps"][key]
+                    for x in cohort]
+            result[key]={
+                "event_count":len(values),
+                "mean_net_excess_percentage_points":None if not values else round(mean(values),5),
+                "median_net_excess_percentage_points":None if not values else round(median(values),5),
+                "min_net_excess_percentage_points":None if not values else round(min(values),5),
+                "positive_net_excess_event_fraction":None if not values else round(sum(v>0 for v in values)/len(values),5),
+            }
+        return result
+
+    # Post-hoc descriptive controls, NOT an untouched holdout or a
+    # causal estimate. All groups use identical entry/exit dates and fees.
+    summary=summarize(selected)
+    unselected=[r for r in events if not r["qualifies_positive_catalyst_signal"]]
+    below=summarize(unselected)
+    unconditional=summarize(events)
+    controls={}
     for bps in COSTS:
         key=str(bps)
-        values=[x["net_spy_relative_percentage_points_by_one_way_cost_bps"][key] for x in selected]
-        summary[key]={
-            "event_count":len(values),
-            "mean_net_excess_percentage_points":None if not values else round(mean(values),5),
-            "median_net_excess_percentage_points":None if not values else round(median(values),5),
-            "min_net_excess_percentage_points":None if not values else round(min(values),5),
-            "positive_net_excess_event_fraction":None if not values else round(sum(v>0 for v in values)/len(values),5),
+        signal_mean=summary[key]["mean_net_excess_percentage_points"]
+        below_mean=below[key]["mean_net_excess_percentage_points"]
+        all_mean=unconditional[key]["mean_net_excess_percentage_points"]
+        controls[key]={
+            "below_threshold_filing_control":below[key],
+            "all_filing_unconditional_control":unconditional[key],
+            "selected_minus_below_threshold_mean_pp":None if
+                signal_mean is None or below_mean is None else
+                round(signal_mean-below_mean,5),
+            "selected_minus_all_filing_mean_pp":None if
+                signal_mean is None or all_mean is None else
+                round(signal_mean-all_mean,5),
         }
     v35=[r["net_spy_relative_percentage_points_by_one_way_cost_bps"]["35"] for r in selected]
     k=len(v35)//2
@@ -130,6 +183,9 @@ def event_study(sec_manifest:dict, submissions:dict, p4g_snapshot:dict, prices:p
         "positive_reaction_events":len(selected),
         "positive_reaction_issuers":issuer_count,
         "results_by_one_way_transaction_cost_bps":summary,
+        "matched_event_controls_by_cost_bps":controls,
+        "controls_added_post_hoc_not_independent_holdout":True,
+        "real_xnys_event_horizons_verified":True,
         "minimum_research_coverage":MIN_EVENTS,
         "minimal_candidate_evidence_check_passed":minimal_coverage,
         "economic_status":"INCONCLUSIVE_NEEDS_INDEPENDENT_EVIDENCE" if minimal_coverage else "REJECT_FOR_LIVE_TOO_WEAK_OR_INSUFFICIENT",
@@ -160,6 +216,8 @@ def main():
     print("V6-E2 reviewed original Item 2.02 filings:",result["individual_original_sec_earnings_events_checked"])
     print("Qualifying positive reaction events:",result["positive_reaction_events"])
     print("Covered selected issuers:",result["positive_reaction_issuers"])
+    print("Full-horizon filing controls:",result["matched_event_controls_by_cost_bps"]["15"]["all_filing_unconditional_control"]["event_count"])
+    print("Non-signal filing controls:",result["matched_event_controls_by_cost_bps"]["15"]["below_threshold_filing_control"]["event_count"])
     for bps,m in result["results_by_one_way_transaction_cost_bps"].items():
         print(bps,"bps/side event excess pct-points: median",m["median_net_excess_percentage_points"],
               "mean",m["mean_net_excess_percentage_points"],"hit share",m["positive_net_excess_event_fraction"])
