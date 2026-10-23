@@ -9,8 +9,8 @@ import fund100_v6_existing_four_model_economics_v1_0 as economics
 import fund100_v6_aggressive_rotation_research_v1_0 as original
 
 
-def paths(n=1000):
-    dates = pd.bdate_range("2012-01-02", periods=n)
+def paths(n=3500):
+    dates = pd.bdate_range("2013-01-02", periods=n)
     t = np.arange(n)
     benchmark = 100 * (1.00025 ** t)
     out = {}
@@ -44,7 +44,7 @@ def test_switch_costs_are_charged_for_entry_and_not_on_no_change():
     a = w.evaluate(p, switch_side_cost_bps=5)
     b = w.evaluate(p, switch_side_cost_bps=35)
     assert a["comparison_windows"]["since_2014"]["switches"] >= 1
-    assert a["comparison_windows"]["since_2014"]["historical_selector_cagr_pct"] > b["comparison_windows"]["since_2014"]["historical_selector_cagr_pct"]
+    assert a["terminal_hypothetical_selector_nav"] > b["terminal_hypothetical_selector_nav"]
     assert a["comparison_windows"]["since_2014"]["model_switch_one_way_notional_NAV"] == b["comparison_windows"]["since_2014"]["model_switch_one_way_notional_NAV"]
 
 
