@@ -175,6 +175,8 @@ def evaluate(paths: dict, *, switch_side_cost_bps: int) -> dict:
         "independent_out_of_sample_alpha_proven": False,
         "strategy_promoted_for_funded_trading": None,
         "paper_or_live_orders": 0,
+        "terminal_hypothetical_selector_nav": round(capital, 6),
+        "total_switches": int((frame["switch_turnover"] > 0).sum()),
         "comparison_windows": {
             name: _window_metrics(frame, start)
             for name, start in START_WINDOWS.items()
