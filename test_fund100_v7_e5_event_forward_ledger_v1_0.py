@@ -42,6 +42,41 @@ def evalx(fields=None):
     return e5.evaluate(sec_source=s,baseline=b,baseline_prices=initial,
                        follow=later,follow_prices=full)
 
+
+def test_exchange_calendar_accepts_thanksgiving_and_weekend_closures():
+    original=pd.Timestamp("2026-11-25")
+    # Thanksgiving (Nov 26) and the Nov 28-29 weekend are not sessions.
+    future=pd.DatetimeIndex(["2026-11-25","2026-11-27","2026-11-30"])
+    entry,exit_=e5.verified_forward_sessions(original,future)
+    assert entry==pd.Timestamp("2026-11-27")
+    assert exit_==pd.Timestamp("2026-11-30")
+
+
+@pytest.mark.parametrize("later_sessions",[
+    ["2026-10-21","2026-10-23"],  # Thursday Oct 22 omitted
+    ["2026-10-21","2026-10-22","2026-10-24"],  # Saturday invented
+    ["2026-10-21","2026-10-22","2026-10-23","2026-10-27"],  # Monday missing
+])
+def test_exchange_calendar_rejects_missing_or_nontrading_vendor_rows(later_sessions):
+    with pytest.raises(e5.ForwardStop,match="XNYS"):
+        e5.verified_forward_sessions(
+            pd.Timestamp("2026-10-21"),pd.DatetimeIndex(later_sessions))
+
+
+def test_full_evaluation_rejects_a_missing_first_forward_market_session():
+    s,b,initial,later,full=fixtures()
+    # 23 October is present, but the 22 October exchange session is absent.
+    full=full.drop(pd.Timestamp("2026-10-22"))
+    with pytest.raises(e5.ForwardStop,match="XNYS"):
+        e5.evaluate(sec_source=s,baseline=b,baseline_prices=initial,
+                    follow=later,follow_prices=full)
+
+
+def test_verified_forward_report_explicitly_records_independent_calendar():
+    report=evalx()
+    assert report["independent_market_session_calendar_verified"] is True
+
+
 def test_frozen_positive_event_uses_first_two_later_rows_only():
     out=evalx()
     assert out["pre_entry_qualified_original_events"]==1
@@ -156,6 +191,13 @@ def test_all_eligible_original_captures_are_counted_and_repeated_filing_deduped(
     assert out["no_cross_event_independence_or_multiple_testing_claim"]
     assert not out["statistically_significant_alpha_proven"]
     assert not out["trading_authorized"]
+
+
+def test_cohort_refuses_legacy_reports_without_verified_market_sessions():
+    report=_source_pinned_report()
+    report["independent_market_session_calendar_verified"]=False
+    with pytest.raises(e5.ForwardStop,match="research-only contract"):
+        e5.aggregate_reports([report])
 
 
 def test_distinct_original_event_identity_increases_cohort_sample_size():
