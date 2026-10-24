@@ -155,3 +155,15 @@ def test_original_post_intent_refresh_must_retain_exact_source_binding(bad,good)
     assert good not in modified
     assert bad in modified
     assert audit.approved_scoped_live_script(FLOW,SCRIPT,y)
+    assert not audit.approved_scoped_live_script(FLOW,SCRIPT,modified)
+
+
+def test_original_first_intent_trigger_rejects_untrusted_name_and_skipped_finish():
+    y=yml()
+    for mutated in (
+        y.replace("    types: [completed]","    types: [requested]"),
+        y.replace("Fund-100 V6-S1 ONE ACWI Original Intent Signed CAS (STORAGE ONLY; NO BROKER)",
+                  "Fund-100 fake broker writer"),
+        y.replace("github.event.workflow_run.head_sha == github.sha","true"),
+    ):
+        assert not audit.approved_scoped_live_script(FLOW,SCRIPT,mutated)
