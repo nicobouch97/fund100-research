@@ -159,3 +159,49 @@ def test_research_is_not_owner_earnings_or_point_in_time_alpha():
     assert out["eps_share_class_and_post_filing_price_execution_not_independently_verified"]
     assert out["no_historical_investable_backtest_or_validated_alpha"]
     assert out["no_intrinsic_value_or_owner_earnings_claim"]
+
+
+def test_within_issuer_contrast_does_not_confuse_cross_company_within_signal():
+    def row(ticker, momentum, bucket, excess):
+        return {"ticker": ticker, "positive_pre_filing_relative_momentum": momentum,
+                "valuation_bucket": bucket,
+                "net_15bps_stock_minus_spy_pp": excess}
+    high = "POSITIVE_EPS_YIELD_AT_LEAST_5PCT"
+    low = "POSITIVE_EPS_YIELD_BELOW_5PCT"
+    records = [
+        row("MSFT", True, high, 4), row("MSFT", True, low, -2),
+        row("KO", True, high, -1), row("KO", True, low, 3),
+        row("PG", True, high, 8),  # no low-yield match
+        row("CAT", False, high, 1), row("CAT", False, low, 2),
+        row("AVGO", False, high, 100),  # cannot inflate paired result
+        row("CAT", True, low, 50),  # other momentum state must not leak
+        row("MSFT", True, "MISSING_ORIGINAL_DILUTED_EPS", 1000),
+    ]
+    result = p4s._within_issuer_valuation_contrasts(records)
+    pos = result["by_prior_momentum"]["positive_momentum"]
+    neg = result["by_prior_momentum"]["nonpositive_momentum"]
+    assert pos["issuers_with_both_yield_buckets_in_same_momentum_state"] == 2
+    assert pos["issuers_with_any_eligible_yield"] == 4
+    assert pos["issuer_equal_high_minus_low_yield_excess_pp"] == 1.0
+    assert pos["per_issuer"]["MSFT"]["high_minus_low_yield_mean_excess_pp"] == 6.0
+    assert pos["per_issuer"]["KO"]["high_minus_low_yield_mean_excess_pp"] == -4.0
+    assert pos["leave_one_issuer_out_pp"] == {"KO": 6.0, "MSFT": -4.0}
+    assert neg["issuers_with_both_yield_buckets_in_same_momentum_state"] == 1
+    assert neg["issuer_equal_high_minus_low_yield_excess_pp"] == -1.0
+    assert neg["leave_one_issuer_out_pp"] == {}
+    assert pos["insufficient_paired_issuers_for_stable_conclusion"]
+    assert result["comparison_is_descriptive_not_independent_inference"]
+
+
+def test_real_evaluator_reports_no_paired_issuer_as_no_evidence():
+    out = evaluate()
+    contrast = out["within_issuer_valuation_contrasts"]
+    assert contrast["method"] == (
+        "WITHIN_ISSUER_SAME_PRIOR_MOMENTUM_5PCT_EPS_YIELD_CONTRAST")
+    for cell in contrast["by_prior_momentum"].values():
+        assert cell["issuers_with_both_yield_buckets_in_same_momentum_state"] == 0
+        assert cell["issuer_equal_high_minus_low_yield_excess_pp"] is None
+        assert cell["leave_one_issuer_out_pp"] == {}
+        assert cell["insufficient_paired_issuers_for_stable_conclusion"]
+    assert out["broker_requests"] == out["broker_orders"] == 0
+    assert out["live_authorized"] is False
