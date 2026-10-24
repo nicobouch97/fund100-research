@@ -31,3 +31,24 @@ Predeclared outputs: total net return, CAGR, maximum peak-to-trough drawdown, an
 - Even if diversification appears helpful historically, results do **not** establish future alpha, verified gold crash-hedge reliability or current account suitability. 2026-selected weights applied retrospectively and data-vintage corrections preclude causal strategy claims. Independent current ETF look-through, actual spreads, and realistic portfolio-level risk controls remain future gates.
 
 **No change to the USD 130.30 pilot capital ceiling, operator STOP, ENGAGED environment kill switch, original V5/V6 risk limits, release locks, holdings or broker permissions. No orders.**
+
+
+## Post-run implementation correction — 24 October 2026 UTC
+
+The original pre-registration above is preserved unchanged. A source-code
+review **after** the first historical run found that the initial C13 simulator
+calculated monthly turnover as the L1 distance across all six weights,
+including the untraded CASH accounting leg. This incorrectly charged
+transaction costs to both an ETF cash transfer and its offsetting cash entry.
+The corrected cost convention charges each actual ETF buy and sell once,
+using the L1 distance over the five ETF positions **only**. For an ETF-to-ETF
+switch both security legs still incur their respective per-side costs; for
+an ETF-to-cash transfer only the security leg incurs costs. Inception ETF
+buys remain charged. The output schema is advanced to V2 so previous
+C13 V1 historical reports are not silently treated as cost-comparable.
+
+The correction changes **only historical cost attribution**, not the
+fixed allocations, 5/15/35 bp assumptions, data window, signal thresholds,
+crisis intervals or LIVE controls. New historical output must be rerun on
+original-source prices and interpreted as a corrected retrospective
+risk diagnostic, not a new holdout or a strategy promotion.
