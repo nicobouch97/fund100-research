@@ -182,3 +182,16 @@ def test_one_time_confirmation_and_separate_protected_reader_no_broker_credentia
         assert denied not in create
     assert x.NO_BROKER_NETWORK and not x.LIVE_ORDER_RELEASED
     assert x.MAX_OWNER_FENCE_CREATES==1 and not x.FIRST_OWNER_CLAIM_ALLOWED
+
+def test_persisted_signed_owner_fence_labels_no_order_release_not_research_absence():
+    w=witness.verify()
+    raw=fence.synthetic_fence_genesis(
+        private_genesis=w["original_public_genesis_nonce"],
+        account_binding_sha256=w["original_live_account_binding_sha256"],
+        key=bytes.fromhex(KEY))
+    parsed=json.loads(raw)
+    assert parsed["mode"]=="SIGNED_ORIGINAL_ACWI_OWNER_FENCE_NO_ORDER_RELEASE_V1"
+    assert parsed["sequence"]==0
+    assert parsed["claim"] is None
+    assert not x.LIVE_ORDER_RELEASED
+    assert x.ORIGINAL_SIGNED_LEDGER_WRITE_ALLOWED is False
