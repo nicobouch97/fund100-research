@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -312,7 +313,7 @@ def main()->None:
             raise IntentStop("Signed first-head result cannot be handed to read-only job")
         with Path(output).open("a",encoding="ascii") as sink:
             sink.write("first_comment_id="+str(
-                result["verified_public_head_comment_id"])+"\\n")
+                result["verified_public_head_comment_id"])+"\n")
     for field in (
         "status","verified_public_head_comment_id","signed_sequence",
         "broker_four_GET_job_authenticated",
