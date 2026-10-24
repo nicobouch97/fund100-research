@@ -334,3 +334,102 @@ def test_one_confirmed_storage_writer_waits_for_actual_succeeded_source():
     assert "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2" in writer
     assert "a148b919ab25071dc3872211bb20588c466a1b92" in writer
     assert "Live order" not in writer
+
+
+def test_separate_readonly_job_recovers_realshape_seq1_and_public_head_without_write():
+    private=Private()
+    public=Public(private.raw)
+    submitted=call(private,public)
+    assert submitted["signed_sequence"]==1
+    before=private.puts
+    result=m.reconfirm_first_signed_intent_readonly(
+        read_token=READ,hmac_hex=KEY,public_token=PUBLIC,
+        first_comment_id="987654321",first_run_id=RUN,
+        private_transport=private,public_transport=public,
+        read_identity=identity_get)
+    assert result["status"]=="ORIGINAL_ACWI_SIGNED_RESERVED_NO_RETRY_AND_PUBLIC_HEAD_RECONFIRMED"
+    assert result["original_signed_seq1_and_parent_HMAC_verified"]
+    assert result["original_ACWI_qty_commitment_matched"]
+    assert result["independent_first_successor_comment_verified"]
+    assert result["broker_order_posts"]==result["private_state_writes"]==0
+    assert result["real_broker_sell_authorized"] is False
+    assert result["independently_immutable_rollback_anchor_verified"] is False
+    assert private.puts==before==1
+    for sensitive in (m.original_acwi_qty(),"0123456789abcdef"*4,
+                      cas.CLIENT_IDS["ACWI"],"not-real-private-read-pat"):
+        assert sensitive not in str(result)
+
+
+@pytest.mark.parametrize("kind",["missing_first","wrong_first","missing_seq1",
+                                 "tamper_private","wrong_hmac","wrong_run"])
+def test_independent_first_signed_head_recovery_fail_closed(kind):
+    private=Private()
+    public=Public(private.raw)
+    call(private,public)
+    args=dict(read_token=READ,hmac_hex=KEY,public_token=PUBLIC,
+        first_comment_id="987654321",first_run_id=RUN,
+        private_transport=private,public_transport=public,
+        read_identity=identity_get)
+    if kind=="missing_first":
+        args["first_comment_id"]="999888777"
+    elif kind=="wrong_first":
+        public.changed=True
+    elif kind=="missing_seq1":
+        private.raw=original_raw()
+    elif kind=="tamper_private":
+        private.raw+=b"x"
+    elif kind=="wrong_hmac":
+        args["hmac_hex"]="abcdef0123456789"*4
+    elif kind=="wrong_run":
+        args["first_run_id"]="111111111"
+    before=private.puts
+    with pytest.raises((m.IntentStop,m.recovery.RecoveryStop,m.post_check.OneShotStop)):
+        m.reconfirm_first_signed_intent_readonly(**args)
+    assert private.puts==before
+    assert before==1
+
+
+def test_signed_writer_outputs_only_public_comment_id_for_separate_job(monkeypatch,tmp_path):
+    output=tmp_path/"actions-output"
+    monkeypatch.setenv("GITHUB_REPOSITORY","nicobouch97/fund100-research")
+    monkeypatch.setenv("GITHUB_REF","refs/heads/main")
+    monkeypatch.setenv("GITHUB_EVENT_NAME","workflow_dispatch")
+    monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH","ENGAGED")
+    monkeypatch.setenv("FUND100_RISK_LEVEL","HIGH")
+    monkeypatch.setenv("FUND100_FIRST_INTENT_CONFIRM",m.CONFIRM)
+    monkeypatch.setenv("GITHUB_ACTIONS","true")
+    monkeypatch.setenv("GITHUB_OUTPUT",str(output))
+    monkeypatch.setattr(m,"execute",lambda **kw:{
+        "verified_public_head_comment_id":987654321,
+        "signed_sequence":1,"status":"ACWI_SIGNED_INTENT_AND_PUBLIC_HEAD_WITNESS_STORAGE_ONLY",
+        "broker_four_GET_job_authenticated":True,
+        "signed_private_CAS_GET_and_PUT_verified":True,
+        "signed_external_next_head_commitment_readback_verified":True,
+        "private_future_HEAD_order_submission_authorized":False,
+        "live_trading_activated":False,
+        "broker_requests_by_this_workflow":0,
+        "broker_order_posts":0,"private_Git_PUTs":1,
+    })
+    m.main()
+    assert output.read_text()=="first_comment_id=987654321\n"
+
+
+def test_new_independent_readback_job_has_no_writer_broker_or_dispatch_secrets():
+    from pathlib import Path
+    yml=Path(".github/workflows/fund100-v6-s1-first-acwi-private-intent-only.yml").read_text()
+    marker="  independent-readonly-confirm-first-ACWI-signed-head:"
+    assert marker in yml
+    separate=yml.split(marker,1)[1]
+    assert "protected-main-one-original-ACWI-intent-NO-orders" in separate
+    assert "first_comment_id" in separate
+    assert "GITHUB_RUN_ID" in separate
+    assert "m.reconfirm_first_signed_intent_readonly(" in separate or "p.reconfirm_first_signed_intent_readonly(" in separate
+    assert "FUND100_PRIVATE_STATE_READ_TOKEN" in separate
+    assert "FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX" in separate
+    assert "issues: read" in separate and "contents: read" in separate
+    for forbidden in ("FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN",
+                      "ALPACA_LIVE_KEY","ALPACA_LIVE_SECRET",
+                      "actions: write","issues: write","gh api -X POST",
+                      "submit_order(","method=\"PUT\""):
+        assert forbidden not in separate
+    assert m.NO_BROKER_NETWORK and m.NO_LIVE_ORDER_RELEASE
