@@ -307,3 +307,57 @@ def test_skipped_real_risk_step_is_an_explicit_false_not_certification():
         source=result,genesis=signed_empty_genesis())
     assert joined["postfunding_account_6_20_35_read_evidence"] is False
     assert joined["orders_authorized"] is False
+
+
+def signed_acwi_reservation_metadata():
+    return {
+        "status":"ORIGINAL_ACWI_SIGNED_SEQ1_AND_PUBLIC_HEAD_RECONFIRMED_READONLY",
+        "private_genesis_HMAC_signature_and_original_account_binding_verified":True,
+        "independent_public_issue8_comment_digest_and_identity_verified":True,
+        "private_ledger_sequence":1,
+        "first_reserved_symbol":"ACWI",
+        "first_reservation_state":"RESERVED_NO_RETRY",
+        "original_ACWI_qty_commitment_verified":True,
+        "independent_first_successor_public_witness_verified":True,
+        "independently_immutable_rollback_anchor_proven":False,
+        "production_trade_order_submission_authorized":False,
+        "private_git_writes":0,"broker_orders":0,
+    }
+
+
+def test_existing_broker_risk_join_accepts_realshape_verified_seq1_but_never_order():
+    source=h.verify_any_source(**risk_fx())
+    joined=h.join_current_risk_and_signed_first_reservation(
+        source=source,reserved=signed_acwi_reservation_metadata())
+    assert joined["status"]=="STOPPED_RISK_AND_FIRST_SIGNED_ACWI_RESERVATION_READS_JOINED"
+    assert joined["first_original_signed_ACWI_intent_readback_verified"]
+    assert joined["first_reservation_is_no_retry"]
+    assert joined["postfunding_account_6_20_35_read_evidence"] is False
+    assert joined["orders_authorized"] is False
+    assert joined["broker_POSTs"]==joined["private_Git_PUTs"]==0
+
+
+@pytest.mark.parametrize("change",[
+    {"private_ledger_sequence":0},{"private_ledger_sequence":2},
+    {"first_reserved_symbol":"EEM"},
+    {"first_reservation_state":"POST_MAY_HAVE_BEEN_SENT"},
+    {"original_ACWI_qty_commitment_verified":False},
+    {"independent_first_successor_public_witness_verified":False},
+    {"independently_immutable_rollback_anchor_proven":True},
+    {"production_trade_order_submission_authorized":True},
+    {"private_git_writes":1},{"broker_orders":1},
+    {"status":"PRESENT_UNANCHORED_PRODUCTION_LEDGER_STOP"},
+])
+def test_private_seq1_recovery_must_be_authenticated_and_initial(change):
+    reserved=signed_acwi_reservation_metadata()
+    reserved.update(change)
+    with pytest.raises(h.HandoffStop):
+        h.join_current_risk_and_signed_first_reservation(
+            source=h.verify_any_source(**risk_fx()),reserved=reserved)
+
+
+def test_old_broker_order_id_flow_does_not_claim_new_seq1_risk_evidence():
+    with pytest.raises(h.HandoffStop):
+        h.join_current_risk_and_signed_first_reservation(
+            source=h.verify_any_source(**fx()),
+            reserved=signed_acwi_reservation_metadata())
