@@ -53,6 +53,16 @@ def read_current_original_acwi_owner_fence_getonly(
         if len(raw)>26000:
             raise HandoffStop("Original private fence response too large")
         source=json.loads(raw.decode("utf-8"))
+        # GitHub Contents GET returns line-wrapped base64 (normally
+        # 60-character lines). The pure original fence parser intentionally
+        # validates strict base64; strip ONLY GitHub's CR/LF transport wrapping
+        # before rechecking Git blob SHA, canonical bytes and private HMAC.
+        # No signature or account-binding validation is relaxed.
+        if type(source) is not dict:
+            raise HandoffStop("Original owner-fence GET body malformed")
+        encoded=source.get("content")
+        if type(encoded) is str:
+            source["content"]=encoded.replace("\r","").replace("\n","")
     except HTTPError as exc:
         if (exc.code==404 and exc.url==OWNER_FENCE_GET_URL
             and request.get_method()=="GET"):
