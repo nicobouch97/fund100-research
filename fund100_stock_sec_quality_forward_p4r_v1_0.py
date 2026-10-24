@@ -111,6 +111,7 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
     right_censored = 0
     no_entry = 0
     left_censored = 0
+    not_new_accession_events = 0
     for issuer in sorted(observations, key=lambda r: r["ticker"]):
         ticker = issuer["ticker"]
         if ticker not in p4n.SOURCE_MATCHED_TAGS:
@@ -124,11 +125,26 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
         last_day = None
         for event in events:
             day = _date(event["asof_conservative_available_date"])
-            if (last_day is not None and day <= last_day
-                or day.date() > sec_capture.date()
-                or event["source_10k_available_date"] != day.date().isoformat()):
+            if ((last_day is not None and day <= last_day)
+                or day.date() > sec_capture.date()):
                 raise EventStudyStop("SEC filing chronology or availability mismatch")
             last_day = day
+            # P4Q enumerates all original 10-K filing dates. Its as-of
+            # quality evaluator can still reference a PREVIOUS accession
+            # when the newly filed 10-K has an older fiscal end or lacks
+            # the issuer-specific facts. That is NOT a new score signal.
+            # Only a score whose OWN source accession becomes available
+            # on this event day is eligible for a forward outcome.
+            available = event["source_10k_available_date"]
+            if available is None:
+                not_new_accession_events += 1
+                continue
+            source_day = _date(available)
+            if source_day > day:
+                raise EventStudyStop("Future SEC accession leaked into event")
+            if source_day < day:
+                not_new_accession_events += 1
+                continue
             score = event["score"]
             if score is None:
                 missing += 1
@@ -172,7 +188,7 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
                 "spy_matched_gross_return_pct": round(100 * (spy_gross - 1), 6),
                 "cost_scenarios": costs,
             })
-    if len(rows) + missing + right_censored + no_entry + left_censored != annual["industrial_annual_scores_available"] + (
+    if len(rows) + missing + right_censored + no_entry + left_censored + not_new_accession_events != annual["industrial_annual_scores_available"] + (
         annual["industrial_annual_filing_dates_reviewed"] -
         annual["industrial_annual_scores_available"]):
         raise EventStudyStop("SEC event-to-outcome accounting failed")
@@ -199,6 +215,7 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
         "right_censored_eligible_scores": right_censored,
         "scores_without_future_entry_close": no_entry,
         "left_censored_eligible_scores": left_censored,
+        "nonnew_or_unavailable_source_accession_events": not_new_accession_events,
         "completed_event_returns": len(rows),
         "summary": groups,
         "event_returns": rows,
