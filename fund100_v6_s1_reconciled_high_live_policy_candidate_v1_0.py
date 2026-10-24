@@ -116,7 +116,7 @@ def contract(*, root: Path = ROOT) -> dict:
         ("source_independent_v6_high_contract_git_blob_sha1",
          HIGH_SOURCE, "cb5c2ac943ba786a3c535715a6e0dcf3f7dc66b2"),
         ("source_existing_fractional_sell_adapter_git_blob_sha1",
-         SELL_SOURCE, "b5a7d98737858684e3ba7600bc9665f106410243"),
+         SELL_SOURCE, "b18d23664197ac791a129aef970921cd3c9efc01"),
         ("source_existing_signed_private_CAS_protocol_git_blob_sha1",
          CAS_SOURCE, "9b9f8917faa21b4157600ac642f80595445a7276"),
     )
