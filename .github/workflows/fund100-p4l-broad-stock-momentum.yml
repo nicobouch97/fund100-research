@@ -5,6 +5,8 @@ on:
     paths:
       - "fund100_stock_broad_momentum_p4l_v1_0.py"
       - "test_fund100_stock_broad_momentum_p4l_v1_0.py"
+      - "fund100_stock_frozen_forward_marks_p4m_v1_0.py"
+      - "test_fund100_stock_frozen_forward_marks_p4m_v1_0.py"
       - "research_lab/stocks/P4L_BROAD_CONTEMPORARY_STOCK_SOURCE_2026_10_24.md"
       - ".github/workflows/fund100-p4l-broad-stock-momentum.yml"
   push:
@@ -20,6 +22,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: fund100-p4l-broad-stock-price-source
@@ -29,6 +32,8 @@ jobs:
   broad-stock-research:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -39,7 +44,7 @@ jobs:
       - name: Test 24-company roster, price provenance, selection and no-order contracts
         run: |
           set -euo pipefail
-          python -m pytest -q test_fund100_stock_broad_momentum_p4l_v1_0.py test_fund100_stock_quality_momentum_p4g_v1_0.py
+          python -m pytest -q test_fund100_stock_broad_momentum_p4l_v1_0.py test_fund100_stock_frozen_forward_marks_p4m_v1_0.py test_fund100_stock_quality_momentum_p4g_v1_0.py
       - name: Acquire actual completed-session adjusted stock prices
         if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
@@ -64,6 +69,51 @@ jobs:
           print("Real original public source capture:",d["asof_completed_session"],
                 "coverage",d["cohort_size"],"momentum-only",d["momentum_only_watchlist"])
           PY
+      - name: Score the original frozen 24-stock selection using only later same-vintage closes
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          mkdir -p /tmp/p4m-original
+          # Independently pin the ORIGINAL immutable GitHub Actions artifact
+          # and its uploaded ZIP digest; never select an anchor based on returns.
+          gh api -X GET "repos/$GITHUB_REPOSITORY/actions/artifacts/12545733087" > /tmp/p4m-original-artifact-metadata.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import fund100_stock_frozen_forward_marks_p4m_v1_0 as p4m
+          a=json.loads(Path("/tmp/p4m-original-artifact-metadata.json").read_text())
+          assert a["id"]==p4m.ORIGINAL_ARTIFACT_ID
+          assert a["name"]=="fund100-p4l-broad-stock-original-price-vintage"
+          assert a["digest"]=="sha256:"+p4m.ORIGINAL_ARTIFACT_ZIP_SHA256
+          assert a["workflow_run"]["id"]==p4m.ORIGINAL_RUN_ID
+          assert a["workflow_run"]["head_sha"]==p4m.ORIGINAL_HEAD_SHA
+          assert not a["expired"]
+          PY
+          gh run download 40057272409 --repo "$GITHUB_REPOSITORY" \
+            --name fund100-p4l-broad-stock-original-price-vintage \
+            --dir /tmp/p4m-original
+          test -s /tmp/p4m-original/fund100-p4l-current-research.json
+          test -s /tmp/p4m-original/fund100-p4l-current-original-prices.csv
+          python fund100_stock_frozen_forward_marks_p4m_v1_0.py \
+            --original-json /tmp/p4m-original/fund100-p4l-current-research.json \
+            --original-csv /tmp/p4m-original/fund100-p4l-current-original-prices.csv \
+            --later-json /tmp/fund100-p4l-current-research.json \
+            --later-csv /tmp/fund100-p4l-current-original-prices.csv \
+            --output /tmp/fund100-p4m-frozen-24-stock-forward-marks.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("/tmp/fund100-p4m-frozen-24-stock-forward-marks.json").read_text())
+          assert d["frozen_selection"]==["MSFT","CVX","XOM","DIS","MA","V"]
+          assert d["frozen_selection_session"]=="2026-10-23"
+          assert d["same_later_source_vintage_for_entry_and_exit"]
+          assert d["all_post_selection_nyse_sessions_verified"]
+          assert d["broker_requests"]==d["paper_orders"]==d["live_orders"]==0
+          assert not d["trading_authorized"] and not d["live_authorized"]
+          print("Original P4L 24-stock forward evidence:",d["status"],
+                "intervals",d["observed_forward_return_intervals"])
+          PY
       - name: Archive original source vintage and corresponding dated signal
         if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
@@ -72,5 +122,6 @@ jobs:
           path: |
             /tmp/fund100-p4l-current-research.json
             /tmp/fund100-p4l-current-original-prices.csv
+            /tmp/fund100-p4m-frozen-24-stock-forward-marks.json
           retention-days: 90
           if-no-files-found: error
