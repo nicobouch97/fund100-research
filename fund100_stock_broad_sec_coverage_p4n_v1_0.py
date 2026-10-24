@@ -100,6 +100,8 @@ def jpm_bank_annual_diagnostics(facts: dict, submissions: dict,
         "cross_sector_comparison_approved": False,
         "for_trading_approved": False,
     }
+    if not submissions["filings"]["recent"]:
+        return out
     filings = p4a.submissions_index(submissions)
     ready = sorted(
         [(acc, f) for acc, f in filings.items()
