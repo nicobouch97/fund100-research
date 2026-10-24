@@ -86,5 +86,5 @@ def test_wrong_source_sha_and_missing_nyse_session_fail_closed():
     missing = p.drop(index=p.index[70])
     with pytest.raises(p4p.FeasibilityStop, match="NYSE"):
         analyze(missing)
-    with pytest.raises(p4p.FeasibilityStop, match="NYSE"):
+    with pytest.raises(p4p.FeasibilityStop, match="Insufficient"):
         analyze(p.iloc[:130])
