@@ -9,6 +9,8 @@ on:
       - "test_fund100_stock_broad_sec_annual_replay_p4q_v1_0.py"
       - "fund100_stock_sec_quality_forward_p4r_v1_0.py"
       - "test_fund100_stock_sec_quality_forward_p4r_v1_0.py"
+      - "fund100_stock_sec_eps_yield_p4s_v1_0.py"
+      - "test_fund100_stock_sec_eps_yield_p4s_v1_0.py"
       - ".github/workflows/fund100-p4n-broad-sec-coverage.yml"
   push:
     branches: [main]
@@ -19,6 +21,8 @@ on:
       - "test_fund100_stock_broad_sec_annual_replay_p4q_v1_0.py"
       - "fund100_stock_sec_quality_forward_p4r_v1_0.py"
       - "test_fund100_stock_sec_quality_forward_p4r_v1_0.py"
+      - "fund100_stock_sec_eps_yield_p4s_v1_0.py"
+      - "test_fund100_stock_sec_eps_yield_p4s_v1_0.py"
       - ".github/workflows/fund100-p4n-broad-sec-coverage.yml"
   workflow_dispatch:
 
@@ -47,6 +51,7 @@ jobs:
             test_fund100_stock_broad_sec_coverage_p4n_v1_0.py \
             test_fund100_stock_broad_sec_annual_replay_p4q_v1_0.py \
             test_fund100_stock_sec_quality_forward_p4r_v1_0.py \
+            test_fund100_stock_sec_eps_yield_p4s_v1_0.py \
             test_fund100_stock_sec_source_p4b_v1_0.py \
             test_fund100_stock_sec_quality_p4a_v1_0.py \
             test_fund100_stock_broad_momentum_p4l_v1_0.py
@@ -237,6 +242,40 @@ jobs:
           print("15bp pre-filing momentum x SEC quality:",
                 d["quality_by_pre_filing_relative_momentum"]["15"])
           print("RETROSPECTIVE SURVIVORS, NOT A VALIDATED INVESTABLE BACKTEST")
+          PY
+      - name: Research original SEC diluted EPS yield versus prior momentum (not alpha)
+        if: steps.capture.outputs.acquired == 'true'
+        run: |
+          set -euo pipefail
+          python fund100_stock_sec_eps_yield_p4s_v1_0.py \
+            --source-dir /tmp/fund100-p4n-original-sec \
+            --event-report /tmp/fund100-p4n-original-sec/quality-126-session-event-study.json \
+            --output /tmp/fund100-p4n-original-sec/gaap-eps-yield-event-diagnostic.json \
+            --raw-close-csv /tmp/fund100-p4n-original-sec/raw-vendor-split-adjusted-close.csv \
+            --split-factors-csv /tmp/fund100-p4n-original-sec/raw-vendor-stock-splits.csv
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root=Path("/tmp/fund100-p4n-original-sec")
+          d=json.loads((root/"gaap-eps-yield-event-diagnostic.json").read_text())
+          p4r=json.loads((root/"quality-126-session-event-study.json").read_text())
+          assert d["completed_events"] == p4r["completed_event_returns"]
+          raw_close=(root/"raw-vendor-split-adjusted-close.csv").read_bytes()
+          raw_splits=(root/"raw-vendor-stock-splits.csv").read_bytes()
+          assert hashlib.sha256(raw_close+raw_splits).hexdigest() == d["raw_vendor_market_csv_sha256"]
+          assert d["original_eps_available"] <= d["completed_events"]
+          assert d["predeclared_positive_earnings_yield_threshold"] == 0.05
+          assert d["comparison_cost_per_side_bps"] == 15
+          assert d["no_historical_investable_backtest_or_validated_alpha"]
+          assert d["reconstructed_yahoo_close_and_splits_not_independent_corporate_action_proof"]
+          assert not d["trading_authorized"] and not d["paper_authorized"] and not d["live_authorized"]
+          assert d["broker_requests"] == d["broker_orders"] == 0
+          assert sum(cell["events"] for groups in d["valuation_by_prior_momentum"].values()
+                     for cell in groups.values()) == d["completed_events"]
+          print("Original 10-K diluted EPS available:", d["original_eps_available"],
+                "of", d["completed_events"])
+          print("15bp matched excess-return research cells:", d["valuation_by_prior_momentum"])
+          print("NOT owner earnings, point-in-time universe or validated alpha.")
           PY
       - name: Preserve original SEC bytes, source identities and missing coverage
         if: steps.capture.outputs.acquired == 'true'
