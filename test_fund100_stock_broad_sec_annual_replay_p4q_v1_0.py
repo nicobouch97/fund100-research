@@ -92,6 +92,20 @@ def test_historical_original_accession_replay_not_later_comparative(archive):
     assert out["sector_specific_issuers_not_replayed"] == ["CVX", "JPM", "LLY", "NEE"]
     assert out["industrial_annual_scores_available"] == 2
     assert out["industrial_annual_filing_dates_reviewed"] == 36
+    stability = out["industrial_annual_score_stability"]
+    assert stability["score_observation_distribution"] == {
+        "0": 0, "1": 0, "2": 1, "3": 1}
+    assert stability["adjacent_annual_pairs_with_both_scores"] == 1
+    assert stability["adjacent_annual_pairs_with_missing_score"] == 23
+    assert stability["unchanged_score_pairs"] == 0
+    assert stability["improved_score_pairs"] == 0
+    assert stability["deteriorated_score_pairs"] == 1
+    assert stability["score_at_least_2_entries"] == 0
+    assert stability["score_at_least_2_exits"] == 0
+    assert stability["score_at_least_2_remained"] == 1
+    assert stability["issuers_with_scored_adjacent_pairs"] == 1
+    assert stability["issuers_with_any_score_change"] == 1
+    assert stability["score_persistence_is_not_stock_return_predictiveness"]
     cat = next(row for row in out["observations"] if row["ticker"] == "CAT")
     assert cat["annual_filing_dates_reviewed"] == 3
     assert [e["score"] for e in cat["annual_events"]] == [None, 3, 2]
@@ -159,3 +173,50 @@ def test_canonical_capture_time_required(archive):
     path.write_text(json.dumps(report))
     with pytest.raises(p4q.AnnualReplayStop, match="timestamp"):
         p4q.evaluate(archive)
+
+
+def test_quality_stability_never_bridges_missing_middle_year():
+    observations = [{
+        "ticker": "CAT",
+        "annual_filing_dates_reviewed": 3,
+        "available_score_count": 2,
+        "annual_events": [{"score": 3}, {"score": None}, {"score": 1}],
+    }]
+    s = p4q.annual_score_stability(observations)
+    assert s["adjacent_annual_pairs_with_both_scores"] == 0
+    assert s["adjacent_annual_pairs_with_missing_score"] == 2
+    assert s["score_at_least_2_exits"] == 0
+    assert s["issuers_with_scored_adjacent_pairs"] == 0
+
+
+def test_quality_stability_counts_threshold_crossings_only_with_evidence():
+    observations = [{
+        "ticker": "CAT",
+        "annual_filing_dates_reviewed": 5,
+        "available_score_count": 5,
+        "annual_events": [
+            {"score": 1}, {"score": 2}, {"score": 3},
+            {"score": 1}, {"score": 1},
+        ],
+    }]
+    s = p4q.annual_score_stability(observations)
+    assert s["adjacent_annual_pairs_with_both_scores"] == 4
+    assert s["improved_score_pairs"] == 2
+    assert s["deteriorated_score_pairs"] == 1
+    assert s["unchanged_score_pairs"] == 1
+    assert s["score_at_least_2_entries"] == 1
+    assert s["score_at_least_2_exits"] == 1
+    assert s["score_at_least_2_remained"] == 1
+
+
+def test_quality_stability_rejects_non_integer_scores_and_mismatched_counts():
+    row = {
+        "ticker": "CAT", "annual_filing_dates_reviewed": 1,
+        "available_score_count": 1, "annual_events": [{"score": True}],
+    }
+    with pytest.raises(p4q.AnnualReplayStop, match="Invalid annual"):
+        p4q.annual_score_stability([row])
+    row["annual_events"] = [{"score": 2}]
+    row["available_score_count"] = 0
+    with pytest.raises(p4q.AnnualReplayStop, match="reconciliation"):
+        p4q.annual_score_stability([row])
