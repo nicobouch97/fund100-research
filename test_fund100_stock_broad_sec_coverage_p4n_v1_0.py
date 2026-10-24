@@ -108,6 +108,32 @@ def test_missing_duplicate_and_changed_frozen_identity_rejected():
         p4n.resolve_registry(raw_registry(mismatch))
 
 
+
+def test_official_ticker_cik_drift_quarantined_not_rewritten(patched_quality):
+    # The official SEC registry can change a ticker's registrant CIK.
+    # P4E's 2026 frozen issuer evidence must NEVER be silently rekeyed.
+    registry = registry_obj()
+    xom = next(v for v in registry.values() if v["ticker"] == "XOM")
+    frozen = next(r["cik_10_digit"] for r in p4b.read_cohort()
+                  if r["ticker"] == "XOM")
+    xom["cik_str"] = 2115436
+    assert f"{xom['cik_str']:010d}" != frozen
+    with pytest.raises(p4n.BroadSecStop, match="conflicts"):
+        p4n.resolve_registry(raw_registry(registry))
+    report, files = p4n.capture(
+        user_agent=AGENT, registry=raw_registry(registry),
+        loader=fake_loader, captured_utc="2026-10-24T05:30:00Z")
+    assert report["new_issuers_captured"] == 16
+    assert report["source_count"] == 32
+    assert not report["original_eight_registry_identity_all_match"]
+    assert report["original_eight_identity_drift_quarantined"] == [{
+        "ticker": "XOM", "frozen_p4e_cik": frozen,
+        "current_sec_registry_cik": "0002115436"}]
+    assert report["drifted_original_eight_issuer_scores_not_joined_to_current_cik"]
+    assert all(row["ticker"] != "XOM" for row in report["observations"])
+    assert not report["trading_authorized"] and report["broker_orders"] == 0
+
+
 def test_source_identity_mismatch_fails_before_any_report(patched_quality):
     def bad_loader(url, agent):
         obj = json.loads(fake_loader(url, agent))
