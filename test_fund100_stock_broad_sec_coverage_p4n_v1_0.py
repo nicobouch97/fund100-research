@@ -272,12 +272,13 @@ def jpm_2026_original_10k_source_derived_fixture():
         ]}}
     facts = {"cik": int(cik), "facts": {"us-gaap": concepts}}
     submissions = {"cik": int(cik), "filings": {"recent": {
-        "accessionNumber": [acc, "0000019617-25-000001"],
-        "form": ["10-K", "10-K"],
-        "filingDate": ["2026-02-13", "2025-02-13"],
-        "reportDate": ["2025-12-31", "2024-12-31"],
-        "acceptanceDateTime": ["2026-02-13T12:00:00Z",
-                               "2025-02-13T12:00:00Z"],
+        # JPM's genuine SEC recent index contains only this one 10-K.
+        # The 2024 annual comparative is within its 2025 accession.
+        "accessionNumber": [acc],
+        "form": ["10-K"],
+        "filingDate": ["2026-02-13"],
+        "reportDate": ["2025-12-31"],
+        "acceptanceDateTime": ["2026-02-13T12:00:00Z"],
     }}}
     return cik, facts, submissions
 
@@ -320,6 +321,13 @@ def test_jpm_diagnostics_reject_future_filing_missing_comparative_and_bad_bridge
     assert q["state"] == "BANK_NET_REVENUE_IDENTITY_MISMATCH"
     assert not q["net_revenue_identity_reconciled_both_years"]
     assert q["current_efficiency_ratio"] is None
+
+    # A changed bank FY convention must be reviewed, not inferred.
+    bad_year_end = json.loads(json.dumps(subs))
+    bad_year_end["filings"]["recent"]["reportDate"][0] = "2025-12-30"
+    q = p4n.jpm_bank_annual_diagnostics(
+        facts, bad_year_end, cik, "2026-10-24")
+    assert q["state"] == "BANK_UNEXPECTED_FISCAL_YEAR_END"
 
     # Later restatement accession must not rewrite the latest 10-K's facts.
     later = json.loads(json.dumps(facts))
