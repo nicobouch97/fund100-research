@@ -6,6 +6,7 @@ on:
       - "test_fund100_v6_s1_qty_sell_inside_reviewed_writer_v1_0.py"
       - "fund100_v6_s1_one_time_owner_claim_cas_v1_0.py"
       - "test_fund100_v6_s1_one_time_owner_claim_cas_v1_0.py"
+      - "test_fund100_v6_s1_prepost_locked_transport_v1_0.py"
       - "research_lab/V6_S1_APPROVED_WRITER_ACWI_FRACTIONAL_SELL_TRANSPORT_LOCKED_PROTOCOL_2026_10_21.md"
       - ".github/workflows/fund100-v6-s1-acwi-qty-sell-inside-reviewed-writer.yml"
   workflow_dispatch:
@@ -30,6 +31,7 @@ jobs:
             test_fund100_v6_s1_qty_sell_inside_reviewed_writer_v1_0.py \
             test_fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0.py \
             test_fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0.py \
-            test_fund100_v6_s1_one_time_owner_claim_cas_v1_0.py
+            test_fund100_v6_s1_one_time_owner_claim_cas_v1_0.py \
+            test_fund100_v6_s1_prepost_locked_transport_v1_0.py
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
           echo 'Dummy response/keys only: no LIVE writer command, no Alpaca secrets, no real POST.'
