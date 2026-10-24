@@ -187,6 +187,15 @@ PUBLIC_ISSUE_COMMENTS_PAGE_PREFIX = (
 )
 MAX_ISSUE_PAGES = 10
 MAX_ISSUE_PAGE_BYTES = 1_500_000
+ORIGINAL_INTENT_RUN_PREFIX = (
+    "https://api.github.com/repos/nicobouch97/fund100-research/actions/runs/"
+)
+ORIGINAL_INTENT_WORKFLOW_PATH = (
+    ".github/workflows/fund100-v6-s1-first-acwi-private-intent-only.yml"
+)
+ORIGINAL_INTENT_WORKFLOW_NAME = (
+    "Fund-100 V6-S1 ONE ACWI Original Intent Signed CAS (STORAGE ONLY; NO BROKER)"
+)
 
 
 def _public_issue_page(*, page: int, token: str, transport=None) -> list:
@@ -215,6 +224,53 @@ def _public_issue_page(*, page: int, token: str, transport=None) -> list:
     return data
 
 
+
+
+def _public_original_intent_run(*, run_id: str, token: str,
+                                transport=None) -> dict:
+    _number(run_id, "signed first reservation workflow run")
+    request = Request(ORIGINAL_INTENT_RUN_PREFIX + run_id, method="GET", headers={
+        "Accept": "application/vnd.github+json",
+        "Authorization": "Bearer " + _secret(token, "public actions-read token"),
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "fund100-first-intent-run-auth-readonly",
+    })
+    try:
+        with (urlopen if transport is None else transport)(request, timeout=12) as response:
+            if getattr(response,"status",None)!=200:
+                raise RecoveryStop("Original first intent run metadata unavailable")
+            raw=response.read(40_001)
+        if len(raw)>40_000:
+            raise RecoveryStop("Original first intent run response oversized")
+        data=json.loads(raw.decode("utf-8"))
+    except (HTTPError, URLError, OSError, TimeoutError, ValueError, UnicodeError):
+        raise RecoveryStop("Original first intent run source ambiguous; STOP") from None
+    if type(data) is not dict:
+        raise RecoveryStop("Malformed original first intent run source")
+    return data
+
+
+def _verify_public_original_intent_run(*, run: dict, run_id: str)->None:
+    """Public source-run URL alone is not authenticated proof of our writer."""
+    if (type(run) is not dict
+        or type(run.get("id")) is not int
+        or str(run["id"]) != run_id
+        or run.get("path") != ORIGINAL_INTENT_WORKFLOW_PATH
+        or run.get("name") != ORIGINAL_INTENT_WORKFLOW_NAME
+        or run.get("event") != "workflow_dispatch"
+        or run.get("head_branch") != "main"
+        or run.get("status") != "completed"
+        or run.get("conclusion") != "success"
+        or type(run.get("run_attempt")) is not int
+        or run["run_attempt"] != 1
+        or type(run.get("repository")) is not dict
+        or run["repository"].get("full_name") != "nicobouch97/fund100-research"
+        or type(run.get("head_repository")) is not dict
+        or run["head_repository"].get("full_name") != "nicobouch97/fund100-research"
+        or type(run.get("head_sha")) is not str
+        or re.fullmatch(r"[0-9a-f]{40}",run["head_sha"]) is None):
+        raise RecoveryStop("Signed first reservation public workflow origin not proven")
+
 def _complete_original_comment_pages(*, token: str, issue_page_get,
                                      public_transport=None) -> list:
     """No incomplete pagination can silently hide another successor witness."""
@@ -237,7 +293,7 @@ def recover_current_original_signed_head_readonly(
         *, public_comment_id: str, bootstrap_run_id: str, read_token: str,
         hmac_hex: str, public_token: str, private_transport=None,
         public_transport=None, identity_fetch=identity.safe_get,
-        issue_page_get=None) -> dict:
+        issue_page_get=None, public_run_get=None) -> dict:
     """Original seq0 or exact signed ACWI seq1, in a separate READ principal.
 
     Independent issue comments remain editable; this never establishes
@@ -336,6 +392,12 @@ def recover_current_original_signed_head_readonly(
     if len(candidates) != 1:
         raise RecoveryStop("Missing or ambiguous original seq1 public head witness")
     comment, comment_id, run_id = candidates[0]
+    # Independently validate the origin of the public successor comment.
+    original_run = (_public_original_intent_run(
+        run_id=run_id,token=public_token,transport=public_transport)
+        if public_run_get is None else
+        public_run_get(run_id=run_id,token=public_token))
+    _verify_public_original_intent_run(run=original_run,run_id=run_id)
     try:
         checked = prepost.check_initial_reserved(
             source=private, genesis_public_comment=genesis_comment,
