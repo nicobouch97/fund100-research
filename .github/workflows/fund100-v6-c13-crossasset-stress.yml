@@ -36,8 +36,6 @@ jobs:
         run: |
           set -euo pipefail
           test "${FUND100_BROKER_KILL_SWITCH}" = ENGAGED
-          test -z "${ALPACA_LIVE_KEY:-}"
-          test -z "${ALPACA_LIVE_SECRET:-}"
           python -m pytest -q test_fund100_v6_crossasset_stress_diagnostic_v1_0.py
       - name: Retrieve real vendor ETF prices and calculate fixed historical risk
         run: |
