@@ -87,13 +87,9 @@ class OfflineFencedSendOnce:
             raise FencedRehearsalStop("Original fake owner CAS not confirmed; HOLD")
         try:
             reread=fake_fence_get()
-            verified=fence.verify_claimed_owner(**{
-                **original,
-                "current_fence_source":reread,
-            } if False else {
+            verified=fence.verify_claimed_owner(
                 **{k:v for k,v in original.items() if k!="fence_source"},
-                "current_fence_source":reread,
-            })
+                current_fence_source=reread)
             if (verified["unique_original_workflow_owner_HMAC_recognized"] is not True
                 or verified["LIVE_order_released"] is not False
                 or verified["restarted_same_owner_can_submit"] is not False
