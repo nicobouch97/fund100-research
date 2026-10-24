@@ -15,6 +15,19 @@ import test_fund100_v6_s1_acwi_unique_owner_fence_offline_v1_0 as fixture
 READ="dummy-original-private-read-token-different"
 WRITE="dummy-original-private-write-token-different"
 
+@pytest.fixture(autouse=True)
+def trusted_actions_attempt(monkeypatch):
+    original=fixture.setup()
+    for name,value in (
+        ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
+        ("GITHUB_REF","refs/heads/main"),
+        ("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_RUN_ATTEMPT","1"),
+        ("GITHUB_RUN_ID",original["owner_run_id"]),
+        ("GITHUB_SHA",original["current_main_sha"]),
+    ):
+        monkeypatch.setenv(name,value)
+
 class FakeResponse:
     def __init__(self,status,data):
         self.status=status
@@ -180,6 +193,23 @@ def test_any_real_order_or_retry_enablement_is_an_immediate_stop(change,monkeypa
     with pytest.raises(x.OwnerClaimStop,match="HARD LOCKED"):
         x.claim_for_same_attempt_only(**params(fake))
     assert fake.put_count==0 and fake.gets==[]
+
+@pytest.mark.parametrize("name,value",[
+    ("GITHUB_REPOSITORY","attacker/bad"),
+    ("GITHUB_REF","refs/heads/not-main"),
+    ("GITHUB_EVENT_NAME","pull_request"),
+    ("GITHUB_RUN_ATTEMPT","2"),
+    ("GITHUB_RUN_ID","39812340002"),
+    ("GITHUB_SHA","b"*40),
+])
+def test_untrusted_workflow_identity_cannot_claim_or_access_private_head(name,value,monkeypatch):
+    monkeypatch.setattr(x,"SIGNED_OWNER_CLAIM_TRANSPORT_RELEASED",True)
+    monkeypatch.setenv(name,value)
+    fake=FakeGit(fixture.setup()["fence_source"])
+    with pytest.raises(x.OwnerClaimStop,match="trusted first-run"):
+        x.claim_for_same_attempt_only(**params(fake))
+    assert fake.put_count==0 and not fake.gets
+
 
 def test_candidate_has_no_entrypoint_or_live_order_transport():
     from pathlib import Path
