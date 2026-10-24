@@ -62,6 +62,10 @@ jobs:
           assert report["new_issuers_captured"] == 16
           assert report["source_count"] == 32
           assert report["original_eight_ciks_checked_against_official_registry"]
+          assert report["drifted_original_eight_issuer_scores_not_joined_to_current_cik"]
+          assert report["original_eight_registry_identity_all_match"] == (not report["original_eight_identity_drift_quarantined"])
+          assert all(row["ticker"] not in {r["ticker"] for r in report["observations"]}
+                     for row in report["original_eight_identity_drift_quarantined"])
           assert report["official_registry_sha256"] == hashlib.sha256(
               (root / "official-sec-ticker-registry.json").read_bytes()).hexdigest()
           assert report["broker_orders"] == 0
@@ -75,7 +79,9 @@ jobs:
                   assert hashlib.sha256(raw).hexdigest() == p["raw_sha256"]
           print("Original SEC source and generic descriptive coverage verified:",
                 report["new_issuers_captured"], "new issuers;",
-                report["new_issuers_generic_score_available"], "generic scores.")
+                report["new_issuers_generic_score_available"], "generic scores;",
+                "original-eight CIK drift quarantined:",
+                [r["ticker"] for r in report["original_eight_identity_drift_quarantined"]])
           PY
           echo "acquired=true" >> "$GITHUB_OUTPUT"
       - name: Preserve original SEC bytes, source identities and missing coverage

@@ -53,7 +53,7 @@ def registry_bytes(user_agent: str) -> bytes:
     return data
 
 
-def resolve_registry(raw: bytes) -> dict[str, str]:
+def resolve_registry(raw: bytes, *, allow_frozen_drift: bool = False) -> dict[str, str]:
     """Fail closed if any of the 24 contemporary tickers cannot be identified."""
     if type(raw) is not bytes or not 2 <= len(raw) <= REGISTRY_LIMIT:
         raise BroadSecStop("Missing or oversized official registry")
@@ -83,7 +83,8 @@ def resolve_registry(raw: bytes) -> dict[str, str]:
         raise BroadSecStop("Incomplete or ambiguous 24-issuer SEC identity map")
     original = {row["ticker"]: row["cik_10_digit"] for row in p4b.read_cohort()}
     if any(result[ticker] != cik for ticker, cik in original.items()):
-        raise BroadSecStop("Official SEC registry conflicts with frozen original eight")
+        if not allow_frozen_drift:
+            raise BroadSecStop("Official SEC registry conflicts with frozen original eight")
     return result
 
 
@@ -94,8 +95,17 @@ def capture(*, user_agent: str, registry: bytes,
     p4b.contact_user_agent(user_agent)
     if type(limit) is not int or not 1 <= limit <= MAX_NEW:
         raise BroadSecStop("New SEC cohort limit must be 1 through 16")
-    mapping = resolve_registry(registry)
-    original = {row["ticker"] for row in p4b.read_cohort()}
+    # SEC ticker identities can change after a corporate reorganization.
+    # Keep frozen P4E CIKs unchanged; quarantine any discrepancy rather than
+    # mislabelling a current ticker identity as the original 2026 issuer.
+    mapping = resolve_registry(registry, allow_frozen_drift=True)
+    frozen = {row["ticker"]: row["cik_10_digit"] for row in p4b.read_cohort()}
+    drift = [
+        {"ticker": ticker, "frozen_p4e_cik": cik,
+         "current_sec_registry_cik": mapping[ticker]}
+        for ticker, cik in sorted(frozen.items()) if mapping[ticker] != cik
+    ]
+    original = set(frozen)
     new = sorted(set(p4l.SECTORS) - original)
     if len(new) != MAX_NEW:
         raise BroadSecStop("P4L roster unexpectedly changed")
@@ -155,6 +165,9 @@ def capture(*, user_agent: str, registry: bytes,
         "official_registry_url": REGISTRY_URL,
         "official_registry_sha256": hashlib.sha256(registry).hexdigest(),
         "original_eight_ciks_checked_against_official_registry": True,
+        "original_eight_registry_identity_all_match": not drift,
+        "original_eight_identity_drift_quarantined": drift,
+        "drifted_original_eight_issuer_scores_not_joined_to_current_cik": True,
         "p4l_roster_size": len(p4l.SECTORS),
         "new_issuers_in_roster": MAX_NEW,
         "new_issuers_captured": len(observations),
@@ -195,7 +208,9 @@ def main() -> None:
     print("P4N official SEC prospective coverage:", report["new_issuers_captured"],
           "of 16 new issuers; generic scores:",
           report["new_issuers_generic_score_available"])
-    print("Original eight P4E untouched; no historical alpha or stock orders.")
+    print("Original eight P4E untouched; SEC registry identity drift quarantined:",
+          [row["ticker"] for row in report["original_eight_identity_drift_quarantined"]])
+    print("No historical alpha or stock orders.")
 
 
 if __name__ == "__main__":
