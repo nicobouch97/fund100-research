@@ -56,6 +56,26 @@ def _qty(value)->Decimal:
         raise V6SellStop("Fractional qty must be positive and <=9 decimal places")
     return v
 
+def _held_qty(value)->Decimal|None:
+    """Explicit broker position quantity. None means UNKNOWN, never flat.
+
+    Unlike an order quantity, a confirmed position may be exactly zero.
+    This validator checks only caller-provided shape, not broker provenance.
+    """
+    if value is None:
+        return None
+    if type(value) not in (str,int,Decimal):
+        raise V6SellStop("Broker position quantity must be explicit decimal or unknown")
+    try:
+        v=Decimal(str(value))
+    except (InvalidOperation,ValueError):
+        raise V6SellStop("Invalid broker position quantity") from None
+    if (not v.is_finite() or v<0 or v>Decimal("1000000")
+        or v.as_tuple().exponent < -MAX_FRAC_PLACES
+        or (type(value) is str and "e" in value.lower())):
+        raise V6SellStop("Invalid nonnegative broker position quantity")
+    return v
+
 def _id(symbol)->str:
     if symbol not in LEGACY_TO_EXIT:
         raise V6SellStop("Only ACWI, EEM, XLV may be original V6 legacy exits")
@@ -93,14 +113,16 @@ def reconcile(*,symbol:str,original_qty:str,receipt:dict|None,
 
     Intended as a future immutable client-ID lookup / order history boundary.
     A 404/absence is NOT evidence that a previous network POST never happened.
+    None means no holdings snapshot. An explicit "0" is a ZERO quantity input,
+    but does not establish independently authenticated broker provenance.
     """
     expected=inspect_sell_shape(symbol=symbol,original_qty=original_qty)
-    held=_qty(currently_held_qty) if currently_held_qty is not None else None
+    held=_held_qty(currently_held_qty)
     original=_qty(original_qty)
     if held is not None and held>original:
         raise V6SellStop("Original position increased; must reconcile manually")
     if receipt is None:
-        stage=("HOLD_POSITION_UNEXPLAINABLY_FLAT_WITHOUT_BROKER_RECEIPT"
+        stage=("HOLD_POSITION_SNAPSHOT_MISSING_AND_NO_RECEIPT"
                if held is None else "HOLD_NO_RECEIPT_REQUIRES_DURABLE_NEVER_POSTED_PROOF")
     else:
         if type(receipt) is not dict:
@@ -125,8 +147,12 @@ def reconcile(*,symbol:str,original_qty:str,receipt:dict|None,
             if (filled!=original or not isinstance(receipt.get("filled_at"),str)
                 or not receipt["filled_at"]):
                 raise V6SellStop("Broker filled receipt has no exact full-fill proof")
-            stage=("LEGACY_EXIT_FULL_FILL_AND_FLAT_VERIFIED"
-                   if held is None else "HOLD_BROKER_FILLED_BUT_POSITION_NOT_FLAT")
+            if held is None:
+                stage="HOLD_FILLED_RECEIPT_POSITION_SNAPSHOT_MISSING"
+            elif held==0:
+                stage="REVIEW_FILLED_RECEIPT_AND_ZERO_QTY_INPUT_NOT_INDEPENDENTLY_VERIFIED"
+            else:
+                stage="HOLD_BROKER_FILLED_BUT_POSITION_NOT_FLAT"
         elif status in ACTIVE:
             stage="HOLD_ACTIVE_OR_PARTIAL_ORDER_NO_RESUBMISSION"
         elif status in TERMINAL:
@@ -144,6 +170,8 @@ def reconcile(*,symbol:str,original_qty:str,receipt:dict|None,
       "order_may_be_resubmitted":False,
       "order_lookup_alone_proves_never_attempted_post":False,
       "broker_receipt_sourced_by_this_module":False,
+      "explicit_zero_holdings_input_present":held is not None and held==0,
+      "broker_zero_holdings_source_independently_verified":False,
       "original_broker_order_execution_released":False,
       "live_order_authorized":False,
       "live_orders_submitted":0,"broker_requests":0,
