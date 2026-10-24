@@ -15,6 +15,7 @@ from __future__ import annotations
 from base64 import b64encode
 from hashlib import sha256
 import json
+import os
 import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -44,6 +45,26 @@ def _token(value,label):
     if type(value) is not str or len(value.strip())<10:
         raise OwnerClaimStop("Missing distinct private "+label+" principal")
     return value
+
+def _require_real_same_run(*,owner_run_id,owner_attempt,current_main_sha):
+    """Require the attested GitHub runner identity, not caller-made IDs.
+
+    This is additional to the HMAC owner proof, never a trading release.
+    GitHub workflow_dispatch must be the SAME run that would eventually
+    perform the sole signed PRE_POST transition and broker send.
+    """
+    e=os.environ
+    if (e.get("GITHUB_REPOSITORY")!="nicobouch97/fund100-research"
+        or e.get("GITHUB_REF")!="refs/heads/main"
+        or e.get("GITHUB_EVENT_NAME")!="workflow_dispatch"
+        or e.get("GITHUB_RUN_ATTEMPT")!="1"
+        or e.get("GITHUB_RUN_ID")!=owner_run_id
+        or e.get("GITHUB_SHA")!=current_main_sha
+        or type(owner_attempt) is not int or owner_attempt!=1
+        or type(current_main_sha) is not str
+        or re.fullmatch("[0-9a-f]{40}",current_main_sha) is None):
+        raise OwnerClaimStop(
+            "Signed owner must equal trusted first-run GitHub Actions context")
 
 def _get_signed_source(*,token,transport=None):
     req=Request(
@@ -163,6 +184,9 @@ def claim_for_same_attempt_only(*,reserved_source,genesis_comment,first_comment,
         or LIVE_BROKER_ORDER_RELEASED is not False
         or RETRY_AFTER_ANY_PUT_RELEASED is not False):
         raise OwnerClaimStop("Production owner claim HARD LOCKED")
+    _require_real_same_run(
+        owner_run_id=owner_run_id,owner_attempt=owner_attempt,
+        current_main_sha=current_main_sha)
     rt=_token(private_read_token,"READ")
     wt=_token(private_write_token,"WRITE")
     if rt==wt:
