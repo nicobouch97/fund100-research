@@ -208,6 +208,34 @@ jobs:
               assert diag["leave_one_issuer_out_gap_range_pp"] == ([min(values),max(values)] if values else None)
           print("15bp issuer-balanced quality sensitivity:",
                 d["issuer_balanced_sensitivity"]["15"])
+          assert d["predeclared_pre_filing_momentum_sessions"] == 126
+          assert d["pre_filing_momentum_threshold_pp"] == 0
+          assert set(d["quality_by_pre_filing_relative_momentum"]) == {"5","15","35"}
+          for event in d["event_returns"]:
+              last = event["pre_filing_momentum_last_close"]
+              first = event["pre_filing_momentum_first_close"]
+              if last is None:
+                  assert first is None
+                  assert event["pre_filing_relative_momentum_positive"] is None
+                  assert event["pre_filing_126_session_stock_minus_spy_pp"] is None
+              else:
+                  assert first < last < event["conservative_available_date"]
+                  assert event["pre_filing_relative_momentum_positive"] is not None
+          for bps, cells in d["quality_by_pre_filing_relative_momentum"].items():
+              assert cells["all_completed_events_accounted"]
+              assert cells["momentum_uses_only_closes_strictly_before_filing_day"]
+              assert cells["no_threshold_search_or_fitted_allocation"]
+              assert cells["no_independent_alpha_or_statistical_significance_claim"]
+              assert cells["unavailable_lookback_events"] == d["missing_pre_filing_momentum_lookback_events"]
+              assert (cells["positive_relative_momentum"]["events"]
+                      + cells["nonpositive_relative_momentum"]["events"]
+                      + cells["unavailable_lookback_events"] == d["completed_event_returns"])
+              for side in ("positive_relative_momentum","nonpositive_relative_momentum"):
+                  cell=cells[side]
+                  assert cell["score_0_or_1"]["events"] + cell["score_2_or_3"]["events"] == cell["events"]
+                  assert cell["issuer_balanced_sensitivity"]["deletion_range_is_not_a_confidence_interval"]
+          print("15bp pre-filing momentum x SEC quality:",
+                d["quality_by_pre_filing_relative_momentum"]["15"])
           print("RETROSPECTIVE SURVIVORS, NOT A VALIDATED INVESTABLE BACKTEST")
           PY
       - name: Preserve original SEC bytes, source identities and missing coverage

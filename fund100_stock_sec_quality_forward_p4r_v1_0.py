@@ -25,6 +25,8 @@ import fund100_stock_quality_momentum_p4g_v1_0 as p4g
 
 SCHEMA = "FUND100_P4R_ORIGINAL_SEC_QUALITY_126_SESSION_EVENT_STUDY_V1"
 HORIZON = 126
+# Fixed, predeclared relative-momentum window; no grid search or fitted threshold.
+MOMENTUM_LOOKBACK = 126
 SIDE_COSTS_BPS = (5, 15, 35)
 HISTORICAL_PRICE_START = "2017-01-01"
 
@@ -110,6 +112,42 @@ def _issuer_balanced_sensitivity(rows: list[dict], bps: int) -> dict:
             if leave_one_out else None),
         "deletion_range_is_not_a_confidence_interval": True,
         "survivorship_and_overlapping_outcomes_preclude_alpha_inference": True,
+    }
+
+
+def _quality_momentum_interaction(rows: list[dict], bps: int) -> dict:
+    """Fixed quality x prior relative momentum cells, descriptive only.
+
+    The quality score and relative-momentum sign are measured before entry.
+    Sparse cells, repeated issuers and retrospectively selected survivors
+    preclude a predictive claim or a self-financing strategy simulation.
+    """
+    positive = [r for r in rows if r["pre_filing_relative_momentum_positive"] is True]
+    nonpositive = [r for r in rows if r["pre_filing_relative_momentum_positive"] is False]
+    unavailable = [r for r in rows if r["pre_filing_relative_momentum_positive"] is None]
+
+    def describe(group: list[dict]) -> dict:
+        return {
+            "events": len(group),
+            "distinct_issuers": len({r["ticker"] for r in group}),
+            "score_0_or_1": _summarize(
+                [r for r in group if r["quality_score"] < 2], bps),
+            "score_2_or_3": _summarize(
+                [r for r in group if r["quality_score"] >= 2], bps),
+            "issuer_balanced_sensitivity": _issuer_balanced_sensitivity(group, bps),
+        }
+
+    return {
+        "method": "FIXED_126_SESSION_PRE_FILING_STOCK_MINUS_SPY_SIGN_X_SEC_QUALITY",
+        "positive_relative_momentum": describe(positive),
+        "nonpositive_relative_momentum": describe(nonpositive),
+        "unavailable_lookback_events": len(unavailable),
+        "all_completed_events_accounted": (
+            len(positive) + len(nonpositive) + len(unavailable) == len(rows)),
+        "momentum_uses_only_closes_strictly_before_filing_day": True,
+        "zero_relative_momentum_classified_nonpositive": True,
+        "no_threshold_search_or_fitted_allocation": True,
+        "no_independent_alpha_or_statistical_significance_claim": True,
     }
 
 
@@ -219,6 +257,23 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
             if exit_i >= len(data):
                 right_censored += 1
                 continue
+            # Use the last COMPLETED close strictly before the filing day,
+            # never the filing-day close, post-filing price, or forward outcome.
+            pre_i = int(data.index.searchsorted(day, side="left")) - 1
+            first_i = pre_i - MOMENTUM_LOOKBACK
+            if first_i < 0:
+                prior_momentum_pp = None
+                prior_momentum_positive = None
+                momentum_first_close = None
+                momentum_last_close = None
+            else:
+                prior_momentum_pp_raw = 100 * (
+                    float(data[ticker].iloc[pre_i] / data[ticker].iloc[first_i])
+                    - float(data["SPY"].iloc[pre_i] / data["SPY"].iloc[first_i]))
+                prior_momentum_pp = round(prior_momentum_pp_raw, 6)
+                prior_momentum_positive = bool(prior_momentum_pp_raw > 0)
+                momentum_first_close = data.index[first_i].date().isoformat()
+                momentum_last_close = data.index[pre_i].date().isoformat()
             stock_gross = float(data[ticker].iloc[exit_i] / data[ticker].iloc[entry_i])
             spy_gross = float(data["SPY"].iloc[exit_i] / data["SPY"].iloc[entry_i])
             costs = {}
@@ -233,6 +288,10 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
             rows.append({
                 "ticker": ticker, "original_10k_accession": event["source_10k_accession"],
                 "quality_score": score,
+                "pre_filing_126_session_stock_minus_spy_pp": prior_momentum_pp,
+                "pre_filing_relative_momentum_positive": prior_momentum_positive,
+                "pre_filing_momentum_first_close": momentum_first_close,
+                "pre_filing_momentum_last_close": momentum_last_close,
                 "conservative_available_date": day.date().isoformat(),
                 "entry_next_session_close": data.index[entry_i].date().isoformat(),
                 "exit_126_sessions_later": data.index[exit_i].date().isoformat(),
@@ -261,6 +320,8 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
         "source_first_price_session": data.index[0].date().isoformat(),
         "source_last_price_session": data.index[-1].date().isoformat(),
         "predeclared_forward_sessions": HORIZON,
+        "predeclared_pre_filing_momentum_sessions": MOMENTUM_LOOKBACK,
+        "pre_filing_momentum_threshold_pp": 0,
         "cost_per_side_bps": list(SIDE_COSTS_BPS),
         "original_annual_scores": annual["industrial_annual_scores_available"],
         "missing_original_annual_scores": missing,
@@ -274,6 +335,12 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
             str(bps): _issuer_balanced_sensitivity(rows, bps)
             for bps in SIDE_COSTS_BPS
         },
+        "quality_by_pre_filing_relative_momentum": {
+            str(bps): _quality_momentum_interaction(rows, bps)
+            for bps in SIDE_COSTS_BPS
+        },
+        "missing_pre_filing_momentum_lookback_events": sum(
+            r["pre_filing_relative_momentum_positive"] is None for r in rows),
         "event_returns": rows,
         "event_returns_are_overlapping_and_not_independent": True,
         "retrospectively_selected_2026_survivors": True,
@@ -317,6 +384,8 @@ def main() -> None:
           "right-censored:", report["right_censored_eligible_scores"])
     print("15bp score >=2:", report["summary"]["15"]["score_2_or_3"])
     print("15bp score <2:", report["summary"]["15"]["score_0_or_1"])
+    print("15bp pre-filing quality x relative momentum:",
+          report["quality_by_pre_filing_relative_momentum"]["15"])
     print("2026 SURVIVORS / REVISABLE PRICES / NO VALIDATED ALPHA OR ORDERS")
 
 

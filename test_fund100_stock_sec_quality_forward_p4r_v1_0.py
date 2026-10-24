@@ -250,3 +250,65 @@ def test_issuer_balance_is_integrated_at_all_cost_levels_without_trading():
         assert diag["leave_one_issuer_out_gap_range_pp"] is None
     assert out["broker_requests"] == out["broker_orders"] == 0
     assert not out["live_authorized"]
+
+
+def test_fixed_pre_filing_momentum_excludes_filing_and_forward_closes():
+    baseline = run()
+    rows = {r["ticker"]: r for r in baseline["event_returns"]}
+    assert baseline["predeclared_pre_filing_momentum_sessions"] == 126
+    assert baseline["pre_filing_momentum_threshold_pp"] == 0
+    assert rows["CAT"]["pre_filing_momentum_last_close"] == "2025-02-17"
+    assert rows["CAT"]["pre_filing_momentum_last_close"] < rows["CAT"]["conservative_available_date"]
+    assert rows["CAT"]["pre_filing_relative_momentum_positive"] is False
+    assert rows["CAT"]["pre_filing_126_session_stock_minus_spy_pp"] == 0
+    assert baseline["quality_by_pre_filing_relative_momentum"]["15"]["nonpositive_relative_momentum"]["events"] == 2
+
+    p = prices()
+    # Only a completed pre-filing close changes the fixed relative signal.
+    p.loc[pd.Timestamp("2025-02-17"), "CAT"] = 110.0
+    changed = run(p=p)
+    cat = next(r for r in changed["event_returns"] if r["ticker"] == "CAT")
+    assert cat["pre_filing_relative_momentum_positive"] is True
+    assert cat["pre_filing_126_session_stock_minus_spy_pp"] == 10
+    assert cat["stock_gross_return_pct"] == rows["CAT"]["stock_gross_return_pct"]
+    for bps in p4r.SIDE_COSTS_BPS:
+        study = changed["quality_by_pre_filing_relative_momentum"][str(bps)]
+        assert study["positive_relative_momentum"]["score_2_or_3"]["events"] == 1
+        assert study["nonpositive_relative_momentum"]["score_0_or_1"]["events"] == 1
+        assert study["all_completed_events_accounted"]
+        assert study["no_independent_alpha_or_statistical_significance_claim"]
+
+
+def test_missing_prior_126_session_lookback_is_explicit_not_backfilled():
+    a = annual()
+    cat = next(r for r in a["observations"] if r["ticker"] == "CAT")
+    cat["annual_events"][0]["asof_conservative_available_date"] = "2017-02-15"
+    cat["annual_events"][0]["source_10k_available_date"] = "2017-02-15"
+    result = run(a=a)
+    assert result["completed_event_returns"] == 2
+    assert result["missing_pre_filing_momentum_lookback_events"] == 1
+    cat_result = next(r for r in result["event_returns"] if r["ticker"] == "CAT")
+    assert cat_result["pre_filing_relative_momentum_positive"] is None
+    assert cat_result["pre_filing_126_session_stock_minus_spy_pp"] is None
+    assert cat_result["pre_filing_momentum_last_close"] is None
+    for bps in p4r.SIDE_COSTS_BPS:
+        diag = result["quality_by_pre_filing_relative_momentum"][str(bps)]
+        assert diag["unavailable_lookback_events"] == 1
+        assert diag["nonpositive_relative_momentum"]["events"] == 1
+        assert diag["all_completed_events_accounted"]
+
+
+def test_momentum_cells_remain_descriptive_and_not_an_investable_strategy():
+    report = run()
+    assert set(report["quality_by_pre_filing_relative_momentum"]) == {"5", "15", "35"}
+    for bps, cells in report["quality_by_pre_filing_relative_momentum"].items():
+        assert cells["method"] == "FIXED_126_SESSION_PRE_FILING_STOCK_MINUS_SPY_SIGN_X_SEC_QUALITY"
+        assert cells["momentum_uses_only_closes_strictly_before_filing_day"]
+        assert cells["no_threshold_search_or_fitted_allocation"]
+        assert cells["zero_relative_momentum_classified_nonpositive"]
+        for name in ("positive_relative_momentum", "nonpositive_relative_momentum"):
+            diag = cells[name]
+            assert diag["issuer_balanced_sensitivity"]["method"] == "ISSUER_EQUAL_WEIGHT_WITH_WHOLE_ISSUER_DELETION"
+            assert diag["score_0_or_1"]["events"] + diag["score_2_or_3"]["events"] == diag["events"]
+    assert report["broker_requests"] == report["broker_orders"] == 0
+    assert not report["trading_authorized"] and not report["live_authorized"]
