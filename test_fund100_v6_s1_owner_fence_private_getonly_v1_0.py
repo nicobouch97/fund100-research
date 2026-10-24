@@ -39,7 +39,7 @@ def test_existing_original_signed_owner_fence_observed_but_never_a_post_permit(w
         account_binding_sha256=w["original_live_account_binding_sha256"],
         key=key)
     encoded=b64encode(raw).decode("ascii")
-    newline="\\r\\n" if wrap=="CRLF" else "\\n"
+    newline="\r\n" if wrap=="CRLF" else "\n"
     # GitHub REST Contents delivers encoded file bytes split across lines.
     # Preserve strict HMAC, Git blob SHA and canonical JSON checks.
     wrapped=newline.join(encoded[i:i+60] for i in range(0,len(encoded),60))+newline
@@ -135,7 +135,7 @@ def test_wrapped_signed_owner_fence_rejects_non_base64_injected_character():
         account_binding_sha256=w["original_live_account_binding_sha256"],key=key)
     encoded=b64encode(raw).decode("ascii")
     source={"type":"file","path":fence.PATH,"encoding":"base64",
-            "sha":cas.blob_sha(raw),"content":encoded[:60]+"\\n!"+encoded[60:]}
+            "sha":cas.blob_sha(raw),"content":encoded[:60]+"\n!"+encoded[60:]}
     class Response:
         status=200
         def __enter__(self):return self
