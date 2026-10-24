@@ -111,22 +111,28 @@ def jpm_bank_annual_diagnostics(facts: dict, submissions: dict,
         key=lambda item: (item[1]["end"], item[1]["filed"], item[0]),
         reverse=True,
     )
-    if len(ready) < 2:
+    # JPM's SEC 'recent' submissions list is high-volume and can retain
+    # only ONE 10-K (verified in original archive 40073118213). The latest
+    # 10-K itself contains the preceding FY comparative; requiring the
+    # previous accession wrongly discards valid same-filing evidence.
+    if not ready:
         return out
-    (acc, latest), (_, previous) = ready[:2]
+    acc, latest = ready[0]
     out["latest_10k_accession"] = acc
     out["latest_10k_available_date"] = p4a.availability_day(latest["filed"])
     latest_end = p4a.iso_date(latest["end"], "bank FY end")
-    previous_end = p4a.iso_date(previous["end"], "bank prior FY end")
     if (now - latest_end).days > p4a.MAX_STALENESS_DAYS:
         out["state"] = "BANK_LATEST_10K_STALE"
         return out
-    if not 330 <= (latest_end - previous_end).days < 400:
-        out["state"] = "BANK_NONCONSECUTIVE_FISCAL_YEARS"
+    # JPM reports calendar-year annual periods; do not silently assume a
+    # 52/53-week or changed FY end when reconstructing the comparative end.
+    if (latest_end.month, latest_end.day) != (12, 31):
+        out["state"] = "BANK_UNEXPECTED_FISCAL_YEAR_END"
         return out
+    previous_end = latest_end.replace(year=latest_end.year - 1)
     concepts = facts["facts"]["us-gaap"]
     amounts = {}
-    for period, end in (("current", latest["end"]), ("prior", previous["end"])):
+    for period, end in (("current", latest["end"]), ("prior", previous_end.isoformat())):
         amounts[period] = {
             name: p4e.annual_value(concepts, tag, acc, latest["filed"], end)
             for name, tag in JPM_BANK_TAGS.items()
