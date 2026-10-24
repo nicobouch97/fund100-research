@@ -20,6 +20,7 @@ import fund100_stock_quality_momentum_p4g_v1_0 as p4g
 
 SCHEMA = "FUND100_P4L_BROAD_CONTEMPORARY_MOMENTUM_SOURCE_V1"
 COHORT_START = date(2026, 10, 24)
+BASELINE_COMPLETED_SESSION = date(2026, 10, 23)  # Known close before cohort freeze
 # Frozen research selection, NOT an index history or a survivorship-safe roster.
 # Sector tags describe this cohort NOW; they are not historical classifications.
 SECTORS = {
@@ -89,7 +90,7 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
     except (TypeError, ValueError, AttributeError) as exc:
         raise BroadStockStop("Canonical UTC acquisition timestamp required") from exc
     last = data.index[-1].date()
-    if (last < COHORT_START or acquired.date() <= last
+    if (last < BASELINE_COMPLETED_SESSION or acquired.date() <= last
         or (acquired.date() - last).days > 5):
         raise BroadStockStop("Current completed post-cohort source session required")
     if not isinstance(provider_reference, str) or not 8 <= len(provider_reference) <= 240:
