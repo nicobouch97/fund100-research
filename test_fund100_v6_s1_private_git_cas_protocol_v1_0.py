@@ -166,7 +166,6 @@ def test_unique_first_acwi_runner_is_bound_inside_same_seq2_signed_CAS():
             key=KEY,owner_run_id="40084557930",owner_attempt=1,
             owner_nonce="2"*64,source_main_sha="a"*40,
             source_broker_run_id="40084577726")
-    later=owned_post(db,owner_run_id="40084557931",owner_nonce="3"*64) if False else None
     with pytest.raises(c.CasStop):
         owned_post(db,owner_run_id="40084557931",owner_nonce="3"*64)
     assert Q.encode() not in db.body
