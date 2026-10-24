@@ -312,3 +312,54 @@ def test_momentum_cells_remain_descriptive_and_not_an_investable_strategy():
             assert diag["score_0_or_1"]["events"] + diag["score_2_or_3"]["events"] == diag["events"]
     assert report["broker_requests"] == report["broker_orders"] == 0
     assert not report["trading_authorized"] and not report["live_authorized"]
+
+
+def test_prefiling_market_beta_and_linearized_risk_proxy_use_only_past_prices():
+    p = prices()
+    index = p.index
+    pre_i = int(index.searchsorted(pd.Timestamp("2025-02-18"), side="left")) - 1
+    first_i = pre_i - p4r.MOMENTUM_LOOKBACK
+    for i in range(first_i + 1, pre_i + 1):
+        market_r = .002 if i % 2 else -.001
+        p.loc[index[i], "SPY"] = p.loc[index[i - 1], "SPY"] * (1 + market_r)
+        p.loc[index[i], "CAT"] = p.loc[index[i - 1], "CAT"] * (1 + 2 * market_r)
+    entry_i = int(index.searchsorted(pd.Timestamp("2025-02-18"), side="right"))
+    for i in range(entry_i + 1, len(index)):
+        p.loc[index[i], "SPY"] = 100 * 1.0001 ** (i - entry_i)
+    result = run(p=p)
+    cat = next(r for r in result["event_returns"] if r["ticker"] == "CAT")
+    assert cat["prefiling_market_beta_status"] == "IDENTIFIABLE_PREFILING_126_SESSION_BETA"
+    assert 1.99 < cat["prefiling_126_session_spy_beta"] < 2.01
+    assert cat["beta_adjusted_15bps_proxy_pp"] < cat["cost_scenarios"]["15"]["stock_net_return_pct"]
+    cells = result["prefiling_market_beta_risk_diagnostic"]
+    assert cells["pre_filing_beta_uses_no_filing_day_or_forward_prices"]
+    assert cells["no_shorting_or_leverage_or_executable_hedge_implied"]
+    assert cells["no_significance_or_investable_alpha_inference"]
+    assert result["beta_adjusted_proxy_is_not_a_hedged_trade_or_alpha"]
+    # Alter future SPY and stock prices only: beta MUST remain unchanged.
+    p.loc[index[entry_i + 10], "CAT"] *= 1.15
+    p.loc[index[entry_i + 11], "SPY"] *= 1.20
+    later = run(p=p)
+    new_cat = next(r for r in later["event_returns"] if r["ticker"] == "CAT")
+    assert new_cat["prefiling_126_session_spy_beta"] == cat["prefiling_126_session_spy_beta"]
+
+
+def test_beta_unidentifiable_for_constant_market_or_missing_lookback():
+    out = run()
+    for row in out["event_returns"]:
+        assert row["prefiling_market_beta_status"] == "PREFILING_MARKET_VARIANCE_UNIDENTIFIABLE"
+        assert row["prefiling_126_session_spy_beta"] is None
+        assert row["beta_adjusted_15bps_proxy_pp"] is None
+    cells = out["prefiling_market_beta_risk_diagnostic"]["by_quality_and_prior_momentum"]
+    assert all(v["beta_identifiable_events"] == 0 for v in cells.values())
+    assert all(v["issuer_equal_mean_beta_adjusted_15bps_proxy_pp"] is None
+               for v in cells.values())
+    a = annual()
+    cat = next(r for r in a["observations"] if r["ticker"] == "CAT")
+    cat["annual_events"][0]["asof_conservative_available_date"] = "2017-02-15"
+    cat["annual_events"][0]["source_10k_available_date"] = "2017-02-15"
+    result = run(a=a)
+    early = next(r for r in result["event_returns"] if r["ticker"] == "CAT")
+    assert early["prefiling_market_beta_status"] == "INSUFFICIENT_PREFILING_SESSIONS"
+    assert early["prefiling_126_session_spy_beta"] is None
+    assert not result["live_authorized"] and result["broker_orders"] == 0
