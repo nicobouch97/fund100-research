@@ -117,3 +117,30 @@ transaction netting, independent holdout alpha or permission to trade.
 Correlations and effective dimensions are in-sample and may change
 abruptly under stress. No strategy parameters, costs, capital limits,
 risk policies or LIVE release locks change.
+
+
+## ACWI equity-beta and bad-market-day attribution (24 October 2026)
+
+Four correlated strategy sleeves can merely repackage a shared equity
+benchmark exposure. Diagnose the existing fixed 25%-per-model, naturally
+drifting, already-costed synthetic blend against the **same original ACWI
+NAV** using identical close-to-close sessions after the first eligible
+quarterly entry date. For 2014+, 2020+, 2023+ and 5/15/35bp original
+cost scenarios, report daily OLS beta, the fraction of blend daily variance
+explained by ACWI (R-squared), a descriptive annualised *arithmetic*
+regression intercept with **zero assumed cash yield**, active tracking
+error, and average blend/ACWI returns on the worst 5% of ACWI sessions.
+The latter is a conditional historical stress diagnostic, not a downside
+guarantee. The original model costs and synthetic entry cost are retained;
+no new fitting or trading signals are introduced.
+
+A high R-squared or large loss on ACWI's worst days would challenge the
+interpretation of the blend as a truly diversified alpha portfolio.
+A positive OLS intercept is **not** proof of executable alpha: it depends
+on the zero-rate assumption, is not a CAGR, has no statistical-significance
+claim, and is calculated on repeatedly examined history. Benchmark or
+blend return series with effectively zero variance explicitly yield
+unidentifiable beta rather than spurious precision. This remains
+research-only, not independently replicated ETF holdings or fills.
+No capital ceiling, operator STOP, kill switch, LIVE release lock, or
+protected private-state record is changed.

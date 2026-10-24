@@ -88,6 +88,20 @@ jobs:
                         "realised vol",metrics["historical_vol_target_blend_realized_vol_pct"],
                         "mean exposure",metrics["historical_vol_target_blend_average_exposure_pct"],
                         "fixed blend CAGR",metrics["historical_equal_model_blend_cagr_pct"])
+          for cost, comparison in d["causal_quarterly_model_switching_exploratory"].items():
+              for window, beta in comparison["fixed_blend_acwi_beta_by_window"].items():
+                  assert beta["status"] == "DESCRIPTIVE_FIXED_BLEND_ACWI_EQUITY_BETA"
+                  assert beta["descriptive_in_sample_not_independent_alpha"]
+                  assert beta["identical_post_eligibility_sessions"]
+                  assert beta["return_observations"] >= 259
+                  assert 0 <= beta["acwi_explained_daily_variance_pct"] <= 100
+                  print("ACWI beta and tail exposure",cost,"bps",window,
+                        "beta",beta["acwi_daily_beta"],
+                        "R2 pct",beta["acwi_explained_daily_variance_pct"],
+                        "annual arithmetic intercept pp",
+                        beta["zero_cash_rate_ols_intercept_annual_pp"],
+                        "worst ACWI 5pct day blend capture pct",
+                        beta["worst_5pct_acwi_day_blend_capture_pct"])
           print("Causal four-model selector and risk-target sensitivity evaluated; no trading.")
           PY
       - name: Store reproducible historical review
