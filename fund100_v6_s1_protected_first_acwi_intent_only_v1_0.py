@@ -21,6 +21,7 @@ import fund100_v6_s1_private_state_actions_readonly_probe_v1_0 as identity
 import fund100_v6_s1_public_genesis_witness_v1_0 as witness
 import fund100_v6_brokerless_transition_preview_v1_0 as original
 import fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0 as high
+import fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0 as post_check
 
 SCHEMA="FUND100_V6_S1_FIRST_AUTHENTIC_ACWI_INTENT_CAS_ONLY_V1"
 BOOT=Path("live_activation_outputs/v5_002/live_bootstrap_v1_0.json")
@@ -215,6 +216,75 @@ def execute(*,read_token:str,write_token:str,hmac_hex:str,public_token:str,
     }
 
 
+
+
+def reconfirm_first_signed_intent_readonly(*,read_token:str,hmac_hex:str,
+        public_token:str,first_comment_id:str,first_run_id:str,
+        private_transport=None,public_transport=None,
+        read_identity=identity.safe_get,source_root:Path=Path("."))->dict:
+    """Independent protected READ_ONLY seq1 recovery after original one-shot.
+
+    The caller runs in a separate Actions job with private READ but no WRITE
+    token and no broker keys. The original ledger, genesis comment and first
+    ACWI successor comment are independently fetched and reconciled against
+    source-locked original ACWI filled shares. No executable order is emitted.
+    """
+    if (type(first_comment_id) is not str
+        or type(first_run_id) is not str
+        or re.fullmatch(r"[1-9][0-9]{0,18}",first_comment_id) is None
+        or re.fullmatch(r"[1-9][0-9]{0,18}",first_run_id) is None):
+        raise IntentStop("Original first public head identity invalid")
+    if (high.contract(root=source_root)["orders_authorized"] is not False
+        or high.contract(root=source_root)["stage"] !=
+            "RECONCILED_SEPARATE_V6_HIGH_PROPOSED_POLICY_NO_ORDERS"):
+        raise IntentStop("Original separate HIGH source/STOP changed")
+    try:
+        github._secret(read_token,"separate read principal")
+        github._secret(public_token,"public read principal")
+        key=github._key(hmac_hex)
+        original_qty=original_acwi_qty(root=source_root)
+        repo=read_identity(url=identity.BASE,token=read_token)
+        readme=read_identity(
+            url=identity.BASE+"/contents/README.md?ref=main",
+            token=read_token)
+        identity.classify(repo=repo,readme=readme)
+        private=recovery._get(
+            url=recovery.ORIGINAL_PRIVATE_URL,token=read_token,
+            transport=private_transport)
+        genesis=recovery._get(
+            url=recovery.PUBLIC_COMMENT_PREFIX+GENESIS_COMMENT_ID,
+            token=public_token,transport=public_transport)
+        first=recovery._get(
+            url=recovery.PUBLIC_COMMENT_PREFIX+first_comment_id,
+            token=public_token,transport=public_transport)
+        bound=post_check.check_initial_reserved(
+            source=private,genesis_public_comment=genesis,
+            first_public_comment=first,first_comment_id=first_comment_id,
+            first_run_id=first_run_id,original_qty=original_qty,key=key)
+        if (type(bound) is not dict
+            or type(bound.get("source_sha")) is not str
+            or re.fullmatch(r"[0-9a-f]{40}",bound["source_sha"]) is None):
+            raise IntentStop("Original signed seq1 source/commitment not complete")
+    except IntentStop:
+        raise
+    except Exception:
+        raise IntentStop("Independent original seq1 recovery invalid; STOP") from None
+    return {
+        "schema":"FUND100_V6_S1_ORIGINAL_ACWI_SEQ1_INDEPENDENT_READONLY_V1",
+        "status":"ORIGINAL_ACWI_SIGNED_RESERVED_NO_RETRY_AND_PUBLIC_HEAD_RECONFIRMED",
+        "original_private_identity_verified":True,
+        "original_signed_seq1_and_parent_HMAC_verified":True,
+        "original_ACWI_qty_commitment_matched":True,
+        "independent_first_successor_comment_verified":True,
+        "independently_immutable_rollback_anchor_verified":False,
+        "restart_resubmit_allowed":False,
+        "real_broker_sell_authorized":False,
+        "private_state_writes":0,"broker_order_posts":0,
+        "private_raw_source":None,"hmac":None,
+        "real_acwi_qty":None,"signed_head_sha":None,"account_id":None,
+    }
+
+
 def main()->None:
     env=os.environ
     if (env.get("GITHUB_REPOSITORY")!="nicobouch97/fund100-research"
@@ -231,6 +301,18 @@ def main()->None:
         public_token=env.get("GITHUB_TOKEN",""),
         github_sha=env.get("GITHUB_SHA",""),
         run_id=env.get("GITHUB_RUN_ID",""))
+    output=os.environ.get("GITHUB_OUTPUT")
+    if output is not None:
+        if (os.environ.get("GITHUB_ACTIONS")!="true"
+            or type(output) is not str or not output.strip()
+            or type(result.get("verified_public_head_comment_id")) is not int
+            or result["verified_public_head_comment_id"]<=0
+            or result.get("broker_order_posts")!=0
+            or result.get("signed_sequence")!=1):
+            raise IntentStop("Signed first-head result cannot be handed to read-only job")
+        with Path(output).open("a",encoding="ascii") as sink:
+            sink.write("first_comment_id="+str(
+                result["verified_public_head_comment_id"])+"\\n")
     for field in (
         "status","verified_public_head_comment_id","signed_sequence",
         "broker_four_GET_job_authenticated",
