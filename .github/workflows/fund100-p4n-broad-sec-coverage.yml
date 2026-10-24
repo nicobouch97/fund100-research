@@ -179,7 +179,10 @@ jobs:
           assert hashlib.sha256(raw).hexdigest()==d["source_prices_canonical_csv_sha256"]
           assert d["predeclared_forward_sessions"]==126
           assert d["cost_per_side_bps"]==[5,15,35]
-          assert d["original_annual_scores"]==64 or d["original_annual_scores"]>=0
+          assert 0 <= d["completed_event_returns"] <= d["original_annual_scores"]
+          assert (d["completed_event_returns"] + d["right_censored_eligible_scores"]
+                  + d["left_censored_eligible_scores"] + d["scores_without_future_entry_close"]
+                  <= d["original_annual_scores"])
           assert d["retrospectively_selected_2026_survivors"]
           assert d["SEC_facts_retrieved_today_not_historical_vintages"]
           assert d["vendor_adjusted_prices_revisable_and_corporate_actions_not_independently_verified"]
