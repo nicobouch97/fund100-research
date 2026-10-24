@@ -45,6 +45,81 @@ def _clock(value: object) -> str:
     return dt.date().isoformat()
 
 
+
+def annual_score_stability(observations: list[dict]) -> dict:
+    """Measure adjacent ORIGINAL annual score transitions, not stock returns.
+
+    Do not bridge missing filings/scores: comparing 2023 with 2025 after
+    missing 2024 would falsely imply a one-year signal persistence result.
+    The 2/3 threshold is a descriptive diagnostic, NOT a trading rule.
+    """
+    distribution = {str(i): 0 for i in range(4)}
+    scored_pairs = unchanged = improved = deteriorated = missing_pairs = 0
+    entered = exited = remained_eligible = 0
+    issuers_with_scored_pairs = issuers_with_changes = 0
+    for row in observations:
+        if row["ticker"] not in p4n.SOURCE_MATCHED_TAGS:
+            continue
+        events = row["annual_events"]
+        if len(events) != row["annual_filing_dates_reviewed"]:
+            raise AnnualReplayStop("Annual filing chronology count inconsistent")
+        for event in events:
+            score = event["score"]
+            if score is not None:
+                if type(score) is not int or score not in range(4):
+                    raise AnnualReplayStop("Invalid annual quality score")
+                distribution[str(score)] += 1
+        pairs_here = changes_here = 0
+        for prior, current in zip(events, events[1:]):
+            before, after = prior["score"], current["score"]
+            if before is None or after is None:
+                missing_pairs += 1
+                continue
+            scored_pairs += 1
+            pairs_here += 1
+            if after == before:
+                unchanged += 1
+            elif after > before:
+                improved += 1
+                changes_here += 1
+            else:
+                deteriorated += 1
+                changes_here += 1
+            if before < 2 <= after:
+                entered += 1
+            elif before >= 2 > after:
+                exited += 1
+            elif before >= 2 and after >= 2:
+                remained_eligible += 1
+        issuers_with_scored_pairs += bool(pairs_here)
+        issuers_with_changes += bool(changes_here)
+    if (sum(distribution.values()) != sum(
+            row["available_score_count"] for row in observations
+            if row["ticker"] in p4n.SOURCE_MATCHED_TAGS)
+        or scored_pairs + missing_pairs != sum(
+            max(0, row["annual_filing_dates_reviewed"] - 1)
+            for row in observations if row["ticker"] in p4n.SOURCE_MATCHED_TAGS)
+        or scored_pairs != unchanged + improved + deteriorated):
+        raise AnnualReplayStop("Annual quality stability reconciliation failed")
+    return {
+        "method": "ADJACENT_ORIGINAL_10K_SCORE_PAIRS_NO_MISSING_BACKFILL",
+        "score_observation_distribution": distribution,
+        "adjacent_annual_pairs_with_both_scores": scored_pairs,
+        "adjacent_annual_pairs_with_missing_score": missing_pairs,
+        "unchanged_score_pairs": unchanged,
+        "improved_score_pairs": improved,
+        "deteriorated_score_pairs": deteriorated,
+        "score_at_least_2_entries": entered,
+        "score_at_least_2_exits": exited,
+        "score_at_least_2_remained": remained_eligible,
+        "issuers_with_scored_adjacent_pairs": issuers_with_scored_pairs,
+        "issuers_with_any_score_change": issuers_with_changes,
+        "threshold_2_is_descriptive_not_a_validated_trade_signal": True,
+        "score_persistence_is_not_stock_return_predictiveness": True,
+        "source_retrieved_today_not_independent_historical_vintage": True,
+    }
+
+
 def evaluate(source_dir: Path) -> dict:
     """Audit 16 archived issuer identities; replay 12 industrial annual series.
 
@@ -162,6 +237,7 @@ def evaluate(source_dir: Path) -> dict:
                 row["annual_filing_dates_reviewed"] for row in observations),
             "industrial_annual_scores_available": sum(
                 row["available_score_count"] for row in observations),
+            "industrial_annual_score_stability": annual_score_stability(observations),
             "original_accession_and_filed_day_used": True,
             "conservative_two_weekday_lag_not_holiday_or_intraday_proof": True,
             "today_retrieved_companyfacts_not_original_historical_capture": True,
