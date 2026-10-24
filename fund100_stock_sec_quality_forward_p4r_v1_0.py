@@ -61,6 +61,58 @@ def _summarize(rows: list[dict], bps: int) -> dict:
     }
 
 
+def _issuer_balanced_sensitivity(rows: list[dict], bps: int) -> dict:
+    """Descriptive issuer weighting and deletion sensitivity, NOT inference.
+
+    Repeated annual outcomes from the same issuer and overlapping 126-session
+    windows are dependent. Delete an issuer from BOTH score groups if it
+    changes score; do not treat events as independent experimental units.
+    """
+    def issuer_means(group: list[dict]) -> dict[str, float]:
+        by_ticker: dict[str, list[float]] = {}
+        for row in group:
+            by_ticker.setdefault(row["ticker"], []).append(
+                row["cost_scenarios"][str(bps)]["stock_minus_spy_pp"])
+        return {ticker: float(np.mean(values))
+                for ticker, values in sorted(by_ticker.items())}
+
+    low = issuer_means([r for r in rows if r["quality_score"] < 2])
+    high = issuer_means([r for r in rows if r["quality_score"] >= 2])
+
+    def group_report(means: dict[str, float]) -> dict:
+        return {
+            "distinct_issuers": len(means),
+            "issuer_equal_weight_mean_stock_minus_spy_pp": (
+                round(float(np.mean(list(means.values()))), 6) if means else None),
+            "per_issuer_mean_stock_minus_spy_pp": {
+                ticker: round(value, 6) for ticker, value in means.items()},
+        }
+
+    gap = (float(np.mean(list(high.values()))) -
+           float(np.mean(list(low.values())))) if high and low else None
+    leave_one_out = {}
+    for ticker in sorted(set(high) | set(low)):
+        remaining_high = [value for name, value in high.items() if name != ticker]
+        remaining_low = [value for name, value in low.items() if name != ticker]
+        if remaining_high and remaining_low:
+            leave_one_out[ticker] = round(
+                float(np.mean(remaining_high) - np.mean(remaining_low)), 6)
+    return {
+        "method": "ISSUER_EQUAL_WEIGHT_WITH_WHOLE_ISSUER_DELETION",
+        "score_0_or_1": group_report(low),
+        "score_2_or_3": group_report(high),
+        "issuers_appearing_in_both_groups": sorted(set(high) & set(low)),
+        "high_minus_low_issuer_balanced_pp": round(gap, 6) if gap is not None else None,
+        "leave_one_issuer_out_gap_pp": leave_one_out,
+        "leave_one_issuer_out_evaluable_exclusions": len(leave_one_out),
+        "leave_one_issuer_out_gap_range_pp": (
+            [min(leave_one_out.values()), max(leave_one_out.values())]
+            if leave_one_out else None),
+        "deletion_range_is_not_a_confidence_interval": True,
+        "survivorship_and_overlapping_outcomes_preclude_alpha_inference": True,
+    }
+
+
 def analyze(annual: dict, prices: pd.DataFrame, *,
             acquired_at_utc: str, source_sha256: str) -> dict:
     """Pure deterministic event-return study; caller authenticates SEC archive."""
@@ -218,6 +270,10 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
         "nonnew_or_unavailable_source_accession_events": not_new_accession_events,
         "completed_event_returns": len(rows),
         "summary": groups,
+        "issuer_balanced_sensitivity": {
+            str(bps): _issuer_balanced_sensitivity(rows, bps)
+            for bps in SIDE_COSTS_BPS
+        },
         "event_returns": rows,
         "event_returns_are_overlapping_and_not_independent": True,
         "retrospectively_selected_2026_survivors": True,
