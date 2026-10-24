@@ -986,14 +986,17 @@ def require_v6_s1_acwi_live_release() -> None:
 def submit_v6_s1_original_acwi_fractional_sell(*,
                                                original_qty: str,
                                                signed_sources: dict,
+                                               owner_sources: dict,
                                                key: str,
                                                secret: str,
                                                transport=None) -> dict:
     """One reviewed-shape Alpaca POST, completely LOCKED in production.
 
-    Authentication of a future LIVE risk run and latest external private
-    head watermark are separate unreleased prerequisites. Dummy fake
-    transports are used ONLY in credentialless offline tests.
+    Verify a signed unique-claim owner before the signed possible-POST
+    boundary, but neither signed input grants order authority. Authentication
+    of a fresh LIVE risk run and independently anchored latest HEAD remain
+    separate unreleased prerequisites. Dummy fake transports are used
+    ONLY in credentialless offline tests.
     """
     require_v6_s1_acwi_live_release()  # MUST remain the FIRST action.
     # Avoid trusting a user-supplied approved flag/receipt status.
@@ -1007,12 +1010,41 @@ def submit_v6_s1_original_acwi_fractional_sell(*,
         or signed_sources.get("original_qty")!=original_qty):
         raise LiveWriterCandidateLocked(
             "V6-S1 LIVE writer requires complete original signed private evidence")
+    required_owner={
+        "current_fence_source","reserved_source","genesis_comment",
+        "first_comment","first_comment_id","first_run_id",
+        "original_qty","key","owner_run_id","owner_attempt",
+        "owner_nonce","current_main_sha","source_broker_run_id",
+    }
+    if (type(owner_sources) is not dict or set(owner_sources)!=required_owner
+        or owner_sources.get("original_qty")!=original_qty
+        or type(owner_sources.get("owner_attempt")) is not int
+        or owner_sources.get("owner_attempt")!=1
+        or any(owner_sources.get(name)!=signed_sources.get(name)
+               for name in ("reserved_source","genesis_comment",
+                            "first_comment","first_comment_id",
+                            "first_run_id","original_qty","key"))):
+        raise LiveWriterCandidateLocked(
+            "V6-S1 original signed owner/pre-POST evidence missing or divergent")
     try:
+        owner=v6.owner_fence.verify_claimed_owner(**owner_sources)
         review=v6.check_prepost_sources(**signed_sources)
         payload=v6.build_exact_sell_payload(original_qty=original_qty)
     except Exception:
         raise LiveWriterCandidateLocked(
-            "V6-S1 HMAC pre-POST or original qty payload not authenticated") from None
+            "V6-S1 HMAC owner/pre-POST or original qty payload not authenticated") from None
+    if (owner.get("stage")!=
+            "OFFLINE_SIGNED_OWNER_MATCHES_ORIGINAL_ACWI_NO_ORDER_RELEASE"
+        or owner.get("unique_original_workflow_owner_HMAC_recognized") is not True
+        or owner.get("source_signed_reserved_and_prepost_HEADs_bound") is not True
+        or owner.get("claimed_fence_signed_current_head_verified") is not True
+        or owner.get("claimed_fence_head_immutable_outside_GitHub") is not False
+        or owner.get("LIVE_order_released") is not False
+        or owner.get("restarted_same_owner_can_submit") is not False
+        or owner.get("different_owner_can_submit") is not False
+        or owner.get("real_broker_POSTs")!=0):
+        raise LiveWriterCandidateLocked(
+            "V6 original ACWI HMAC owner claim is invalid or incorrectly released")
     if (review.get("stage")!=
             "ORIGINAL_SIGNED_PREPOST_AND_PUBLIC_CHAIN_STRUCTURALLY_VALID_LOCKED"
         or review.get("signed_private_sequence")!=2
