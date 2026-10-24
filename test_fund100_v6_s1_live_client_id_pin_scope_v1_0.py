@@ -59,3 +59,25 @@ def test_no_migration_writer_or_original_staged_controller_gets_creds_from_reado
                    "fund100_v6_s1_frac_live_sell_writer_candidate_v1_0.py"):
         assert (FLOW,script) not in a.PINNED_LIVE_CREDENTIAL_JOBS
         assert not a.approved_scoped_live_script(FLOW,script,workflow())
+
+
+def test_actual_broker_client_ID_lookups_are_identical_to_first_signed_reservation():
+    """The broker GET and real seq1 HMAC must refer to ONE stable order ID."""
+    from hashlib import sha256
+    import fund100_v6_s1_frac_live_sell_writer_candidate_v1_0 as candidate
+    import fund100_v6_s1_private_git_cas_protocol_v1_0 as ledger
+    import fund100_v6_s1_acwi_unique_owner_fence_offline_v1_0 as fence
+    assert candidate.MIGRATION_KEY==ledger.MIGRATION
+    assert candidate.LEGACY_TO_EXIT==ledger.LEGACY
+    for symbol in ledger.LEGACY:
+        assert candidate._id(symbol)==ledger.CLIENT_IDS[symbol]
+        assert candidate._id(symbol).startswith("f100v6s1-")
+    acwi=candidate._id("ACWI")
+    commitment=sha256(
+        ("fund100-original-ACWI-owner-client-id-v1|"+acwi).encode("ascii")
+    ).hexdigest()
+    # The already-signed original fence uses this same immutable domain.
+    source=Path(fence.__file__).read_text()
+    assert '"fund100-original-ACWI-owner-client-id-v1|"+cas.CLIENT_IDS["ACWI"]' in source
+    assert len(commitment)==64
+    assert fence.NO_ALPACA_NETWORK and not fence.FENCED_LIVE_ORDER_RELEASED
