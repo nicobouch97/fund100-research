@@ -267,7 +267,17 @@ def seq1_fixture():
               public_token=intent_fx.PUBLIC,
               private_transport=private,public_transport=public,
               identity_fetch=intent_fx.identity_get,
-              issue_page_get=lambda *,page,token:[first_comment] if page==1 else [])
+              issue_page_get=lambda *,page,token:[first_comment] if page==1 else [],
+              public_run_get=lambda *,run_id,token:{
+                  "id":123456789,"path":r.ORIGINAL_INTENT_WORKFLOW_PATH,
+                  "name":r.ORIGINAL_INTENT_WORKFLOW_NAME,
+                  "event":"workflow_dispatch","head_branch":"main",
+                  "status":"completed","conclusion":"success",
+                  "run_attempt":1,
+                  "repository":{"full_name":"nicobouch97/fund100-research"},
+                  "head_repository":{"full_name":"nicobouch97/fund100-research"},
+                  "head_sha":"a"*40,
+              })
     return args,private,first_comment
 
 
@@ -325,8 +335,12 @@ def test_first_signed_head_incomplete_or_ambiguous_never_falls_back(mutate):
     elif mutate=="changed_body":
         args["issue_page_get"]=lambda **_: [dict(comment,body=comment["body"]+"extra")]
     elif mutate=="incorrect_run":
-        args["issue_page_get"]=lambda **_: [dict(comment,body=comment["body"].replace(
-            "/actions/runs/123456789","/actions/runs/333333333"))]
+        args["public_run_get"]=lambda **_: {
+            "id":333333333,"path":"attacker.yml","name":"fake",
+            "event":"push","head_branch":"other","status":"completed",
+            "conclusion":"success","run_attempt":1,
+            "repository":{"full_name":"other/repo"},
+            "head_repository":{"full_name":"other/repo"},"head_sha":"a"*40}
     elif mutate=="missing_page":
         args["issue_page_get"]=lambda **_: None
     elif mutate=="invalid_pagination":
