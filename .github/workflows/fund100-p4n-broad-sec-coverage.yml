@@ -195,6 +195,19 @@ jobs:
                 "left-censored:",d["left_censored_eligible_scores"])
           print("Score >=2 15bp matched SPY:",d["summary"]["15"]["score_2_or_3"])
           print("Score <2 15bp matched SPY:",d["summary"]["15"]["score_0_or_1"])
+          assert set(d["issuer_balanced_sensitivity"]) == {"5","15","35"}
+          for bps, diag in d["issuer_balanced_sensitivity"].items():
+              assert diag["method"] == "ISSUER_EQUAL_WEIGHT_WITH_WHOLE_ISSUER_DELETION"
+              assert diag["deletion_range_is_not_a_confidence_interval"]
+              assert diag["survivorship_and_overlapping_outcomes_preclude_alpha_inference"]
+              for group in ("score_0_or_1", "score_2_or_3"):
+                  assert diag[group]["distinct_issuers"] == d["summary"][bps][group]["distinct_issuers"]
+                  assert diag[group]["distinct_issuers"] == len(diag[group]["per_issuer_mean_stock_minus_spy_pp"])
+              values=list(diag["leave_one_issuer_out_gap_pp"].values())
+              assert diag["leave_one_issuer_out_evaluable_exclusions"] == len(values)
+              assert diag["leave_one_issuer_out_gap_range_pp"] == ([min(values),max(values)] if values else None)
+          print("15bp issuer-balanced quality sensitivity:",
+                d["issuer_balanced_sensitivity"]["15"])
           print("RETROSPECTIVE SURVIVORS, NOT A VALIDATED INVESTABLE BACKTEST")
           PY
       - name: Preserve original SEC bytes, source identities and missing coverage

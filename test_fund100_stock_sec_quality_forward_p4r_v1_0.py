@@ -192,3 +192,61 @@ def test_future_source_accession_is_rejected_not_forward_filled():
     cat["annual_events"][0]["source_10k_available_date"] = "2025-03-01"
     with pytest.raises(p4r.EventStudyStop, match="Future SEC accession"):
         run(a=a)
+
+
+def _outcome(ticker, score, pp):
+    return {"ticker": ticker, "quality_score": score,
+            "cost_scenarios": {str(bps): {"stock_minus_spy_pp": pp}
+                               for bps in p4r.SIDE_COSTS_BPS}}
+
+
+def test_issuer_balancing_does_not_treat_repeat_annual_events_as_independent():
+    rows = [
+        _outcome("AAA", 3, 10), _outcome("AAA", 3, 10),
+        _outcome("BBB", 2, -10),
+        _outcome("CCC", 0, -5), _outcome("DDD", 1, -5),
+    ]
+    assert p4r._summarize(rows[:3], 15)["mean_stock_minus_spy_pp"] == 3.333333
+    report = p4r._issuer_balanced_sensitivity(rows, 15)
+    assert report["score_2_or_3"]["distinct_issuers"] == 2
+    assert report["score_2_or_3"]["issuer_equal_weight_mean_stock_minus_spy_pp"] == 0
+    assert report["score_0_or_1"]["issuer_equal_weight_mean_stock_minus_spy_pp"] == -5
+    assert report["high_minus_low_issuer_balanced_pp"] == 5
+    assert report["leave_one_issuer_out_gap_range_pp"] == [-5, 15]
+    assert report["leave_one_issuer_out_evaluable_exclusions"] == 4
+    assert report["deletion_range_is_not_a_confidence_interval"]
+
+
+def test_issuer_changing_quality_groups_is_deleted_from_both_sides():
+    rows = [
+        _outcome("AAA", 3, 10), _outcome("BBB", 3, 0),
+        _outcome("AAA", 0, -20), _outcome("CCC", 0, 0),
+    ]
+    report = p4r._issuer_balanced_sensitivity(rows, 15)
+    assert report["issuers_appearing_in_both_groups"] == ["AAA"]
+    assert report["high_minus_low_issuer_balanced_pp"] == 15
+    assert report["leave_one_issuer_out_gap_pp"]["AAA"] == 0
+    assert report["leave_one_issuer_out_gap_range_pp"] == [0, 25]
+    assert report["survivorship_and_overlapping_outcomes_preclude_alpha_inference"]
+
+
+def test_issuer_balance_missing_comparison_group_is_explicitly_unavailable():
+    report = p4r._issuer_balanced_sensitivity([_outcome("AAA", 3, 10)], 35)
+    assert report["score_0_or_1"]["distinct_issuers"] == 0
+    assert report["score_0_or_1"]["issuer_equal_weight_mean_stock_minus_spy_pp"] is None
+    assert report["high_minus_low_issuer_balanced_pp"] is None
+    assert report["leave_one_issuer_out_gap_range_pp"] is None
+    assert report["leave_one_issuer_out_evaluable_exclusions"] == 0
+
+
+def test_issuer_balance_is_integrated_at_all_cost_levels_without_trading():
+    out = run()
+    assert set(out["issuer_balanced_sensitivity"]) == {"5", "15", "35"}
+    for bps in p4r.SIDE_COSTS_BPS:
+        diag = out["issuer_balanced_sensitivity"][str(bps)]
+        assert diag["score_2_or_3"]["distinct_issuers"] == 1
+        assert diag["score_0_or_1"]["distinct_issuers"] == 1
+        assert diag["high_minus_low_issuer_balanced_pp"] > 0
+        assert diag["leave_one_issuer_out_gap_range_pp"] is None
+    assert out["broker_requests"] == out["broker_orders"] == 0
+    assert not out["live_authorized"]
