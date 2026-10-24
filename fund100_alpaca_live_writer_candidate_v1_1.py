@@ -1025,7 +1025,7 @@ def submit_v6_s1_original_acwi_fractional_sell(*,
                             "first_comment","first_comment_id",
                             "first_run_id","original_qty","key"))):
         raise LiveWriterCandidateLocked(
-            "V6-S1 original signed owner/pre-POST evidence missing or divergent")
+            "V6-S1 HMAC signed owner/pre-POST evidence missing or divergent")
     try:
         owner=v6.owner_fence.verify_claimed_owner(**owner_sources)
         review=v6.check_prepost_sources(**signed_sources)
