@@ -165,6 +165,65 @@ def _vol_target_fixed_blend(dates: pd.DatetimeIndex, navs: dict,
         held = new
     return wealth, exposure, turnover
 
+
+def _model_return_dependence(dates: pd.DatetimeIndex, navs: dict,
+                             start: str) -> dict:
+    """Describe diversification of ORIGINAL model daily returns after eligibility.
+
+    Correlation participation ratio is (trace(C)^2 / trace(C @ C)),
+    where C is the four-by-four return correlation matrix. A value near
+    one indicates one effective correlated return dimension; four is the
+    theoretical maximum. This is not holdings look-through or future alpha.
+    """
+    first = next((
+        t for t in range(TRAINING_RETURNS + 1, len(dates))
+        if dates[t].to_period("Q") != dates[t - 1].to_period("Q")
+    ), None)
+    if first is None:
+        raise WalkforwardStop("No eligible date for dependence diagnostics")
+    eligible = (dates >= pd.Timestamp(start)) & (np.arange(len(dates)) >= first)
+    indices = np.flatnonzero(eligible)
+    if len(indices) < 260 or np.any(np.diff(indices) != 1):
+        raise WalkforwardStop("Insufficient consecutive model-dependence sessions")
+    levels = np.column_stack([navs[model][indices] for model in MODELS])
+    if not np.isfinite(levels).all() or (levels <= 0).any():
+        raise WalkforwardStop("Invalid model-dependence NAV")
+    daily = levels[1:] / levels[:-1] - 1
+    if not np.isfinite(daily).all() or (daily <= -1).any():
+        raise WalkforwardStop("Invalid model-dependence daily returns")
+    variances = np.var(daily, axis=0, ddof=1)
+    common = {
+        "first_session": dates[indices[0]].date().isoformat(),
+        "last_session": dates[indices[-1]].date().isoformat(),
+        "return_observations": len(daily),
+        "original_four_costed_model_returns": True,
+        "after_common_first_eligible_quarter_close": True,
+        "descriptive_not_holdings_lookthrough_or_independent_alpha": True,
+    }
+    # A constant-cash or near-constant sleeve has no identifiable
+    # correlation; do not manufacture a four-way diversification score.
+    if np.any(variances <= 1e-16):
+        return dict(common, status="UNIDENTIFIABLE_NEAR_CONSTANT_MODEL",
+                    effective_correlated_return_dimensions=None,
+                    maximum_pairwise_return_correlation=None,
+                    mean_pairwise_return_correlation=None)
+    correlation = np.corrcoef(daily, rowvar=False)
+    if not np.isfinite(correlation).all():
+        raise WalkforwardStop("Nonfinite original model return correlation")
+    eigenvalues = np.linalg.eigvalsh(correlation)
+    if eigenvalues.min() < -1e-8:
+        raise WalkforwardStop("Invalid model correlation matrix")
+    effective = float(np.trace(correlation) ** 2 /
+                      np.sum(correlation ** 2))
+    pairs = correlation[np.triu_indices(len(MODELS), k=1)]
+    if not 1 - 1e-8 <= effective <= len(MODELS) + 1e-8:
+        raise WalkforwardStop("Invalid effective return dimension")
+    return dict(common, status="DESCRIPTIVE_ORIGINAL_MODEL_RETURN_DEPENDENCE",
+                effective_correlated_return_dimensions=round(effective, 4),
+                maximum_pairwise_return_correlation=round(float(pairs.max()), 4),
+                mean_pairwise_return_correlation=round(float(pairs.mean()), 4))
+
+
 def _window_metrics(frame: pd.DataFrame, start: str) -> dict:
     view = frame.loc[start:]
     if len(view) < 260:
@@ -301,6 +360,10 @@ def evaluate(paths: dict, *, switch_side_cost_bps: int) -> dict:
         "paper_or_live_orders": 0,
         "terminal_hypothetical_selector_nav": round(capital, 6),
         "total_switches": int((frame["switch_turnover"] > 0).sum()),
+        "model_return_dependence_by_window": {
+            name: _model_return_dependence(dates, navs, start)
+            for name, start in START_WINDOWS.items()
+        },
         "comparison_windows": {
             name: _window_metrics(frame, start)
             for name, start in START_WINDOWS.items()

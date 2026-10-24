@@ -95,3 +95,25 @@ so any improvement is in-sample and not independent evidence of alpha.
 No automatic promotion or funded execution is authorized. Original
 $130.30 ceiling, operator STOP, ENGAGED kill switch and all LIVE locks
 remain unchanged.
+
+
+## Original four-model return-dependence diagnostic (24 October 2026)
+
+A 25% allocation to four strategy *names* is not automatically four
+independent sources of risk. The same four original costed model NAVs now
+produce a descriptive, common-session return-correlation diagnostic for
+each 2014/2020/2023 comparison window, beginning no earlier than the
+shared first eligible quarterly close. It reports maximum and mean
+pairwise daily return correlation and the correlation-matrix participation
+ratio, `trace(C)^2 / trace(C @ C)`, ranging from one (effectively one
+correlated return dimension) to four (four uncorrelated return dimensions).
+Near-constant model paths explicitly return **unidentifiable**, never a
+fabricated diversification statistic. Synthetic regressions test perfect
+duplication, distinct return paths, future isolation and constant sleeves.
+
+This diagnoses potential *return* redundancy, not security-level
+look-through, gross combined holdings, liquidity, forward correlations,
+transaction netting, independent holdout alpha or permission to trade.
+Correlations and effective dimensions are in-sample and may change
+abruptly under stress. No strategy parameters, costs, capital limits,
+risk policies or LIVE release locks change.
