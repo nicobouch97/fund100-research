@@ -245,3 +245,254 @@ def claim_for_same_attempt_only(*,reserved_source,genesis_comment,first_comment,
         "original_qty":None,"client_order_id":None,
         "account_identifier":None,"hmac_key":None,"signed_fence_head_sha":None,
     }
+
+
+# Same-attempt follow-on: owner HMAC winner -> original signed seq2 ->
+# publicly cross-checked head commitment. No production release and NO BROKER.
+PREPOST_PRIVATE_CAS_RELEASED=False
+PREPOST_PUBLIC_WITNESS_RELEASED=False
+ORIGINAL_ORDER_LEDGER_URL=(
+    "https://api.github.com/repos/nicobouch97/fund100-state-private/"
+    "contents/state/v6_s1_original_legacy_sales.json")
+PUBLIC_COMMENT_COLLECTION=(
+    "https://api.github.com/repos/nicobouch97/fund100-research/"
+    "issues/8/comments")
+
+
+def _get_bounded_json(*,url,token,transport=None):
+    # No redirects, pagination, alternate hosts, nor free-form caller URL.
+    if url not in (
+        ORIGINAL_ORDER_LEDGER_URL+"?ref=main",
+        PRIVATE_CONTENTS_URL+"?ref=main",
+    ) and not (url.startswith(PUBLIC_COMMENT_COLLECTION+"/") and
+               re.fullmatch(r"[1-9][0-9]{0,18}",url[len(PUBLIC_COMMENT_COLLECTION)+1:])):
+        raise OwnerClaimStop("Nonoriginal GitHub source path forbidden")
+    req=Request(url,method="GET",headers={
+        "Accept":"application/vnd.github+json",
+        "Authorization":"Bearer "+_token(token,"source READ"),
+        "X-GitHub-Api-Version":"2022-11-28",
+        "User-Agent":"fund100-one-first-acwi-prepost"})
+    try:
+        with (urlopen if transport is None else transport)(req,timeout=12) as resp:
+            if getattr(resp,"status",None)!=200:
+                raise OwnerClaimStop("Original signed source GET not authenticated")
+            raw=resp.read(READ_LIMIT+1)
+        if len(raw)>READ_LIMIT:
+            raise OwnerClaimStop("Original signed source too large")
+        obj=json.loads(raw.decode("utf-8"))
+        if type(obj) is not dict:
+            raise OwnerClaimStop("Original signed source JSON invalid")
+        if type(obj.get("content")) is str:
+            obj["content"]=obj["content"].replace("\r","").replace("\n","")
+        return obj
+    except (HTTPError,URLError,TimeoutError,OSError,ValueError,UnicodeError):
+        raise OwnerClaimStop("Original signed source GET ambiguous; HOLD") from None
+
+
+def _put_original_prepost_once(*,token,old_sha,proposal,transport=None):
+    if (type(proposal) is not dict
+        or proposal.get("repository")!=cas.STATE_REPO
+        or proposal.get("path")!=cas.STATE_PATH
+        or proposal.get("expected_current_sha")!=old_sha
+        or type(proposal.get("content_base64")) is not str):
+        raise OwnerClaimStop("Signed pre-POST CAS proposal invalid")
+    payload={
+        "branch":"main",
+        "message":"fund100: original ACWI signed possible POST; NO RETRY",
+        "sha":old_sha,"content":proposal["content_base64"],
+    }
+    req=Request(ORIGINAL_ORDER_LEDGER_URL,method="PUT",
+        data=json.dumps(payload,sort_keys=True,separators=(",",":")).encode("ascii"),
+        headers={
+            "Accept":"application/vnd.github+json",
+            "Authorization":"Bearer "+_token(token,"private WRITE"),
+            "Content-Type":"application/json",
+            "X-GitHub-Api-Version":"2022-11-28",
+            "User-Agent":"fund100-original-acwi-prepost-one-shot",
+        })
+    try:
+        with (urlopen if transport is None else transport)(req,timeout=12) as resp:
+            if getattr(resp,"status",None)!=200:
+                raise OwnerClaimStop("Private possible-POST update unconfirmed")
+            raw=resp.read(WRITE_REPLY_LIMIT+1)
+        if len(raw)>WRITE_REPLY_LIMIT:
+            raise OwnerClaimStop("Private possible-POST reply oversized")
+        obj=json.loads(raw.decode("utf-8"))
+        if (type(obj) is not dict or type(obj.get("content")) is not dict
+            or obj["content"].get("path")!=cas.STATE_PATH
+            or obj["content"].get("sha")!=cas.blob_sha(
+                __import__("base64").b64decode(proposal["content_base64"],validate=True))
+            or type(obj.get("commit")) is not dict
+            or type(obj["commit"].get("sha")) is not str
+            or re.fullmatch("[0-9a-f]{40}",obj["commit"]["sha"]) is None):
+            raise OwnerClaimStop("Private possible-POST acknowledgement invalid")
+    except (HTTPError,URLError,TimeoutError,OSError,ValueError,UnicodeError):
+        raise OwnerClaimStop("Private possible-POST outcome uncertain; NEVER RETRY") from None
+
+
+def _post_prepost_public_witness_once(*,token,body,transport=None):
+    req=Request(PUBLIC_COMMENT_COLLECTION,method="POST",
+        data=json.dumps({"body":body},sort_keys=True,separators=(",",":")).encode("utf-8"),
+        headers={
+            "Accept":"application/vnd.github+json",
+            "Authorization":"Bearer "+_token(token,"public issue WRITE"),
+            "Content-Type":"application/json",
+            "X-GitHub-Api-Version":"2022-11-28",
+            "User-Agent":"fund100-original-acwi-public-head-once",
+        })
+    try:
+        with (urlopen if transport is None else transport)(req,timeout=12) as resp:
+            if getattr(resp,"status",None)!=201:
+                raise OwnerClaimStop("Public pre-POST witness not uniquely acknowledged")
+            raw=resp.read(READ_LIMIT+1)
+        if len(raw)>READ_LIMIT:
+            raise OwnerClaimStop("Public pre-POST witness oversized")
+        obj=json.loads(raw.decode("utf-8"))
+        if type(obj) is not dict:
+            raise OwnerClaimStop("Public witness JSON invalid")
+        return obj
+    except (HTTPError,URLError,TimeoutError,OSError,ValueError,UnicodeError):
+        raise OwnerClaimStop("Public witness POST uncertain; NEVER RETRY") from None
+
+
+def commit_signed_acwi_prepost_and_witness_same_attempt_only(
+    *,owner_sources,private_read_token,private_write_token,
+    public_issue_write_token,read_transport=None,write_transport=None,
+    public_transport=None,
+):
+    """ONE owner-verified real-format signed seq2 CAS and public witness.
+
+    Any uncertainty after the private Git update is an irreversible HOLD,
+    not a repair or replay permit. A separate broker order would require
+    independent authenticated fresh risk, market and immutable watermark.
+    """
+    if (PREPOST_PRIVATE_CAS_RELEASED is not True
+        or PREPOST_PUBLIC_WITNESS_RELEASED is not True
+        or LIVE_BROKER_ORDER_RELEASED is not False
+        or RETRY_AFTER_ANY_PUT_RELEASED is not False):
+        raise OwnerClaimStop("Original pre-POST production transport HARD LOCKED")
+    if (type(owner_sources) is not dict
+        or set(owner_sources)!={
+            "current_fence_source","reserved_source","genesis_comment",
+            "first_comment","first_comment_id","first_run_id",
+            "original_qty","key","owner_run_id","owner_attempt",
+            "owner_nonce","current_main_sha","source_broker_run_id"}):
+        raise OwnerClaimStop("Original owner input incomplete")
+    _require_real_same_run(
+        owner_run_id=owner_sources["owner_run_id"],
+        owner_attempt=owner_sources["owner_attempt"],
+        current_main_sha=owner_sources["current_main_sha"])
+    rt=_token(private_read_token,"READ")
+    wt=_token(private_write_token,"WRITE")
+    pt=_token(public_issue_write_token,"PUBLIC")
+    if rt==wt or rt==pt or wt==pt:
+        raise OwnerClaimStop("Original private READ/WRITE and public WRITE distinct")
+    key=owner_sources["key"]
+    if (type(key) is not bytes or len(key)<32
+        or policy.contract().get("orders_authorized") is not False
+        or cas.REMOTE_TRANSPORT_RELEASED is not False
+        or cas.LIVE_ORDER_RELEASED is not False):
+        raise OwnerClaimStop("Original signed account, policy or STOP changed")
+    # Independently authenticated private HEADs before any mutation.
+    own_read=_get_bounded_json(
+        url=PRIVATE_CONTENTS_URL+"?ref=main",token=rt,transport=read_transport)
+    own_write=_get_bounded_json(
+        url=PRIVATE_CONTENTS_URL+"?ref=main",token=wt,transport=read_transport)
+    if _signed_head(own_read,key)!=_signed_head(own_write,key):
+        raise OwnerClaimStop("Two owner-fence principals disagree; HOLD")
+    signed_owner=dict(owner_sources,current_fence_source=own_read)
+    if (owner_sources["current_fence_source"].get("sha")!=own_read.get("sha")
+        or owner_sources["current_fence_source"].get("content")!=own_read.get("content")):
+        raise OwnerClaimStop("Caller owner witness differs from fresh signed HEAD")
+    try:
+        approved=fence.verify_claimed_owner(**signed_owner)
+    except Exception:
+        raise OwnerClaimStop("Unique current first-run signed owner not verified") from None
+    if (approved.get("unique_original_workflow_owner_HMAC_recognized") is not True
+        or approved.get("claimed_fence_signed_current_head_verified") is not True
+        or approved.get("LIVE_order_released") is not False):
+        raise OwnerClaimStop("Original ACWI one-writer source changed")
+    read=_get_bounded_json(
+        url=ORIGINAL_ORDER_LEDGER_URL+"?ref=main",
+        token=rt,transport=read_transport)
+    write=_get_bounded_json(
+        url=ORIGINAL_ORDER_LEDGER_URL+"?ref=main",
+        token=wt,transport=read_transport)
+    import fund100_v6_s1_public_genesis_witness_v1_0 as original
+    import fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0 as prepost
+    w=original.verify()
+    expected={
+        "private_genesis":w["original_public_genesis_nonce"],
+        "account_binding_sha256":w["original_live_account_binding_sha256"],
+        "key":key,
+    }
+    try:
+        old_sha,old_doc=cas._read_source(read,**expected)
+        wsha,wdoc=cas._read_source(write,**expected)
+        caller_sha,caller_doc=cas._read_source(owner_sources["reserved_source"],**expected)
+        if (wsha!=old_sha or wdoc!=old_doc or caller_sha!=old_sha
+            or caller_doc!=old_doc or old_doc["sequence"]!=1):
+            raise OwnerClaimStop("Original signed ACWI reservation no longer current")
+        plan=cas.plan_possible_post(
+            read,symbol="ACWI",original_qty=owner_sources["original_qty"],**expected)
+        proposed=plan.get("commit")
+        if (plan.get("stage")!="PRE_POST_COMMIT_PROPOSED_NO_ACTUAL_POST"
+            or plan.get("old_blob_sha")!=old_sha
+            or plan.get("live_order_authorized") is not False):
+            raise OwnerClaimStop("Original signed seq2 transition not valid")
+    except OwnerClaimStop:
+        raise
+    except Exception:
+        raise OwnerClaimStop("Original private sequence-1 HMAC inconsistent") from None
+    # First irreversible step: exactly one signed PRIVATE PUT. NEVER RETRY.
+    _put_original_prepost_once(
+        token=wt,old_sha=old_sha,proposal=proposed,transport=write_transport)
+    try:
+        reread=_get_bounded_json(
+            url=ORIGINAL_ORDER_LEDGER_URL+"?ref=main",
+            token=rt,transport=read_transport)
+        verified=cas.verify_remote_commit(plan,reread,**expected)
+        if (verified.get("stage")!="REMOTE_STATE_CAS_COMMIT_CONFIRMED_NO_TRADE_AUTHORIZATION"
+            or verified.get("live_order_authorized") is not False):
+            raise OwnerClaimStop("Independent signed possible-POST readback failed")
+        next_sha,_=cas._read_source(reread,**expected)
+        if next_sha!=plan["new_blob_sha"]:
+            raise OwnerClaimStop("Original signed seq2 head mismatch")
+        body=prepost.second_head_comment(
+            nonce=w["original_public_genesis_nonce"],old_blob_sha=old_sha,
+            new_blob_sha=next_sha,first_comment_id=owner_sources["first_comment_id"],
+            simulation_run_id=owner_sources["owner_run_id"])
+    except Exception:
+        raise OwnerClaimStop("Signed private post-commit read uncertain; NEVER RETRY") from None
+    # Second irreversible step: exactly one editable public witness POST.
+    # Even a 201 cannot be treated as immutable external rollback protection.
+    created=_post_prepost_public_witness_once(
+        token=pt,body=body,transport=public_transport)
+    try:
+        cid=created["id"]
+        if type(cid) is not int or cid<=0:
+            raise OwnerClaimStop("Original public witness comment ID invalid")
+        prepost._comment(created,ident=cid,body=body)
+        witnessed=_get_bounded_json(
+            url=PUBLIC_COMMENT_COLLECTION+"/"+str(cid),
+            token=pt,transport=public_transport)
+        prepost._comment(witnessed,ident=cid,body=body)
+    except Exception:
+        raise OwnerClaimStop("Public signed head witness reread uncertain; NEVER RETRY") from None
+    return {
+        "schema":SCHEMA,
+        "status":"SIGNED_ACWI_SEQ2_AND_PUBLIC_HEAD_WITNESSED_BROKER_STILL_BLOCKED",
+        "same_original_claimed_owner_and_first_run":True,
+        "signed_acwi_prepost_private_sequence":2,
+        "independent_private_and_public_readbacks_verified":True,
+        "external_immutable_anti_rollback_anchor_proven":False,
+        "fresh_live_broker_account_or_risk_verified_here":False,
+        "live_broker_order_authorized":False,
+        "retry_after_any_uncertain_write":False,
+        "real_private_git_put_attempts":1,
+        "real_public_issue_post_attempts":1,
+        "real_broker_post_attempts":0,
+        "client_order_id":None,"original_qty":None,
+        "account_identifier":None,"private_hmac_key":None,
+        "owner_identity":None,"signed_head_sha":None,
+    }
