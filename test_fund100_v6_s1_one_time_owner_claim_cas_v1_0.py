@@ -219,5 +219,8 @@ def test_candidate_has_no_entrypoint_or_live_order_transport():
     assert "ALPACA_LIVE_KEY" not in src
     assert "ALPACA_LIVE_SECRET" not in src
     assert "https://api.alpaca.markets" not in src
-    assert "method=\"POST\"" not in src
+    # The NEW POST is a public GitHub issue witness, never a brokerage order.
+    assert "method=\"POST\"" in src
+    assert "https://api.alpaca.markets" not in src
+    assert "PUBLIC_COMMENT_COLLECTION" in src
     assert "MAX_GIT_PUTS=1" in src
