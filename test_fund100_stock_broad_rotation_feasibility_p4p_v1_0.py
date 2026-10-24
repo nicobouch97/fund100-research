@@ -128,3 +128,49 @@ def test_all_cash_strategy_has_zero_cost_drag_even_if_passive_benchmark_trades()
     assert row["spy_passive_pre_cost_return_pct"] == 0
     assert row["spy_passive_modelled_cost_drag_pp"] > 0
     assert row["strategy_vs_spy_incremental_cost_drag_pp"] < 0
+
+
+def test_chain_linked_gross_attribution_reconciles_by_stock_sector_and_cost():
+    result = analyze(prices())
+    assert result["gross_stock_sector_attribution_uses_same_decisions_and_prices"]
+    scenarios = result["scenarios"]
+    for bps, row in scenarios.items():
+        assert row["gross_attribution_method"] == (
+            "CHAIN_LINKED_DAILY_RETURN_TO_TERMINAL_WEALTH")
+        assert row["gross_attribution_is_path_dependent_not_causal_alpha"]
+        assert set(row["gross_symbol_contribution_pct"]) == set(p4l.SECTORS)
+        assert set(row["gross_active_vs_equal24_symbol_pp"]) == set(p4l.SECTORS)
+        assert row["gross_attribution_reconciliation_error_pp"] == pytest.approx(
+            0, abs=1e-7)
+        assert row["gross_active_attribution_reconciliation_error_pp"] == pytest.approx(
+            0, abs=1e-7)
+        assert sum(row["gross_symbol_contribution_pct"].values()) == pytest.approx(
+            row["strategy_pre_cost_return_pct"], abs=2e-5)
+        assert sum(row["gross_sector_contribution_pct"].values()) == pytest.approx(
+            row["strategy_pre_cost_return_pct"], abs=2e-5)
+        assert sum(row["gross_active_vs_equal24_symbol_pp"].values()) == pytest.approx(
+            row["strategy_pre_cost_minus_equal24_pp"], abs=2e-5)
+        assert sum(row["gross_active_vs_equal24_sector_pp"].values()) == pytest.approx(
+            row["strategy_pre_cost_minus_equal24_pp"], abs=2e-5)
+        for sector in set(p4l.SECTORS.values()):
+            tickers = [s for s, group in p4l.SECTORS.items() if group == sector]
+            assert row["gross_sector_contribution_pct"][sector] == pytest.approx(
+                sum(row["gross_symbol_contribution_pct"][s] for s in tickers),
+                abs=2e-5)
+            assert row["gross_active_vs_equal24_sector_pp"][sector] == pytest.approx(
+                sum(row["gross_active_vs_equal24_symbol_pp"][s] for s in tickers),
+                abs=2e-5)
+    for field in ("gross_symbol_contribution_pct", "gross_sector_contribution_pct",
+                  "gross_active_vs_equal24_symbol_pp",
+                  "gross_active_vs_equal24_sector_pp"):
+        assert scenarios["5"][field] == scenarios["15"][field] == scenarios["35"][field]
+
+
+def test_all_cash_attribution_has_no_invented_stock_return_or_active_edge():
+    row = analyze(prices(flat=True))["scenarios"]["15"]
+    for field in ("gross_symbol_contribution_pct", "gross_sector_contribution_pct",
+                  "gross_active_vs_equal24_symbol_pp",
+                  "gross_active_vs_equal24_sector_pp"):
+        assert all(value == 0 for value in row[field].values())
+    assert row["gross_attribution_reconciliation_error_pp"] == 0
+    assert row["gross_active_attribution_reconciliation_error_pp"] == 0
