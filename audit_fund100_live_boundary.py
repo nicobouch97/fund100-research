@@ -579,7 +579,7 @@ def approved_scoped_live_script(
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
                 "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
             "fund100_v6_s1_frac_live_sell_writer_candidate_v1_0.py":
-                "b5a7d98737858684e3ba7600bc9665f106410243",
+                "b18d23664197ac791a129aef970921cd3c9efc01",
             "fund100_v6_brokerless_transition_preview_v1_0.py":
                 "a0b4efc660f30395b6cdda104f0eddf63b8a6dd9",
             "fund100_v6_s1_concentrated_risk_and_paper_asset_v1_0.py":
