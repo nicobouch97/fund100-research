@@ -344,3 +344,57 @@ def join_current_risk_and_signed_first_reservation(*,source:dict,
         "original_qty":None,"account_id":None,
         "private_head":None,"first_comment_id":None,
     }
+
+
+def join_original_broker_client_ids_and_signed_first_reservation(
+        *,source:dict,reserved:dict)->dict:
+    """Authenticate actual original broker-404 evidence plus signed ACWI seq1.
+
+    This is a pure READ-only join of two independently protected principals.
+    Three broker 404s are NOT proof of never POSTed, external monotonic
+    rollback remains absent, and current owner-fence state is separately read.
+    In particular no real ACWI sell or retry follows from this result.
+    """
+    if (type(source) is not dict
+        or source.get("schema")!=SCHEMA
+        or source.get("status")!="TWO_PRINCIPAL_SOURCE_HANDOFF_READY_FOR_SEPARATE_SIGNED_READ"
+        or source.get("original_real_broker_job_authenticated_by_GitHub") is not True
+        or source.get("broker_source_current_main_commit_matched") is not True
+        or source.get("actual_original_seven_GET_step_freshness_verified") is not True
+        or source.get("original_broker_redacted_three_404_condition_enforced_by_upstream_job") is not True
+        or source.get("broker_404_never_POST_guarantee") is not False
+        or source.get("separate_private_HMAC_GET_still_required") is not True
+        or source.get("same_runner_has_broker_and_private_ledger_secrets") is not False
+        or source.get("orders_authorized") is not False
+        or source.get("real_private_Git_PUTs")!=0
+        or source.get("real_broker_POSTs")!=0
+        or type(reserved) is not dict
+        or reserved.get("status")!="ORIGINAL_ACWI_SIGNED_SEQ1_AND_PUBLIC_HEAD_RECONFIRMED_READONLY"
+        or reserved.get("private_genesis_HMAC_signature_and_original_account_binding_verified") is not True
+        or reserved.get("independent_public_issue8_comment_digest_and_identity_verified") is not True
+        or type(reserved.get("private_ledger_sequence")) is not int
+        or reserved["private_ledger_sequence"]!=1
+        or reserved.get("first_reserved_symbol")!="ACWI"
+        or reserved.get("first_reservation_state")!="RESERVED_NO_RETRY"
+        or reserved.get("original_ACWI_qty_commitment_verified") is not True
+        or reserved.get("independent_first_successor_public_witness_verified") is not True
+        or reserved.get("independently_immutable_rollback_anchor_proven") is not False
+        or reserved.get("production_trade_order_submission_authorized") is not False
+        or reserved.get("private_git_writes")!=0
+        or reserved.get("broker_orders")!=0):
+        raise HandoffStop("Original client IDs and signed ACWI reservation not jointly verified")
+    return {
+        "schema":SCHEMA,
+        "status":"STOPPED_ORIGINAL_BROKER_404_AND_SIGNED_ACWI_SEQ1_READS_JOINED",
+        "original_broker_seven_GET_3_client_ID_404s_verified":True,
+        "original_signed_ACWI_seq1_reserved_no_retry_verified":True,
+        "client_ID_404_proves_no_earlier_POST":False,
+        "signed_owner_fence_this_step_verified":False,
+        "immutable_external_rollback_anchor_verified":False,
+        "independent_HMAC_and_original_broker_secrets_separated":True,
+        "live_ACWI_sell_released":False,
+        "orders_authorized":False,
+        "broker_POSTs":0,"private_Git_PUTs":0,
+        "client_order_ID":None,"real_ACWI_qty":None,
+        "private_signature":None,"account_ID":None,
+    }
