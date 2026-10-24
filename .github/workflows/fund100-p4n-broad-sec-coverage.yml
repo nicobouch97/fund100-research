@@ -250,12 +250,19 @@ jobs:
           python fund100_stock_sec_eps_yield_p4s_v1_0.py \
             --source-dir /tmp/fund100-p4n-original-sec \
             --event-report /tmp/fund100-p4n-original-sec/quality-126-session-event-study.json \
-            --output /tmp/fund100-p4n-original-sec/gaap-eps-yield-event-diagnostic.json
+            --output /tmp/fund100-p4n-original-sec/gaap-eps-yield-event-diagnostic.json \
+            --raw-close-csv /tmp/fund100-p4n-original-sec/raw-vendor-split-adjusted-close.csv \
+            --split-factors-csv /tmp/fund100-p4n-original-sec/raw-vendor-stock-splits.csv
           python - <<'PY'
-          import json
+          import hashlib, json
           from pathlib import Path
-          d=json.loads(Path("/tmp/fund100-p4n-original-sec/gaap-eps-yield-event-diagnostic.json").read_text())
-          assert d["completed_events"] == 63 or d["completed_events"] >= 0
+          root=Path("/tmp/fund100-p4n-original-sec")
+          d=json.loads((root/"gaap-eps-yield-event-diagnostic.json").read_text())
+          p4r=json.loads((root/"quality-126-session-event-study.json").read_text())
+          assert d["completed_events"] == p4r["completed_event_returns"]
+          raw_close=(root/"raw-vendor-split-adjusted-close.csv").read_bytes()
+          raw_splits=(root/"raw-vendor-stock-splits.csv").read_bytes()
+          assert hashlib.sha256(raw_close+raw_splits).hexdigest() == d["raw_vendor_market_csv_sha256"]
           assert d["original_eps_available"] <= d["completed_events"]
           assert d["predeclared_positive_earnings_yield_threshold"] == 0.05
           assert d["comparison_cost_per_side_bps"] == 15
