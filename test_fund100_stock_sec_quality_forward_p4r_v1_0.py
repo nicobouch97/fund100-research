@@ -1,0 +1,164 @@
+"""P4R deterministic SYNTHETIC event-study tests; no performance claims."""
+import hashlib
+
+import numpy as np
+import pandas as pd
+import pytest
+
+import fund100_stock_broad_momentum_p4l_v1_0 as p4l
+import fund100_stock_broad_sec_annual_replay_p4q_v1_0 as p4q
+import fund100_stock_broad_sec_coverage_p4n_v1_0 as p4n
+import fund100_stock_sec_quality_forward_p4r_v1_0 as p4r
+import fund100_stock_quality_momentum_p4g_v1_0 as p4g
+
+
+def annual():
+    observations = []
+    for ticker in sorted(set(p4l.SECTORS) - set(p4g.FROZEN_P4E_SCORES)):
+        events = []
+        if ticker in ("CAT", "AVGO"):
+            events = [{
+                "asof_conservative_available_date": "2025-02-18",
+                "source_10k_available_date": "2025-02-18",
+                "source_10k_accession": "0000000001-25-000001",
+                "state": "SOURCE_MATCHED_LATEST_10K_DESCRIPTIVE_ONLY",
+                "score": 3 if ticker == "CAT" else 0,
+                "same_accession_comparative": True,
+            }]
+        observations.append({
+            "ticker": ticker, "annual_events": events,
+            "annual_filing_dates_reviewed": len(events),
+            "available_score_count": len(events),
+        })
+    return {
+        "schema": p4q.SCHEMA, "source_acquisition_utc": "2026-10-24T12:00:00Z",
+        "original_p4n_manifest_sha256": "a" * 64,
+        "new_issuers_verified": 16, "industrial_issuer_chronologies": 12,
+        "industrial_annual_scores_available": 2,
+        "industrial_annual_filing_dates_reviewed": 2,
+        "original_accession_and_filed_day_used": True,
+        "today_retrieved_companyfacts_not_original_historical_capture": True,
+        "issuer_roster_selected_with_2026_knowledge": True,
+        "historical_investable_backtest_eligible": False,
+        "independent_alpha_validated": False,
+        "trading_authorized": False, "paper_authorized": False,
+        "live_authorized": False, "broker_orders": 0,
+        "observations": observations,
+    }
+
+
+def prices():
+    index = pd.bdate_range("2017-01-02", "2026-10-23")
+    data = pd.DataFrame(100.0, index=index,
+                        columns=sorted(set(p4l.SECTORS) | {"SPY", "SHY"}))
+    entry = index.searchsorted(pd.Timestamp("2025-02-18"), side="right")
+    for t in range(entry + 1, len(index)):
+        data.iloc[t, data.columns.get_loc("CAT")] = 100 * 1.001 ** (t - entry)
+        data.iloc[t, data.columns.get_loc("AVGO")] = 100 * .999 ** (t - entry)
+    return data
+
+
+def run(a=None, p=None, digest=None):
+    p = prices() if p is None else p
+    a = annual() if a is None else a
+    digest = hashlib.sha256(p4l.canonical_csv(p).encode()).hexdigest() if digest is None else digest
+    return p4r.analyze(a, p, acquired_at_utc="2026-10-24T13:00:00Z",
+                       source_sha256=digest)
+
+
+def test_score_groups_use_only_next_close_and_same_126_session_spy_window():
+    out = run()
+    assert out["completed_event_returns"] == 2
+    assert out["missing_original_annual_scores"] == 0
+    assert out["right_censored_eligible_scores"] == 0
+    assert out["predeclared_forward_sessions"] == 126
+    rows = {r["ticker"]: r for r in out["event_returns"]}
+    assert rows["CAT"]["entry_next_session_close"] == "2025-02-19"
+    assert rows["CAT"]["conservative_available_date"] == "2025-02-18"
+    assert rows["CAT"]["exit_126_sessions_later"] == rows["AVGO"]["exit_126_sessions_later"]
+    assert rows["CAT"]["stock_gross_return_pct"] > 0
+    assert rows["AVGO"]["stock_gross_return_pct"] < 0
+    assert out["summary"]["15"]["score_2_or_3"]["events"] == 1
+    assert out["summary"]["15"]["score_0_or_1"]["events"] == 1
+    assert out["summary"]["15"]["score_2_or_3"]["mean_stock_minus_spy_pp"] > 0
+    assert out["summary"]["15"]["score_0_or_1"]["mean_stock_minus_spy_pp"] < 0
+    assert not out["trading_authorized"] and not out["paper_authorized"]
+    assert not out["live_authorized"] and out["broker_orders"] == 0
+    assert out["no_point_in_time_investable_backtest"]
+
+
+def test_roundtrip_costs_reduce_absolute_returns_not_invent_alpha():
+    out = run()
+    cat = next(x for x in out["event_returns"] if x["ticker"] == "CAT")
+    assert cat["cost_scenarios"]["5"]["stock_net_return_pct"] > cat["cost_scenarios"]["15"]["stock_net_return_pct"]
+    assert cat["cost_scenarios"]["15"]["stock_net_return_pct"] > cat["cost_scenarios"]["35"]["stock_net_return_pct"]
+    assert out["event_returns_are_overlapping_and_not_independent"]
+    assert out["retrospectively_selected_2026_survivors"]
+
+
+def test_missing_scores_not_backfilled_and_right_censored_not_treated_as_losses():
+    a = annual()
+    cat = next(x for x in a["observations"] if x["ticker"] == "CAT")
+    cat["annual_events"].append({
+        "asof_conservative_available_date": "2026-09-01",
+        "source_10k_available_date": "2026-09-01",
+        "source_10k_accession": "0000000001-26-000001",
+        "state": "SOURCE_MATCHED_LATEST_10K_DESCRIPTIVE_ONLY",
+        "score": 2, "same_accession_comparative": True,
+    })
+    cat["annual_filing_dates_reviewed"] = 2
+    cat["available_score_count"] = 2
+    a["industrial_annual_filing_dates_reviewed"] = 3
+    a["industrial_annual_scores_available"] = 3
+    out = run(a=a)
+    assert out["completed_event_returns"] == 2
+    assert out["right_censored_eligible_scores"] == 1
+    cat["annual_events"][0]["score"] = None
+    cat["available_score_count"] = 1
+    a["industrial_annual_scores_available"] = 2
+    out = run(a=a)
+    assert out["missing_original_annual_scores"] == 1
+    assert out["completed_event_returns"] == 1
+
+
+def test_reject_price_hash_tampering_and_executable_sec_replay():
+    p = prices()
+    digest = hashlib.sha256(p4l.canonical_csv(p).encode()).hexdigest()
+    p.loc[p.index[-1], "CAT"] *= 1.01
+    with pytest.raises(p4r.EventStudyStop, match="fingerprint"):
+        run(p=p, digest=digest)
+    a = annual()
+    a["live_authorized"] = True
+    with pytest.raises(p4r.EventStudyStop, match="executable"):
+        run(a=a)
+
+
+def test_reject_filing_day_hindsight_and_missing_original_comparative():
+    a = annual()
+    cat = next(x for x in a["observations"] if x["ticker"] == "CAT")
+    cat["annual_events"][0]["source_10k_available_date"] = "2025-02-17"
+    with pytest.raises(p4r.EventStudyStop, match="chronology"):
+        run(a=a)
+    a = annual()
+    cat = next(x for x in a["observations"] if x["ticker"] == "CAT")
+    cat["annual_events"][0]["same_accession_comparative"] = False
+    with pytest.raises(p4r.EventStudyStop, match="quality"):
+        run(a=a)
+
+
+def test_reject_missing_issuer_and_corrupt_event_counts():
+    a = annual()
+    a["observations"].pop()
+    with pytest.raises(p4r.EventStudyStop, match="roster"):
+        run(a=a)
+    a = annual()
+    a["industrial_annual_scores_available"] = 99
+    with pytest.raises(p4r.EventStudyStop, match="accounting"):
+        run(a=a)
+
+
+def test_price_source_default_unchanged_and_earlier_research_date_frozen():
+    assert p4r.HISTORICAL_PRICE_START == "2017-01-01"
+    assert p4r.HORIZON == 126
+    assert p4r.SIDE_COSTS_BPS == (5, 15, 35)
+    assert p4l.public_prices.__defaults__ == ("2025-10-01",)
