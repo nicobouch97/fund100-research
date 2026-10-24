@@ -96,7 +96,20 @@ jobs:
           assert set(d["scenarios"]) == {"5","15","35"}
           assert d["broker_requests"] == d["paper_orders"] == d["live_orders"] == 0
           assert not d["trading_authorized"] and not d["live_authorized"]
-          print("Costed turnover diagnostic, not alpha:", d["scenarios"]["15"]["total_one_way_turnover_including_entry_exit"])
+          base = d["scenarios"]["15"]
+          assert d["gross_stock_sector_attribution_uses_same_decisions_and_prices"]
+          assert base["gross_attribution_is_path_dependent_not_causal_alpha"]
+          assert abs(sum(base["gross_symbol_contribution_pct"].values()) -
+                     base["strategy_pre_cost_return_pct"]) < 0.00002
+          assert abs(sum(base["gross_active_vs_equal24_symbol_pp"].values()) -
+                     base["strategy_pre_cost_minus_equal24_pp"]) < 0.00002
+          print("Costed turnover diagnostic, not alpha:",
+                base["total_one_way_turnover_including_entry_exit"])
+          print("Gross active versus equal24, worst three stock contributions (pp):",
+                sorted(base["gross_active_vs_equal24_symbol_pp"].items(),
+                       key=lambda item: (item[1], item[0]))[:3])
+          print("Gross active versus equal24, sector contributions (pp):",
+                base["gross_active_vs_equal24_sector_pp"])
           PY
       - name: Score the original frozen 24-stock selection using only later same-vintage closes
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
