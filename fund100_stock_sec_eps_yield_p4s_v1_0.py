@@ -142,6 +142,65 @@ def _group(rows: list[dict]) -> dict:
     }
 
 
+def _within_issuer_valuation_contrasts(records: list[dict]) -> dict:
+    """Descriptive 5% yield contrasts within SAME issuer and momentum sign.
+
+    A company must have observed both yield categories in the same prior
+    momentum state. This avoids treating different companies' structural
+    valuations as interchangeable. Repeated events and retrospectively
+    selected survivors still prevent statistical or trading conclusions.
+    """
+    buckets = ("POSITIVE_EPS_YIELD_AT_LEAST_5PCT",
+               "POSITIVE_EPS_YIELD_BELOW_5PCT")
+    cells = {}
+    for momentum, name in ((True, "positive_momentum"),
+                           (False, "nonpositive_momentum")):
+        issuer_buckets: dict[str, dict[str, list[float]]] = {}
+        for row in records:
+            if (row["positive_pre_filing_relative_momentum"] is not momentum
+                or row["valuation_bucket"] not in buckets):
+                continue
+            issuer_buckets.setdefault(
+                row["ticker"], {bucket: [] for bucket in buckets}
+            )[row["valuation_bucket"]].append(
+                row["net_15bps_stock_minus_spy_pp"])
+        paired = {}
+        for ticker, groups in sorted(issuer_buckets.items()):
+            if all(groups[b] for b in buckets):
+                paired[ticker] = {
+                    "high_yield_events": len(groups[buckets[0]]),
+                    "low_yield_events": len(groups[buckets[1]]),
+                    "high_minus_low_yield_mean_excess_pp": round(
+                        float(np.mean(groups[buckets[0]]) -
+                              np.mean(groups[buckets[1]])), 6),
+                }
+        values = {ticker: row["high_minus_low_yield_mean_excess_pp"]
+                  for ticker, row in paired.items()}
+        leave_one_out = {
+            ticker: round(float(np.mean(
+                [v for other, v in values.items() if other != ticker])), 6)
+            for ticker in values if len(values) > 1
+        }
+        cells[name] = {
+            "issuers_with_both_yield_buckets_in_same_momentum_state": len(paired),
+            "issuers_with_any_eligible_yield": len(issuer_buckets),
+            "per_issuer": paired,
+            "issuer_equal_high_minus_low_yield_excess_pp": (
+                round(float(np.mean(list(values.values()))), 6)
+                if values else None),
+            "leave_one_issuer_out_pp": leave_one_out,
+            "insufficient_paired_issuers_for_stable_conclusion":
+                len(paired) < 5,
+        }
+    return {
+        "method": "WITHIN_ISSUER_SAME_PRIOR_MOMENTUM_5PCT_EPS_YIELD_CONTRAST",
+        "net_cost_per_side_bps": 15,
+        "comparison_is_descriptive_not_independent_inference": True,
+        "no_paired_issuer_means_no_evidence": True,
+        "by_prior_momentum": cells,
+    }
+
+
 def analyze(annual: dict, event_report: dict, eps: dict,
             close: pd.DataFrame, splits: pd.DataFrame,
             *, market_capture_utc: str) -> dict:
@@ -269,6 +328,7 @@ def analyze(annual: dict, event_report: dict, eps: dict,
         "predeclared_positive_earnings_yield_threshold": YIELD_CUTOFF,
         "comparison_cost_per_side_bps": 15,
         "valuation_by_prior_momentum": groups,
+        "within_issuer_valuation_contrasts": _within_issuer_valuation_contrasts(records),
         "events": records,
         "today_retrieved_sec_not_original_historical_vendor_vintage": True,
         "reconstructed_yahoo_close_and_splits_not_independent_corporate_action_proof": True,
