@@ -1,0 +1,76 @@
+name: Fund-100 P4L Broad Contemporary Stock Momentum (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_stock_broad_momentum_p4l_v1_0.py"
+      - "test_fund100_stock_broad_momentum_p4l_v1_0.py"
+      - "research_lab/stocks/P4L_BROAD_CONTEMPORARY_STOCK_SOURCE_2026_10_24.md"
+      - ".github/workflows/fund100-p4l-broad-stock-momentum.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_stock_broad_momentum_p4l_v1_0.py"
+      - "test_fund100_stock_broad_momentum_p4l_v1_0.py"
+      - ".github/workflows/fund100-p4l-broad-stock-momentum.yml"
+  schedule:
+    # 04:15 UTC Tuesday-Saturday: after prior US session's close.
+    - cron: "15 4 * * 2-6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-p4l-broad-stock-price-source
+  cancel-in-progress: false
+
+jobs:
+  broad-stock-research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test 24-company roster, price provenance, selection and no-order contracts
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_stock_broad_momentum_p4l_v1_0.py test_fund100_stock_quality_momentum_p4g_v1_0.py
+      - name: Acquire actual completed-session adjusted stock prices
+        if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          python fund100_stock_broad_momentum_p4l_v1_0.py \
+            --output-json /tmp/fund100-p4l-current-research.json \
+            --output-prices-csv /tmp/fund100-p4l-current-original-prices.csv
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          import pandas as pd
+          import fund100_stock_broad_momentum_p4l_v1_0 as p4l
+          d = json.loads(Path("/tmp/fund100-p4l-current-research.json").read_text())
+          csv = Path("/tmp/fund100-p4l-current-original-prices.csv").read_bytes()
+          assert hashlib.sha256(csv).hexdigest() == d["canonical_price_csv_sha256"]
+          assert d["cohort_size"] == 24 and len(d["members"]) == 24
+          assert d["status"] == "BROAD_CONTEMPORARY_MOMENTUM_RESEARCH_NOT_ALPHA"
+          assert d["post_selection_forward_return_observations"] == 0
+          assert not d["historical_stock_alpha_backtest_eligible"]
+          assert not d["paper_authorized"] and not d["live_authorized"]
+          assert not d["trading_authorized"] and d["broker_orders"] == 0
+          print("Real original public source capture:",d["asof_completed_session"],
+                "coverage",d["cohort_size"],"momentum-only",d["momentum_only_watchlist"])
+          PY
+      - name: Archive original source vintage and corresponding dated signal
+        if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-p4l-broad-stock-original-price-vintage
+          path: |
+            /tmp/fund100-p4l-current-research.json
+            /tmp/fund100-p4l-current-original-prices.csv
+          retention-days: 90
+          if-no-files-found: error
