@@ -64,6 +64,7 @@ jobs:
           assert report["new_issuer_source_matched_scores_are_descriptive_not_trade_ready"]
           assert 0 <= report["new_issuers_source_matched_score_available"] <= 12
           assert 0 <= report["new_issuers_bank_diagnostics_available"] <= 1
+          assert 0 <= report["new_issuers_sector_diagnostics_available"] <= 3
           assert report["original_eight_ciks_checked_against_official_registry"]
           assert report["drifted_original_eight_issuer_scores_not_joined_to_current_cik"]
           assert report["original_eight_registry_identity_all_match"] == (not report["original_eight_identity_drift_quarantined"])
@@ -89,6 +90,14 @@ jobs:
                   if bank["state"] == "BANK_LATEST_10K_DESCRIPTIVE_ONLY":
                       assert bank["net_revenue_identity_reconciled_both_years"]
                       assert bank["current_efficiency_ratio"] is not None
+              if row["ticker"] in {"CVX", "LLY", "NEE"}:
+                  sector = q["sector_diagnostics"]
+                  assert not sector["for_trading_approved"]
+                  assert not sector["cross_sector_comparison_approved"]
+                  assert not sector["industrial_fcf_score_computed"]
+                  if sector["state"] == "SECTOR_LATEST_10K_DESCRIPTIVE_ONLY":
+                      assert sector["metrics"] is not None
+                      assert sector["current_and_prior_from_same_accession"]
               if q["score"] is not None:
                   assert q["state"] == "SOURCE_MATCHED_LATEST_10K_DESCRIPTIVE_ONLY"
                   assert q["latest_10k_accession"] and q["comparative_from_same_latest_accession"]
