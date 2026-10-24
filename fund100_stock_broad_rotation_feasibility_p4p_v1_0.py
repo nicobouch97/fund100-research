@@ -80,17 +80,31 @@ def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
     decisions: list[dict] = []
     one_way_turnover = 0.0
     cash_history: list[float] = []
+    # Chain-linked arithmetic contribution to terminal GROSS wealth. This
+    # is path attribution, not a causal counterfactual or an alpha estimate.
+    gross_symbol_contributions = {s: 0.0 for s in p4l.SECTORS}
     for t in range(start, len(prices)):
         if t > start:
+            relatives = {
+                s: float(prices[s].iloc[t] / prices[s].iloc[t - 1])
+                for s in weights
+            }
             gross = cash + sum(
-                weight * float(prices[s].iloc[t] / prices[s].iloc[t - 1])
-                for s, weight in weights.items()
+                weight * relatives[s] for s, weight in weights.items()
             )
             if not np.isfinite(gross) or gross <= 0:
                 raise FeasibilityStop("Impossible price-relative portfolio return")
+            # If C_{t-1} sums to gross_wealth_{t-1}-1, then
+            # C_t = gross_t*C_{t-1} + sum(w_s*(relative_s-1)).
+            # Consequently the final ticker contributions add EXACTLY to
+            # terminal gross wealth minus one, including after rotations.
+            for symbol in gross_symbol_contributions:
+                gross_symbol_contributions[symbol] *= gross
+            for symbol, weight in weights.items():
+                gross_symbol_contributions[symbol] += weight * (relatives[symbol] - 1)
             nav *= gross
             weights = {
-                s: weight * float(prices[s].iloc[t] / prices[s].iloc[t - 1]) / gross
+                s: weight * relatives[s] / gross
                 for s, weight in weights.items()
             }
             cash /= gross
@@ -142,6 +156,33 @@ def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
     equal24_gross = float(np.mean(
         (end_prices[list(p4l.SECTORS)] / start_prices[list(p4l.SECTORS)]).to_numpy()
     ))
+    # Decompose the equal-24 buy-and-hold gross benchmark using its fixed
+    # inception weights. Subtracting ticker by ticker yields an exact
+    # descriptive active gross attribution against the SAME 24-name roster.
+    equal24_symbol_contributions = {
+        s: float(end_prices[s] / start_prices[s] - 1) / len(p4l.SECTORS)
+        for s in p4l.SECTORS
+    }
+    active_symbol_contributions = {
+        s: gross_symbol_contributions[s] - equal24_symbol_contributions[s]
+        for s in p4l.SECTORS
+    }
+    sectors = sorted(set(p4l.SECTORS.values()))
+    gross_sector_contributions = {
+        sector: sum(gross_symbol_contributions[s]
+                    for s, group in p4l.SECTORS.items() if group == sector)
+        for sector in sectors
+    }
+    active_sector_contributions = {
+        sector: sum(active_symbol_contributions[s]
+                    for s, group in p4l.SECTORS.items() if group == sector)
+        for sector in sectors
+    }
+    gross_error = gross_nav - 1 - sum(gross_symbol_contributions.values())
+    active_error = (gross_nav - equal24_gross
+                    - sum(active_symbol_contributions.values()))
+    if abs(gross_error) > 1e-9 or abs(active_error) > 1e-9:
+        raise FeasibilityStop("Gross stock attribution failed wealth reconciliation")
     # Two-sided entry/exit for passive buy-and-hold comparators, and
     # actual gross notional turnover at every rotation for the strategy.
     spy_net = spy_gross * (1 - c) ** 2
@@ -161,6 +202,26 @@ def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
         "equal24_passive_pre_cost_return_pct": round(100 * (equal24_gross - 1), 6),
         "strategy_pre_cost_minus_spy_pp": round(100 * (gross_nav - spy_gross), 6),
         "strategy_pre_cost_minus_equal24_pp": round(100 * (gross_nav - equal24_gross), 6),
+        "gross_attribution_method": "CHAIN_LINKED_DAILY_RETURN_TO_TERMINAL_WEALTH",
+        "gross_symbol_contribution_pct": {
+            s: round(100 * gross_symbol_contributions[s], 6)
+            for s in sorted(p4l.SECTORS)
+        },
+        "gross_sector_contribution_pct": {
+            sector: round(100 * gross_sector_contributions[sector], 6)
+            for sector in sectors
+        },
+        "gross_active_vs_equal24_symbol_pp": {
+            s: round(100 * active_symbol_contributions[s], 6)
+            for s in sorted(p4l.SECTORS)
+        },
+        "gross_active_vs_equal24_sector_pp": {
+            sector: round(100 * active_sector_contributions[sector], 6)
+            for sector in sectors
+        },
+        "gross_attribution_reconciliation_error_pp": round(100 * gross_error, 9),
+        "gross_active_attribution_reconciliation_error_pp": round(100 * active_error, 9),
+        "gross_attribution_is_path_dependent_not_causal_alpha": True,
         "strategy_modelled_cost_drag_pp": round(100 * (gross_nav - nav), 6),
         "spy_passive_modelled_cost_drag_pp": round(100 * (spy_gross - spy_net), 6),
         "strategy_vs_spy_incremental_cost_drag_pp": round(
@@ -207,6 +268,7 @@ def analyze(prices: pd.DataFrame, *, source_sha256: str) -> dict:
         "cash_assumed_zero_yield": True,
         "transaction_costs_exclude_market_impact_and_tax": True,
         "pre_cost_selection_vs_friction_attribution_same_decisions": True,
+        "gross_stock_sector_attribution_uses_same_decisions_and_prices": True,
         "pre_cost_is_not_a_tradeable_zero_friction_strategy": True,
         "initial_month_end_signal": data.index[first].date().isoformat(),
         "per_side_cost_scenarios_bps": list(SIDE_COSTS),

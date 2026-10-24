@@ -49,3 +49,27 @@ is promoted from this dataset without independent evidence.
 This workflow has **no broker credentials, POST endpoints or account access**.
 All capital ceilings, operator STOP, environment kill switch and LIVE release
 locks are unchanged. No funded or PAPER stock orders are authorised.
+
+
+## P4P gross stock and sector attribution (24 October 2026)
+
+The existing May–October monthly rotation feasibility analysis now
+decomposes its **pre-cost**, daily-chain-linked terminal return into
+ticker and sector contributions. Each day's opening weights earn that
+day's observed adjusted-price move; past contributions are chain-linked
+through subsequent gross daily wealth factors. The sum of ticker and
+sector contributions must reproduce the original gross return exactly
+before output rounding. A separate 24-name equal-weight, buy-and-hold
+gross comparator is decomposed by inception ticker weight; the
+ticker-by-ticker difference must reproduce original strategy-minus-
+equal24 gross active performance. All three 5/15/35-bp scenarios
+must show identical **gross** contributions and unchanged selections,
+even though net returns differ.
+
+This diagnoses *which* stock and sector exposures accompanied the
+observed historical selection shortfall. It does not estimate a causal
+counterfactual, investment alpha, sector-neutral factor premium or
+future expected return. The 24 names were chosen with October 2026
+knowledge, historical membership and corporate actions remain
+unverified, and adjusted-price vendor history is revisable. No new
+signals, allocations, brokerage credentials or trading authority.
