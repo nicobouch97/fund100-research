@@ -156,13 +156,19 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
     }
 
 
-def public_prices() -> pd.DataFrame:
-    """Retrieve original daily adjusted closes, fail closed on any missing bar."""
+def public_prices(start: str = "2025-10-01") -> pd.DataFrame:
+    """Retrieve original daily adjusted closes, fail closed on any missing bar.
+
+    Optional earlier start is for historical research only; the ordinary
+    prospective P4L workflow keeps its unchanged 2025-10-01 default.
+    """
+    if start not in ("2025-10-01", "2017-01-01"):
+        raise BroadStockStop("Only frozen research price start dates allowed")
     import yfinance as yf
     symbols = sorted(set(SECTORS) | {BENCHMARK, CASH_REFERENCE})
     end = datetime.now(timezone.utc).date().isoformat()
     raw = yf.download(
-        tickers=symbols, start="2025-10-01", end=end,
+        tickers=symbols, start=start, end=end,
         interval="1d", auto_adjust=True, actions=False,
         progress=False, threads=False,
     )
