@@ -145,6 +145,34 @@ jobs:
           print('SUCCESS: current verified original broker seven-GET and separately protected HMAC private head read, within 5m.')
           print('No brokerage key available in private read; NO mutation token, trade, external immutable watermark or release.')
           PY
+      - name: Observe original first ACWI owner fence through ONE private GET principal (NO WRITE)
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "workflow_run"
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          test "$FUND100_RISK_LEVEL" = "HIGH"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import os
+          import fund100_v6_s1_two_principal_readonly_handoff_v1_0 as h
+          observed=h.read_current_original_acwi_owner_fence_getonly(
+              read_token=os.environ["FUND100_PRIVATE_STATE_READ_TOKEN"],
+              hmac_hex=os.environ["FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX"])
+          assert observed["status"] in (
+              "OWNER_FENCE_NOT_VISIBLE_TO_ORIGINAL_READ_PRINCIPAL",
+              "SIGNED_UNCLAIMED_FIRST_ACWI_OWNER_FENCE_READONLY",
+              "SIGNED_ALREADY_CLAIMED_FIRST_ACWI_OWNER_FENCE_HOLD")
+          assert observed["write_principal_absence_independently_verified"] is False
+          assert observed["owner_claim_or_broker_POST_authorized"] is False
+          assert observed["real_private_Git_PUTs"] == observed["broker_orders"] == 0
+          print("Original first ACWI owner fence READ principal: "+observed["status"])
+          print("Separate WRITE principal and immutable head NOT verified; STOP.")
+          PY
       - name: Explicit no-order STOP
         run: |
           set -euo pipefail
