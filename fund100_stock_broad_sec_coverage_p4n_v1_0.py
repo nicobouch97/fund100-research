@@ -22,6 +22,7 @@ from urllib.request import Request, urlopen
 import fund100_stock_broad_momentum_p4l_v1_0 as p4l
 import fund100_stock_sec_quality_p4a_v1_0 as p4a
 import fund100_stock_sec_source_p4b_v1_0 as p4b
+import fund100_stock_sec_issuer_quality_p4e_v1_0 as p4e
 
 SCHEMA = "FUND100_P4N_BROAD_SEC_SOURCE_COVERAGE_V1"
 REGISTRY_URL = "https://www.sec.gov/files/company_tickers.json"
@@ -31,6 +32,123 @@ MAX_NEW = 16
 
 class BroadSecStop(ValueError):
     pass
+
+
+
+# Accounting-concept candidates checked against the original 24-Oct-2026
+# P4N SEC companyfacts capture (run 40065283660). These are SOURCE-MATCHED
+# descriptive tags, NOT reviewed cash economics, normalized FCF or a trading
+# quality model. In particular no cross-sector rank is defensible yet.
+# Four other issuers are intentionally unresolved: CVX lacks the standard
+# operating-income concept; LLY likewise; NEE's capex cash concept is not
+# established; JPM's bank economics require a different model.
+SOURCE_MATCHED_TAGS = {
+    "AVGO": ("RevenueFromContractWithCustomerExcludingAssessedTax", "PaymentsToAcquirePropertyPlantAndEquipment"),
+    "CAT": ("Revenues", "PaymentsToAcquirePropertyPlantAndEquipment"),
+    "COST": ("RevenueFromContractWithCustomerExcludingAssessedTax", "PaymentsToAcquirePropertyPlantAndEquipment"),
+    "DIS": ("Revenues", "PaymentsToAcquirePropertyPlantAndEquipment"),
+    "HD": ("RevenueFromContractWithCustomerExcludingAssessedTax", "PaymentsToAcquireProductiveAssets"),
+    "MA": ("Revenues", "PaymentsToAcquirePropertyPlantAndEquipment"),
+    "MCD": ("Revenues", "PaymentsToAcquirePropertyPlantAndEquipment"),
+    "META": ("RevenueFromContractWithCustomerExcludingAssessedTax", "PaymentsToAcquirePropertyPlantAndEquipment"),
+    "NVDA": ("Revenues", "PaymentsToAcquireProductiveAssets"),
+    "PEP": ("Revenues", "PaymentsToAcquireProductiveAssets"),
+    "V": ("RevenueFromContractWithCustomerExcludingAssessedTax", "PaymentsToAcquireProductiveAssets"),
+    "WMT": ("RevenueFromContractWithCustomerExcludingAssessedTax", "PaymentsToAcquirePropertyPlantAndEquipment"),
+}
+UNRESOLVED_ACCOUNTING = {
+    "CVX": "STANDARD_OPERATING_INCOME_MISSING_AND_OIL_GAS_CAPEX_REVIEW_REQUIRED",
+    "JPM": "BANK_NET_INTEREST_AND_CASH_FLOW_MODEL_REQUIRED",
+    "LLY": "STANDARD_OPERATING_INCOME_MISSING",
+    "NEE": "CASH_CAPEX_NOT_ESTABLISHED_FOR_UTILITY",
+}
+
+
+def source_matched_annual_quality(facts: dict, submissions: dict,
+                                  cik: str, ticker: str, asof: str) -> dict:
+    """Latest eligible 10-K, same-accession FY and comparative, never fallback.
+
+    This source-matched three-test diagnostic cannot be promoted to trading
+    or interpreted as cross-sector normalized quality/valuation.
+    """
+    p4a.validate_identity(facts, submissions, cik)
+    now = p4a.iso_date(asof, "source-matched research as-of")
+    result = {
+        "state": "SOURCE_MATCHED_ANNUAL_FACTS_UNAVAILABLE",
+        "score": None, "score_max": 3,
+        "latest_10k_accession": None,
+        "latest_10k_fiscal_end": None,
+        "latest_10k_available_date": None,
+        "revenue_source_tag": None, "capex_source_tag": None,
+        "revenue_growth_yoy": None, "operating_margin": None,
+        "free_cash_flow_margin": None,
+        "comparative_from_same_latest_accession": True,
+        "cross_sector_economics_reviewed": False,
+        "for_trading_approved": False,
+    }
+    if ticker in UNRESOLVED_ACCOUNTING:
+        result["state"] = UNRESOLVED_ACCOUNTING[ticker]
+        return result
+    if ticker not in SOURCE_MATCHED_TAGS:
+        raise BroadSecStop("Unknown source-matched SEC issuer")
+    revenue_tag, capex_tag = SOURCE_MATCHED_TAGS[ticker]
+    result.update(revenue_source_tag=revenue_tag, capex_source_tag=capex_tag)
+    filings = p4a.submissions_index(submissions)
+    ready = sorted(
+        [(acc, filing) for acc, filing in filings.items()
+         if filing["form"] == "10-K"
+         and p4a.iso_date(filing["end"], "annual FY end") <= now
+         and p4a.iso_date(p4a.availability_day(filing["filed"]), "availability") <= now],
+        key=lambda item: (item[1]["end"], item[1]["filed"], item[0]),
+        reverse=True,
+    )
+    if len(ready) < 2:
+        result["state"] = "INSUFFICIENT_10K_CHRONOLOGY"
+        return result
+    (acc, latest), (_, previous) = ready[:2]
+    result.update(
+        latest_10k_accession=acc,
+        latest_10k_fiscal_end=latest["end"],
+        latest_10k_available_date=p4a.availability_day(latest["filed"]),
+    )
+    if (now - p4a.iso_date(latest["end"], "FY end")).days > p4a.MAX_STALENESS_DAYS:
+        result["state"] = "LATEST_10K_STALE"
+        return result
+    years_apart = (p4a.iso_date(latest["end"], "FY end") -
+                   p4a.iso_date(previous["end"], "prior FY end")).days
+    if not 330 <= years_apart < 400:
+        result["state"] = "NONCONSECUTIVE_10K_PERIODS"
+        return result
+    tags = {
+        "revenue": revenue_tag,
+        "operating_income": p4e.OPERATING,
+        "operating_cash_flow": p4e.CFO,
+        "capital_expenditure": capex_tag,
+    }
+    concepts = facts["facts"]["us-gaap"]
+    current, prior = {}, {}
+    for key, tag in tags.items():
+        current[key] = p4e.annual_value(concepts, tag, acc, latest["filed"], latest["end"])
+        prior[key] = p4e.annual_value(concepts, tag, acc, latest["filed"], previous["end"])
+    if any(v is None for v in (*current.values(), *prior.values())):
+        result["state"] = "LATEST_10K_MISSING_SAME_ACCESSION_COMPARATIVE"
+        return result
+    if (current["revenue"] <= 0 or prior["revenue"] <= 0
+        or current["capital_expenditure"] < 0 or prior["capital_expenditure"] < 0):
+        result["state"] = "INVALID_REVENUE_OR_CAPEX"
+        return result
+    growth = current["revenue"] / prior["revenue"] - 1
+    op_margin = current["operating_income"] / current["revenue"]
+    fcf_margin = (current["operating_cash_flow"] -
+                  current["capital_expenditure"]) / current["revenue"]
+    result.update(
+        state="SOURCE_MATCHED_LATEST_10K_DESCRIPTIVE_ONLY",
+        score=int(growth >= 0) + int(op_margin >= .10) + int(fcf_margin >= .05),
+        revenue_growth_yoy=round(growth, 8),
+        operating_margin=round(op_margin, 8),
+        free_cash_flow_margin=round(fcf_margin, 8),
+    )
+    return result
 
 
 def registry_bytes(user_agent: str) -> bytes:
@@ -134,6 +252,8 @@ def capture(*, user_agent: str, registry: bytes,
         subs = p4b.decode_source(raws["submissions"], expected_cik=cik)
         p4a.validate_identity(facts, subs, cik)
         quality = p4a.asof_quality(facts, subs, cik, dt.date().isoformat())
+        source_matched = source_matched_annual_quality(
+            facts, subs, cik, ticker, dt.date().isoformat())
         if quality["paper_authorized"] or quality["live_authorized"]:
             raise BroadSecStop("SEC descriptive quality attempted broker promotion")
         provenance = {}
@@ -150,6 +270,7 @@ def capture(*, user_agent: str, registry: bytes,
             "contemporary_sector": p4l.SECTORS[ticker],
             "generic_p4a_quality_state": quality["state"],
             "generic_p4a_quality_score": quality["score"],
+            "source_matched_latest_10k_quality": source_matched,
             "generic_p4a_score_not_issuer_tag_reviewed": True,
             "issuer_specific_gaap_mapping_reviewed": False,
             "fundamental_quality_for_trading_approved": False,
@@ -173,6 +294,10 @@ def capture(*, user_agent: str, registry: bytes,
         "new_issuers_captured": len(observations),
         "new_issuers_generic_score_available": sum(
             row["generic_p4a_quality_score"] is not None for row in observations),
+        "new_issuers_source_matched_score_available": sum(
+            row["source_matched_latest_10k_quality"]["score"] is not None
+            for row in observations),
+        "new_issuer_source_matched_scores_are_descriptive_not_trade_ready": True,
         "new_issuer_specific_accounting_review_complete": False,
         "historical_point_in_time_universe_or_fundamentals_verified": False,
         "analyst_revisions_available": False,
@@ -207,7 +332,9 @@ def main() -> None:
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print("P4N official SEC prospective coverage:", report["new_issuers_captured"],
           "of 16 new issuers; generic scores:",
-          report["new_issuers_generic_score_available"])
+          report["new_issuers_generic_score_available"],
+          "source-matched descriptive scores:",
+          report["new_issuers_source_matched_score_available"])
     print("Original eight P4E untouched; SEC registry identity drift quarantined:",
           [row["ticker"] for row in report["original_eight_identity_drift_quarantined"]])
     print("No historical alpha or stock orders.")
