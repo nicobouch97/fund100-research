@@ -35,7 +35,13 @@ def fake_loader(url, agent):
     if "/companyfacts/" in url:
         doc = {"cik": cik, "facts": {"us-gaap": {}}}
     else:
-        doc = {"cik": cik, "filings": {"recent": {}}}
+        doc = {"cik": cik, "filings": {"recent": {
+            "accessionNumber": [f"{cik:010d}-26-000001", f"{cik:010d}-25-000001"],
+            "form": ["10-K", "10-K"],
+            "filingDate": ["2026-02-13", "2025-02-13"],
+            "reportDate": ["2025-12-31", "2024-12-31"],
+            "acceptanceDateTime": ["2026-02-13T12:00:00Z", "2025-02-13T12:00:00Z"],
+        }}}
     return json.dumps(doc, sort_keys=True).encode()
 
 
@@ -65,6 +71,10 @@ def test_source_capture_hashes_missing_scores_and_no_trading(patched_quality):
     assert report["new_issuers_captured"] == 16
     assert report["source_count"] == 32
     assert report["new_issuers_generic_score_available"] == 0
+    assert report["new_issuers_source_matched_score_available"] == 0
+    assert report["new_issuer_source_matched_scores_are_descriptive_not_trade_ready"]
+    assert len(p4n.SOURCE_MATCHED_TAGS) == 12
+    assert len(p4n.UNRESOLVED_ACCOUNTING) == 4
     assert report["official_registry_sha256"] == hashlib.sha256(registry).hexdigest()
     assert files["official-sec-ticker-registry.json"] == registry
     assert not report["historic_stock_alpha_backtest_eligible"]
@@ -159,3 +169,79 @@ def test_oversized_registry_and_invalid_limits_rejected(patched_quality):
             p4n.capture(user_agent=AGENT, registry=raw_registry(),
                         loader=fake_loader, limit=limit,
                         captured_utc="2026-10-24T05:30:00Z")
+
+
+def test_source_matched_latest_10k_comparatives_are_causal_and_not_trade_ready():
+    ticker, cik = "CAT", "0000018230"
+    accession = "0000018230-26-000008"
+    filings = {"cik": int(cik), "filings": {"recent": {
+        "accessionNumber": [accession, "0000018230-25-000008"],
+        "form": ["10-K", "10-K"],
+        "filingDate": ["2026-02-13", "2025-02-13"],
+        "reportDate": ["2025-12-31", "2024-12-31"],
+        "acceptanceDateTime": ["2026-02-13T12:00:00Z", "2025-02-13T12:00:00Z"],
+    }}}
+    tags = {
+        "Revenues": (1100, 1000),
+        "OperatingIncomeLoss": (220, 200),
+        "NetCashProvidedByUsedInOperatingActivities": (300, 280),
+        "PaymentsToAcquirePropertyPlantAndEquipment": (100, 90),
+    }
+    concepts = {}
+    for tag, (now, prior) in tags.items():
+        concepts[tag] = {"units": {"USD": [
+            {"accn": accession, "filed": "2026-02-13", "form": "10-K",
+             "start": "2025-01-01", "end": "2025-12-31", "val": now},
+            {"accn": accession, "filed": "2026-02-13", "form": "10-K",
+             "start": "2024-01-01", "end": "2024-12-31", "val": prior},
+        ]}}
+    facts = {"cik": int(cik), "facts": {"us-gaap": concepts}}
+    result = p4n.source_matched_annual_quality(
+        facts, filings, cik, ticker, "2026-10-24")
+    assert result["state"] == "SOURCE_MATCHED_LATEST_10K_DESCRIPTIVE_ONLY"
+    assert result["score"] == 3
+    assert result["latest_10k_accession"] == accession
+    assert result["comparative_from_same_latest_accession"]
+    assert not result["cross_sector_economics_reviewed"]
+    assert not result["for_trading_approved"]
+    assert result["revenue_growth_yoy"] == .1
+    # Never infer the comparative from a different 10-K accession.
+    altered = json.loads(json.dumps(facts))
+    altered["facts"]["us-gaap"]["Revenues"]["units"]["USD"][1]["accn"] = (
+        "0000018230-25-000008")
+    missing = p4n.source_matched_annual_quality(
+        altered, filings, cik, ticker, "2026-10-24")
+    assert missing["score"] is None
+    assert missing["state"] == "LATEST_10K_MISSING_SAME_ACCESSION_COMPARATIVE"
+    # Before the filing's conservative publication lag, latest report unavailable.
+    before = p4n.source_matched_annual_quality(
+        facts, filings, cik, ticker, "2026-02-13")
+    assert before["score"] is None
+    assert before["state"] == "INSUFFICIENT_10K_CHRONOLOGY"
+    # A later restated current-period fact with a different accession
+    # cannot overwrite this accession's original source observation.
+    restated = json.loads(json.dumps(facts))
+    restated["facts"]["us-gaap"]["Revenues"]["units"]["USD"].append({
+        "accn": "0000018230-26-000099", "filed": "2026-09-01",
+        "form": "10-K/A", "start": "2025-01-01",
+        "end": "2025-12-31", "val": 99999})
+    assert p4n.source_matched_annual_quality(
+        restated, filings, cik, ticker, "2026-10-24")["score"] == 3
+
+
+def test_unresolved_issuer_never_gets_a_source_matched_quality_score():
+    for ticker in p4n.UNRESOLVED_ACCOUNTING:
+        cik = "0000093410"
+        facts = {"cik": int(cik), "facts": {"us-gaap": {}}}
+        submissions = {"cik": int(cik), "filings": {"recent": {}}}
+        result = p4n.source_matched_annual_quality(
+            facts, submissions, cik, ticker, "2026-10-24")
+        assert result["score"] is None
+        assert not result["for_trading_approved"]
+        assert result["state"] == p4n.UNRESOLVED_ACCOUNTING[ticker]
+
+
+def test_source_matched_mapping_covers_exactly_the_original_new_sixteen():
+    new = set(p4l.SECTORS) - {r["ticker"] for r in p4b.read_cohort()}
+    assert set(p4n.SOURCE_MATCHED_TAGS).isdisjoint(p4n.UNRESOLVED_ACCOUNTING)
+    assert set(p4n.SOURCE_MATCHED_TAGS) | set(p4n.UNRESOLVED_ACCOUNTING) == new
