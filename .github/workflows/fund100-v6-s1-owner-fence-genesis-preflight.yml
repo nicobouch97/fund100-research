@@ -1,4 +1,4 @@
-name: Fund-100 V6-S1 Owner Fence Genesis Preflight (NO WRITES)
+name: Fund-100 V6-S1 ACWI Owner Fence Signed Init (MANUAL; NO ORDERS)
 
 on:
   pull_request:
@@ -6,12 +6,22 @@ on:
       - "fund100_v6_s1_owner_fence_genesis_preflight_offline_v1_0.py"
       - "test_fund100_v6_s1_owner_fence_genesis_preflight_offline_v1_0.py"
       - ".github/workflows/fund100-v6-s1-owner-fence-genesis-preflight.yml"
+      - "fund100_v6_s1_one_time_owner_fence_create_v1_0.py"
+      - "test_fund100_v6_s1_one_time_owner_fence_create_v1_0.py"
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type INITIALIZE_SIGNED_ACWI_OWNER_FENCE_NO_ORDERS once to create only the HMAC-signed unclaimed owner fence; no brokerage orders"
+        required: true
+        type: string
   push:
     branches: [main]
     paths:
       - "fund100_v6_s1_owner_fence_genesis_preflight_offline_v1_0.py"
       - "test_fund100_v6_s1_owner_fence_genesis_preflight_offline_v1_0.py"
       - ".github/workflows/fund100-v6-s1-owner-fence-genesis-preflight.yml"
+      - "fund100_v6_s1_one_time_owner_fence_create_v1_0.py"
+      - "test_fund100_v6_s1_one_time_owner_fence_create_v1_0.py"
 
 permissions:
   contents: read
@@ -32,5 +42,114 @@ jobs:
           python -m pytest -q \
             test_fund100_v6_s1_owner_fence_genesis_preflight_offline_v1_0.py \
             test_fund100_v6_s1_acwi_unique_owner_fence_offline_v1_0.py \
-            test_fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py
+            test_fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py \
+            test_fund100_v6_s1_one_time_owner_fence_create_v1_0.py
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+
+  protected-original-signed-ACWI-fence-genesis-CREATE-only:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1 &&
+      inputs.confirmation == 'INITIALIZE_SIGNED_ACWI_OWNER_FENCE_NO_ORDERS'
+    needs: offline-genesis-readback
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      actions: read
+    concurrency:
+      group: fund100-v6-s1-first-original-ACWI-owner-fence-one-create
+      cancel-in-progress: false
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_INITIAL_OWNER_FENCE_CONFIRM: ${{ inputs.confirmation }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pin original seq1 and no-order signed fence CREATE scope
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          test "$FUND100_RISK_LEVEL" = "HIGH"
+          test "$FUND100_INITIAL_OWNER_FENCE_CONFIRM" = "INITIALIZE_SIGNED_ACWI_OWNER_FENCE_NO_ORDERS"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          test "$(git hash-object fund100_v6_s1_one_time_owner_fence_create_v1_0.py)" = "cab510ebbb7f118f79c0d6c61a871102b1216d10"
+          test "$(git hash-object fund100_v6_s1_private_git_cas_protocol_v1_0.py)" = "9b9f8917faa21b4157600ac642f80595445a7276"
+          test "$(git hash-object fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py)" = "96aeb01c23c7f4efbc8e0e9fd117e90a34ce8382"
+          echo 'STOP + exact original signed ACWI sequence-1 and one conditional owner-fence create, no broker key.'
+      - name: CREATE original first signed unclaimed ACWI owner fence exactly once (NO ORDERS)
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_one_time_owner_fence_create_v1_0.py
+      - name: Preserve original kill and operator stop
+        run: |
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Signed empty fence only, no ACWI owner claim, no Alpaca sell, no release.'
+
+  independent-signed-unclaimed-ACWI-fence-READ-only:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1 &&
+      inputs.confirmation == 'INITIALIZE_SIGNED_ACWI_OWNER_FENCE_NO_ORDERS'
+    needs: [offline-genesis-readback, protected-original-signed-ACWI-fence-genesis-CREATE-only]
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      issues: read
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Independently reread original signed seq1 and empty owner fence; NO WRITE token
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          test "$FUND100_RISK_LEVEL" = "HIGH"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          test "$(git hash-object fund100_v6_s1_one_time_owner_fence_create_v1_0.py)" = "cab510ebbb7f118f79c0d6c61a871102b1216d10"
+          python - <<'PY'
+          import os
+          import fund100_v6_s1_owner_fence_private_getonly_v1_0 as observer
+          import fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0 as signed
+          read=os.environ["FUND100_PRIVATE_STATE_READ_TOKEN"]
+          key=os.environ["FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX"]
+          seq1=signed.recover_current_original_signed_head_readonly(
+              public_comment_id="6321330005",bootstrap_run_id="39637082911",
+              read_token=read,hmac_hex=key,public_token=os.environ["GITHUB_TOKEN"])
+          assert seq1["private_ledger_sequence"]==1
+          assert seq1["first_reservation_state"]=="RESERVED_NO_RETRY"
+          assert not seq1["production_trade_order_submission_authorized"]
+          fence=observer.read_current_original_acwi_owner_fence_getonly(
+              read_token=read,hmac_hex=key)
+          assert fence["status"]=="SIGNED_UNCLAIMED_FIRST_ACWI_OWNER_FENCE_READONLY"
+          assert fence["owner_fence_signed_head_exists"]
+          assert not fence["owner_claim_or_broker_POST_authorized"]
+          assert fence["real_private_Git_PUTs"]==fence["broker_orders"]==0
+          print('Original signed ACWI sequence-1 plus separate empty HMAC owner fence independent GET: VERIFIED, NO BROKER ORDER.')
+          PY
