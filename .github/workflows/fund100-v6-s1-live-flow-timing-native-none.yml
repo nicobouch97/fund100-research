@@ -23,6 +23,13 @@ on:
       # genuine seven-GET source run before workflow_run can verify it.
       - ".github/workflows/fund100-v6-s1-two-principal-readonly-handoff.yml"
       - ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml"
+  # Future successful first signed ACWI reservations must re-evaluate actual
+  # account risk and independently check the resulting sequence-1 HMAC state.
+  # This observes only and cannot submit/rollback/retry the private CAS.
+  workflow_run:
+    workflows:
+      - "Fund-100 V6-S1 ONE ACWI Original Intent Signed CAS (STORAGE ONLY; NO BROKER)"
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -72,7 +79,15 @@ jobs:
           PY
 
   authentic-private-seven-get:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'workflow_dispatch' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.head_sha == github.sha))
     needs: nontrading-source-and-scope-fixtures
     runs-on: ubuntu-latest
     environment: fund100-live-broker
