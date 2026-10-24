@@ -137,8 +137,10 @@ def test_reject_filing_day_hindsight_and_missing_original_comparative():
     a = annual()
     cat = next(x for x in a["observations"] if x["ticker"] == "CAT")
     cat["annual_events"][0]["source_10k_available_date"] = "2025-02-17"
-    with pytest.raises(p4r.EventStudyStop, match="chronology"):
-        run(a=a)
+    # A valid older accession is NOT a new filing-day signal.
+    out = run(a=a)
+    assert out["nonnew_or_unavailable_source_accession_events"] == 1
+    assert out["completed_event_returns"] == 1
     a = annual()
     cat = next(x for x in a["observations"] if x["ticker"] == "CAT")
     cat["annual_events"][0]["same_accession_comparative"] = False
@@ -162,3 +164,31 @@ def test_price_source_default_unchanged_and_earlier_research_date_frozen():
     assert p4r.HORIZON == 126
     assert p4r.SIDE_COSTS_BPS == (5, 15, 35)
     assert p4l.public_prices.__defaults__ == ("2025-10-01",)
+
+
+def test_existing_older_accession_not_reused_as_a_new_filing_signal():
+    a = annual()
+    cat = next(x for x in a["observations"] if x["ticker"] == "CAT")
+    cat["annual_events"].append({
+        "asof_conservative_available_date": "2025-04-01",
+        "source_10k_available_date": "2025-02-18",
+        "source_10k_accession": "0000000001-25-000001",
+        "state": "SOURCE_MATCHED_LATEST_10K_DESCRIPTIVE_ONLY",
+        "score": 3, "same_accession_comparative": True,
+    })
+    cat["annual_filing_dates_reviewed"] = 2
+    cat["available_score_count"] = 2
+    a["industrial_annual_filing_dates_reviewed"] = 3
+    a["industrial_annual_scores_available"] = 3
+    out = run(a=a)
+    assert out["completed_event_returns"] == 2
+    assert out["nonnew_or_unavailable_source_accession_events"] == 1
+    assert len([r for r in out["event_returns"] if r["ticker"] == "CAT"]) == 1
+
+
+def test_future_source_accession_is_rejected_not_forward_filled():
+    a = annual()
+    cat = next(x for x in a["observations"] if x["ticker"] == "CAT")
+    cat["annual_events"][0]["source_10k_available_date"] = "2025-03-01"
+    with pytest.raises(p4r.EventStudyStop, match="Future SEC accession"):
+        run(a=a)
