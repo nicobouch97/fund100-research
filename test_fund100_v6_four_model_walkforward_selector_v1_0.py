@@ -200,3 +200,65 @@ def test_vol_target_rejects_bad_original_model_returns():
     navs[w.MODELS[0]][700] = float("nan")
     with pytest.raises(w.WalkforwardStop, match="blend NAV"):
         w._vol_target_fixed_blend(dates, navs, 15)
+
+
+def test_original_model_dependence_identifies_duplicate_return_sleeves():
+    p = paths()
+    dates = next(iter(p.values())).index
+    t = np.arange(len(dates))
+    returns = .0002 + .004 * np.sin(t / 13)
+    nav = 100 * np.cumprod(1 + returns)
+    for model in w.MODELS:
+        p[model]["nav"] = nav
+    _, _, navs = w._verified_paths(p)
+    result = w._model_return_dependence(dates, navs, "2014-01-01")
+    assert result["status"] == "DESCRIPTIVE_ORIGINAL_MODEL_RETURN_DEPENDENCE"
+    assert result["effective_correlated_return_dimensions"] == pytest.approx(1)
+    assert result["maximum_pairwise_return_correlation"] == pytest.approx(1)
+    assert result["after_common_first_eligible_quarter_close"]
+
+
+def test_original_model_dependence_detects_distinct_returns_and_future_isolation():
+    p = paths()
+    dates = next(iter(p.values())).index
+    t = np.arange(len(dates))
+    for i, model in enumerate(w.MODELS):
+        # Four deterministic, nonidentical return patterns; synthetic only.
+        returns = .0002 + .005 * np.sin(t / (11 + i * 7) + i)
+        p[model]["nav"] = 100 * np.cumprod(1 + returns)
+    _, _, navs = w._verified_paths(p)
+    result = w._model_return_dependence(dates, navs, "2014-01-01")
+    assert 1.5 < result["effective_correlated_return_dimensions"] <= 4
+    assert result["maximum_pairwise_return_correlation"] < .5
+    cutoff = 1200
+    before = w._model_return_dependence(
+        dates[:cutoff], {m: n[:cutoff] for m, n in navs.items()}, "2014-01-01")
+    changed = {m: n.copy() for m, n in navs.items()}
+    changed[w.MODELS[0]][cutoff:] *= 1.5
+    unchanged_prefix = w._model_return_dependence(
+        dates[:cutoff], {m: n[:cutoff] for m, n in changed.items()}, "2014-01-01")
+    assert before == unchanged_prefix
+
+
+def test_original_model_dependence_never_invents_correlation_for_constant_sleeve():
+    p = paths()
+    dates, _, navs = w._verified_paths(p)
+    result = w._model_return_dependence(dates, navs, "2014-01-01")
+    assert result["status"] == "UNIDENTIFIABLE_NEAR_CONSTANT_MODEL"
+    assert result["effective_correlated_return_dimensions"] is None
+    assert result["maximum_pairwise_return_correlation"] is None
+
+
+def test_original_model_dependence_real_frozen_paths_are_descriptive_only():
+    prices, sha = original.load_frozen(Path("research_lab/frozen_history_v2.csv"))
+    assert sha == original.FROZEN_FILE_SHA256
+    models = economics._all_paths(prices, 15)
+    report = w.evaluate(models, switch_side_cost_bps=15)
+    dependence = report["model_return_dependence_by_window"]
+    assert set(dependence) == set(w.START_WINDOWS)
+    for window in dependence.values():
+        assert window["descriptive_not_holdings_lookthrough_or_independent_alpha"]
+        assert window["return_observations"] >= 259
+        if window["effective_correlated_return_dimensions"] is not None:
+            assert 1 <= window["effective_correlated_return_dimensions"] <= 4
+    assert report["paper_or_live_orders"] == 0
