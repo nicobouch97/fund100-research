@@ -70,6 +70,9 @@ def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
     start = signal_i + 1
     c = cost_bps / 10000
     nav = 1.0
+    # Multiplicative fee factor isolates selection/market P&L from trading
+    # friction WITHOUT changing any historical signal, holding or rebalance.
+    cost_factor = 1.0
     weights: dict[str, float] = {}
     cash = 1.0
     pending = (start, signal_i, _select(prices, signal_i))
@@ -98,7 +101,11 @@ def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
                 abs(target.get(s, 0.0) - weights.get(s, 0.0))
                 for s in set(target) | set(weights)
             )
-            nav *= 1 - c * turnover
+            fee_factor = 1 - c * turnover
+            if fee_factor <= 0:
+                raise FeasibilityStop("Invalid transaction-cost factor")
+            nav *= fee_factor
+            cost_factor *= fee_factor
             one_way_turnover += turnover
             weights = target
             cash = 1.0 - sum(target.values())
@@ -115,11 +122,19 @@ def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
             pending = (t + 1, t, _select(prices, t))
     # Hypothetical exit cost on final close; no actual sale or broker fill.
     exit_turnover = sum(weights.values())
-    nav *= 1 - c * exit_turnover
+    exit_fee_factor = 1 - c * exit_turnover
+    if exit_fee_factor <= 0:
+        raise FeasibilityStop("Invalid terminal transaction-cost factor")
+    nav *= exit_fee_factor
+    cost_factor *= exit_fee_factor
     one_way_turnover += exit_turnover
     path[-1] = nav
-    if not np.isfinite(nav) or nav <= 0:
+    if (not np.isfinite(nav) or nav <= 0 or not np.isfinite(cost_factor)
+        or cost_factor <= 0):
         raise FeasibilityStop("Invalid terminal hypothetical portfolio wealth")
+    # Portfolio weights are not affected by proportional fees: removing
+    # their product recovers EXACTLY the same holdings path before costs.
+    gross_nav = nav / cost_factor
 
     start_prices = prices.iloc[start]
     end_prices = prices.iloc[-1]
@@ -141,6 +156,16 @@ def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
         "average_cash_weight_pct": round(100 * float(np.mean(cash_history)), 4),
         "max_drawdown_hypothetical_pct": round(100 * _drawdown(path), 4),
         "strategy_net_return_pct": round(100 * (nav - 1), 6),
+        "strategy_pre_cost_return_pct": round(100 * (gross_nav - 1), 6),
+        "spy_passive_pre_cost_return_pct": round(100 * (spy_gross - 1), 6),
+        "equal24_passive_pre_cost_return_pct": round(100 * (equal24_gross - 1), 6),
+        "strategy_pre_cost_minus_spy_pp": round(100 * (gross_nav - spy_gross), 6),
+        "strategy_pre_cost_minus_equal24_pp": round(100 * (gross_nav - equal24_gross), 6),
+        "strategy_modelled_cost_drag_pp": round(100 * (gross_nav - nav), 6),
+        "spy_passive_modelled_cost_drag_pp": round(100 * (spy_gross - spy_net), 6),
+        "strategy_vs_spy_incremental_cost_drag_pp": round(
+            100 * ((gross_nav - spy_gross) - (nav - spy_net)), 6),
+        "pre_cost_result_not_evidence_of_point_in_time_alpha": True,
         "spy_passive_net_return_pct": round(100 * (spy_net - 1), 6),
         "equal24_passive_net_return_pct": round(100 * (equal24_net - 1), 6),
         "strategy_minus_spy_net_pp": round(100 * (nav - spy_net), 6),
@@ -181,6 +206,8 @@ def analyze(prices: pd.DataFrame, *, source_sha256: str) -> dict:
         "predeclared_month_end_signal_next_session_close_execution": True,
         "cash_assumed_zero_yield": True,
         "transaction_costs_exclude_market_impact_and_tax": True,
+        "pre_cost_selection_vs_friction_attribution_same_decisions": True,
+        "pre_cost_is_not_a_tradeable_zero_friction_strategy": True,
         "initial_month_end_signal": data.index[first].date().isoformat(),
         "per_side_cost_scenarios_bps": list(SIDE_COSTS),
         "scenarios": scenarios,
@@ -215,6 +242,8 @@ def main() -> None:
     print("P4P CONTEMPORARY ROSTER COSTED FEASIBILITY ONLY",
           "15bps strategy", base["strategy_net_return_pct"],
           "SPY", base["spy_passive_net_return_pct"],
+          "gross_strategy_minus_spy_pp", base["strategy_pre_cost_minus_spy_pp"],
+          "incremental_cost_drag_pp", base["strategy_vs_spy_incremental_cost_drag_pp"],
           "turnover", base["total_one_way_turnover_including_entry_exit"])
     print("HINDSIGHT ROSTER, NO ALPHA, NO ORDERS, NO LIVE AUTHORIZATION")
 

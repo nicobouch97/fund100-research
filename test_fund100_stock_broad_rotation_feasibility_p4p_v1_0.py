@@ -88,3 +88,43 @@ def test_wrong_source_sha_and_missing_nyse_session_fail_closed():
         analyze(missing)
     with pytest.raises(p4p.FeasibilityStop, match="Insufficient"):
         analyze(p.iloc[:130])
+
+
+def test_gross_selection_return_is_identical_across_costs_and_friction_reconciles():
+    result = analyze(prices())
+    assert result["pre_cost_selection_vs_friction_attribution_same_decisions"]
+    assert result["pre_cost_is_not_a_tradeable_zero_friction_strategy"]
+    scenarios = result["scenarios"]
+    for key in ("strategy_pre_cost_return_pct",
+                "spy_passive_pre_cost_return_pct",
+                "equal24_passive_pre_cost_return_pct",
+                "strategy_pre_cost_minus_spy_pp",
+                "strategy_pre_cost_minus_equal24_pp"):
+        assert scenarios["5"][key] == scenarios["15"][key] == scenarios["35"][key]
+    for bps in ("5", "15", "35"):
+        row = scenarios[bps]
+        assert row["pre_cost_result_not_evidence_of_point_in_time_alpha"]
+        assert row["strategy_modelled_cost_drag_pp"] >= 0
+        assert row["spy_passive_modelled_cost_drag_pp"] >= 0
+        assert row["strategy_pre_cost_return_pct"] - row[
+            "strategy_net_return_pct"] == pytest.approx(
+                row["strategy_modelled_cost_drag_pp"], abs=2e-6)
+        assert row["spy_passive_pre_cost_return_pct"] - row[
+            "spy_passive_net_return_pct"] == pytest.approx(
+                row["spy_passive_modelled_cost_drag_pp"], abs=2e-6)
+        assert row["strategy_pre_cost_minus_spy_pp"] - row[
+            "strategy_minus_spy_net_pp"] == pytest.approx(
+                row["strategy_vs_spy_incremental_cost_drag_pp"], abs=2e-6)
+    assert scenarios["5"]["strategy_modelled_cost_drag_pp"] < scenarios["15"][
+        "strategy_modelled_cost_drag_pp"] < scenarios["35"]["strategy_modelled_cost_drag_pp"]
+    assert scenarios["5"]["signals_and_next_close_execution"] == scenarios["35"][
+        "signals_and_next_close_execution"]
+
+
+def test_all_cash_strategy_has_zero_cost_drag_even_if_passive_benchmark_trades():
+    row = analyze(prices(flat=True))["scenarios"]["15"]
+    assert row["strategy_pre_cost_return_pct"] == row["strategy_net_return_pct"] == 0
+    assert row["strategy_modelled_cost_drag_pp"] == 0
+    assert row["spy_passive_pre_cost_return_pct"] == 0
+    assert row["spy_passive_modelled_cost_drag_pp"] > 0
+    assert row["strategy_vs_spy_incremental_cost_drag_pp"] < 0
