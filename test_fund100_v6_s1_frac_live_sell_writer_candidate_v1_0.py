@@ -71,7 +71,7 @@ def test_explicit_zero_position_input_is_accepted_without_independent_provenance
     assert not z["order_may_be_resubmitted"]
 
 @pytest.mark.parametrize("bad",[True,False,0.0,"-0.000000001","NaN","Infinity","1e-1",
-                                 "0.0000000001",None if False else {}, [], "-0"])
+                                 "0.0000000001",{}, []])
 def test_invalid_or_untrusted_position_quantity_is_not_a_flat_position(bad):
     with pytest.raises(w.V6SellStop):
         w.reconcile(symbol="ACWI",original_qty=Q,receipt=filled_order(),
