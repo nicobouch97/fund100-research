@@ -218,7 +218,14 @@ class PrivateJournal:
             except sell.V6SellStop:
                 raise JournalStop("Original broker order receipt identity or status invalid") from None
             status=result["stage"]
-            if status=="LEGACY_EXIT_FULL_FILL_AND_FLAT_VERIFIED":
+            # This journal only accepts synthetic broker events. Explicit
+            # zero in the fake position snapshot is required; None remains
+            # UNKNOWN. Even this simulated completion is never a LIVE proof.
+            if (status=="REVIEW_FILLED_RECEIPT_AND_ZERO_QTY_INPUT_NOT_INDEPENDENTLY_VERIFIED"
+                and result["explicit_zero_holdings_input_present"] is True
+                and result["broker_zero_holdings_source_independently_verified"] is False
+                and result["live_order_authorized"] is False
+                and MODE=="SYNTHETIC_BROKER_EVENTS_ONLY"):
                 new_state="SIM_FILLED_AND_FLAT_RECONCILED"
             elif status.startswith("HOLD_TERMINAL_") or status.startswith("HOLD_AMBIGUOUS_"):
                 new_state="HOLD_TERMINAL_OR_AMBIGUOUS"
