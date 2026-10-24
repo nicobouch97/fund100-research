@@ -247,3 +247,119 @@ def test_recovery_script_has_no_Git_MUTATION_or_alpaca_source():
     ):
         assert forbidden not in src
     assert r.NO_PRIVATE_GIT_WRITE and r.NO_ALPACA_NETWORK and r.NO_LIVE_ORDER_RELEASE
+
+
+def seq1_fixture():
+    import test_fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent_fx
+    private=intent_fx.Private()
+    public=intent_fx.Public(private.raw)
+    outcome=intent_fx.call(private,public)
+    assert outcome["signed_sequence"]==1 and private.puts==1
+    first_comment={
+        "id":987654321,
+        "body":public.body,
+        "issue_url":r.ORIGINAL_PUBLIC_ISSUE_URL,
+        "user":{"login":"github-actions[bot]"}
+    }
+    args=dict(public_comment_id=intent_fx.m.GENESIS_COMMENT_ID,
+              bootstrap_run_id=intent_fx.m.GENESIS_RUN_ID,
+              read_token=intent_fx.READ,hmac_hex=intent_fx.KEY,
+              public_token=intent_fx.PUBLIC,
+              private_transport=private,public_transport=public,
+              identity_fetch=intent_fx.identity_get,
+              issue_page_get=lambda *,page,token:[first_comment] if page==1 else [])
+    return args,private,first_comment
+
+
+def test_current_original_head_genesis_keeps_existing_exact_read_only_semantics():
+    import test_fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent_fx
+    private=intent_fx.Private()
+    public=intent_fx.Public(private.raw)
+    def never_issue_page(**_):
+        raise AssertionError("Gen 0 does not enumerate issue comments")
+    result=r.recover_current_original_signed_head_readonly(
+        public_comment_id=intent_fx.m.GENESIS_COMMENT_ID,
+        bootstrap_run_id=intent_fx.m.GENESIS_RUN_ID,
+        read_token=intent_fx.READ,hmac_hex=intent_fx.KEY,
+        public_token=intent_fx.PUBLIC,
+        private_transport=private,public_transport=public,
+        identity_fetch=intent_fx.identity_get,issue_page_get=never_issue_page)
+    assert result["private_ledger_sequence"]==0
+    assert result["status"]=="GENESIS_CONTENT_AND_PUBLIC_HASH_WITNESS_RECONFIRMED_READONLY"
+    assert not result["production_trade_order_submission_authorized"]
+    assert private.puts==0
+
+
+def test_current_original_head_recognizes_only_signed_realshape_first_acwi():
+    args,private,comment=seq1_fixture()
+    result=r.recover_current_original_signed_head_readonly(**args)
+    assert result["status"]=="ORIGINAL_ACWI_SIGNED_SEQ1_AND_PUBLIC_HEAD_RECONFIRMED_READONLY"
+    assert result["private_ledger_sequence"]==1
+    assert result["first_reserved_symbol"]=="ACWI"
+    assert result["first_reservation_state"]=="RESERVED_NO_RETRY"
+    assert result["original_ACWI_qty_commitment_verified"] is True
+    assert result["independent_first_successor_public_witness_verified"] is True
+    assert result["independently_immutable_rollback_anchor_proven"] is False
+    assert result["production_trade_order_submission_authorized"] is False
+    assert result["broker_orders"]==result["private_git_writes"]==0
+    assert private.puts==1
+    import test_fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent_fx
+    for secret in (intent_fx.READ,intent_fx.KEY,
+                   intent_fx.m.original_acwi_qty(),intent_fx.cas.CLIENT_IDS["ACWI"]):
+        assert secret not in str(result)
+
+
+@pytest.mark.parametrize("mutate",[
+    "no_comment","duplicate_comment","forged_author","changed_body",
+    "incorrect_run","missing_page","invalid_pagination",
+    "tamper_signed_private","wrong_hmac","unsupported_seq",
+])
+def test_first_signed_head_incomplete_or_ambiguous_never_falls_back(mutate):
+    args,private,comment=seq1_fixture()
+    if mutate=="no_comment":
+        args["issue_page_get"]=lambda **_: []
+    elif mutate=="duplicate_comment":
+        args["issue_page_get"]=lambda **_: [comment,dict(comment,id=987654322)]
+    elif mutate=="forged_author":
+        args["issue_page_get"]=lambda **_: [dict(comment,user={"login":"attacker"})]
+    elif mutate=="changed_body":
+        args["issue_page_get"]=lambda **_: [dict(comment,body=comment["body"]+"extra")]
+    elif mutate=="incorrect_run":
+        args["issue_page_get"]=lambda **_: [dict(comment,body=comment["body"].replace(
+            "/actions/runs/123456789","/actions/runs/333333333"))]
+    elif mutate=="missing_page":
+        args["issue_page_get"]=lambda **_: None
+    elif mutate=="invalid_pagination":
+        args["issue_page_get"]=lambda **_: [comment]*100
+    elif mutate=="tamper_signed_private":
+        private.raw+=b"\x00"
+    elif mutate=="wrong_hmac":
+        args["hmac_hex"]="abcdef0123456789"*4
+    elif mutate=="unsupported_seq":
+        import test_fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as it
+        doc=json.loads(private.raw)
+        doc.pop("signature")
+        doc["sequence"]=2
+        private.raw=it.cas._canon(dict(doc,signature=it.cas._seal(doc,bytes.fromhex(it.KEY))))
+    with pytest.raises(r.RecoveryStop):
+        r.recover_current_original_signed_head_readonly(**args)
+    assert private.puts==1
+
+
+def test_original_current_head_fails_when_private_hmac_not_signed():
+    args,private,_=seq1_fixture()
+    private.raw=private.raw[:-8]+b"12345678"
+    with pytest.raises(r.RecoveryStop):
+        r.recover_current_original_signed_head_readonly(**args)
+
+
+def test_issues_pagination_disallows_out_of_bound_pages_or_write_paths():
+    with pytest.raises(r.RecoveryStop):
+        r._public_issue_page(page=0,token=PUBLIC_TOKEN)
+    with pytest.raises(r.RecoveryStop):
+        r._public_issue_page(page=11,token=PUBLIC_TOKEN)
+    source=Path(r.__file__).read_text()
+    assert "method=\"GET\"" in source
+    for forbidden in ("method=\"PUT\"","method=\"POST\"",
+                      "ALPACA_LIVE_KEY","FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"):
+        assert forbidden not in source
