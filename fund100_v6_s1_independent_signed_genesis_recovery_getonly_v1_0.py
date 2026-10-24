@@ -179,6 +179,194 @@ def runtime(*, public_comment_id: str, bootstrap_run_id: str, read_token: str,
         hmac_hex=hmac_hex, original_witness=original)
 
 
+
+
+PUBLIC_ISSUE_COMMENTS_PAGE_PREFIX = (
+    "https://api.github.com/repos/nicobouch97/fund100-research/"
+    "issues/8/comments?per_page=100&page="
+)
+MAX_ISSUE_PAGES = 10
+MAX_ISSUE_PAGE_BYTES = 1_500_000
+
+
+def _public_issue_page(*, page: int, token: str, transport=None) -> list:
+    """Bounded exact issue-8 GET; never modify/publicly echo comment contents."""
+    if type(page) is not int or not 1 <= page <= MAX_ISSUE_PAGES:
+        raise RecoveryStop("Unapproved public witness page")
+    url = PUBLIC_ISSUE_COMMENTS_PAGE_PREFIX + str(page)
+    req = Request(url, method="GET", headers={
+        "Accept": "application/vnd.github+json",
+        "Authorization": "Bearer " + _secret(token, "public issue-read token"),
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "fund100-original-signed-head-recovery-readonly",
+    })
+    try:
+        with (urlopen if transport is None else transport)(req, timeout=12) as response:
+            if getattr(response, "status", None) != 200:
+                raise RecoveryStop("Original public issue page GET failed")
+            payload = response.read(MAX_ISSUE_PAGE_BYTES + 1)
+        if len(payload) > MAX_ISSUE_PAGE_BYTES:
+            raise RecoveryStop("Original public issue page oversized")
+        data = json.loads(payload.decode("utf-8"))
+    except (HTTPError, URLError, OSError, TimeoutError, ValueError, UnicodeError):
+        raise RecoveryStop("Original public issue read ambiguous; STOP") from None
+    if type(data) is not list or len(data) > 100:
+        raise RecoveryStop("Original public comment page malformed")
+    return data
+
+
+def _complete_original_comment_pages(*, token: str, issue_page_get,
+                                     public_transport=None) -> list:
+    """No incomplete pagination can silently hide another successor witness."""
+    comments = []
+    for page in range(1, MAX_ISSUE_PAGES + 1):
+        if issue_page_get is None:
+            batch = _public_issue_page(page=page, token=token,
+                                       transport=public_transport)
+        else:
+            batch = issue_page_get(page=page, token=token)
+        if type(batch) is not list or len(batch) > 100:
+            raise RecoveryStop("Original issue-8 comment pagination invalid")
+        comments.extend(batch)
+        if len(batch) < 100:
+            return comments
+    raise RecoveryStop("Original successor comments exceed bounded verified pages")
+
+
+def recover_current_original_signed_head_readonly(
+        *, public_comment_id: str, bootstrap_run_id: str, read_token: str,
+        hmac_hex: str, public_token: str, private_transport=None,
+        public_transport=None, identity_fetch=identity.safe_get,
+        issue_page_get=None) -> dict:
+    """Original seq0 or exact signed ACWI seq1, in a separate READ principal.
+
+    Independent issue comments remain editable; this never establishes
+    immutable rollback protection or authorises a second/first broker POST.
+    The original seq0 validation remains unchanged and fail-closed.
+    """
+    _secret(read_token, "existing private READ token")
+    _secret(public_token, "public issue-read token")
+    _number(public_comment_id, "public original genesis comment")
+    _number(bootstrap_run_id, "original genesis run")
+    try:
+        key = bootstrap._key(hmac_hex)
+    except bootstrap.GenesisBootstrapStop:
+        raise RecoveryStop("Invalid original private HMAC verifier") from None
+    observed = witness.verify()
+    repo = identity_fetch(url=identity.BASE, token=read_token)
+    readme = identity_fetch(
+        url=identity.BASE + "/contents/README.md?ref=main", token=read_token)
+    try:
+        identity.classify(repo=repo, readme=readme)
+    except identity.PrivateRepoProbeStop:
+        raise RecoveryStop("Original private identity changed") from None
+    private = _get(url=ORIGINAL_PRIVATE_URL, token=read_token,
+                   transport=private_transport)
+    genesis_comment = _get(
+        url=PUBLIC_COMMENT_PREFIX + public_comment_id,
+        token=public_token, transport=public_transport)
+    try:
+        head_sha, doc = cas._read_source(
+            private, private_genesis=observed["original_public_genesis_nonce"],
+            account_binding_sha256=observed["original_live_account_binding_sha256"],
+            key=key)
+    except (cas.CasStop, ValueError, TypeError, KeyError):
+        raise RecoveryStop("Original signed ledger HMAC/account invalid") from None
+
+    if doc.get("sequence") == 0:
+        return validate_sources(
+            private_source=private, issue_comment=genesis_comment,
+            public_comment_id=public_comment_id, bootstrap_run_id=bootstrap_run_id,
+            hmac_hex=hmac_hex, original_witness=observed)
+    if doc.get("sequence") != 1:
+        raise RecoveryStop("Only original empty or one reserved ACWI head is supported")
+
+    # Lazy imports prevent a cycle: the existing first-head verifier depends
+    # upon this independent genesis recovery module.
+    import fund100_v6_s1_first_private_head_external_witness_offline_v1_0 as first
+    import fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0 as prepost
+    import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent
+
+    original_raw = cas.genesis(
+        private_genesis=observed["original_public_genesis_nonce"],
+        account_binding_sha256=observed["original_live_account_binding_sha256"],
+        key=key)
+    initial_sha = cas.blob_sha(original_raw)
+    if (doc.get("prior_document_sha") != initial_sha
+        or set(doc.get("entries", {})) != {"ACWI"}
+        or type(doc["entries"].get("ACWI")) is not dict
+        or doc["entries"]["ACWI"].get("state") != "RESERVED_NO_RETRY"):
+        raise RecoveryStop("Original seq1 signed ACWI state or parent is not admissible")
+
+    # Exact parent comment identity and old/new head commitments are
+    # independently reconstructed, not guessed from a parsed comment.
+    all_comments = _complete_original_comment_pages(
+        token=public_token, issue_page_get=issue_page_get,
+        public_transport=public_transport)
+    candidates = []
+    for comment in all_comments:
+        if type(comment) is not dict:
+            raise RecoveryStop("Malformed original issue-8 comment")
+        body = comment.get("body")
+        if type(body) is not str or not body.startswith(first.COMMENT_DOMAIN):
+            continue
+        # Fail closed on malformed/bogus successor witnesses rather than
+        # skipping them and accepting a later candidate.
+        match = re.search(
+            r"(?m)^Source: https://github\\.com/nicobouch97/"
+            r"fund100-research/actions/runs/([1-9][0-9]{0,18})$",
+            body)
+        if match is None:
+            raise RecoveryStop("Untrusted first signed-head witness identity")
+        run_id = match.group(1)
+        try:
+            expected = first.first_next_comment(
+                original_nonce=observed["original_public_genesis_nonce"],
+                old_private_sha=initial_sha, new_private_sha=head_sha,
+                run_id=run_id)
+        except (first.FirstHeadStop, ValueError, TypeError):
+            raise RecoveryStop("Original first successor commitment invalid") from None
+        if (body != expected
+            or type(comment.get("id")) is not int or comment["id"] <= 0
+            or comment.get("issue_url") != ORIGINAL_PUBLIC_ISSUE_URL
+            or type(comment.get("user")) is not dict
+            or comment["user"].get("login") != USER_BOT):
+            raise RecoveryStop("Original first successor issue witness mismatched")
+        candidates.append((comment, str(comment["id"]), run_id))
+    if len(candidates) != 1:
+        raise RecoveryStop("Missing or ambiguous original seq1 public head witness")
+    comment, comment_id, run_id = candidates[0]
+    try:
+        checked = prepost.check_initial_reserved(
+            source=private, genesis_public_comment=genesis_comment,
+            first_public_comment=comment, first_comment_id=comment_id,
+            first_run_id=run_id, original_qty=intent.original_acwi_qty(),
+            key=key)
+    except Exception:
+        raise RecoveryStop("Original seq1 account shares/HMAC/head invalid") from None
+    if checked.get("source_sha") != head_sha:
+        raise RecoveryStop("First successor source SHA changed during recovery")
+    return {
+        "schema": SCHEMA,
+        "status":"ORIGINAL_ACWI_SIGNED_SEQ1_AND_PUBLIC_HEAD_RECONFIRMED_READONLY",
+        "source_original_public_witness_proven":True,
+        "private_genesis_HMAC_signature_and_original_account_binding_verified":True,
+        "independent_public_issue8_comment_digest_and_identity_verified":True,
+        "private_ledger_sequence":1,
+        "first_reserved_symbol":"ACWI",
+        "first_reservation_state":"RESERVED_NO_RETRY",
+        "original_ACWI_qty_commitment_verified":True,
+        "independent_first_successor_public_witness_verified":True,
+        "independently_immutable_rollback_anchor_proven":False,
+        "future_private_head_progression_recovery_authorized":False,
+        "production_trade_order_submission_authorized":False,
+        "private_git_writes":0,"broker_requests":0,"broker_orders":0,
+        "original_public_comments_were_immutable":False,
+        "private_raw_bytes":None,"private_git_blob_sha":None,
+        "hmac_key_or_signature":None,"account_binding_or_account_id":None,
+    }
+
+
 def main() -> None:
     if (os.environ.get("GITHUB_REPOSITORY") !=
             "nicobouch97/fund100-research"
