@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "fund100_stock_broad_momentum_p4l_v1_0.py"
+      - "fund100_stock_broad_rotation_feasibility_p4p_v1_0.py"
+      - "test_fund100_stock_broad_rotation_feasibility_p4p_v1_0.py"
       - "fund100_stock_broad_exante_risk_p4o_v1_0.py"
       - "test_fund100_stock_broad_exante_risk_p4o_v1_0.py"
       - "test_fund100_stock_broad_momentum_p4l_v1_0.py"
@@ -15,6 +17,8 @@ on:
     branches: [main]
     paths:
       - "fund100_stock_broad_momentum_p4l_v1_0.py"
+      - "fund100_stock_broad_rotation_feasibility_p4p_v1_0.py"
+      - "test_fund100_stock_broad_rotation_feasibility_p4p_v1_0.py"
       - "fund100_stock_broad_exante_risk_p4o_v1_0.py"
       - "test_fund100_stock_broad_exante_risk_p4o_v1_0.py"
       - "test_fund100_stock_broad_momentum_p4l_v1_0.py"
@@ -48,7 +52,7 @@ jobs:
       - name: Test 24-company roster, price provenance, selection and no-order contracts
         run: |
           set -euo pipefail
-          python -m pytest -q test_fund100_stock_broad_momentum_p4l_v1_0.py test_fund100_stock_frozen_forward_marks_p4m_v1_0.py test_fund100_stock_broad_exante_risk_p4o_v1_0.py test_fund100_stock_quality_momentum_p4g_v1_0.py
+          python -m pytest -q test_fund100_stock_broad_momentum_p4l_v1_0.py test_fund100_stock_broad_rotation_feasibility_p4p_v1_0.py test_fund100_stock_frozen_forward_marks_p4m_v1_0.py test_fund100_stock_broad_exante_risk_p4o_v1_0.py test_fund100_stock_quality_momentum_p4g_v1_0.py
       - name: Acquire actual completed-session adjusted stock prices
         if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
@@ -72,6 +76,27 @@ jobs:
           assert not d["trading_authorized"] and d["broker_orders"] == 0
           print("Real original public source capture:",d["asof_completed_session"],
                 "coverage",d["cohort_size"],"momentum-only",d["momentum_only_watchlist"])
+          PY
+      - name: Measure historical rotation feasibility on hindsight-selected roster, never claim alpha
+        if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          python fund100_stock_broad_rotation_feasibility_p4p_v1_0.py \
+            --source-json /tmp/fund100-p4l-current-research.json \
+            --source-csv /tmp/fund100-p4l-current-original-prices.csv \
+            --output /tmp/fund100-p4p-hindsight-roster-feasibility.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("/tmp/fund100-p4p-hindsight-roster-feasibility.json").read_text())
+          assert d["historical_roster_selected_only_on_2026_10_24"]
+          assert d["survivorship_and_sector_history_not_point_in_time"]
+          assert d["not_a_historical_investable_strategy_backtest"]
+          assert d["predeclared_month_end_signal_next_session_close_execution"]
+          assert set(d["scenarios"]) == {"5","15","35"}
+          assert d["broker_requests"] == d["paper_orders"] == d["live_orders"] == 0
+          assert not d["trading_authorized"] and not d["live_authorized"]
+          print("Costed turnover diagnostic, not alpha:", d["scenarios"]["15"]["total_one_way_turnover_including_entry_exit"])
           PY
       - name: Score the original frozen 24-stock selection using only later same-vintage closes
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
@@ -156,5 +181,6 @@ jobs:
             /tmp/fund100-p4l-current-original-prices.csv
             /tmp/fund100-p4m-frozen-24-stock-forward-marks.json
             /tmp/fund100-p4o-original-six-risk.json
+            /tmp/fund100-p4p-hindsight-roster-feasibility.json
           retention-days: 90
           if-no-files-found: error
