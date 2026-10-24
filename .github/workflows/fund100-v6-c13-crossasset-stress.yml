@@ -1,0 +1,65 @@
+name: Fund-100 V6 C13 Costed Cross-Asset Stress Research (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_crossasset_stress_diagnostic_v1_0.py"
+      - "test_fund100_v6_crossasset_stress_diagnostic_v1_0.py"
+      - "research_lab/V6_C13_CROSSASSET_STRESS_COMPARISON_PRE_REG_2026_10_24.md"
+      - ".github/workflows/fund100-v6-c13-crossasset-stress.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v6_crossasset_stress_diagnostic_v1_0.py"
+      - "test_fund100_v6_crossasset_stress_diagnostic_v1_0.py"
+      - ".github/workflows/fund100-v6-c13-crossasset-stress.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixed-basket-source-research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install research-only dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify offline cost, causality, and source tests
+        run: |
+          set -euo pipefail
+          test "${FUND100_BROKER_KILL_SWITCH}" = ENGAGED
+          python -m pytest -q test_fund100_v6_crossasset_stress_diagnostic_v1_0.py
+      - name: Retrieve real vendor ETF prices and calculate fixed historical risk
+        run: |
+          set -euo pipefail
+          python fund100_v6_crossasset_stress_diagnostic_v1_0.py \
+            --output /tmp/fund100-c13-crossasset-risk.json \
+            --prices-output /tmp/fund100-c13-price-source.csv
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/fund100-c13-crossasset-risk.json').read_text())
+          assert r['common_sessions'] > 1000
+          assert set(r['costed_historical_diagnostics']) == {'5','15','35'}
+          assert r['broker_requests'] == r['live_orders'] == r['paper_orders'] == 0
+          assert r['private_state_writes'] == 0
+          assert not r['funded_trading_or_rebalance_authorized']
+          print('Original price source captured; no trade permissions or orders')
+          PY
+      - name: Preserve reproducible research-only source and risk output
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v6-c13-crossasset-stress-source-and-report
+          path: |
+            /tmp/fund100-c13-crossasset-risk.json
+            /tmp/fund100-c13-price-source.csv
+          retention-days: 30
+          if-no-files-found: error
