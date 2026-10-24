@@ -5,12 +5,16 @@ on:
     paths:
       - "fund100_stock_broad_sec_coverage_p4n_v1_0.py"
       - "test_fund100_stock_broad_sec_coverage_p4n_v1_0.py"
+      - "fund100_stock_broad_sec_annual_replay_p4q_v1_0.py"
+      - "test_fund100_stock_broad_sec_annual_replay_p4q_v1_0.py"
       - ".github/workflows/fund100-p4n-broad-sec-coverage.yml"
   push:
     branches: [main]
     paths:
       - "fund100_stock_broad_sec_coverage_p4n_v1_0.py"
       - "test_fund100_stock_broad_sec_coverage_p4n_v1_0.py"
+      - "fund100_stock_broad_sec_annual_replay_p4q_v1_0.py"
+      - "test_fund100_stock_broad_sec_annual_replay_p4q_v1_0.py"
       - ".github/workflows/fund100-p4n-broad-sec-coverage.yml"
   workflow_dispatch:
 
@@ -37,6 +41,7 @@ jobs:
           set -euo pipefail
           python -m pytest -q \
             test_fund100_stock_broad_sec_coverage_p4n_v1_0.py \
+            test_fund100_stock_broad_sec_annual_replay_p4q_v1_0.py \
             test_fund100_stock_sec_source_p4b_v1_0.py \
             test_fund100_stock_sec_quality_p4a_v1_0.py \
             test_fund100_stock_broad_momentum_p4l_v1_0.py
@@ -112,6 +117,32 @@ jobs:
                 [r["ticker"] for r in report["original_eight_identity_drift_quarantined"]])
           PY
           echo "acquired=true" >> "$GITHUB_OUTPUT"
+      - name: Reconstruct dated 10-K accession quality without future filings or trades
+        if: steps.capture.outputs.acquired == 'true'
+        run: |
+          set -euo pipefail
+          python fund100_stock_broad_sec_annual_replay_p4q_v1_0.py \
+            --source-dir /tmp/fund100-p4n-original-sec \
+            --output /tmp/fund100-p4n-original-sec/annual-accession-replay.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path("/tmp/fund100-p4n-original-sec/annual-accession-replay.json").read_text())
+          assert d["new_issuers_verified"] == 16
+          assert d["industrial_issuer_chronologies"] == 12
+          assert len(d["sector_specific_issuers_not_replayed"]) == 4
+          assert d["original_accession_and_filed_day_used"]
+          assert d["today_retrieved_companyfacts_not_original_historical_capture"]
+          assert d["issuer_roster_selected_with_2026_knowledge"]
+          assert not d["historical_investable_backtest_eligible"]
+          assert not d["independent_alpha_validated"]
+          assert not d["trading_authorized"] and not d["paper_authorized"]
+          assert not d["live_authorized"]
+          assert d["broker_requests"] == d["broker_orders"] == 0
+          print("Dated SEC original-accession quality replay:",
+                d["industrial_annual_scores_available"], "available scores from",
+                d["industrial_annual_filing_dates_reviewed"], "reviewed annual dates")
+          PY
       - name: Preserve original SEC bytes, source identities and missing coverage
         if: steps.capture.outputs.acquired == 'true'
         uses: actions/upload-artifact@v4
