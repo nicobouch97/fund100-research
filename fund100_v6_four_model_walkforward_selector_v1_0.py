@@ -23,6 +23,9 @@ HISTORICAL_DRAWDOWN_SCREEN = .20
 HISTORICAL_VOL_SCREEN = .35
 CASH = "CASH"
 ANNUAL_SESSIONS = 252
+# Single fixed, unoptimised downside-control research challenger.
+VOL_TARGET_ANNUAL = 0.10
+VOL_LOOKBACK_SESSIONS = 63
 
 
 class WalkforwardStop(ValueError):
@@ -110,6 +113,58 @@ def _fixed_equal_model_blend(dates: pd.DatetimeIndex, navs: dict,
     return out
 
 
+
+def _vol_target_fixed_blend(dates: pd.DatetimeIndex, navs: dict,
+                            cost_bps: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Cash-only volatility scaling of the same fixed four costed model sleeves.
+
+    At close t use the 63 returns THROUGH t to set next-session exposure.
+    Apply t-1 exposure to the return ending at t, then pay the one-way
+    cost for the exposure change at close t. No borrowing or shorts.
+    A single predeclared 10% volatility target is NOT fitted to history.
+    This is a synthetic NAV challenger, not replicable broker orders.
+    """
+    first = next((
+        t for t in range(TRAINING_RETURNS + 1, len(dates))
+        if dates[t].to_period("Q") != dates[t - 1].to_period("Q")
+    ), None)
+    if first is None or first < VOL_LOOKBACK_SESSIONS:
+        raise WalkforwardStop("Insufficient causal blend-volatility history")
+    raw = np.mean(np.vstack([
+        navs[model] / navs[model][first] for model in MODELS
+    ]), axis=0)
+    if not np.isfinite(raw).all() or (raw <= 0).any():
+        raise WalkforwardStop("Invalid original blend NAV")
+    daily = raw[1:] / raw[:-1] - 1
+    if not np.isfinite(daily).all() or (daily <= -1).any():
+        raise WalkforwardStop("Invalid original blend returns")
+    wealth = np.full(len(dates), 100.0)
+    exposure = np.zeros(len(dates))
+    turnover = np.zeros(len(dates))
+    held = 0.0
+    capital = 100.0
+    for t in range(first, len(dates)):
+        if t > first:
+            # Exposure fixed at the preceding close: no same-close foresight.
+            capital *= 1 + held * float(daily[t - 1])
+        trailing = daily[t - VOL_LOOKBACK_SESSIONS:t]
+        if len(trailing) != VOL_LOOKBACK_SESSIONS:
+            raise WalkforwardStop("Incomplete trailing volatility history")
+        annual_vol = float(np.std(trailing, ddof=1) * math.sqrt(ANNUAL_SESSIONS))
+        if not math.isfinite(annual_vol):
+            raise WalkforwardStop("Invalid trailing volatility")
+        new = min(1.0, VOL_TARGET_ANNUAL / annual_vol) if annual_vol > 1e-12 else 1.0
+        changed = abs(new - held)
+        # Synthetic one-way trade cost, on current capital at each close.
+        capital *= 1 - changed * cost_bps / 10000
+        if not math.isfinite(capital) or capital <= 0 or not 0 <= new <= 1:
+            raise WalkforwardStop("Invalid unlevered risk-controlled NAV")
+        wealth[t] = capital
+        exposure[t] = new
+        turnover[t] = changed
+        held = new
+    return wealth, exposure, turnover
+
 def _window_metrics(frame: pd.DataFrame, start: str) -> dict:
     view = frame.loc[start:]
     if len(view) < 260:
@@ -120,6 +175,10 @@ def _window_metrics(frame: pd.DataFrame, start: str) -> dict:
     wealth = view["selector_nav"]
     bench = view["acwi_nav"]
     blend = view["equal_model_blend_nav"]
+    risk = view["vol_target_blend_nav"]
+    risk_daily = risk.pct_change(fill_method=None).dropna()
+    risk_annual = (risk.iloc[-1] / risk.iloc[0]) ** (1 / years) - 1
+    risk_drawdown = risk / risk.cummax() - 1
     daily = wealth.pct_change(fill_method=None).dropna()
     annual = (wealth.iloc[-1] / wealth.iloc[0]) ** (1 / years) - 1
     baseline = (bench.iloc[-1] / bench.iloc[0]) ** (1 / years) - 1
@@ -132,6 +191,19 @@ def _window_metrics(frame: pd.DataFrame, start: str) -> dict:
         "historical_acwi_cagr_pct": round(float(100 * baseline), 4),
         "historical_excess_cagr_pp": round(float(100 * (annual - baseline)), 4),
         "historical_equal_model_blend_cagr_pct": round(float(100 * blend_annual), 4),
+        "historical_vol_target_blend_cagr_pct": round(float(100 * risk_annual), 4),
+        "historical_vol_target_minus_fixed_blend_cagr_pp": round(
+            float(100 * (risk_annual - blend_annual)), 4),
+        "historical_vol_target_blend_max_drawdown_pct": round(
+            float(100 * risk_drawdown.min()), 4),
+        "historical_vol_target_blend_realized_vol_pct": round(
+            float(100 * risk_daily.std(ddof=1) * math.sqrt(ANNUAL_SESSIONS)), 4),
+        "historical_vol_target_blend_average_exposure_pct": round(
+            float(100 * view["vol_target_exposure_after_close"].mean()), 4),
+        "historical_vol_target_blend_one_way_turnover_NAV": round(
+            float(view["vol_target_turnover"].sum()), 4),
+        "historical_vol_target_blend_20pct_drawdown_screen_breached": bool(
+            risk_drawdown.min() < -HISTORICAL_DRAWDOWN_SCREEN),
         "historical_selector_minus_equal_blend_cagr_pp": round(
             float(100 * (annual - blend_annual)), 4),
         "historical_equal_blend_max_drawdown_pct": round(
@@ -162,6 +234,8 @@ def evaluate(paths: dict, *, switch_side_cost_bps: int) -> dict:
         raise WalkforwardStop("Only original 5/15/35bps cost scenarios allowed")
     dates, benchmark, navs = _verified_paths(paths)
     blend = _fixed_equal_model_blend(dates, navs, switch_side_cost_bps)
+    risk_nav, risk_exposure, risk_turnover = _vol_target_fixed_blend(
+        dates, navs, switch_side_cost_bps)
     chosen = CASH
     capital = 100.0
     rows = []
@@ -189,6 +263,9 @@ def evaluate(paths: dict, *, switch_side_cost_bps: int) -> dict:
             "date": date, "selector_nav": capital,
             "acwi_nav": 100.0 * float(benchmark[t] / benchmark[0]),
             "equal_model_blend_nav": float(blend[t]),
+            "vol_target_blend_nav": float(risk_nav[t]),
+            "vol_target_exposure_after_close": float(risk_exposure[t]),
+            "vol_target_turnover": float(risk_turnover[t]),
             "held_during_session": held,
             "chosen_after_close": chosen,
             "quarterly_decision_after_close": new_choice,
@@ -209,6 +286,13 @@ def evaluate(paths: dict, *, switch_side_cost_bps: int) -> dict:
         "equal_model_blend_rebalances_after_entry": False,
         "equal_model_blend_one_synthetic_entry_side_charged": True,
         "equal_model_blend_uses_only_original_costed_model_paths": True,
+        "vol_target_blend_is_exploratory_cash_only_synthetic": True,
+        "vol_target_blend_annual_volatility_target_pct": 10,
+        "vol_target_blend_lookback_completed_sessions": VOL_LOOKBACK_SESSIONS,
+        "vol_target_blend_decision_after_close_applies_next_session": True,
+        "vol_target_blend_no_leverage_or_shorting": True,
+        "vol_target_blend_extra_one_way_costs_included": True,
+        "vol_target_blend_target_not_parameter_optimized": True,
         "historical_model_risk_screens_not_live_controls": True,
         "synthetic_model_sleeve_replication_not_verified": True,
         "historical_universe_and_models_already_inspected": True,
