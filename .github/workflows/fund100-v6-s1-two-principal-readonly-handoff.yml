@@ -143,7 +143,17 @@ jobs:
                     str(joined['postfunding_account_6_20_35_read_evidence']))
               print('Original risk-to-signed-private-head join VERIFIED READ ONLY: LIVE RISK AND ORDER RELEASE BLOCKED.')
           else:
-              assert source['status']=='TWO_PRINCIPAL_SOURCE_HANDOFF_READY_FOR_SEPARATE_SIGNED_READ'
+              # Original real LIVE client-ID source has three independently
+              # queried 404s; these are NOT "never POSTed" assurance.
+              joined=h.join_original_broker_client_ids_and_signed_first_reservation(
+                  source=source,reserved=observed)
+              assert joined['status']=='STOPPED_ORIGINAL_BROKER_404_AND_SIGNED_ACWI_SEQ1_READS_JOINED'
+              assert joined['original_broker_seven_GET_3_client_ID_404s_verified']
+              assert joined['original_signed_ACWI_seq1_reserved_no_retry_verified']
+              assert joined['client_ID_404_proves_no_earlier_POST'] is False
+              assert joined['orders_authorized'] is False
+              assert joined['broker_POSTs']==joined['private_Git_PUTs']==0
+              print('Original LIVE broker client IDs 3x404 + independently signed ACWI seq1: VERIFIED READ ONLY; 404 does NOT prove never POSTed.')
           print('SUCCESS: current verified original broker seven-GET and separately protected HMAC private head read, within 5m.')
           print('No brokerage key available in private read; NO mutation token, trade, external immutable watermark or release.')
           PY
