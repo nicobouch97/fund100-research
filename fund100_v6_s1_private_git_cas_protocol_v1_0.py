@@ -23,7 +23,7 @@ CLIENT_IDS={
     s:"f100v6s1-"+sha256((MIGRATION+"|sell|"+s).encode()).hexdigest()[:24]+"-s"
     for s in LEGACY}
 STATES={"RESERVED_NO_RETRY","POST_MAY_HAVE_BEEN_SENT","SIM_FULL_FILL_AND_FLAT"}
-OWNER_MAC_DOMAIN=b"fund100-v6-s1-exact-prepost-owner-v1\\x00"
+OWNER_MAC_DOMAIN=b"fund100-v6-s1-exact-prepost-owner-v1\x00"
 OWNER_FIELDS={"owner_run_id","owner_attempt","source_main_sha",
               "source_broker_run_id","nonce_sha256"}
 
