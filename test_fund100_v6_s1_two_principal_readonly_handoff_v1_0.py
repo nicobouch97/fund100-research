@@ -362,3 +362,68 @@ def test_old_broker_order_id_flow_does_not_claim_new_seq1_risk_evidence():
             source=h.verify_any_source(**fx()),
             reserved=signed_acwi_reservation_metadata())
 
+
+
+def test_realshape_original_client_ID_404_and_signed_ACWI_seq1_cross_principal_join():
+    source=h.verify_any_source(**fx())
+    assert source["original_broker_redacted_three_404_condition_enforced_by_upstream_job"]
+    result=h.join_original_broker_client_ids_and_signed_first_reservation(
+        source=source,reserved=signed_acwi_reservation_metadata())
+    assert result["status"]=="STOPPED_ORIGINAL_BROKER_404_AND_SIGNED_ACWI_SEQ1_READS_JOINED"
+    assert result["original_broker_seven_GET_3_client_ID_404s_verified"]
+    assert result["original_signed_ACWI_seq1_reserved_no_retry_verified"]
+    assert result["client_ID_404_proves_no_earlier_POST"] is False
+    assert result["signed_owner_fence_this_step_verified"] is False
+    assert result["immutable_external_rollback_anchor_verified"] is False
+    assert result["live_ACWI_sell_released"] is False
+    assert result["orders_authorized"] is False
+    assert result["broker_POSTs"]==result["private_Git_PUTs"]==0
+    assert result["client_order_ID"] is result["real_ACWI_qty"] is None
+
+
+@pytest.mark.parametrize("change",[
+    {"status":"CURRENT_RISK_SOURCE_STOP_READY_FOR_PRIVATE_HMAC_READ"},
+    {"original_real_broker_job_authenticated_by_GitHub":False},
+    {"broker_source_current_main_commit_matched":False},
+    {"actual_original_seven_GET_step_freshness_verified":False},
+    {"original_broker_redacted_three_404_condition_enforced_by_upstream_job":False},
+    {"broker_404_never_POST_guarantee":True},
+    {"separate_private_HMAC_GET_still_required":False},
+    {"same_runner_has_broker_and_private_ledger_secrets":True},
+    {"real_broker_POSTs":1},
+    {"orders_authorized":True},
+])
+def test_broker_metadata_unverified_cannot_join_actual_signed_ACWI(change):
+    source=h.verify_any_source(**fx())
+    source.update(change)
+    with pytest.raises(h.HandoffStop):
+        h.join_original_broker_client_ids_and_signed_first_reservation(
+            source=source,reserved=signed_acwi_reservation_metadata())
+
+
+@pytest.mark.parametrize("change",[
+    {"status":"GENESIS_CONTENT_AND_PUBLIC_HASH_WITNESS_RECONFIRMED_READONLY"},
+    {"private_ledger_sequence":0},{"private_ledger_sequence":2},
+    {"first_reserved_symbol":"EEM"},
+    {"first_reservation_state":"POST_MAY_HAVE_BEEN_SENT"},
+    {"original_ACWI_qty_commitment_verified":False},
+    {"independent_first_successor_public_witness_verified":False},
+    {"independently_immutable_rollback_anchor_proven":True},
+    {"production_trade_order_submission_authorized":True},
+    {"broker_orders":1},{"private_git_writes":1},
+])
+def test_noninitial_or_tampered_signed_ACWI_cannot_join_broker_404(change):
+    reserved=signed_acwi_reservation_metadata()
+    reserved.update(change)
+    with pytest.raises(h.HandoffStop):
+        h.join_original_broker_client_ids_and_signed_first_reservation(
+            source=h.verify_any_source(**fx()),reserved=reserved)
+
+
+def test_hmac_workflow_never_interprets_404s_as_order_replay_release():
+    from pathlib import Path
+    y=Path(".github/workflows/fund100-v6-s1-two-principal-readonly-handoff.yml").read_text()
+    assert "join_original_broker_client_ids_and_signed_first_reservation(" in y
+    assert "client_ID_404_proves_no_earlier_POST'] is False" in y
+    assert "Original LIVE broker client IDs 3x404 + independently signed ACWI seq1" in y
+    assert "broker_POSTs']==joined['private_Git_PUTs']==0" in y
