@@ -64,6 +64,99 @@ UNRESOLVED_ACCOUNTING = {
 }
 
 
+# A deposit-funded bank cannot be evaluated using industrial free cash flow:
+# deposits/loans are its operating inventory, not excess working capital.
+# Keep these source-matched BANK metrics separate from the 0-3 industrial
+# diagnostic; no cross-sector rank, valuation, or trade approval is implied.
+JPM_BANK_TAGS = {
+    "net_interest_income": "InterestIncomeExpenseNet",
+    "noninterest_income": "NoninterestIncome",
+    "noninterest_expense": "NoninterestExpense",
+    "net_revenue": "RevenuesNetOfInterestExpense",
+}
+
+
+def jpm_bank_annual_diagnostics(facts: dict, submissions: dict,
+                                cik: str, asof: str) -> dict:
+    """Bank efficiency and revenue composition from ONE eligible 10-K.
+
+    All current and comparative amounts must come from that same filing,
+    and the SEC net-revenue identity must reconcile in BOTH years.
+    """
+    p4a.validate_identity(facts, submissions, cik)
+    now = p4a.iso_date(asof, "bank research as-of")
+    out = {
+        "state": "BANK_10K_UNAVAILABLE",
+        "latest_10k_accession": None,
+        "latest_10k_available_date": None,
+        "current_efficiency_ratio": None,
+        "prior_efficiency_ratio": None,
+        "efficiency_ratio_change_percentage_points": None,
+        "net_revenue_growth_yoy": None,
+        "current_net_interest_revenue_share": None,
+        "net_revenue_identity_reconciled_both_years": False,
+        "comparatives_from_same_accession": True,
+        "bank_specific_diagnostic_not_industrial_fcf_score": True,
+        "cross_sector_comparison_approved": False,
+        "for_trading_approved": False,
+    }
+    filings = p4a.submissions_index(submissions)
+    ready = sorted(
+        [(acc, f) for acc, f in filings.items()
+         if f["form"] == "10-K"
+         and p4a.iso_date(f["end"], "bank FY end") <= now
+         and p4a.iso_date(p4a.availability_day(f["filed"]), "bank availability") <= now],
+        key=lambda item: (item[1]["end"], item[1]["filed"], item[0]),
+        reverse=True,
+    )
+    if len(ready) < 2:
+        return out
+    (acc, latest), (_, previous) = ready[:2]
+    out["latest_10k_accession"] = acc
+    out["latest_10k_available_date"] = p4a.availability_day(latest["filed"])
+    latest_end = p4a.iso_date(latest["end"], "bank FY end")
+    previous_end = p4a.iso_date(previous["end"], "bank prior FY end")
+    if (now - latest_end).days > p4a.MAX_STALENESS_DAYS:
+        out["state"] = "BANK_LATEST_10K_STALE"
+        return out
+    if not 330 <= (latest_end - previous_end).days < 400:
+        out["state"] = "BANK_NONCONSECUTIVE_FISCAL_YEARS"
+        return out
+    concepts = facts["facts"]["us-gaap"]
+    amounts = {}
+    for period, end in (("current", latest["end"]), ("prior", previous["end"])):
+        amounts[period] = {
+            name: p4e.annual_value(concepts, tag, acc, latest["filed"], end)
+            for name, tag in JPM_BANK_TAGS.items()
+        }
+    if any(value is None for row in amounts.values() for value in row.values()):
+        out["state"] = "BANK_MISSING_SAME_ACCESSION_COMPARATIVE"
+        return out
+    for row in amounts.values():
+        revenue = row["net_revenue"]
+        if (revenue <= 0 or row["noninterest_expense"] < 0
+            or row["net_interest_income"] < 0 or row["noninterest_income"] < 0):
+            out["state"] = "BANK_INVALID_REVENUE_OR_EXPENSE"
+            return out
+        if abs(row["net_interest_income"] + row["noninterest_income"] - revenue) > max(1.0, .005 * revenue):
+            out["state"] = "BANK_NET_REVENUE_IDENTITY_MISMATCH"
+            return out
+    current, prior = amounts["current"], amounts["prior"]
+    cur_eff = current["noninterest_expense"] / current["net_revenue"]
+    prior_eff = prior["noninterest_expense"] / prior["net_revenue"]
+    out.update(
+        state="BANK_LATEST_10K_DESCRIPTIVE_ONLY",
+        current_efficiency_ratio=round(cur_eff, 8),
+        prior_efficiency_ratio=round(prior_eff, 8),
+        efficiency_ratio_change_percentage_points=round(100 * (cur_eff - prior_eff), 6),
+        net_revenue_growth_yoy=round(current["net_revenue"] / prior["net_revenue"] - 1, 8),
+        current_net_interest_revenue_share=round(
+            current["net_interest_income"] / current["net_revenue"], 8),
+        net_revenue_identity_reconciled_both_years=True,
+    )
+    return out
+
+
 def source_matched_annual_quality(facts: dict, submissions: dict,
                                   cik: str, ticker: str, asof: str) -> dict:
     """Latest eligible 10-K, same-accession FY and comparative, never fallback.
@@ -88,6 +181,9 @@ def source_matched_annual_quality(facts: dict, submissions: dict,
     }
     if ticker in UNRESOLVED_ACCOUNTING:
         result["state"] = UNRESOLVED_ACCOUNTING[ticker]
+        if ticker == "JPM":
+            result["bank_diagnostics"] = jpm_bank_annual_diagnostics(
+                facts, submissions, cik, asof)
         return result
     if ticker not in SOURCE_MATCHED_TAGS:
         raise BroadSecStop("Unknown source-matched SEC issuer")
@@ -297,6 +393,10 @@ def capture(*, user_agent: str, registry: bytes,
         "new_issuers_source_matched_score_available": sum(
             row["source_matched_latest_10k_quality"]["score"] is not None
             for row in observations),
+        "new_issuers_bank_diagnostics_available": sum(
+            row["source_matched_latest_10k_quality"]
+               .get("bank_diagnostics", {}).get("state")
+            == "BANK_LATEST_10K_DESCRIPTIVE_ONLY" for row in observations),
         "new_issuer_source_matched_scores_are_descriptive_not_trade_ready": True,
         "new_issuer_specific_accounting_review_complete": False,
         "historical_point_in_time_universe_or_fundamentals_verified": False,
