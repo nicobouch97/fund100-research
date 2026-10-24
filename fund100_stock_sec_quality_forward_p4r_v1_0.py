@@ -47,6 +47,83 @@ def _date(value: object) -> pd.Timestamp:
     return pd.Timestamp(d)
 
 
+
+def _prefiling_market_beta(data: pd.DataFrame, ticker: str,
+                           first_i: int, pre_i: int) -> tuple[float | None, str]:
+    """Ex-ante descriptive beta from the SAME 126 strictly pre-filing returns.
+
+    Beta is NOT a hedge instruction: shorting, leverage, financing and
+    executable prices are absent. Never estimate it using forward outcomes.
+    """
+    if first_i < 0:
+        return None, "INSUFFICIENT_PREFILING_SESSIONS"
+    stock = data[ticker].iloc[first_i:pre_i + 1].to_numpy(dtype=float)
+    market = data["SPY"].iloc[first_i:pre_i + 1].to_numpy(dtype=float)
+    if len(stock) != MOMENTUM_LOOKBACK + 1 or len(market) != len(stock):
+        raise EventStudyStop("Incomplete pre-filing beta lookback")
+    sr = stock[1:] / stock[:-1] - 1
+    mr = market[1:] / market[:-1] - 1
+    if not np.isfinite(sr).all() or not np.isfinite(mr).all():
+        raise EventStudyStop("Nonfinite pre-filing beta returns")
+    variance = float(np.var(mr, ddof=1))
+    if variance <= 1e-12:
+        return None, "PREFILING_MARKET_VARIANCE_UNIDENTIFIABLE"
+    beta = float(np.cov(sr, mr, ddof=1)[0, 1] / variance)
+    if not np.isfinite(beta):
+        raise EventStudyStop("Invalid pre-filing market beta")
+    return beta, "IDENTIFIABLE_PREFILING_126_SESSION_BETA"
+
+
+def _beta_exposure_diagnostic(rows: list[dict]) -> dict:
+    """Issuer-balanced beta and 15bp risk-adjusted P&L PROXY, not alpha.
+
+    The beta-scaled benchmark subtraction is linear in cumulative returns,
+    assumes zero cash carry, and is not an executable hedged portfolio.
+    """
+    cells = {}
+    for momentum, name in ((True, "positive_momentum"),
+                           (False, "nonpositive_momentum"),
+                           (None, "unavailable_momentum")):
+        for high, group in ((True, "quality_2_or_3"),
+                            (False, "quality_0_or_1")):
+            cohort = [r for r in rows
+                      if r["pre_filing_relative_momentum_positive"] is momentum
+                      and (r["quality_score"] >= 2) is high]
+            usable = [r for r in cohort if r["prefiling_126_session_spy_beta"] is not None]
+            by_issuer = {}
+            for row in usable:
+                by_issuer.setdefault(row["ticker"], []).append(row)
+            issuer_betas = [
+                float(np.mean([r["prefiling_126_session_spy_beta"] for r in items]))
+                for items in by_issuer.values()
+            ]
+            issuer_proxies = [
+                float(np.mean([r["beta_adjusted_15bps_proxy_pp"] for r in items]))
+                for items in by_issuer.values()
+            ]
+            cells[f"{name}_{group}"] = {
+                "events": len(cohort),
+                "beta_identifiable_events": len(usable),
+                "distinct_beta_identifiable_issuers": len(by_issuer),
+                "event_mean_prefiling_beta": (
+                    round(float(np.mean([r["prefiling_126_session_spy_beta"]
+                                         for r in usable])), 6) if usable else None),
+                "issuer_equal_mean_prefiling_beta": (
+                    round(float(np.mean(issuer_betas)), 6) if issuer_betas else None),
+                "issuer_equal_mean_beta_adjusted_15bps_proxy_pp": (
+                    round(float(np.mean(issuer_proxies)), 6) if issuer_proxies else None),
+                "fewer_than_five_issuers_not_stable": len(by_issuer) < 5,
+            }
+    return {
+        "method": "STRICTLY_PREFILING_126_SESSION_SPY_BETA_AND_LINEAR_FORWARD_PNL_PROXY",
+        "pre_filing_beta_uses_no_filing_day_or_forward_prices": True,
+        "zero_cash_carry_and_unhedged_proxy_not_self_financing": True,
+        "no_shorting_or_leverage_or_executable_hedge_implied": True,
+        "no_significance_or_investable_alpha_inference": True,
+        "by_quality_and_prior_momentum": cells,
+    }
+
+
 def _summarize(rows: list[dict], bps: int) -> dict:
     values = [r["cost_scenarios"][str(bps)]["stock_minus_spy_pp"] for r in rows]
     if not values:
@@ -274,6 +351,7 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
                 prior_momentum_positive = bool(prior_momentum_pp_raw > 0)
                 momentum_first_close = data.index[first_i].date().isoformat()
                 momentum_last_close = data.index[pre_i].date().isoformat()
+            beta, beta_status = _prefiling_market_beta(data, ticker, first_i, pre_i)
             stock_gross = float(data[ticker].iloc[exit_i] / data[ticker].iloc[entry_i])
             spy_gross = float(data["SPY"].iloc[exit_i] / data["SPY"].iloc[entry_i])
             costs = {}
@@ -292,6 +370,13 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
                 "pre_filing_relative_momentum_positive": prior_momentum_positive,
                 "pre_filing_momentum_first_close": momentum_first_close,
                 "pre_filing_momentum_last_close": momentum_last_close,
+                "prefiling_126_session_spy_beta": (
+                    round(beta, 6) if beta is not None else None),
+                "prefiling_market_beta_status": beta_status,
+                "beta_adjusted_15bps_proxy_pp": (
+                    round(100 * (stock_gross * (1 - 15 / 10000) ** 2 - 1
+                                 - beta * (spy_gross - 1)), 6)
+                    if beta is not None else None),
                 "conservative_available_date": day.date().isoformat(),
                 "entry_next_session_close": data.index[entry_i].date().isoformat(),
                 "exit_126_sessions_later": data.index[exit_i].date().isoformat(),
@@ -331,6 +416,7 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
         "nonnew_or_unavailable_source_accession_events": not_new_accession_events,
         "completed_event_returns": len(rows),
         "summary": groups,
+        "prefiling_market_beta_risk_diagnostic": _beta_exposure_diagnostic(rows),
         "issuer_balanced_sensitivity": {
             str(bps): _issuer_balanced_sensitivity(rows, bps)
             for bps in SIDE_COSTS_BPS
@@ -343,6 +429,7 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
             r["pre_filing_relative_momentum_positive"] is None for r in rows),
         "event_returns": rows,
         "event_returns_are_overlapping_and_not_independent": True,
+        "beta_adjusted_proxy_is_not_a_hedged_trade_or_alpha": True,
         "retrospectively_selected_2026_survivors": True,
         "SEC_facts_retrieved_today_not_historical_vintages": True,
         "vendor_adjusted_prices_revisable_and_corporate_actions_not_independently_verified": True,
