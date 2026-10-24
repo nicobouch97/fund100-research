@@ -41,7 +41,7 @@ jobs:
           python -m pytest -q \
             test_fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py \
             test_fund100_v6_s1_private_git_cas_protocol_v1_0.py
-          test "$(git hash-object fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py)" = "a774a67de7b5e0abac0a13f06d744c0c45baf079"
+          test "$(git hash-object fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py)" = "96aeb01c23c7f4efbc8e0e9fd117e90a34ce8382"
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
 
   protected-main-independent-signed-genesis-getonly:
@@ -72,7 +72,7 @@ jobs:
           test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
           test "$FUND100_RISK_LEVEL" = "HIGH"
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
-          test "$(git hash-object fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py)" = "a774a67de7b5e0abac0a13f06d744c0c45baf079"
+          test "$(git hash-object fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py)" = "96aeb01c23c7f4efbc8e0e9fd117e90a34ce8382"
           test "$(git hash-object fund100_v6_s1_private_git_cas_protocol_v1_0.py)" = "9b9f8917faa21b4157600ac642f80595445a7276"
           test "$(git hash-object research_lab/V6_S1_INITIAL_PUBLIC_LEDGER_GENESIS_WITNESS_2026_10_21.json)" = "b6fd44c4bb0b17bcd906e97c7ca8d6a50cc00a99"
           python - <<'PY'
