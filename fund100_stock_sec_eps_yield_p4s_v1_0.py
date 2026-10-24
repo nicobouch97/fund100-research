@@ -320,6 +320,8 @@ def main() -> None:
     parser.add_argument("--source-dir", type=Path, required=True)
     parser.add_argument("--event-report", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--raw-close-csv", type=Path, required=True)
+    parser.add_argument("--split-factors-csv", type=Path, required=True)
     args = parser.parse_args()
     annual = p4q.evaluate(args.source_dir)
     report = json.loads(args.event_report.read_text(encoding="utf-8"))
@@ -327,9 +329,21 @@ def main() -> None:
     eps = original_eps_map(args.source_dir, annual, events)
     tickers = {r["ticker"] for r in events}
     close, splits = vendor_raw_prices(tickers)
+    close = _market_frame(close, tickers, is_split=False)
+    splits = _market_frame(splits, tickers, is_split=True)
+    if not close.index.equals(splits.index):
+        raise EarningsYieldStop("Vendor split dates do not match raw closes")
+    args.raw_close_csv.parent.mkdir(parents=True, exist_ok=True)
+    args.split_factors_csv.parent.mkdir(parents=True, exist_ok=True)
+    close_csv = close.to_csv(float_format="%.10f").encode()
+    split_csv = splits.to_csv(float_format="%.10f").encode()
+    args.raw_close_csv.write_bytes(close_csv)
+    args.split_factors_csv.write_bytes(split_csv)
     captured = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     result = analyze(annual, report, eps, close, splits,
                      market_capture_utc=captured)
+    if hashlib.sha256(close_csv + split_csv).hexdigest() != result["raw_vendor_market_csv_sha256"]:
+        raise EarningsYieldStop("Archived original raw vendor source fingerprint mismatch")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n",
                            encoding="utf-8")
