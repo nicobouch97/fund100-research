@@ -38,7 +38,7 @@ def fake_full_exit(db,symbol,qty=Q):
     b=db.mark_possible_post(symbol=symbol,original_qty=qty)
     assert b["stage"]=="POST_BOUNDARY_JOURNALED_NO_REAL_POST"
     c=db.observe_synthetic_receipt(symbol=symbol,original_qty=qty,
-        receipt=fake_receipt(symbol=symbol,qty=qty),currently_held_qty=None)
+        receipt=fake_receipt(symbol=symbol,qty=qty),currently_held_qty="0")
     assert c["stage"]=="SIM_FULL_FILL_AND_POSITION_FLAT"
     assert c["live_order_authorized"] is False
     return c
@@ -124,6 +124,19 @@ def test_existing_reservation_denies_change_of_share_qty(tmp_path):
         with pytest.raises(j.JournalStop):
             db.observe_synthetic_receipt(symbol="ACWI",original_qty="12.126",receipt=None,
                                          currently_held_qty="12.125")
+
+def test_missing_position_snapshot_even_with_filled_receipt_cannot_complete_offline_exit(tmp_path):
+    path=disk(tmp_path)
+    with launch(path) as db:
+        db.reserve_next(symbol="ACWI",original_qty=Q)
+        db.mark_possible_post(symbol="ACWI",original_qty=Q)
+        held=db.observe_synthetic_receipt(
+            symbol="ACWI",original_qty=Q,
+            receipt=fake_receipt(),currently_held_qty=None)
+        assert held["stage"]=="NO_RETRY_BROKER_RECONCILIATION_HOLD"
+        assert not held["live_order_authorized"]
+        assert db.reserve_next(symbol="EEM",original_qty=Q)["stage"]=="WAIT_PRIOR_LEGACY_EXIT_RECONCILIATION"
+
 
 def test_missing_or_404_receipt_after_attempt_is_still_uncertain(tmp_path):
     path=disk(tmp_path)
@@ -271,7 +284,7 @@ def test_simulated_full_fill_can_eventually_recover_after_partial(tmp_path):
             currently_held_qty="0.063456789")
     with launch(path) as restarted:
         success=restarted.observe_synthetic_receipt(symbol="ACWI",original_qty=Q,
-            receipt=fake_receipt(),currently_held_qty=None)
+            receipt=fake_receipt(),currently_held_qty="0")
         assert success["stage"]=="SIM_FULL_FILL_AND_POSITION_FLAT"
         assert restarted.reserve_next(symbol="EEM",original_qty=Q)["stage"]=="NEW_PRIVATE_RESERVATION_NO_BROKER_AUTHORITY"
 
