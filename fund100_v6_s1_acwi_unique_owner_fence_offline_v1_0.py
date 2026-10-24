@@ -1,4 +1,4 @@
-"""Original ACWI: owner-unique signed fencing CAS PROTOCOL, offline only.
+"""Original ACWI: pure owner-unique signed fencing CAS format, no transport.
 
 Existing seq1 -> seq2 possible-POST plans can be byte-for-byte identical
 across independent runners. After a lost Git PUT response, exact blob equality
@@ -24,7 +24,9 @@ import fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0 as prepost
 import fund100_v6_s1_public_genesis_witness_v1_0 as witness
 
 SCHEMA="FUND100_V6_S1_EXCLUSIVE_ORIGINAL_ACWI_POST_FENCE_V1"
-MODE="RESEARCH_ONLY_SIGNED_FENCE_NOT_CREATED_PRODUCTION"
+# These HMAC bytes can be initialized in production, but grant NO trade
+# permission. Owner claims and broker posts are still separate unreleased paths.
+MODE="SIGNED_ORIGINAL_ACWI_OWNER_FENCE_NO_ORDER_RELEASE_V1"
 PATH="state/v6_s1_first_acwi_execution_owner_fence.json"
 REPO=cas.STATE_REPO
 MAC_DOMAIN=b"fund100-acwi-exclusive-owner-fence-v1\x00"
@@ -78,7 +80,7 @@ def _base(*,private_genesis,account_binding_sha256):
     }
 
 def synthetic_fence_genesis(*,private_genesis,account_binding_sha256,key)->bytes:
-    """Only a simulated fixture: NO real remote empty fence exists."""
+    """Deterministic signed initial bytes; this PURE method never writes Git."""
     return _pack(_base(private_genesis=private_genesis,
                        account_binding_sha256=account_binding_sha256),key)
 
