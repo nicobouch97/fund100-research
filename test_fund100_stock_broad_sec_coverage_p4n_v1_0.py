@@ -245,3 +245,88 @@ def test_source_matched_mapping_covers_exactly_the_original_new_sixteen():
     new = set(p4l.SECTORS) - {r["ticker"] for r in p4b.read_cohort()}
     assert set(p4n.SOURCE_MATCHED_TAGS).isdisjoint(p4n.UNRESOLVED_ACCOUNTING)
     assert set(p4n.SOURCE_MATCHED_TAGS) | set(p4n.UNRESOLVED_ACCOUNTING) == new
+
+
+def jpm_2026_original_10k_source_derived_fixture():
+    """2025/2024 JPM figures from official SEC P4N archive run 40069130408.
+
+    Minimal reproducible accession-linked excerpt, not a replacement for
+    the original archived SEC companyfacts or an independent data vintage.
+    Amounts are original USD values; no broker credentials or order paths.
+    """
+    cik = "0000019617"
+    acc = "0001628280-26-008131"
+    values = {
+        "InterestIncomeExpenseNet": (95443000000, 92583000000),
+        "NoninterestIncome": (87004000000, 84973000000),
+        "NoninterestExpense": (95640000000, 91797000000),
+        "RevenuesNetOfInterestExpense": (182447000000, 177556000000),
+    }
+    concepts = {}
+    for tag, (current, prior) in values.items():
+        concepts[tag] = {"units": {"USD": [
+            {"accn": acc, "filed": "2026-02-13", "form": "10-K",
+             "start": "2025-01-01", "end": "2025-12-31", "val": current},
+            {"accn": acc, "filed": "2026-02-13", "form": "10-K",
+             "start": "2024-01-01", "end": "2024-12-31", "val": prior},
+        ]}}
+    facts = {"cik": int(cik), "facts": {"us-gaap": concepts}}
+    submissions = {"cik": int(cik), "filings": {"recent": {
+        "accessionNumber": [acc, "0000019617-25-000001"],
+        "form": ["10-K", "10-K"],
+        "filingDate": ["2026-02-13", "2025-02-13"],
+        "reportDate": ["2025-12-31", "2024-12-31"],
+        "acceptanceDateTime": ["2026-02-13T12:00:00Z",
+                               "2025-02-13T12:00:00Z"],
+    }}}
+    return cik, facts, submissions
+
+
+def test_jpm_bank_diagnostics_from_archived_sec_values_not_industrial_score():
+    cik, facts, subs = jpm_2026_original_10k_source_derived_fixture()
+    q = p4n.source_matched_annual_quality(facts, subs, cik, "JPM", "2026-10-24")
+    assert q["score"] is None
+    assert q["state"] == "BANK_NET_INTEREST_AND_CASH_FLOW_MODEL_REQUIRED"
+    b = q["bank_diagnostics"]
+    assert b["state"] == "BANK_LATEST_10K_DESCRIPTIVE_ONLY"
+    assert b["latest_10k_accession"] == "0001628280-26-008131"
+    assert b["net_revenue_identity_reconciled_both_years"]
+    assert b["current_efficiency_ratio"] == pytest.approx(.52420703)
+    assert b["prior_efficiency_ratio"] == pytest.approx(.51700309)
+    assert b["efficiency_ratio_change_percentage_points"] == pytest.approx(.720394)
+    assert b["net_revenue_growth_yoy"] == pytest.approx(.02754624)
+    assert b["current_net_interest_revenue_share"] == pytest.approx(.52312726)
+    assert b["bank_specific_diagnostic_not_industrial_fcf_score"]
+    assert not b["cross_sector_comparison_approved"] and not b["for_trading_approved"]
+
+
+def test_jpm_diagnostics_reject_future_filing_missing_comparative_and_bad_bridge():
+    cik, facts, subs = jpm_2026_original_10k_source_derived_fixture()
+    before = p4n.jpm_bank_annual_diagnostics(facts, subs, cik, "2026-02-13")
+    assert before["state"] == "BANK_10K_UNAVAILABLE"
+    assert before["current_efficiency_ratio"] is None
+
+    missing = json.loads(json.dumps(facts))
+    missing["facts"]["us-gaap"]["NoninterestExpense"]["units"]["USD"][1][
+        "accn"] = "0000019617-25-000001"
+    q = p4n.jpm_bank_annual_diagnostics(missing, subs, cik, "2026-10-24")
+    assert q["state"] == "BANK_MISSING_SAME_ACCESSION_COMPARATIVE"
+    assert q["current_efficiency_ratio"] is None
+
+    mismatched = json.loads(json.dumps(facts))
+    mismatched["facts"]["us-gaap"]["RevenuesNetOfInterestExpense"][
+        "units"]["USD"][0]["val"] = 190000000000
+    q = p4n.jpm_bank_annual_diagnostics(mismatched, subs, cik, "2026-10-24")
+    assert q["state"] == "BANK_NET_REVENUE_IDENTITY_MISMATCH"
+    assert not q["net_revenue_identity_reconciled_both_years"]
+    assert q["current_efficiency_ratio"] is None
+
+    # Later restatement accession must not rewrite the latest 10-K's facts.
+    later = json.loads(json.dumps(facts))
+    later["facts"]["us-gaap"]["NoninterestExpense"]["units"]["USD"].append({
+        "accn": "0001628280-26-999999", "filed": "2026-09-01",
+        "form": "10-K/A", "start": "2025-01-01", "end": "2025-12-31",
+        "val": 999999999999,
+    })
+    q = p4n.jpm_bank_annual_diagnostics(later, subs, cik, "2026-10-24")
+    assert q["current_efficiency_ratio"] == pytest.approx(.52420703)
