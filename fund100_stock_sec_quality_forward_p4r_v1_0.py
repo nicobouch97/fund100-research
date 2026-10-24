@@ -103,6 +103,9 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
         or {r["ticker"] for r in observations} !=
            (set(p4l.SECTORS) - set(p4g.FROZEN_P4E_SCORES))):
         raise EventStudyStop("SEC issuer roster mismatch")
+    if (sum(r["available_score_count"] for r in observations) != annual["industrial_annual_scores_available"]
+        or sum(r["annual_filing_dates_reviewed"] for r in observations) != annual["industrial_annual_filing_dates_reviewed"]):
+        raise EventStudyStop("SEC event-to-outcome accounting failed")
     rows = []
     missing = 0
     right_censored = 0
