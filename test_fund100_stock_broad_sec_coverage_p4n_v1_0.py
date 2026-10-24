@@ -338,3 +338,143 @@ def test_jpm_diagnostics_reject_future_filing_missing_comparative_and_bad_bridge
     })
     q = p4n.jpm_bank_annual_diagnostics(later, subs, cik, "2026-10-24")
     assert q["current_efficiency_ratio"] == pytest.approx(.52420703)
+
+
+# Minimal excerpts from the original 2025 SEC companyfacts in the archived
+# 24-Oct-2026 P4N acquisition (Actions run 40073422637). Dollar values and
+# same-accession 2024 comparisons are preserved; this fixture is NOT a
+# separately authenticated historical point-in-time dataset.
+SECTOR_SOURCE_VALUES = {
+    "CVX": {
+        "cik": "0000093410", "acc": "0000093410-26-000078", "filed": "2026-02-24",
+        "tags": {
+            "Revenues": (189031000000, 202792000000),
+            "NetCashProvidedByUsedInOperatingActivities": (33939000000, 31492000000),
+            "PaymentsToAcquireOilAndGasPropertyAndEquipment": (16830000000, 15544000000),
+        },
+    },
+    "LLY": {
+        "cik": "0000059478", "acc": "0000059478-26-000013", "filed": "2026-02-12",
+        "tags": {
+            "Revenues": (65179000000, 45043000000),
+            "CostOfGoodsAndServicesSold": (11052000000, 8418000000),
+            "ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost":
+                (13337000000, 10991000000),
+            "NetCashProvidedByUsedInOperatingActivities": (16813000000, 8818000000),
+            "PaymentsToAcquireOtherPropertyPlantAndEquipment": (7841000000, 5058000000),
+        },
+    },
+    "NEE": {
+        "cik": "0000753308", "acc": "0000753308-26-000015", "filed": "2026-02-13",
+        "tags": {
+            "RegulatedAndUnregulatedOperatingRevenue": (27412000000, 24753000000),
+            "OperatingIncomeLoss": (8280000000, 7479000000),
+            "NetCashProvidedByUsedInOperatingActivities": (12485000000, 13260000000),
+            "NetCashProvidedByUsedInInvestingActivities": (-23865000000, -22264000000),
+            "NetCashProvidedByUsedInFinancingActivities": (12979000000, 7000000000),
+        },
+    },
+}
+
+
+def sector_original_source_fixture(ticker):
+    src = SECTOR_SOURCE_VALUES[ticker]
+    concepts = {}
+    for tag, (current, prior) in src["tags"].items():
+        concepts[tag] = {"units": {"USD": [
+            {"accn": src["acc"], "filed": src["filed"], "form": "10-K",
+             "start": "2025-01-01", "end": "2025-12-31", "val": current},
+            {"accn": src["acc"], "filed": src["filed"], "form": "10-K",
+             "start": "2024-01-01", "end": "2024-12-31", "val": prior},
+        ]}}
+    facts = {"cik": int(src["cik"]), "facts": {"us-gaap": concepts}}
+    subs = {"cik": int(src["cik"]), "filings": {"recent": {
+        # One latest 10-K is sufficient because the original comparative
+        # figures are sourced from that exact same accession.
+        "accessionNumber": [src["acc"]],
+        "form": ["10-K"], "filingDate": [src["filed"]],
+        "reportDate": ["2025-12-31"],
+        "acceptanceDateTime": [src["filed"] + "T12:00:00Z"],
+    }}}
+    return src["cik"], facts, subs
+
+
+@pytest.mark.parametrize("ticker,metric,expected", [
+    ("CVX", "revenue_growth_yoy", -.06785771),
+    ("CVX", "oil_gas_cash_spend_to_operating_cash_flow", .49588968),
+    ("LLY", "revenue_growth_yoy", .44703950),
+    ("LLY", "rd_ex_acquired_iprd_to_revenue", .20462112),
+    ("LLY", "gross_margin", .83043618),
+    ("NEE", "operating_margin", .30205749),
+    ("NEE", "operating_cash_flow_to_net_investing_outflow", .52315106),
+    ("NEE", "net_financing_cash_flow_to_net_investing_outflow", .54385083),
+])
+def test_real_sec_sector_metrics_are_descriptive_and_same_accession(ticker, metric, expected):
+    cik, facts, subs = sector_original_source_fixture(ticker)
+    q = p4n.source_matched_annual_quality(
+        facts, subs, cik, ticker, "2026-10-24")
+    assert q["score"] is None
+    assert q["state"] == p4n.UNRESOLVED_ACCOUNTING[ticker]
+    d = q["sector_diagnostics"]
+    assert d["state"] == "SECTOR_LATEST_10K_DESCRIPTIVE_ONLY"
+    assert d["metrics"][metric] == pytest.approx(expected, abs=1e-8)
+    assert d["current_and_prior_from_same_accession"]
+    assert d["latest_10k_accession"] == SECTOR_SOURCE_VALUES[ticker]["acc"]
+    assert not d["industrial_fcf_score_computed"]
+    assert not d["cross_sector_comparison_approved"]
+    assert not d["for_trading_approved"]
+    assert d["partial_cash_spending_not_total_company_capex"] == (ticker == "CVX")
+    assert d["rd_excludes_acquired_in_process_rd"] == (ticker == "LLY")
+    assert d["net_investing_cash_flow_not_capex"] == (ticker == "NEE")
+
+
+@pytest.mark.parametrize("ticker", ["CVX", "LLY", "NEE"])
+def test_sector_metrics_fail_closed_on_future_and_missing_same_filing(ticker):
+    cik, facts, subs = sector_original_source_fixture(ticker)
+    before = p4n.sector_annual_diagnostics(facts, subs, cik, ticker, "2026-01-15")
+    assert before["state"] == "SECTOR_10K_UNAVAILABLE"
+    assert before["metrics"] is None
+
+    altered = json.loads(json.dumps(facts))
+    tag = next(iter(SECTOR_SOURCE_VALUES[ticker]["tags"]))
+    altered["facts"]["us-gaap"][tag]["units"]["USD"][1]["accn"] = "0000000000-25-000001"
+    missing = p4n.sector_annual_diagnostics(
+        altered, subs, cik, ticker, "2026-10-24")
+    assert missing["state"] == "SECTOR_MISSING_SAME_ACCESSION_COMPARATIVE"
+    assert missing["metrics"] is None
+
+    later = json.loads(json.dumps(facts))
+    later["facts"]["us-gaap"][tag]["units"]["USD"].append({
+        "accn": "0000000000-26-999999", "filed": "2026-09-01",
+        "form": "10-K/A", "start": "2025-01-01", "end": "2025-12-31",
+        "val": 999999999999,
+    })
+    original = p4n.sector_annual_diagnostics(
+        facts, subs, cik, ticker, "2026-10-24")
+    restated = p4n.sector_annual_diagnostics(
+        later, subs, cik, ticker, "2026-10-24")
+    assert restated["metrics"] == original["metrics"]
+
+
+@pytest.mark.parametrize("ticker,tag,value,reason", [
+    ("CVX", "NetCashProvidedByUsedInOperatingActivities", 0,
+     "SECTOR_INVALID_CASH_FLOW_OR_SPEND"),
+    ("LLY", "CostOfGoodsAndServicesSold", 999999999999,
+     "SECTOR_INVALID_PHARMA_EXPENSE_OR_CASH_FLOW"),
+    ("NEE", "NetCashProvidedByUsedInInvestingActivities", 1000000000,
+     "SECTOR_NET_INVESTING_NOT_OUTFLOW_OR_CFO_INVALID"),
+])
+def test_sector_invalid_denominators_and_spend_rejected(ticker, tag, value, reason):
+    cik, facts, subs = sector_original_source_fixture(ticker)
+    facts["facts"]["us-gaap"][tag]["units"]["USD"][0]["val"] = value
+    d = p4n.sector_annual_diagnostics(facts, subs, cik, ticker, "2026-10-24")
+    assert d["state"] == reason
+    assert d["metrics"] is None
+
+
+def test_sector_unexpected_fiscal_calendar_is_not_inferred():
+    cik, facts, subs = sector_original_source_fixture("CVX")
+    subs["filings"]["recent"]["reportDate"][0] = "2025-12-30"
+    d = p4n.sector_annual_diagnostics(facts, subs, cik, "CVX", "2026-10-24")
+    assert d["state"] == "SECTOR_UNEXPECTED_FISCAL_YEAR_END"
+    assert d["metrics"] is None

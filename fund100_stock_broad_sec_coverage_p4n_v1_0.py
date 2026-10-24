@@ -165,6 +165,149 @@ def jpm_bank_annual_diagnostics(facts: dict, submissions: dict,
     return out
 
 
+
+# These issuer-specific observations use original, same-accession 10-K facts.
+# They are NOT interchangeable with industrial free cash flow or a 0-3 score.
+# In particular CVX's oil-and-gas cash spending is NOT total company capex;
+# NEE's net investing cash flow is NOT a capital-expenditure line.
+SECTOR_DIAGNOSTIC_TAGS = {
+    "CVX": {
+        "revenue": "Revenues",
+        "operating_cash_flow": "NetCashProvidedByUsedInOperatingActivities",
+        "oil_gas_cash_spend": "PaymentsToAcquireOilAndGasPropertyAndEquipment",
+    },
+    "LLY": {
+        "revenue": "Revenues",
+        "cost_of_sales": "CostOfGoodsAndServicesSold",
+        "research_development_ex_acquired_iprd":
+            "ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost",
+        "operating_cash_flow": "NetCashProvidedByUsedInOperatingActivities",
+        "property_equipment_cash_spend": "PaymentsToAcquireOtherPropertyPlantAndEquipment",
+    },
+    "NEE": {
+        "revenue": "RegulatedAndUnregulatedOperatingRevenue",
+        "operating_income": "OperatingIncomeLoss",
+        "operating_cash_flow": "NetCashProvidedByUsedInOperatingActivities",
+        "net_investing_cash_flow": "NetCashProvidedByUsedInInvestingActivities",
+        "net_financing_cash_flow": "NetCashProvidedByUsedInFinancingActivities",
+    },
+}
+
+
+def sector_annual_diagnostics(facts: dict, submissions: dict,
+                              cik: str, ticker: str, asof: str) -> dict:
+    """Source-matched sector economics; never infer missing facts or total FCF.
+
+    The current and prior calendar FY facts must both be in the latest
+    eligible 10-K accession. A later restatement cannot rewrite that source.
+    """
+    if ticker not in SECTOR_DIAGNOSTIC_TAGS:
+        raise BroadSecStop("Unsupported issuer-specific sector diagnostic")
+    p4a.validate_identity(facts, submissions, cik)
+    now = p4a.iso_date(asof, "sector diagnostic as-of")
+    out = {
+        "state": "SECTOR_10K_UNAVAILABLE",
+        "latest_10k_accession": None,
+        "latest_10k_available_date": None,
+        "source_tags": SECTOR_DIAGNOSTIC_TAGS[ticker].copy(),
+        "metrics": None,
+        "current_and_prior_from_same_accession": True,
+        "partial_cash_spending_not_total_company_capex": ticker == "CVX",
+        "rd_excludes_acquired_in_process_rd": ticker == "LLY",
+        "net_investing_cash_flow_not_capex": ticker == "NEE",
+        "industrial_fcf_score_computed": False,
+        "cross_sector_comparison_approved": False,
+        "for_trading_approved": False,
+    }
+    if not submissions["filings"]["recent"]:
+        return out
+    filings = p4a.submissions_index(submissions)
+    ready = sorted(
+        [(acc, f) for acc, f in filings.items()
+         if f["form"] == "10-K"
+         and p4a.iso_date(f["end"], "sector FY end") <= now
+         and p4a.iso_date(p4a.availability_day(f["filed"]), "sector availability") <= now],
+        key=lambda item: (item[1]["end"], item[1]["filed"], item[0]),
+        reverse=True,
+    )
+    if not ready:
+        return out
+    acc, latest = ready[0]
+    out["latest_10k_accession"] = acc
+    out["latest_10k_available_date"] = p4a.availability_day(latest["filed"])
+    end = p4a.iso_date(latest["end"], "sector FY end")
+    if (now - end).days > p4a.MAX_STALENESS_DAYS:
+        out["state"] = "SECTOR_LATEST_10K_STALE"
+        return out
+    # These three issuer source mappings were verified on calendar FY 2025
+    # 10-Ks. A changed fiscal convention needs a separate accounting review.
+    if (end.month, end.day) != (12, 31):
+        out["state"] = "SECTOR_UNEXPECTED_FISCAL_YEAR_END"
+        return out
+    prior_end = end.replace(year=end.year - 1).isoformat()
+    concepts = facts["facts"]["us-gaap"]
+    amounts = {
+        period: {
+            label: p4e.annual_value(concepts, tag, acc, latest["filed"], period_end)
+            for label, tag in SECTOR_DIAGNOSTIC_TAGS[ticker].items()
+        }
+        for period, period_end in (("current", latest["end"]), ("prior", prior_end))
+    }
+    if any(v is None for row in amounts.values() for v in row.values()):
+        out["state"] = "SECTOR_MISSING_SAME_ACCESSION_COMPARATIVE"
+        return out
+    current, prior = amounts["current"], amounts["prior"]
+    if current["revenue"] <= 0 or prior["revenue"] <= 0:
+        out["state"] = "SECTOR_INVALID_REVENUE"
+        return out
+    if ticker == "CVX":
+        if any(row["operating_cash_flow"] <= 0 or row["oil_gas_cash_spend"] < 0
+               for row in (current, prior)):
+            out["state"] = "SECTOR_INVALID_CASH_FLOW_OR_SPEND"
+            return out
+        metrics = {
+            "revenue_growth_yoy": current["revenue"] / prior["revenue"] - 1,
+            "operating_cash_flow_growth_yoy":
+                current["operating_cash_flow"] / prior["operating_cash_flow"] - 1,
+            "oil_gas_cash_spend_to_operating_cash_flow":
+                current["oil_gas_cash_spend"] / current["operating_cash_flow"],
+            "prior_oil_gas_cash_spend_to_operating_cash_flow":
+                prior["oil_gas_cash_spend"] / prior["operating_cash_flow"],
+        }
+    elif ticker == "LLY":
+        if any(row["operating_cash_flow"] <= 0 or
+               row["cost_of_sales"] < 0 or row["cost_of_sales"] > row["revenue"] or
+               row["research_development_ex_acquired_iprd"] < 0 or
+               row["property_equipment_cash_spend"] < 0
+               for row in (current, prior)):
+            out["state"] = "SECTOR_INVALID_PHARMA_EXPENSE_OR_CASH_FLOW"
+            return out
+        metrics = {
+            "revenue_growth_yoy": current["revenue"] / prior["revenue"] - 1,
+            "gross_margin": 1 - current["cost_of_sales"] / current["revenue"],
+            "rd_ex_acquired_iprd_to_revenue":
+                current["research_development_ex_acquired_iprd"] / current["revenue"],
+            "property_equipment_cash_spend_to_operating_cash_flow":
+                current["property_equipment_cash_spend"] / current["operating_cash_flow"],
+        }
+    else:
+        if any(row["operating_cash_flow"] <= 0 or row["net_investing_cash_flow"] >= 0
+               for row in (current, prior)):
+            out["state"] = "SECTOR_NET_INVESTING_NOT_OUTFLOW_OR_CFO_INVALID"
+            return out
+        metrics = {
+            "revenue_growth_yoy": current["revenue"] / prior["revenue"] - 1,
+            "operating_margin": current["operating_income"] / current["revenue"],
+            "operating_cash_flow_to_net_investing_outflow":
+                current["operating_cash_flow"] / -current["net_investing_cash_flow"],
+            "net_financing_cash_flow_to_net_investing_outflow":
+                current["net_financing_cash_flow"] / -current["net_investing_cash_flow"],
+        }
+    out["state"] = "SECTOR_LATEST_10K_DESCRIPTIVE_ONLY"
+    out["metrics"] = {k: round(v, 8) for k, v in metrics.items()}
+    return out
+
+
 def source_matched_annual_quality(facts: dict, submissions: dict,
                                   cik: str, ticker: str, asof: str) -> dict:
     """Latest eligible 10-K, same-accession FY and comparative, never fallback.
@@ -192,6 +335,9 @@ def source_matched_annual_quality(facts: dict, submissions: dict,
         if ticker == "JPM":
             result["bank_diagnostics"] = jpm_bank_annual_diagnostics(
                 facts, submissions, cik, asof)
+        elif ticker in SECTOR_DIAGNOSTIC_TAGS:
+            result["sector_diagnostics"] = sector_annual_diagnostics(
+                facts, submissions, cik, ticker, asof)
         return result
     if ticker not in SOURCE_MATCHED_TAGS:
         raise BroadSecStop("Unknown source-matched SEC issuer")
@@ -405,6 +551,10 @@ def capture(*, user_agent: str, registry: bytes,
             row["source_matched_latest_10k_quality"]
                .get("bank_diagnostics", {}).get("state")
             == "BANK_LATEST_10K_DESCRIPTIVE_ONLY" for row in observations),
+        "new_issuers_sector_diagnostics_available": sum(
+            row["source_matched_latest_10k_quality"]
+               .get("sector_diagnostics", {}).get("state")
+            == "SECTOR_LATEST_10K_DESCRIPTIVE_ONLY" for row in observations),
         "new_issuer_source_matched_scores_are_descriptive_not_trade_ready": True,
         "new_issuer_specific_accounting_review_complete": False,
         "historical_point_in_time_universe_or_fundamentals_verified": False,
