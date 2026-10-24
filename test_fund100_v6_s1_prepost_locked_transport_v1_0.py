@@ -200,7 +200,7 @@ def test_once_seq2_exists_no_second_private_update(monkeypatch):
     unlocked(monkeypatch)
     s=GitScenario()
     x.commit_signed_acwi_prepost_and_witness_same_attempt_only(**args(s))
-    with pytest.raises(x.OwnerClaimStop,match="sequence-1"):
+    with pytest.raises(x.OwnerClaimStop,match="no longer current"):
         x.commit_signed_acwi_prepost_and_witness_same_attempt_only(**args(s))
     assert s.private_puts==1 and s.public_posts==1
 
