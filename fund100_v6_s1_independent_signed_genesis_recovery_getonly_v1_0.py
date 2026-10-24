@@ -313,7 +313,7 @@ def recover_current_original_signed_head_readonly(
         # Fail closed on malformed/bogus successor witnesses rather than
         # skipping them and accepting a later candidate.
         match = re.search(
-            r"(?m)^Source: https://github\\.com/nicobouch97/"
+            r"(?m)^Source: https://github\.com/nicobouch97/"
             r"fund100-research/actions/runs/([1-9][0-9]{0,18})$",
             body)
         if match is None:
