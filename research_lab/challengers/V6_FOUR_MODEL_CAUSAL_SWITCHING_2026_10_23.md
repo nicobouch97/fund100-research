@@ -60,3 +60,38 @@ rebalancing, order code or strategy promotion. This comparator is a
 holdings replication; overlapping ETF transactions, spreads and
 market impact remain unverified. All histories were already inspected.
 A favorable selector-versus-blend result would still NOT prove alpha.
+
+
+## Predeclared unlevered volatility-managed blend sensitivity (24 October 2026)
+
+The fixed 25%-per-model sleeve blend produced attractive retrospective returns
+but an approximately 29% historical peak-to-trough drawdown, exceeding the
+descriptive HIGH 20% screen. Test **one** causal downside-control challenger
+on the **same original four costed model NAVs**, not a fifth alpha model:
+target 10% annualised realised volatility, estimated from the preceding
+63 completed close-to-close blend returns. Set risky exposure at each close
+to `min(100%, 10% / trailing annualised volatility)`; use 100% when
+volatility is effectively zero. Hold the remainder in zero-yield cash.
+No borrowing, shorts, or exposure above 100%.
+
+Enter at the identical first eligible quarterly close as the fixed blend;
+the newly selected exposure earns its first return only over the **next**
+close-to-close session. Thereafter, earn each session's return using the
+**previous close's** exposure, then recompute exposure and charge an
+additional 5/15/35bp one-way cost proportional to synthetic notional
+changed. The original four sleeves' costs remain embedded in their NAVs.
+Report CAGR, maximum drawdown, realised volatility, mean exposure,
+synthetic turnover and a descriptive 20% drawdown breach for the same
+2014/2020/2023 windows. Compare directly with unchanged fixed blend and
+ACWI. No optimization across lookbacks or targets.
+
+**Critical limitations:** Volatility targeting does not guarantee a
+20% drawdown limit and can suffer sudden gaps or prolonged trends.
+The equal-sleeve synthetic blend is not a verified holdings-level
+execution strategy; underlying model overlap, correlated positions,
+tax, dividends, corporate actions, market impact and trade-time prices
+remain incompletely modelled. All data were previously inspected,
+so any improvement is in-sample and not independent evidence of alpha.
+No automatic promotion or funded execution is authorized. Original
+$130.30 ceiling, operator STOP, ENGAGED kill switch and all LIVE locks
+remain unchanged.
