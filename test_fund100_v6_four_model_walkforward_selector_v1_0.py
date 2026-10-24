@@ -262,3 +262,73 @@ def test_original_model_dependence_real_frozen_paths_are_descriptive_only():
         if window["effective_correlated_return_dimensions"] is not None:
             assert 1 <= window["effective_correlated_return_dimensions"] <= 4
     assert report["paper_or_live_orders"] == 0
+
+
+def _beta_fixture(benchmark_daily, blend_daily):
+    dates = pd.bdate_range("2013-01-02", periods=len(benchmark_daily))
+    return pd.DataFrame({
+        "acwi_nav": 100 * np.cumprod(1 + benchmark_daily),
+        "equal_model_blend_nav": 100 * np.cumprod(1 + blend_daily),
+    }, index=dates)
+
+
+def test_fixed_blend_acwi_beta_one_for_identical_return_streams():
+    t = np.arange(3500)
+    returns = .00025 + .008 * np.sin(t / 13)
+    frame = _beta_fixture(returns, returns)
+    d = w._fixed_blend_acwi_beta_diagnostics(frame, "2014-01-01")
+    assert d["status"] == "DESCRIPTIVE_FIXED_BLEND_ACWI_EQUITY_BETA"
+    assert d["acwi_daily_beta"] == pytest.approx(1)
+    assert d["acwi_explained_daily_variance_pct"] == pytest.approx(100)
+    assert d["zero_cash_rate_ols_intercept_annual_pp"] == pytest.approx(0)
+    assert d["worst_5pct_acwi_day_blend_capture_pct"] == pytest.approx(100)
+    assert d["annualized_active_tracking_error_pct"] == pytest.approx(0)
+    assert d["identical_post_eligibility_sessions"]
+
+
+def test_fixed_blend_acwi_beta_distinct_sleeve_and_prefix_isolation():
+    t = np.arange(3500)
+    benchmark = .0002 + .007 * np.sin(t / 11)
+    sleeve = .0002 + .006 * np.sin(t / 37 + 1)
+    frame = _beta_fixture(benchmark, sleeve)
+    d = w._fixed_blend_acwi_beta_diagnostics(frame, "2014-01-01")
+    assert abs(d["acwi_daily_beta"]) < .15
+    assert d["acwi_explained_daily_variance_pct"] < 3
+    cutoff = 1400
+    before = w._fixed_blend_acwi_beta_diagnostics(
+        frame.iloc[:cutoff], "2014-01-01")
+    modified = frame.copy()
+    modified.iloc[cutoff:, modified.columns.get_loc("equal_model_blend_nav")] *= 2
+    after = w._fixed_blend_acwi_beta_diagnostics(
+        modified.iloc[:cutoff], "2014-01-01")
+    assert before == after
+
+
+def test_fixed_blend_acwi_beta_fails_closed_on_flat_or_corrupt_benchmark():
+    t = np.arange(3500)
+    benchmark = .0002 + .007 * np.sin(t / 11)
+    frame = _beta_fixture(benchmark, benchmark)
+    frame["acwi_nav"] = 100.
+    result = w._fixed_blend_acwi_beta_diagnostics(frame, "2014-01-01")
+    assert result["status"] == "UNIDENTIFIABLE_NEAR_CONSTANT_ACWI"
+    assert result["acwi_daily_beta"] is None
+    frame.loc[frame.index[-1], "acwi_nav"] = np.nan
+    with pytest.raises(w.WalkforwardStop, match="attribution NAV"):
+        w._fixed_blend_acwi_beta_diagnostics(frame, "2014-01-01")
+
+
+def test_fixed_blend_acwi_beta_real_original_source_not_promotion():
+    prices, sha = original.load_frozen(Path("research_lab/frozen_history_v2.csv"))
+    assert sha == original.FROZEN_FILE_SHA256
+    models = economics._all_paths(prices, 15)
+    report = w.evaluate(models, switch_side_cost_bps=15)
+    beta = report["fixed_blend_acwi_beta_by_window"]
+    assert set(beta) == set(w.START_WINDOWS)
+    for window in beta.values():
+        assert window["descriptive_in_sample_not_independent_alpha"]
+        assert window["identical_post_eligibility_sessions"]
+        assert window["return_observations"] >= 259
+        assert window["status"] == "DESCRIPTIVE_FIXED_BLEND_ACWI_EQUITY_BETA"
+        assert 0 <= window["acwi_explained_daily_variance_pct"] <= 100
+    assert report["strategy_promoted_for_funded_trading"] is None
+    assert report["paper_or_live_orders"] == 0
