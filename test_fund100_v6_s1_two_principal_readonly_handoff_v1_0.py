@@ -427,3 +427,78 @@ def test_hmac_workflow_never_interprets_404s_as_order_replay_release():
     assert "client_ID_404_proves_no_earlier_POST'] is False" in y
     assert "Original LIVE broker client IDs 3x404 + independently signed ACWI seq1" in y
     assert "broker_POSTs']==joined['private_Git_PUTs']==0" in y
+
+
+def owner_unclaimed_signed_report():
+    # This only models the already HMAC-authenticated private READ output.
+    # The actual protected workflow calls the GET-only HMAC fence reader.
+    return {
+        "status":"SIGNED_UNCLAIMED_FIRST_ACWI_OWNER_FENCE_READONLY",
+        "owner_fence_signed_head_exists":True,
+        "read_principal_get_succeeded_as_404":False,
+        "owner_claim_or_broker_POST_authorized":False,
+        "external_immutable_rollback_anchor_verified":False,
+        "real_private_Git_PUTs":0,"broker_orders":0,
+    }
+
+
+@pytest.mark.parametrize("which",["risk","original_broker_ids"])
+def test_same_protected_job_joins_original_acwi_owner_and_broker_reads_without_release(which):
+    source=h.verify_any_source(**(risk_fx() if which=="risk" else fx()))
+    verified=h.join_first_acwi_owner_and_protected_broker_readonly(
+        source=source,reserved=signed_acwi_reservation_metadata(),
+        owner_fence=owner_unclaimed_signed_report())
+    assert verified["status"]=="STOPPED_FIRST_ACWI_THREE_SOURCE_JOIN_NO_ORDER_AUTHORITY"
+    assert verified["signed_original_seq1_ACWI_reservation_verified"]
+    assert verified["signed_owner_fence_unclaimed_verified"]
+    assert "EXTERNAL_IMMUTABLE_HEAD_WATERMARK_NOT_VERIFIED" in verified["remaining_release_blockers"]
+    assert "SAME_ATTEMPT_FRESH_ACCOUNT_ORDER_TIME_RISK_NOT_VERIFIED" in verified["remaining_release_blockers"]
+    assert "FIRST_LIVE_ORDER_RELEASE_STILL_OFF" in verified["remaining_release_blockers"]
+    assert verified["protected_source_risk_evidence_pass"] is False
+    assert not verified["owner_claim_or_broker_post_released"]
+    assert verified["real_broker_POSTs"]==verified["real_private_Git_PUTs"]==0
+    assert verified["original_qty"] is verified["client_order_id"] is None
+
+
+@pytest.mark.parametrize("field,value",[
+    ("status","SIGNED_ALREADY_CLAIMED_FIRST_ACWI_OWNER_FENCE_HOLD"),
+    ("status","OWNER_FENCE_NOT_VISIBLE_TO_ORIGINAL_READ_PRINCIPAL"),
+    ("owner_fence_signed_head_exists",False),
+    ("read_principal_get_succeeded_as_404",True),
+    ("owner_claim_or_broker_POST_authorized",True),
+    ("external_immutable_rollback_anchor_verified",True),
+    ("real_private_Git_PUTs",1),
+    ("broker_orders",1),
+])
+def test_same_protected_job_rejects_missing_claimed_forged_or_mutated_owner(field,value):
+    owner=owner_unclaimed_signed_report()
+    owner[field]=value
+    with pytest.raises(h.HandoffStop):
+        h.join_first_acwi_owner_and_protected_broker_readonly(
+            source=h.verify_any_source(**risk_fx()),
+            reserved=signed_acwi_reservation_metadata(),owner_fence=owner)
+
+
+def test_same_protected_job_rejects_arbitrary_source_and_unsiged_reservation():
+    valid=h.verify_any_source(**risk_fx())
+    for src in ({},dict(valid,status="FABRICATED_READY")):
+        with pytest.raises(h.HandoffStop):
+            h.join_first_acwi_owner_and_protected_broker_readonly(
+                source=src,reserved=signed_acwi_reservation_metadata(),
+                owner_fence=owner_unclaimed_signed_report())
+    changed=signed_acwi_reservation_metadata()
+    changed["first_reservation_state"]="POST_MAY_HAVE_BEEN_SENT"
+    with pytest.raises(h.HandoffStop):
+        h.join_first_acwi_owner_and_protected_broker_readonly(
+            source=valid,reserved=changed,owner_fence=owner_unclaimed_signed_report())
+
+
+def test_protected_job_only_hands_redacted_trusted_booleans_to_owner_fence_step():
+    from pathlib import Path
+    wf=Path(".github/workflows/fund100-v6-s1-two-principal-readonly-handoff.yml").read_text()
+    assert "fund100-s1-redacted-handoff.json" in wf
+    assert "join_first_acwi_owner_and_protected_broker_readonly(" in wf
+    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in wf
+    assert "ALPACA_LIVE_KEY" not in wf and "ALPACA_LIVE_SECRET" not in wf
+    assert "real_broker_POSTs" in wf and "real_private_Git_PUTs" in wf
+    assert "external_immutable_head_anchor_verified" in wf

@@ -398,3 +398,67 @@ def join_original_broker_client_ids_and_signed_first_reservation(
         "client_order_ID":None,"real_ACWI_qty":None,
         "private_signature":None,"account_ID":None,
     }
+
+
+def join_first_acwi_owner_and_protected_broker_readonly(
+        *,source:dict,reserved:dict,owner_fence:dict)->dict:
+    """One protected-run verdict for broker evidence, signed seq1 and fence.
+
+    Sources are authenticated *by the caller's protected job*: the original
+    broker source via GitHub Actions runs/jobs, and private HMAC ledger and
+    fence via separate READ credential. This pure function does not establish
+    their origin from arbitrary user-provided dictionaries. In particular
+    an unclaimed fence is never an order permit.
+    """
+    if type(source) is not dict or type(reserved) is not dict:
+        raise HandoffStop("Missing independent LIVE/ACWI signed sources")
+    if source.get("status")=="CURRENT_RISK_SOURCE_STOP_READY_FOR_PRIVATE_HMAC_READ":
+        verified=join_current_risk_and_signed_first_reservation(
+            source=source,reserved=reserved)
+        if verified.get("status")!="STOPPED_RISK_AND_FIRST_SIGNED_ACWI_RESERVATION_READS_JOINED":
+            raise HandoffStop("HIGH risk and first signed ACWI did not join")
+        risk_pass=verified["postfunding_account_6_20_35_read_evidence"]
+        source_class="AUTHENTIC_ORIGINAL_7_GET_ACCOUNT_RISK"
+    elif source.get("status")=="TWO_PRINCIPAL_SOURCE_HANDOFF_READY_FOR_SEPARATE_SIGNED_READ":
+        verified=join_original_broker_client_ids_and_signed_first_reservation(
+            source=source,reserved=reserved)
+        if verified.get("status")!="STOPPED_ORIGINAL_BROKER_404_AND_SIGNED_ACWI_SEQ1_READS_JOINED":
+            raise HandoffStop("Client-ID broker read and ACWI did not join")
+        risk_pass=False  # Original three 404s cannot substitute for account risk.
+        source_class="AUTHENTIC_ORIGINAL_7_GET_CLIENT_ID_NO_RISK_PROOF"
+    else:
+        raise HandoffStop("Unrecognized original protected broker source class")
+    if (type(owner_fence) is not dict
+        or owner_fence.get("status")!="SIGNED_UNCLAIMED_FIRST_ACWI_OWNER_FENCE_READONLY"
+        or owner_fence.get("owner_fence_signed_head_exists") is not True
+        or owner_fence.get("read_principal_get_succeeded_as_404") is not False
+        or owner_fence.get("owner_claim_or_broker_POST_authorized") is not False
+        or owner_fence.get("external_immutable_rollback_anchor_verified") is not False
+        or owner_fence.get("real_private_Git_PUTs")!=0
+        or owner_fence.get("broker_orders")!=0
+        or reserved.get("private_ledger_sequence")!=1
+        or reserved.get("first_reservation_state")!="RESERVED_NO_RETRY"):
+        raise HandoffStop("First ACWI owner fence claimed, missing or not HMAC-verified")
+    blockers=[
+        "EXTERNAL_IMMUTABLE_HEAD_WATERMARK_NOT_VERIFIED",
+        "SAME_ATTEMPT_FRESH_ACCOUNT_ORDER_TIME_RISK_NOT_VERIFIED",
+        "FIRST_LIVE_ORDER_RELEASE_STILL_OFF",
+    ]
+    if not risk_pass:
+        blockers.insert(0,"STRICTLY_POSTFUNDING_6_20_35_ACCOUNT_RISK_UNVERIFIED")
+    return {
+        "schema":SCHEMA,
+        "status":"STOPPED_FIRST_ACWI_THREE_SOURCE_JOIN_NO_ORDER_AUTHORITY",
+        "source_class":source_class,
+        "signed_original_seq1_ACWI_reservation_verified":True,
+        "signed_owner_fence_unclaimed_verified":True,
+        "protected_source_risk_evidence_pass":risk_pass,
+        "remaining_release_blockers":blockers,
+        "external_immutable_head_anchor_verified":False,
+        "fresh_order_time_risk_verified":False,
+        "owner_claim_or_broker_post_released":False,
+        "real_broker_POSTs":0,"real_private_Git_PUTs":0,
+        "original_qty":None,"client_order_id":None,
+        "account_id":None,"private_head":None,
+        "hmac_signature":None,"owner_id":None,
+    }
