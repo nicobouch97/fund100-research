@@ -75,7 +75,20 @@ jobs:
           for x in d["causal_quarterly_model_switching_exploratory"].values():
               assert not x["independent_out_of_sample_alpha_proven"]
               assert x["paper_or_live_orders"] == 0
-          print("Causal four-model selector evaluated on historical source; no trading.")
+          for cost, comparison in d["causal_quarterly_model_switching_exploratory"].items():
+              assert comparison["vol_target_blend_is_exploratory_cash_only_synthetic"]
+              assert comparison["vol_target_blend_no_leverage_or_shorting"]
+              assert comparison["vol_target_blend_decision_after_close_applies_next_session"]
+              assert comparison["vol_target_blend_lookback_completed_sessions"] == 63
+              assert comparison["vol_target_blend_annual_volatility_target_pct"] == 10
+              for window, metrics in comparison["comparison_windows"].items():
+                  print("Causal cash-only risk blend",cost,"bps",window,
+                        "CAGR",metrics["historical_vol_target_blend_cagr_pct"],
+                        "maxDD",metrics["historical_vol_target_blend_max_drawdown_pct"],
+                        "realised vol",metrics["historical_vol_target_blend_realized_vol_pct"],
+                        "mean exposure",metrics["historical_vol_target_blend_average_exposure_pct"],
+                        "fixed blend CAGR",metrics["historical_equal_model_blend_cagr_pct"])
+          print("Causal four-model selector and risk-target sensitivity evaluated; no trading.")
           PY
       - name: Store reproducible historical review
         uses: actions/upload-artifact@v4
