@@ -6,7 +6,7 @@
   "source_original_v6_exploratory_manifest": "research_lab/v6_s1_high_risk_micro_pilot_proposed_manifest.json",
   "source_original_v6_exploratory_manifest_git_blob_sha1": "4ea6af355283e68a16c2b6ec632337639894509c",
   "source_independent_v6_high_contract_git_blob_sha1": "cb5c2ac943ba786a3c535715a6e0dcf3f7dc66b2",
-  "source_existing_fractional_sell_adapter_git_blob_sha1": "b5a7d98737858684e3ba7600bc9665f106410243",
+  "source_existing_fractional_sell_adapter_git_blob_sha1": "b18d23664197ac791a129aef970921cd3c9efc01",
   "source_existing_signed_private_CAS_protocol_git_blob_sha1": "9b9f8917faa21b4157600ac642f80595445a7276",
   "evidence_original_four_get_run_id": 39636438731,
   "evidence_actual_empty_production_genesis_run_id": 39637082911,
