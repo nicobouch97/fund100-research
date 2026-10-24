@@ -7,6 +7,8 @@ on:
       - "test_fund100_stock_broad_sec_coverage_p4n_v1_0.py"
       - "fund100_stock_broad_sec_annual_replay_p4q_v1_0.py"
       - "test_fund100_stock_broad_sec_annual_replay_p4q_v1_0.py"
+      - "fund100_stock_sec_quality_forward_p4r_v1_0.py"
+      - "test_fund100_stock_sec_quality_forward_p4r_v1_0.py"
       - ".github/workflows/fund100-p4n-broad-sec-coverage.yml"
   push:
     branches: [main]
@@ -15,6 +17,8 @@ on:
       - "test_fund100_stock_broad_sec_coverage_p4n_v1_0.py"
       - "fund100_stock_broad_sec_annual_replay_p4q_v1_0.py"
       - "test_fund100_stock_broad_sec_annual_replay_p4q_v1_0.py"
+      - "fund100_stock_sec_quality_forward_p4r_v1_0.py"
+      - "test_fund100_stock_sec_quality_forward_p4r_v1_0.py"
       - ".github/workflows/fund100-p4n-broad-sec-coverage.yml"
   workflow_dispatch:
 
@@ -42,6 +46,7 @@ jobs:
           python -m pytest -q \
             test_fund100_stock_broad_sec_coverage_p4n_v1_0.py \
             test_fund100_stock_broad_sec_annual_replay_p4q_v1_0.py \
+            test_fund100_stock_sec_quality_forward_p4r_v1_0.py \
             test_fund100_stock_sec_source_p4b_v1_0.py \
             test_fund100_stock_sec_quality_p4a_v1_0.py \
             test_fund100_stock_broad_momentum_p4l_v1_0.py
@@ -156,6 +161,38 @@ jobs:
                 "improved",s["improved_score_pairs"],
                 "deteriorated",s["deteriorated_score_pairs"],
                 "missing pairs",s["adjacent_annual_pairs_with_missing_score"])
+          PY
+      - name: Match dated original 10-K scores to 126-session historical stock outcomes (not alpha)
+        if: steps.capture.outputs.acquired == 'true'
+        run: |
+          set -euo pipefail
+          python fund100_stock_sec_quality_forward_p4r_v1_0.py \
+            --source-dir /tmp/fund100-p4n-original-sec \
+            --output /tmp/fund100-p4n-original-sec/quality-126-session-event-study.json \
+            --output-prices-csv /tmp/fund100-p4n-original-sec/original-revisable-historical-adjusted-prices.csv
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root=Path("/tmp/fund100-p4n-original-sec")
+          d=json.loads((root/"quality-126-session-event-study.json").read_text())
+          raw=(root/"original-revisable-historical-adjusted-prices.csv").read_bytes()
+          assert hashlib.sha256(raw).hexdigest()==d["source_prices_canonical_csv_sha256"]
+          assert d["predeclared_forward_sessions"]==126
+          assert d["cost_per_side_bps"]==[5,15,35]
+          assert d["original_annual_scores"]==64 or d["original_annual_scores"]>=0
+          assert d["retrospectively_selected_2026_survivors"]
+          assert d["SEC_facts_retrieved_today_not_historical_vintages"]
+          assert d["vendor_adjusted_prices_revisable_and_corporate_actions_not_independently_verified"]
+          assert d["no_point_in_time_investable_backtest"]
+          assert d["not_a_self_financing_portfolio_or_validated_alpha"]
+          assert not d["trading_authorized"] and not d["paper_authorized"] and not d["live_authorized"]
+          assert d["broker_requests"]==d["broker_orders"]==0
+          print("Matched SEC event outcomes:",d["completed_event_returns"],
+                "right-censored:",d["right_censored_eligible_scores"],
+                "left-censored:",d["left_censored_eligible_scores"])
+          print("Score >=2 15bp matched SPY:",d["summary"]["15"]["score_2_or_3"])
+          print("Score <2 15bp matched SPY:",d["summary"]["15"]["score_0_or_1"])
+          print("RETROSPECTIVE SURVIVORS, NOT A VALIDATED INVESTABLE BACKTEST")
           PY
       - name: Preserve original SEC bytes, source identities and missing coverage
         if: steps.capture.outputs.acquired == 'true'
