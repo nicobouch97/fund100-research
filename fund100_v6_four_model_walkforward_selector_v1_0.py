@@ -224,6 +224,80 @@ def _model_return_dependence(dates: pd.DatetimeIndex, navs: dict,
                 mean_pairwise_return_correlation=round(float(pairs.mean()), 4))
 
 
+def _fixed_blend_acwi_beta_diagnostics(frame: pd.DataFrame, start: str) -> dict:
+    """Describe equity benchmark dependence, NOT independently validated alpha.
+
+    Use identical completed close-to-close sessions after the synthetic
+    comparator first becomes eligible. OLS intercept assumes zero cash rate,
+    and is annualised arithmetically; it is not a tradable alpha estimate.
+    """
+    dates = frame.index
+    first = next((
+        t for t in range(TRAINING_RETURNS + 1, len(dates))
+        if dates[t].to_period("Q") != dates[t - 1].to_period("Q")
+    ), None)
+    if first is None:
+        raise WalkforwardStop("No eligible date for benchmark attribution")
+    view = frame.loc[max(pd.Timestamp(start), dates[first]):]
+    if len(view) < 260:
+        raise WalkforwardStop("Insufficient benchmark-attribution sessions")
+    levels = view[["equal_model_blend_nav", "acwi_nav"]].to_numpy(dtype=float)
+    if not np.isfinite(levels).all() or (levels <= 0).any():
+        raise WalkforwardStop("Invalid benchmark-attribution NAV")
+    daily = levels[1:] / levels[:-1] - 1
+    if not np.isfinite(daily).all() or (daily <= -1).any():
+        raise WalkforwardStop("Invalid benchmark-attribution returns")
+    blend, acwi = daily[:, 0], daily[:, 1]
+    common = {
+        "first_session": view.index[0].date().isoformat(),
+        "last_session": view.index[-1].date().isoformat(),
+        "return_observations": len(daily),
+        "identical_post_eligibility_sessions": True,
+        "blend_original_model_costs_and_synthetic_entry_cost_included": True,
+        "zero_cash_rate_for_arithmetic_ols_intercept": True,
+        "descriptive_in_sample_not_independent_alpha": True,
+    }
+    centered_b = acwi - acwi.mean()
+    centered_s = blend - blend.mean()
+    ss_b = float(np.dot(centered_b, centered_b))
+    ss_s = float(np.dot(centered_s, centered_s))
+    if ss_b / (len(acwi) - 1) <= 1e-16:
+        return dict(common, status="UNIDENTIFIABLE_NEAR_CONSTANT_ACWI",
+                    acwi_daily_beta=None, acwi_explained_daily_variance_pct=None,
+                    zero_cash_rate_ols_intercept_annual_pp=None,
+                    worst_5pct_acwi_day_blend_capture_pct=None)
+    if ss_s / (len(blend) - 1) <= 1e-16:
+        return dict(common, status="UNIDENTIFIABLE_NEAR_CONSTANT_BLEND",
+                    acwi_daily_beta=None, acwi_explained_daily_variance_pct=None,
+                    zero_cash_rate_ols_intercept_annual_pp=None,
+                    worst_5pct_acwi_day_blend_capture_pct=None)
+    covariance_sum = float(np.dot(centered_s, centered_b))
+    beta = covariance_sum / ss_b
+    r_squared = covariance_sum ** 2 / (ss_b * ss_s)
+    intercept = float(blend.mean() - beta * acwi.mean())
+    tail_n = max(1, math.ceil(.05 * len(acwi)))
+    tail = np.argsort(acwi, kind="stable")[:tail_n]
+    tail_benchmark = float(acwi[tail].mean())
+    tail_blend = float(blend[tail].mean())
+    capture = (100 * tail_blend / tail_benchmark
+               if tail_benchmark < -1e-12 else None)
+    return dict(
+        common, status="DESCRIPTIVE_FIXED_BLEND_ACWI_EQUITY_BETA",
+        acwi_daily_beta=round(beta, 4),
+        acwi_explained_daily_variance_pct=round(100 * min(1., max(0., r_squared)), 4),
+        zero_cash_rate_ols_intercept_annual_pp=round(
+            100 * ANNUAL_SESSIONS * intercept, 4),
+        worst_5pct_acwi_day_count=tail_n,
+        worst_5pct_acwi_day_mean_acwi_return_pct=round(100 * tail_benchmark, 4),
+        worst_5pct_acwi_day_mean_blend_return_pct=round(100 * tail_blend, 4),
+        worst_5pct_acwi_day_blend_capture_pct=(
+            round(capture, 4) if capture is not None else None),
+        annualized_active_tracking_error_pct=round(
+            100 * float(np.std(blend - acwi, ddof=1)) *
+            math.sqrt(ANNUAL_SESSIONS), 4),
+    )
+
+
 def _window_metrics(frame: pd.DataFrame, start: str) -> dict:
     view = frame.loc[start:]
     if len(view) < 260:
@@ -360,6 +434,10 @@ def evaluate(paths: dict, *, switch_side_cost_bps: int) -> dict:
         "paper_or_live_orders": 0,
         "terminal_hypothetical_selector_nav": round(capital, 6),
         "total_switches": int((frame["switch_turnover"] > 0).sum()),
+        "fixed_blend_acwi_beta_by_window": {
+            name: _fixed_blend_acwi_beta_diagnostics(frame, start)
+            for name, start in START_WINDOWS.items()
+        },
         "model_return_dependence_by_window": {
             name: _model_return_dependence(dates, navs, start)
             for name, start in START_WINDOWS.items()
