@@ -410,14 +410,14 @@ def approved_scoped_live_script(
             "if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'"
         )
         original_first_intent_followup = (
-            "if: >-\\n"
-            "      github.event_name != 'pull_request' &&\\n"
-            "      github.ref == 'refs/heads/main' &&\\n"
-            "      (github.event_name != 'workflow_run' ||\\n"
-            "       (github.event.workflow_run.conclusion == 'success' &&\\n"
-            "        github.event.workflow_run.event == 'workflow_dispatch' &&\\n"
-            "        github.event.workflow_run.head_branch == 'main' &&\\n"
-            "        github.event.workflow_run.head_repository.full_name == github.repository &&\\n"
+            "if: >-\n"
+            "      github.event_name != 'pull_request' &&\n"
+            "      github.ref == 'refs/heads/main' &&\n"
+            "      (github.event_name != 'workflow_run' ||\n"
+            "       (github.event.workflow_run.conclusion == 'success' &&\n"
+            "        github.event.workflow_run.event == 'workflow_dispatch' &&\n"
+            "        github.event.workflow_run.head_branch == 'main' &&\n"
+            "        github.event.workflow_run.head_repository.full_name == github.repository &&\n"
             "        github.event.workflow_run.head_sha == github.sha))"
         )
         if "  workflow_run:" in source:
