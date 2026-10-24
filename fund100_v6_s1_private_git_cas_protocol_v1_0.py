@@ -23,10 +23,6 @@ CLIENT_IDS={
     s:"f100v6s1-"+sha256((MIGRATION+"|sell|"+s).encode()).hexdigest()[:24]+"-s"
     for s in LEGACY}
 STATES={"RESERVED_NO_RETRY","POST_MAY_HAVE_BEEN_SENT","SIM_FULL_FILL_AND_FLAT"}
-OWNER_MAC_DOMAIN=b"fund100-v6-s1-exact-prepost-owner-v1\x00"
-OWNER_FIELDS={"owner_run_id","owner_attempt","source_main_sha",
-              "source_broker_run_id","nonce_sha256"}
-
 REMOTE_TRANSPORT_RELEASED=False
 LIVE_ORDER_RELEASED=False
 
@@ -104,29 +100,11 @@ def _verify(body,*,private_genesis,account_binding_sha256,key):
         raise CasStop("Unknown original legacy sale symbols")
     if seq==0 and entries:raise CasStop("Genesis cannot contain reservations")
     for symbol,item in entries.items():
-        if type(item) is not dict:
+        if type(item) is not dict or set(item)!={"client_order_id","qty_commitment","state"}:
             raise CasStop("Malformed private reservation")
-        fields=set(item)
-        standard={"client_order_id","qty_commitment","state"}
-        if fields!=standard and fields!=standard|{"execution_owner"}:
-            raise CasStop("Unexpected original private reservation fields")
         if item["client_order_id"]!=CLIENT_IDS[symbol] or item["state"] not in STATES:
             raise CasStop("Unexpected original order ID or stage")
         _hex(item["qty_commitment"],64,"private qty MAC")
-        if "execution_owner" in item:
-            owner=item["execution_owner"]
-            if (item["state"]!="POST_MAY_HAVE_BEEN_SENT"
-                or symbol!="ACWI" or seq!=2
-                or type(owner) is not dict or set(owner)!=OWNER_FIELDS
-                or type(owner.get("owner_run_id")) is not str
-                or re.fullmatch(r"[1-9][0-9]{0,18}",owner["owner_run_id"]) is None
-                or type(owner.get("source_broker_run_id")) is not str
-                or re.fullmatch(r"[1-9][0-9]{0,18}",owner["source_broker_run_id"]) is None
-                or type(owner.get("owner_attempt")) is not int
-                or not 1<=owner["owner_attempt"]<=100):
-                raise CasStop("Unexpected or misplaced exclusive ACWI POST owner")
-            _hex(owner["source_main_sha"],40,"owner pinned main SHA")
-            _hex(owner["nonce_sha256"],64,"owner unique nonce digest")
     return document
 
 def _read_source(source,*,private_genesis,account_binding_sha256,key):
@@ -209,122 +187,3 @@ def verify_remote_commit(plan,new_source,*,private_genesis,account_binding_sha25
         "verified_remote_blob_sha":sha,
         "actual_remote_storage_provisioned":False,
         "live_order_authorized":False,"broker_orders_submitted":0}
-
-
-def _owner_claim(*,owner_run_id,owner_attempt,owner_nonce,
-                 source_main_sha,source_broker_run_id):
-    """Owner uniqueness resides in the SAME atomic seq1->seq2 ledger CAS.
-
-    No separate owner-fence Git file or extra credential/write is needed.
-    Only authenticated external run metadata may supply these values later.
-    """
-    for label,value in (("owner workflow run",owner_run_id),
-                        ("source broker run",source_broker_run_id)):
-        if (type(value) is not str
-            or re.fullmatch(r"[1-9][0-9]{0,18}",value) is None):
-            raise CasStop("Invalid "+label)
-    if type(owner_attempt) is not int or not 1<=owner_attempt<=100:
-        raise CasStop("Invalid owner run attempt")
-    _hex(source_main_sha,40,"source checked-out main SHA")
-    nonce=_hex(owner_nonce,64,"owner fresh random nonce")
-    if nonce=="0"*64:
-        raise CasStop("Zero/nonunique owner nonce forbidden")
-    return {
-        "owner_run_id":owner_run_id,
-        "owner_attempt":owner_attempt,
-        "source_main_sha":source_main_sha,
-        "source_broker_run_id":source_broker_run_id,
-        "nonce_sha256":sha256(
-            OWNER_MAC_DOMAIN+bytes.fromhex(nonce)).hexdigest(),
-    }
-
-
-def plan_unique_owner_possible_post(
-        source,*,symbol,original_qty,private_genesis,
-        account_binding_sha256,key,owner_run_id,owner_attempt,
-        owner_nonce,source_main_sha,source_broker_run_id):
-    """OFFLINE ONLY: one atomic, independently distinguishable seq1->seq2.
-
-    A sequence-2 HMAC reservation with unique owner allows the winning
-    runner to be distinguished after CAS 409/timeout, unlike identical
-    deterministic competing proposals. This is NEVER broker POST authority.
-    """
-    owner=_owner_claim(owner_run_id=owner_run_id,
-        owner_attempt=owner_attempt,owner_nonce=owner_nonce,
-        source_main_sha=source_main_sha,
-        source_broker_run_id=source_broker_run_id)
-    if symbol!="ACWI":
-        raise CasStop("Only original FIRST ACWI reservation may claim owner")
-    parent_sha,parent=_read_source(source,private_genesis=private_genesis,
-        account_binding_sha256=account_binding_sha256,key=key)
-    if (parent["sequence"]!=1 or set(parent["entries"])!={"ACWI"}
-        or parent["entries"]["ACWI"]["state"]!="RESERVED_NO_RETRY"):
-        raise CasStop("Only original signed ACWI seq1 may be assigned one owner")
-    plan=plan_possible_post(source,symbol=symbol,original_qty=original_qty,
-        private_genesis=private_genesis,
-        account_binding_sha256=account_binding_sha256,key=key)
-    if (plan["stage"]!="PRE_POST_COMMIT_PROPOSED_NO_ACTUAL_POST"
-        or plan["commit"] is None or plan["old_blob_sha"]!=parent_sha):
-        raise CasStop("Original protected seq1 pre-POST state is no longer admissible")
-    decoded=b64decode(plan["commit"]["content_base64"],validate=True)
-    nextdoc=json.loads(decoded.decode("ascii"))
-    nextdoc.pop("signature")
-    nextdoc["entries"]["ACWI"]["execution_owner"]=owner
-    raw=_canon(dict(nextdoc,signature=_seal(nextdoc,key)))
-    newsha=blob_sha(raw)
-    return {
-        "stage":"UNIQUE_ACWI_PREPOST_SEQ2_CAS_CANDIDATE_OFFLINE_NO_ORDERS",
-        "old_blob_sha":parent_sha,
-        "new_blob_sha":newsha,
-        "owner_nonce_sha256":owner["nonce_sha256"],
-        "owner_run_id":owner_run_id,
-        "owner_attempt":owner_attempt,
-        "commit":{"repository":STATE_REPO,"path":STATE_PATH,
-                  "expected_current_sha":parent_sha,
-                  "content_base64":b64encode(raw).decode("ascii")},
-        "owner_exclusive_broker_POST_authorized":False,
-        "post_response_timeout_allows_retry":False,
-        "live_order_authorized":False,
-        "broker_orders_submitted":0,
-        "real_private_Git_PUTs":0,
-    }
-
-
-def verify_unique_owner_prepost_readback(
-        plan,current_source,*,private_genesis,
-        account_binding_sha256,key,owner_run_id,owner_attempt,
-        owner_nonce,source_main_sha,source_broker_run_id):
-    """READ ONLY: distinguish a winning owner; NEVER interpret as a POST permit.
-
-    A successful reread establishes matching signed bytes only, not that
-    broker has no previous order, external head is immutable, or fills exist.
-    """
-    expected=_owner_claim(owner_run_id=owner_run_id,
-        owner_attempt=owner_attempt,owner_nonce=owner_nonce,
-        source_main_sha=source_main_sha,
-        source_broker_run_id=source_broker_run_id)
-    if (type(plan) is not dict
-        or plan.get("stage")!="UNIQUE_ACWI_PREPOST_SEQ2_CAS_CANDIDATE_OFFLINE_NO_ORDERS"
-        or plan.get("owner_nonce_sha256")!=expected["nonce_sha256"]
-        or plan.get("owner_run_id")!=owner_run_id
-        or plan.get("owner_attempt")!=owner_attempt):
-        raise CasStop("Untrusted unique first ACWI owner proposal")
-    sha,doc=_read_source(current_source,private_genesis=private_genesis,
-        account_binding_sha256=account_binding_sha256,key=key)
-    if (sha!=plan.get("new_blob_sha")
-        or doc["sequence"]!=2
-        or doc["prior_document_sha"]!=plan.get("old_blob_sha")
-        or set(doc["entries"])!={"ACWI"}
-        or doc["entries"]["ACWI"]["state"]!="POST_MAY_HAVE_BEEN_SENT"
-        or doc["entries"]["ACWI"].get("execution_owner")!=expected):
-        raise CasStop("Winning first ACWI POST owner not independently confirmed")
-    return {
-        "stage":"SIGNED_UNIQUE_ACWI_SEQ2_OWNER_MATCHED_READONLY_NO_ORDER",
-        "signed_sequence":2,
-        "exclusive_signed_owner_readback_confirmed":True,
-        "external_immutable_head_verified":False,
-        "broker_POST_authorized":False,
-        "ambiguous_broker_POST_retrial_authorized":False,
-        "private_Git_PUTs":0,"broker_orders_submitted":0,
-        "raw_private_qty":None,"private_HMAC_key":None,
-    }
