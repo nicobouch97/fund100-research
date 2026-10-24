@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "fund100_stock_broad_momentum_p4l_v1_0.py"
+      - "fund100_stock_broad_exante_risk_p4o_v1_0.py"
+      - "test_fund100_stock_broad_exante_risk_p4o_v1_0.py"
       - "test_fund100_stock_broad_momentum_p4l_v1_0.py"
       - "fund100_stock_frozen_forward_marks_p4m_v1_0.py"
       - "test_fund100_stock_frozen_forward_marks_p4m_v1_0.py"
@@ -13,6 +15,8 @@ on:
     branches: [main]
     paths:
       - "fund100_stock_broad_momentum_p4l_v1_0.py"
+      - "fund100_stock_broad_exante_risk_p4o_v1_0.py"
+      - "test_fund100_stock_broad_exante_risk_p4o_v1_0.py"
       - "test_fund100_stock_broad_momentum_p4l_v1_0.py"
       - ".github/workflows/fund100-p4l-broad-stock-momentum.yml"
   schedule:
@@ -44,7 +48,7 @@ jobs:
       - name: Test 24-company roster, price provenance, selection and no-order contracts
         run: |
           set -euo pipefail
-          python -m pytest -q test_fund100_stock_broad_momentum_p4l_v1_0.py test_fund100_stock_frozen_forward_marks_p4m_v1_0.py test_fund100_stock_quality_momentum_p4g_v1_0.py
+          python -m pytest -q test_fund100_stock_broad_momentum_p4l_v1_0.py test_fund100_stock_frozen_forward_marks_p4m_v1_0.py test_fund100_stock_broad_exante_risk_p4o_v1_0.py test_fund100_stock_quality_momentum_p4g_v1_0.py
       - name: Acquire actual completed-session adjusted stock prices
         if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
@@ -114,6 +118,34 @@ jobs:
           print("Original P4L 24-stock forward evidence:",d["status"],
                 "intervals",d["observed_forward_return_intervals"])
           PY
+      - name: Attribute ORIGINAL 23-Oct six-stock lookback risk without hindsight P&L
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        run: |
+          set -euo pipefail
+          # Original artifact was independently pinned and downloaded above.
+          # P4O uses only that frozen pre-entry price vintage, never later marks.
+          python fund100_stock_broad_exante_risk_p4o_v1_0.py \
+            --original-json /tmp/p4m-original/fund100-p4l-current-research.json \
+            --original-csv /tmp/p4m-original/fund100-p4l-current-original-prices.csv \
+            --output /tmp/fund100-p4o-original-six-risk.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import fund100_stock_frozen_forward_marks_p4m_v1_0 as p4m
+          d=json.loads(Path("/tmp/fund100-p4o-original-six-risk.json").read_text())
+          assert d["original_source_run_id"]==p4m.ORIGINAL_RUN_ID
+          assert d["original_source_artifact_id"]==p4m.ORIGINAL_ARTIFACT_ID
+          assert d["original_source_session"]=="2026-10-23"
+          assert d["selection"]==p4m.ORIGINAL_SELECTION
+          assert d["historical_selection_conditioning_bias"]
+          assert d["not_a_historical_strategy_backtest"]
+          assert d["broker_requests"]==d["broker_orders"]==0
+          assert not d["paper_authorized"] and not d["live_authorized"]
+          print("Frozen six-stock descriptive beta:",
+                d["risk_metrics"]["selected_spy_beta"],
+                "effective return dimensions:",
+                d["risk_metrics"]["selected_effective_correlation_dimensions"])
+          PY
       - name: Archive original source vintage and corresponding dated signal
         if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
@@ -123,5 +155,6 @@ jobs:
             /tmp/fund100-p4l-current-research.json
             /tmp/fund100-p4l-current-original-prices.csv
             /tmp/fund100-p4m-frozen-24-stock-forward-marks.json
+            /tmp/fund100-p4o-original-six-risk.json
           retention-days: 90
           if-no-files-found: error
