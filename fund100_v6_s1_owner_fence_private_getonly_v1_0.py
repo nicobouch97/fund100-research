@@ -62,7 +62,7 @@ def read_current_original_acwi_owner_fence_getonly(
             raise HandoffStop("Original owner-fence GET body malformed")
         encoded=source.get("content")
         if type(encoded) is str:
-            source["content"]=encoded.replace("\\r","").replace("\\n","")
+            source["content"]=encoded.replace("\r","").replace("\n","")
     except HTTPError as exc:
         if (exc.code==404 and exc.url==OWNER_FENCE_GET_URL
             and request.get_method()=="GET"):
