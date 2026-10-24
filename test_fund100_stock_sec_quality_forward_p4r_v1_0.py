@@ -137,8 +137,10 @@ def test_reject_filing_day_hindsight_and_missing_original_comparative():
     a = annual()
     cat = next(x for x in a["observations"] if x["ticker"] == "CAT")
     cat["annual_events"][0]["source_10k_available_date"] = "2025-02-17"
-    with pytest.raises(p4r.EventStudyStop, match="chronology"):
-        run(a=a)
+    # A valid older accession is NOT a new filing-day signal.
+    out = run(a=a)
+    assert out["nonnew_or_unavailable_source_accession_events"] == 1
+    assert out["completed_event_returns"] == 1
     a = annual()
     cat = next(x for x in a["observations"] if x["ticker"] == "CAT")
     cat["annual_events"][0]["same_accession_comparative"] = False
