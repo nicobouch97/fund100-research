@@ -20,6 +20,7 @@ import fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0 as recover
 import fund100_v6_s1_first_private_head_external_witness_offline_v1_0 as first
 import fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0 as prev
 import fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0 as risk
+import fund100_v6_s1_acwi_unique_owner_fence_offline_v1_0 as owner_fence
 
 SCHEMA = "FUND100_V6_S1_ORIGINAL_ACWI_FRACTIONAL_LIVE_HTTP_LOCKED_CANDIDATE_V1"
 LIVE_HOST = "api.alpaca.markets"
@@ -194,6 +195,81 @@ def _validate_receipt(receipt:dict,*,original_qty:str)->dict:
         "live_release_claimed":False,
         "account_id":None,"broker_order_id":None,"order_quantity":None,
         "order_payload":None,
+    }
+
+
+
+def review_unique_owner_first_ACWI_sell_candidate(
+        *,owner_sources:dict,signed_sources:dict,
+        simulated_receipt:dict)->dict:
+    """Cross-check ONE owner-signed claim with the locked original sell shape.
+
+    This is a source-injected OFFLINE receipt-only review: no live source
+    principal, current account mark, external immutable watermark, or
+    production SELL release. A genuine owner-fence claim is not permission
+    to submit, and 404 cannot establish no historic broker POST.
+    The actual LIVE owner fence remains unclaimed.
+    """
+    if type(owner_sources) is not dict or type(signed_sources) is not dict:
+        raise LockedSellStop("Missing independent original owner and private inputs")
+    for name in ("reserved_source","genesis_comment","first_comment",
+                 "first_comment_id","first_run_id","original_qty","key"):
+        if (name not in owner_sources or name not in signed_sources
+            or owner_sources[name]!=signed_sources[name]):
+            raise LockedSellStop("Owner and pre-POST first HMAC sources differ")
+    if (owner_sources.get("owner_attempt") is True
+        or type(owner_sources.get("owner_attempt")) is not int
+        or owner_sources["owner_attempt"]!=1):
+        raise LockedSellStop("Original first-run owner attempt not exact")
+    try:
+        owner=owner_fence.verify_claimed_owner(**owner_sources)
+    except Exception:
+        raise LockedSellStop("Signed first owner fence claim did not match ACWI") from None
+    if (owner.get("stage")!="OFFLINE_SIGNED_OWNER_MATCHES_ORIGINAL_ACWI_NO_ORDER_RELEASE"
+        or owner.get("unique_original_workflow_owner_HMAC_recognized") is not True
+        or owner.get("source_signed_reserved_and_prepost_HEADs_bound") is not True
+        or owner.get("claimed_fence_signed_current_head_verified") is not True
+        or owner.get("claimed_fence_head_immutable_outside_GitHub") is not False
+        or owner.get("LIVE_order_released") is not False
+        or owner.get("restarted_same_owner_can_submit") is not False
+        or owner.get("different_owner_can_submit") is not False
+        or owner.get("real_broker_POSTs")!=0):
+        raise LockedSellStop("Unverified or released original owner source")
+    signed=check_prepost_sources(**signed_sources)
+    if (signed.get("signed_private_sequence")!=2
+        or signed.get("stable_original_client_order_id")!=cas.CLIENT_IDS[ORIGINAL]
+        or signed.get("immutable_rollback_watermark_verified") is not False
+        or signed.get("live_order_authorized") is not False):
+        raise LockedSellStop("Original prePOST signed state not strictly held")
+    payload=build_exact_sell_payload(
+        original_qty=signed["canonical_original_fractional_qty"])
+    if payload["client_order_id"]!=signed["stable_original_client_order_id"]:
+        raise LockedSellStop("Owner/pre-POST/broker payload client IDs disagree")
+    receipt=_validate_receipt(
+        simulated_receipt,original_qty=payload["qty"])
+    if (receipt.get("resubmission_permitted") is not False
+        or receipt.get("live_release_claimed") is not False):
+        raise LockedSellStop("Original receipt improperly claims resend rights")
+    return {
+        "schema":SCHEMA,
+        "status":"SIGNED_UNIQUE_OWNER_AND_ACWI_SEQ2_LOCKED_SELL_SHAPE_REVIEW_ONLY",
+        "original_signed_owner_matches_run_and_nonce":True,
+        "original_signed_ACWI_prepost_sequence":2,
+        "same_original_first_HMAC_sources_verified":True,
+        "original_client_ID_in_owner_prepost_and_broker_shape_bound":True,
+        "simulated_receipt_stage":receipt["stage"],
+        "production_owner_claimed_by_this_review":False,
+        "external_immutable_anti_rollback_verified":False,
+        "fresh_live_account_risk_and_broker_reconciliation_verified":False,
+        "durable_live_restart_recovery_verified":False,
+        "reviewed_REAL_broker_POST_released":False,
+        "live_order_authorized":False,
+        "live_order_retry_authorized":False,
+        "real_broker_POSTs":0,
+        "real_private_Git_PUTs":0,
+        "original_qty":None,"client_order_id":None,
+        "owner_run_id":None,"account_ID":None,
+        "private_HMAC":None,"broker_payload":None,
     }
 
 

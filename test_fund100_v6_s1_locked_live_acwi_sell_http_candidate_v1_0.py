@@ -189,3 +189,88 @@ def test_synthetic_source_is_not_broker_authentication_and_has_no_network_path()
     assert m.PUBLIC_EXECUTION_ENABLED is False
     assert m.SEPARATE_SIGNED_V6_LIVE_RELEASE_PRESENT is False
     assert m.AUTOMATIC_RETRY_RELEASED is False
+
+
+def claimed_owner_and_original_signed_prepost():
+    """Full signed first owner fixture + independent signed seq2 proof."""
+    from base64 import b64decode
+    import test_fund100_v6_s1_acwi_unique_owner_fence_offline_v1_0 as o
+    initial=o.setup()
+    repo=o.FakePrivateContents(initial["fence_source"])
+    planned=o.f.plan_unique_owner(**initial)
+    assert repo.cas(planned)==200
+    owner={
+        **{k:v for k,v in initial.items() if k!="fence_source"},
+        "current_fence_source":repo.head,
+    }
+    seq2=signed()
+    return owner,seq2
+
+
+def test_unique_signed_owner_seq2_payload_receipt_jointly_matches_with_no_release():
+    owner,prepost=claimed_owner_and_original_signed_prepost()
+    out=m.review_unique_owner_first_ACWI_sell_candidate(
+        owner_sources=owner,signed_sources=prepost,simulated_receipt=receipt())
+    assert out["status"]=="SIGNED_UNIQUE_OWNER_AND_ACWI_SEQ2_LOCKED_SELL_SHAPE_REVIEW_ONLY"
+    assert out["original_signed_owner_matches_run_and_nonce"]
+    assert out["same_original_first_HMAC_sources_verified"]
+    assert out["original_client_ID_in_owner_prepost_and_broker_shape_bound"]
+    assert out["original_signed_ACWI_prepost_sequence"]==2
+    assert out["simulated_receipt_stage"]=="POST_ACCEPTED_ACTIVE_OR_PARTIAL_HOLD_NO_RETRY"
+    for deny in ("external_immutable_anti_rollback_verified",
+                 "fresh_live_account_risk_and_broker_reconciliation_verified",
+                 "durable_live_restart_recovery_verified",
+                 "reviewed_REAL_broker_POST_released",
+                 "live_order_authorized","live_order_retry_authorized",
+                 "production_owner_claimed_by_this_review"):
+        assert out[deny] is False
+    assert out["real_broker_POSTs"]==out["real_private_Git_PUTs"]==0
+    for sensitive in (ORIGINAL_QTY,cas.CLIENT_IDS["ACWI"],
+                      owner["owner_run_id"],fixture.KEY.hex()):
+        assert sensitive not in str(out)
+
+
+@pytest.mark.parametrize("state",[
+    "wrong_owner","wrong_nonce","wrong_attempt","wrong_source_sha",
+    "wrong_first_quantity","wrong_first_comment","wrong_seq2",
+    "wrong_receipt_client","wrong_receipt_uuid","wrong_receipt_quantity",
+])
+def test_locked_sell_joint_owner_prepost_broker_shape_cannot_be_swapped(state):
+    owner,prepost=claimed_owner_and_original_signed_prepost()
+    received=receipt()
+    if state=="wrong_owner":owner["owner_run_id"]="39812340002"
+    elif state=="wrong_nonce":owner["owner_nonce"]="2"*64
+    elif state=="wrong_attempt":owner["owner_attempt"]=2
+    elif state=="wrong_source_sha":owner["current_fence_source"]["sha"]="0"*40
+    elif state=="wrong_first_quantity":prepost["original_qty"]="0.123456788"
+    elif state=="wrong_first_comment":owner["first_comment"]["body"]="forged"
+    elif state=="wrong_seq2":prepost["prepost_source"]["sha"]="f"*40
+    elif state=="wrong_receipt_client":received["client_order_id"]="forged"
+    elif state=="wrong_receipt_uuid":received["id"]="not-a-uuid"
+    elif state=="wrong_receipt_quantity":received["qty"]="0.123456788"
+    with pytest.raises(m.LockedSellStop):
+        m.review_unique_owner_first_ACWI_sell_candidate(
+            owner_sources=owner,signed_sources=prepost,simulated_receipt=received)
+
+
+def test_signed_owner_and_prepost_review_accepts_fake_filled_only_as_unsettled():
+    owner,prepost=claimed_owner_and_original_signed_prepost()
+    out=m.review_unique_owner_first_ACWI_sell_candidate(
+        owner_sources=owner,signed_sources=prepost,
+        simulated_receipt=receipt("filled",filled=ORIGINAL_QTY,
+                                  filled_at="2026-10-24T13:02:00Z"))
+    assert out["simulated_receipt_stage"]=="POST_ACCEPTED_FILLED_RECEIPT_NEEDS_POSITION_AND_ACTIVITY_PROOF"
+    assert out["real_broker_POSTs"]==0 and out["live_order_authorized"] is False
+
+
+def test_unique_signed_owner_adapter_cannot_be_used_as_live_transport():
+    import fund100_v6_s1_acwi_unique_owner_fence_offline_v1_0 as owner
+    assert owner.NO_ALPACA_NETWORK and owner.NO_PRIVATE_NETWORK
+    assert owner.FENCED_LIVE_ORDER_RELEASED is False
+    assert m.TRANSPORT_RELEASED is False
+    assert m.PUBLIC_EXECUTION_ENABLED is False
+    source=Path(m.__file__).read_text()
+    for forbidden in ("urlopen(","Request(", "from urllib.request",
+                      "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN",
+                      "ALPACA_LIVE_KEY","ALPACA_LIVE_SECRET"):
+        assert forbidden not in source
