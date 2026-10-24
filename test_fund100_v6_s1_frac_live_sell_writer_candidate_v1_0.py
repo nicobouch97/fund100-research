@@ -51,13 +51,31 @@ def test_exact_one_nano_share_and_whole_shares_are_allowed_as_shapes_only():
     assert w.inspect_sell_shape(symbol="EEM",original_qty="0.000000001")["qty"]=="0.000000001"
     assert w.inspect_sell_shape(symbol="XLV",original_qty="12")["qty"]=="12"
 
-def test_full_fill_and_flat_original_position_is_the_only_confirmed_exit():
+def test_missing_holdings_snapshot_must_never_be_treated_as_flat():
     z=w.reconcile(symbol="ACWI",original_qty=Q,receipt=filled_order(),currently_held_qty=None)
-    assert z["stage"]=="LEGACY_EXIT_FULL_FILL_AND_FLAT_VERIFIED"
+    assert z["stage"]=="HOLD_FILLED_RECEIPT_POSITION_SNAPSHOT_MISSING"
+    assert not z["explicit_zero_holdings_input_present"]
+    assert not z["broker_zero_holdings_source_independently_verified"]
     assert z["order_may_be_resubmitted"] is False
     assert z["live_orders_submitted"]==0
     assert z["executable_order_payload"] is None
     assert z["share_qty"] is None and z["filled_qty"] is None
+
+@pytest.mark.parametrize("zero",["0","0.0",0,Decimal("0.000000000")])
+def test_explicit_zero_position_input_is_accepted_without_independent_provenance(zero):
+    z=w.reconcile(symbol="ACWI",original_qty=Q,receipt=filled_order(),currently_held_qty=zero)
+    assert z["stage"]=="REVIEW_FILLED_RECEIPT_AND_ZERO_QTY_INPUT_NOT_INDEPENDENTLY_VERIFIED"
+    assert z["explicit_zero_holdings_input_present"]
+    assert not z["broker_zero_holdings_source_independently_verified"]
+    assert not z["live_order_authorized"]
+    assert not z["order_may_be_resubmitted"]
+
+@pytest.mark.parametrize("bad",[True,False,0.0,"-0.000000001","NaN","Infinity","1e-1",
+                                 "0.0000000001",{}, []])
+def test_invalid_or_untrusted_position_quantity_is_not_a_flat_position(bad):
+    with pytest.raises(w.V6SellStop):
+        w.reconcile(symbol="ACWI",original_qty=Q,receipt=filled_order(),
+                    currently_held_qty=bad)
 
 def test_filled_order_with_live_residual_holdings_requires_manual_reconciliation():
     z=w.reconcile(symbol="ACWI",original_qty=Q,receipt=filled_order(),
@@ -73,7 +91,7 @@ def test_no_receipt_does_not_prove_never_posted_on_stale_broker_index():
 
 def test_missing_holdings_without_filled_receipt_cannot_claim_exit():
     r=w.reconcile(symbol="ACWI",original_qty=Q,receipt=None,currently_held_qty=None)
-    assert r["stage"]=="HOLD_POSITION_UNEXPLAINABLY_FLAT_WITHOUT_BROKER_RECEIPT"
+    assert r["stage"]=="HOLD_POSITION_SNAPSHOT_MISSING_AND_NO_RECEIPT"
 
 @pytest.mark.parametrize("status",[
     "accepted","accepted_for_bidding","pending_new","new",
