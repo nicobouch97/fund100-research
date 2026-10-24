@@ -75,7 +75,8 @@ class FakeCreate:
             account_binding_sha256=w["original_live_account_binding_sha256"],
             key=bytes.fromhex(KEY))
         assert doc==expected
-        assert b"ACWI" not in doc # empty signed fence, NO ORDER intent embedded
+        assert b'"claim":null' in doc
+        assert b'client_order_id' not in doc # empty signed fence, no order payload
         if self.status in (409,422):
             raise HTTPError(req.full_url,self.status,"conflict",None,None)
         return FakeReply(self.status,{"content":{
