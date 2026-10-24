@@ -38,7 +38,7 @@ jobs:
             test_fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py \
             test_fund100_v6_s1_private_git_cas_protocol_v1_0.py \
             test_fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py
-          test "$(git hash-object fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py)" = "7802c8f92146d01f33f0cb47d1bdc8b413785d7e"
+          test "$(git hash-object fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py)" = "b4e7f84ad8ba3a0aa7e9dd06c2b75915f5d60bb3"
           # Both existing four-GET artifacts are source pinned: no new broker
           # endpoint or changed account validator can be dispatch-authorized.
           test "$(git hash-object fund100_v6_real_live_getonly_transition_readiness_v1_0.py)" = "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2"
@@ -101,6 +101,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: fund100-live-broker
     timeout-minutes: 10
+    outputs:
+      first_comment_id: ${{ steps.signed_intent.outputs.first_comment_id }}
     permissions:
       contents: read
       actions: read
@@ -124,7 +126,7 @@ jobs:
           test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
           test "$FUND100_RISK_LEVEL" = "HIGH"
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
-          test "$(git hash-object fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py)" = "7802c8f92146d01f33f0cb47d1bdc8b413785d7e"
+          test "$(git hash-object fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py)" = "b4e7f84ad8ba3a0aa7e9dd06c2b75915f5d60bb3"
           test "$(git hash-object fund100_v6_real_live_getonly_transition_readiness_v1_0.py)" = "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2"
           test "$(git hash-object .github/workflows/fund100-v6-real-live-getonly-transition.yml)" = "a148b919ab25071dc3872211bb20588c466a1b92"
           test "$(git hash-object live_activation_outputs/v5_002/live_bootstrap_v1_0.json)" = "19557af50e20149470906d22e33ca99753892fb4"
@@ -138,6 +140,7 @@ jobs:
           print('Protected one ACWI original intent path inspected; NO broker orders.')
           PY
       - name: Verify just refreshed original protected four-GET and record one HMAC signed ACWI INTENT
+        id: signed_intent
         env:
           FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
           FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
@@ -151,3 +154,63 @@ jobs:
           set -euo pipefail
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
           echo 'Signed ACWI order INTENT only, no Alpaca SELL submission or LIVE trade activation.'
+
+  independent-readonly-confirm-first-ACWI-signed-head:
+    # If real seq1 CAS or public comment is ambiguous, this protected
+    # independently credentialed GET job FAILS and nothing can resend.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirmation == 'RECORD_ACWI_INTENT_NO_ORDERS'
+    needs: [offline-original-signed-ACWI-intent-transport-contract, protected-main-one-original-ACWI-intent-NO-orders]
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      issues: read
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FIRST_PUBLIC_HEAD_COMMENT_ID: ${{ needs.protected-main-one-original-ACWI-intent-NO-orders.outputs.first_comment_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify independently pinned original seq1 HMAC recovery without ANY mutation principal
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          test "$FUND100_RISK_LEVEL" = "HIGH"
+          [[ "$FIRST_PUBLIC_HEAD_COMMENT_ID" =~ ^[1-9][0-9]{0,18}$ ]]
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          test "$(git hash-object fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py)" = "b4e7f84ad8ba3a0aa7e9dd06c2b75915f5d60bb3"
+          test "$(git hash-object fund100_v6_s1_private_git_cas_protocol_v1_0.py)" = "9b9f8917faa21b4157600ac642f80595445a7276"
+      - name: Independently READ private signed ACWI seq1 plus both original public witnesses (NO WRITE)
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as p
+          result=p.reconfirm_first_signed_intent_readonly(
+              read_token=os.environ["FUND100_PRIVATE_STATE_READ_TOKEN"],
+              hmac_hex=os.environ["FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX"],
+              public_token=os.environ["GITHUB_TOKEN"],
+              first_comment_id=os.environ["FIRST_PUBLIC_HEAD_COMMENT_ID"],
+              first_run_id=os.environ["GITHUB_RUN_ID"])
+          assert result["original_signed_seq1_and_parent_HMAC_verified"]
+          assert result["independent_first_successor_comment_verified"]
+          assert result["original_ACWI_qty_commitment_matched"]
+          assert result["broker_order_posts"]==result["private_state_writes"]==0
+          assert not result["real_broker_sell_authorized"]
+          print("Independent signed ACWI seq1 + first successor public head VERIFIED, LIVE BROKER STILL STOPPED.")
+          PY
+      - name: Preserve post-read operator STOP
+        run: |
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Original signed ACWI intent persisted, GET-verified only; no LIVE sell or retry.'
