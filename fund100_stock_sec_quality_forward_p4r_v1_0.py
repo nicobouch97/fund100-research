@@ -107,6 +107,7 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
     missing = 0
     right_censored = 0
     no_entry = 0
+    left_censored = 0
     for issuer in sorted(observations, key=lambda r: r["ticker"]):
         ticker = issuer["ticker"]
         if ticker not in p4n.SOURCE_MATCHED_TAGS:
@@ -134,6 +135,9 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
                 or not event["same_accession_comparative"]
                 or not event["source_10k_accession"]):
                 raise EventStudyStop("Invalid original SEC quality evidence")
+            if day < data.index[0]:
+                left_censored += 1
+                continue
             # Use the first close strictly AFTER the conservative filing day.
             # This cannot buy on the filing-day close or a prior close.
             entry_i = int(data.index.searchsorted(day, side="right"))
@@ -165,7 +169,7 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
                 "spy_matched_gross_return_pct": round(100 * (spy_gross - 1), 6),
                 "cost_scenarios": costs,
             })
-    if len(rows) + missing + right_censored + no_entry != annual["industrial_annual_scores_available"] + (
+    if len(rows) + missing + right_censored + no_entry + left_censored != annual["industrial_annual_scores_available"] + (
         annual["industrial_annual_filing_dates_reviewed"] -
         annual["industrial_annual_scores_available"]):
         raise EventStudyStop("SEC event-to-outcome accounting failed")
@@ -191,6 +195,7 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
         "missing_original_annual_scores": missing,
         "right_censored_eligible_scores": right_censored,
         "scores_without_future_entry_close": no_entry,
+        "left_censored_eligible_scores": left_censored,
         "completed_event_returns": len(rows),
         "summary": groups,
         "event_returns": rows,
@@ -221,11 +226,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output-prices-csv", type=Path, required=True)
     args = parser.parse_args()
     prices = p4l.public_prices(start=HISTORICAL_PRICE_START)
     p4g.verify_original_nyse_source_sessions(prices.index)
     captured = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     report = evaluate(args.source_dir, prices, acquired_at_utc=captured)
+    args.output_prices_csv.parent.mkdir(parents=True, exist_ok=True)
+    args.output_prices_csv.write_text(p4l.canonical_csv(prices), encoding="utf-8")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n")
     print("P4R ORIGINAL 10-K 126-SESSION MATCHED SPY EVENT STUDY")
