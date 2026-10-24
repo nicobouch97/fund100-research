@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "fund100_v6_s1_two_principal_readonly_handoff_v1_0.py"
+      - "fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py"
+      - "test_fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py"
       - "test_fund100_v6_s1_two_principal_readonly_handoff_v1_0.py"
       - "research_lab/V6_S1_TWO_PRINCIPAL_LIVE_READONLY_SOURCE_HANDOFF_PROTOCOL_2026_10_22.md"
       - ".github/workflows/fund100-v6-s1-original-client-id-getonly.yml"
@@ -87,7 +89,7 @@ jobs:
           assert not r['orders_authorized'] and r['real_broker_POSTs']==0
           print('Authentic SAME-MAIN seven-GET source completed with original redacted 404 gate; no order permission.')
           PY
-      - name: Separately read original PRIVATE HMAC and public GENESIS without any broker key
+      - name: Separately read original signed PRIVATE HEAD seq0 or ACWI seq1 without any broker key
         env:
           FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
           FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
@@ -97,7 +99,7 @@ jobs:
           test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
           test "$FUND100_RISK_LEVEL" = 'HIGH'
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
-          test "$(git hash-object fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py)" = "a774a67de7b5e0abac0a13f06d744c0c45baf079"
+          test "$(git hash-object fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0.py)" = "b0e34497912a0f3c74520554fa1bbfb76b0c9fd3"
           test "$(git hash-object fund100_v6_s1_private_git_cas_protocol_v1_0.py)" = "9b9f8917faa21b4157600ac642f80595445a7276"
           test "$(git hash-object research_lab/V6_S1_INITIAL_PUBLIC_LEDGER_GENESIS_WITNESS_2026_10_21.json)" = "b6fd44c4bb0b17bcd906e97c7ca8d6a50cc00a99"
           python - <<'PY'
@@ -110,15 +112,13 @@ jobs:
           broker_run=json.loads((root/'fund100-source-run.json').read_text())
           broker_jobs=json.loads((root/'fund100-source-jobs.json').read_text())
           main_sha=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
-          observed=r.runtime(
+          observed=r.recover_current_original_signed_head_readonly(
               public_comment_id='6321330005',
               bootstrap_run_id='39637082911',
               read_token=os.environ['FUND100_PRIVATE_STATE_READ_TOKEN'],
               hmac_hex=os.environ['FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX'],
               public_token=os.environ['GITHUB_TOKEN'])
-          assert observed['status']=='GENESIS_CONTENT_AND_PUBLIC_HASH_WITNESS_RECONFIRMED_READONLY'
-          assert observed['private_ledger_sequence']==0
-          assert observed['original_empty_entries_count']==0
+          assert observed['private_ledger_sequence'] in (0,1)
           assert observed['private_genesis_HMAC_signature_and_original_account_binding_verified']
           assert observed['independent_public_issue8_comment_digest_and_identity_verified']
           assert observed['private_git_writes']==0 and observed['broker_orders']==0
@@ -127,16 +127,22 @@ jobs:
                    checked_main_sha=main_sha,
                    observed_at_utc=datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
           if source['status']=='CURRENT_RISK_SOURCE_STOP_READY_FOR_PRIVATE_HMAC_READ':
-              joined=h.join_current_risk_and_signed_genesis(source=source,genesis=observed)
-              assert joined['status']=='STOPPED_REAL_RISK_AND_SIGNED_EMPTY_LEDGER_READS_JOINED'
+              if observed['private_ledger_sequence']==0:
+                  joined=h.join_current_risk_and_signed_genesis(source=source,genesis=observed)
+                  assert joined['status']=='STOPPED_REAL_RISK_AND_SIGNED_EMPTY_LEDGER_READS_JOINED'
+              else:
+                  joined=h.join_current_risk_and_signed_first_reservation(
+                      source=source,reserved=observed)
+                  assert joined['status']=='STOPPED_RISK_AND_FIRST_SIGNED_ACWI_RESERVATION_READS_JOINED'
+                  print('Original signed ACWI sequence-1 head + public witness VERIFIED READ ONLY; no retry or order.')
               assert joined['orders_authorized'] is False
               assert joined['broker_POSTs']==joined['private_Git_PUTs']==0
               print('Source-verified postfunding 6/20/35 account risk passed: '+
                     str(joined['postfunding_account_6_20_35_read_evidence']))
-              print('Original risk-to-signed-private-genesis join VERIFIED READ ONLY: LIVE RISK AND ORDER RELEASE BLOCKED.')
+              print('Original risk-to-signed-private-head join VERIFIED READ ONLY: LIVE RISK AND ORDER RELEASE BLOCKED.')
           else:
               assert source['status']=='TWO_PRINCIPAL_SOURCE_HANDOFF_READY_FOR_SEPARATE_SIGNED_READ'
-          print('SUCCESS: current verified original broker seven-GET and separately protected initial HMAC private read, within 5m.')
+          print('SUCCESS: current verified original broker seven-GET and separately protected HMAC private head read, within 5m.')
           print('No brokerage key available in private read; NO mutation token, trade, external immutable watermark or release.')
           PY
       - name: Explicit no-order STOP
