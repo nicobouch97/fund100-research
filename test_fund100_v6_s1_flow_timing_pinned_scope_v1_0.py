@@ -107,3 +107,63 @@ def test_original_protected_risk_boolean_handoff_must_remain_conditional():
                          "Claim release unconditionally"),
     ):
         assert not audit.approved_scoped_live_script(FLOW,SCRIPT,change)
+
+
+def test_successful_original_first_ACWI_storage_only_intent_refreshes_same_main_read():
+    """One verified source refresh; never interpret a Git PUT as trade."""
+    y=yml()
+    assert "  workflow_run:\n" in y
+    assert ('"Fund-100 V6-S1 ONE ACWI Original Intent Signed CAS '
+            '(STORAGE ONLY; NO BROKER)"' in y)
+    assert "    types: [completed]" in y
+    main=y.split("  authentic-private-seven-get:",1)[1].split("    needs:",1)[0]
+    for condition in (
+        "github.event_name != 'pull_request'",
+        "github.ref == 'refs/heads/main'",
+        "github.event.workflow_run.conclusion == 'success'",
+        "github.event.workflow_run.event == 'workflow_dispatch'",
+        "github.event.workflow_run.head_branch == 'main'",
+        "github.event.workflow_run.head_repository.full_name == github.repository",
+        "github.event.workflow_run.head_sha == github.sha",
+    ):
+        assert condition in main
+    assert "ALPACA_LIVE_KEY" not in main
+    assert "actions: write" not in y
+    assert "issues: write" not in y
+    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in y
+    assert audit.approved_scoped_live_script(FLOW,SCRIPT,y)
+
+
+@pytest.mark.parametrize("bad,good",[
+    ("github.event.workflow_run.conclusion == 'always'",
+     "github.event.workflow_run.conclusion == 'success'"),
+    ("github.event.workflow_run.event == 'pull_request'",
+     "github.event.workflow_run.event == 'workflow_dispatch'"),
+    ("github.event.workflow_run.head_branch == 'feature'",
+     "github.event.workflow_run.head_branch == 'main'"),
+    ("github.event.workflow_run.head_repository.full_name == 'attacker/repo'",
+     "github.event.workflow_run.head_repository.full_name == github.repository"),
+    ("github.event.workflow_run.head_sha == 'unverified'",
+     "github.event.workflow_run.head_sha == github.sha"),
+])
+def test_original_post_intent_refresh_must_retain_exact_source_binding(bad,good):
+    y=yml()
+    assert good in y
+    modified=y.replace(good,bad)
+    # Test the transition contract's check rather than falsely claim the
+    # unrelated generic source-scope audit recognizes semantic trigger drift.
+    assert good not in modified
+    assert bad in modified
+    assert audit.approved_scoped_live_script(FLOW,SCRIPT,y)
+    assert not audit.approved_scoped_live_script(FLOW,SCRIPT,modified)
+
+
+def test_original_first_intent_trigger_rejects_untrusted_name_and_skipped_finish():
+    y=yml()
+    for mutated in (
+        y.replace("    types: [completed]","    types: [requested]"),
+        y.replace("Fund-100 V6-S1 ONE ACWI Original Intent Signed CAS (STORAGE ONLY; NO BROKER)",
+                  "Fund-100 fake broker writer"),
+        y.replace("github.event.workflow_run.head_sha == github.sha","true"),
+    ):
+        assert not audit.approved_scoped_live_script(FLOW,SCRIPT,mutated)
