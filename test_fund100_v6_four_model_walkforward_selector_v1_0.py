@@ -138,3 +138,65 @@ def test_fixed_blend_is_nontrivial_benchmark_when_selector_stays_cash():
     assert window["historical_selector_cagr_pct"] == 0.0
     assert window["historical_equal_model_blend_cagr_pct"] > 0
     assert window["historical_selector_minus_equal_blend_cagr_pp"] < 0
+
+
+def test_vol_target_matches_fixed_blend_when_synthetic_volatility_is_low():
+    p = paths()
+    dates, _, navs = w._verified_paths(p)
+    fixed = w._fixed_equal_model_blend(dates, navs, 15)
+    risk, exposure, turnover = w._vol_target_fixed_blend(dates, navs, 15)
+    np.testing.assert_allclose(risk, fixed, rtol=1e-10, atol=1e-8)
+    first = next(i for i in range(w.TRAINING_RETURNS + 1, len(dates))
+                 if dates[i].to_period("Q") != dates[i-1].to_period("Q"))
+    assert (exposure[:first] == 0).all()
+    assert (exposure[first:] == 1).all()
+    assert turnover[first] == 1
+    assert turnover.sum() == pytest.approx(1)
+
+
+def test_vol_target_reacts_only_after_shock_close_and_never_leverages():
+    baseline = paths()
+    dates, _, navs = w._verified_paths(baseline)
+    original, exposure, _ = w._vol_target_fixed_blend(dates, navs, 15)
+    shocked = paths()
+    t = 600
+    shocked[w.MODELS[1]].iloc[t:, 0] *= 3
+    _, _, new_navs = w._verified_paths(shocked)
+    changed, new_exposure, turnover = w._vol_target_fixed_blend(dates, new_navs, 15)
+    np.testing.assert_array_equal(original[:t], changed[:t])
+    np.testing.assert_array_equal(exposure[:t], new_exposure[:t])
+    assert changed[t] != original[t]  # old exposure earned the shock
+    assert new_exposure[t] < exposure[t]  # scale down only at this close
+    assert np.all((new_exposure >= 0) & (new_exposure <= 1))
+    assert turnover[t] > 0
+    assert np.isfinite(changed).all()
+
+
+def test_vol_target_costs_reduce_wealth_and_report_downside():
+    p = paths()
+    dates, _, navs = w._verified_paths(p)
+    a, ea, ta = w._vol_target_fixed_blend(dates, navs, 5)
+    b, eb, tb = w._vol_target_fixed_blend(dates, navs, 35)
+    np.testing.assert_array_equal(ea, eb)
+    np.testing.assert_array_equal(ta, tb)
+    assert a[-1] > b[-1]
+    report = w.evaluate(p, switch_side_cost_bps=15)
+    assert report["vol_target_blend_is_exploratory_cash_only_synthetic"]
+    assert report["vol_target_blend_annual_volatility_target_pct"] == 10
+    assert report["vol_target_blend_lookback_completed_sessions"] == 63
+    assert report["vol_target_blend_decision_after_close_applies_next_session"]
+    assert report["vol_target_blend_no_leverage_or_shorting"]
+    assert report["strategy_promoted_for_funded_trading"] is None
+    assert report["paper_or_live_orders"] == 0
+    for window in report["comparison_windows"].values():
+        assert "historical_vol_target_blend_cagr_pct" in window
+        assert -100 < window["historical_vol_target_blend_max_drawdown_pct"] <= 0
+        assert 0 <= window["historical_vol_target_blend_average_exposure_pct"] <= 100
+
+
+def test_vol_target_rejects_bad_original_model_returns():
+    p = paths()
+    dates, _, navs = w._verified_paths(p)
+    navs[w.MODELS[0]][700] = float("nan")
+    with pytest.raises(w.WalkforwardStop, match="blend NAV"):
+        w._vol_target_fixed_blend(dates, navs, 15)
