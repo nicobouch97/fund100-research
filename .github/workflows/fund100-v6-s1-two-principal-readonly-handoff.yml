@@ -154,6 +154,19 @@ jobs:
               assert joined['orders_authorized'] is False
               assert joined['broker_POSTs']==joined['private_Git_PUTs']==0
               print('Original LIVE broker client IDs 3x404 + independently signed ACWI seq1: VERIFIED READ ONLY; 404 does NOT prove never POSTed.')
+          # Only redacted signed/risk-verifier verdicts go to a runner-local
+          # handoff for the next STEP (same protected job, no WRITE tokens).
+          # This never stores real account/position values or private HMAC.
+          safe={'source':source,'reserved':observed}
+          assert source['orders_authorized'] is False
+          assert observed['production_trade_order_submission_authorized'] is False
+          assert all(v is None for v in (
+              observed.get('private_raw_bytes'),
+              observed.get('account_binding_or_account_id'),
+              observed.get('hmac_key_or_signature'),
+          ))
+          (root/'fund100-s1-redacted-handoff.json').write_text(
+              json.dumps(safe,sort_keys=True),encoding='utf-8')
           print('SUCCESS: current verified original broker seven-GET and separately protected HMAC private head read, within 5m.')
           print('No brokerage key available in private read; NO mutation token, trade, external immutable watermark or release.')
           PY
@@ -170,8 +183,10 @@ jobs:
           test "$FUND100_RISK_LEVEL" = "HIGH"
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
           python - <<'PY'
-          import os
+          import os,json
+          from pathlib import Path
           import fund100_v6_s1_owner_fence_private_getonly_v1_0 as h
+          import fund100_v6_s1_two_principal_readonly_handoff_v1_0 as joined
           observed=h.read_current_original_acwi_owner_fence_getonly(
               read_token=os.environ["FUND100_PRIVATE_STATE_READ_TOKEN"],
               hmac_hex=os.environ["FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX"])
@@ -182,6 +197,25 @@ jobs:
           assert observed["write_principal_absence_independently_verified"] is False
           assert observed["owner_claim_or_broker_POST_authorized"] is False
           assert observed["real_private_Git_PUTs"] == observed["broker_orders"] == 0
+          # Complete a THREE-source join, not just independent status logs.
+          # Source and private reservation were verified by the preceding
+          # successful step in this SAME protected job. No broker credentials
+          # and no private WRITE principal are available to this step.
+          safe=json.loads((Path(os.environ['RUNNER_TEMP'])/
+              'fund100-s1-redacted-handoff.json').read_text(encoding='utf-8'))
+          if safe['reserved']['private_ledger_sequence']==1:
+              decision=joined.join_first_acwi_owner_and_protected_broker_readonly(
+                  source=safe['source'],reserved=safe['reserved'],
+                  owner_fence=observed)
+              assert decision['status']=='STOPPED_FIRST_ACWI_THREE_SOURCE_JOIN_NO_ORDER_AUTHORITY'
+              assert decision['owner_claim_or_broker_post_released'] is False
+              assert decision['real_broker_POSTs']==decision['real_private_Git_PUTs']==0
+              assert decision['external_immutable_head_anchor_verified'] is False
+              print('Original first ACWI three-source readiness: '+
+                    ','.join(decision['remaining_release_blockers']))
+          else:
+              assert safe['reserved']['private_ledger_sequence']==0
+              print('Original private ledger still empty: ACWI execution HOLD.')
           print("Original first ACWI owner fence READ principal: "+observed["status"])
           print("Separate WRITE principal and immutable head NOT verified; STOP.")
           PY
