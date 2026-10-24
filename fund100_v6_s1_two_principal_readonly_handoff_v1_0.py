@@ -296,3 +296,51 @@ def join_current_risk_and_signed_genesis(*, source:dict, genesis:dict)->dict:
         "broker_POSTs":0,"private_Git_PUTs":0,
         "private_account_data":None,"private_signed_ledger":None,
     }
+
+
+def join_current_risk_and_signed_first_reservation(*,source:dict,
+                                                    reserved:dict)->dict:
+    """Read-only cross-principal join for the EXACT first seq1 ACWI intent.
+
+    An original public head commitment is editable, not an immutable
+    anti-rollback anchor. This NEVER grants a writer token or broker POST.
+    """
+    if (type(source) is not dict
+        or source.get("schema")!=SCHEMA
+        or source.get("status")!="CURRENT_RISK_SOURCE_STOP_READY_FOR_PRIVATE_HMAC_READ"
+        or source.get("same_main_SHA_and_fresh_GET_step_verified") is not True
+        or source.get("upstream_controller_stop_ran_successfully") is not True
+        or type(source.get("source_verified_postfunding_6_20_35")) is not bool
+        or source.get("orders_authorized") is not False
+        or type(reserved) is not dict
+        or reserved.get("status") !=
+             "ORIGINAL_ACWI_SIGNED_SEQ1_AND_PUBLIC_HEAD_RECONFIRMED_READONLY"
+        or reserved.get("private_genesis_HMAC_signature_and_original_account_binding_verified") is not True
+        or reserved.get("independent_public_issue8_comment_digest_and_identity_verified") is not True
+        or type(reserved.get("private_ledger_sequence")) is not int
+        or reserved["private_ledger_sequence"] != 1
+        or reserved.get("first_reserved_symbol") != "ACWI"
+        or reserved.get("first_reservation_state") != "RESERVED_NO_RETRY"
+        or reserved.get("original_ACWI_qty_commitment_verified") is not True
+        or reserved.get("independent_first_successor_public_witness_verified") is not True
+        or reserved.get("independently_immutable_rollback_anchor_proven") is not False
+        or reserved.get("production_trade_order_submission_authorized") is not False
+        or reserved.get("private_git_writes") != 0
+        or reserved.get("broker_orders") != 0):
+        raise HandoffStop("Unverified, noninitial, or mutable first signed reservation")
+    return {
+        "schema":SCHEMA,
+        "status":"STOPPED_RISK_AND_FIRST_SIGNED_ACWI_RESERVATION_READS_JOINED",
+        "postfunding_account_6_20_35_read_evidence":
+            source["source_verified_postfunding_6_20_35"],
+        "first_original_signed_ACWI_intent_readback_verified":True,
+        "first_reservation_is_no_retry":True,
+        "independently_immutable_rollback_anchor_verified":False,
+        "source_to_actual_broker_order_fills_reconciled":False,
+        "broker_sale_proceeds_settled":False,
+        "staged_controller_trade_release":False,
+        "orders_authorized":False,
+        "broker_POSTs":0,"private_Git_PUTs":0,
+        "original_qty":None,"account_id":None,
+        "private_head":None,"first_comment_id":None,
+    }
