@@ -29,7 +29,7 @@ def raw_registry(obj=None):
 
 def fake_loader(url, agent):
     assert agent == AGENT
-    match = re.search(r"CIK(\\d{10})\\.json$", url)
+    match = re.search(r"CIK(\d{10})\.json$", url)
     assert match
     cik = int(match.group(1))
     if "/companyfacts/" in url:
