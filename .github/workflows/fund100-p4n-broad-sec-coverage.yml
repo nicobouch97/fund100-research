@@ -134,6 +134,15 @@ jobs:
           assert d["original_accession_and_filed_day_used"]
           assert d["today_retrieved_companyfacts_not_original_historical_capture"]
           assert d["issuer_roster_selected_with_2026_knowledge"]
+          s=d["industrial_annual_score_stability"]
+          assert s["method"]=="ADJACENT_ORIGINAL_10K_SCORE_PAIRS_NO_MISSING_BACKFILL"
+          assert sum(s["score_observation_distribution"].values()) == d["industrial_annual_scores_available"]
+          assert s["adjacent_annual_pairs_with_both_scores"] == (
+              s["unchanged_score_pairs"] + s["improved_score_pairs"]
+              + s["deteriorated_score_pairs"])
+          assert s["adjacent_annual_pairs_with_both_scores"] + s["adjacent_annual_pairs_with_missing_score"] <= d["industrial_annual_filing_dates_reviewed"]
+          assert s["score_persistence_is_not_stock_return_predictiveness"]
+          assert s["source_retrieved_today_not_independent_historical_vintage"]
           assert not d["historical_investable_backtest_eligible"]
           assert not d["independent_alpha_validated"]
           assert not d["trading_authorized"] and not d["paper_authorized"]
@@ -142,6 +151,11 @@ jobs:
           print("Dated SEC original-accession quality replay:",
                 d["industrial_annual_scores_available"], "available scores from",
                 d["industrial_annual_filing_dates_reviewed"], "reviewed annual dates")
+          print("Adjacent scored annual pairs",s["adjacent_annual_pairs_with_both_scores"],
+                "unchanged",s["unchanged_score_pairs"],
+                "improved",s["improved_score_pairs"],
+                "deteriorated",s["deteriorated_score_pairs"],
+                "missing pairs",s["adjacent_annual_pairs_with_missing_score"])
           PY
       - name: Preserve original SEC bytes, source identities and missing coverage
         if: steps.capture.outputs.acquired == 'true'
