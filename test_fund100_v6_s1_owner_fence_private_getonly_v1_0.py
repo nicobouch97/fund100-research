@@ -23,7 +23,8 @@ def test_real_fence_single_original_READ_principal_404_is_not_a_GO():
     assert "test-original-read-token" not in str(out)
 
 
-def test_existing_original_signed_owner_fence_observed_but_never_a_post_permit():
+@pytest.mark.parametrize("wrap",["LF","CRLF"])
+def test_existing_original_signed_owner_fence_observed_but_never_a_post_permit(wrap):
     from base64 import b64encode
     from io import BytesIO
     import json
@@ -37,9 +38,14 @@ def test_existing_original_signed_owner_fence_observed_but_never_a_post_permit()
         private_genesis=w["original_public_genesis_nonce"],
         account_binding_sha256=w["original_live_account_binding_sha256"],
         key=key)
+    encoded=b64encode(raw).decode("ascii")
+    newline="\\r\\n" if wrap=="CRLF" else "\\n"
+    # GitHub REST Contents delivers encoded file bytes split across lines.
+    # Preserve strict HMAC, Git blob SHA and canonical JSON checks.
+    wrapped=newline.join(encoded[i:i+60] for i in range(0,len(encoded),60))+newline
     source={
         "type":"file","path":fence.PATH,"encoding":"base64",
-        "sha":cas.blob_sha(raw),"content":b64encode(raw).decode("ascii")}
+        "sha":cas.blob_sha(raw),"content":wrapped}
     class Response:
         status=200
         def __enter__(self):return self
@@ -113,3 +119,29 @@ def test_existing_two_principal_handoff_one_private_fence_GET_no_write_secrets()
     assert not contract.PRIVATE_GIT_WRITER_INCLUDED
     assert not contract.ALPACA_CREDENTIALS_INCLUDED
     assert not contract.FUNDED_TRADING_ENABLED
+
+
+def test_wrapped_signed_owner_fence_rejects_non_base64_injected_character():
+    import json
+    from base64 import b64encode
+    from io import BytesIO
+    import fund100_v6_s1_acwi_unique_owner_fence_offline_v1_0 as fence
+    import fund100_v6_s1_public_genesis_witness_v1_0 as witness
+    import fund100_v6_s1_private_git_cas_protocol_v1_0 as cas
+    w=witness.verify()
+    key=bytes.fromhex("12"*32)
+    raw=fence.synthetic_fence_genesis(
+        private_genesis=w["original_public_genesis_nonce"],
+        account_binding_sha256=w["original_live_account_binding_sha256"],key=key)
+    encoded=b64encode(raw).decode("ascii")
+    source={"type":"file","path":fence.PATH,"encoding":"base64",
+            "sha":cas.blob_sha(raw),"content":encoded[:60]+"\\n!"+encoded[60:]}
+    class Response:
+        status=200
+        def __enter__(self):return self
+        def __exit__(self,*_):return False
+        def read(self,n):return BytesIO(json.dumps(source).encode()).read(n)
+    with pytest.raises(h.HandoffStop):
+        h.read_current_original_acwi_owner_fence_getonly(
+            read_token="test-original-read-token-abc123",hmac_hex="12"*32,
+            transport=lambda request,timeout:Response())
