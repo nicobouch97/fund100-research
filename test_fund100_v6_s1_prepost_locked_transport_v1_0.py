@@ -102,6 +102,8 @@ class GitScenario:
         return Reply(200,{"content":{"path":cas.STATE_PATH,"sha":self.ledger["sha"]},
                           "commit":{"sha":"c"*40}})
     def public(self,req,timeout):
+        if req.get_method()=="GET":
+            return self.read(req,timeout)
         assert timeout==12
         assert req.full_url==x.PUBLIC_COMMENT_COLLECTION
         assert req.get_method()=="POST"
