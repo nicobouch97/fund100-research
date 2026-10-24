@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-SCHEMA = "FUND100_V6_CROSSASSET_FIXED_BASKET_STRESS_DIAGNOSTIC_V1"
+SCHEMA = "FUND100_V6_CROSSASSET_FIXED_BASKET_STRESS_DIAGNOSTIC_V2"
 SYMBOLS = ("XLK", "XLE", "IWM", "GLD", "SHY", "SPY")
 ASSETS = ("XLK", "XLE", "IWM", "GLD", "SHY", "CASH")
 STUDY_START = "2014-01-02"
@@ -72,7 +72,8 @@ def simulate(prices: pd.DataFrame, weights: tuple[float, ...], cost_bps: int) ->
     """Monthly close rebalance after today's move, effective NEXT session.
 
     Buy-side costs charged at inception; all later buys AND sells are
-    charged. CASH has zero nominal return; SHY is a risky traded ETF.
+    charged on ETF traded notional only. CASH is not a traded security,
+    has zero nominal return; SHY is a risky traded ETF.
     """
     if cost_bps not in COSTS_BPS or type(cost_bps) is not int:
         raise CrossAssetStop("Only fixed 5/15/35bp per-side costs supported")
@@ -99,7 +100,10 @@ def simulate(prices: pd.DataFrame, weights: tuple[float, ...], cost_bps: int) ->
         # The last session of each month is a trade at THAT close, and
         # the rebalance only affects exposure from the following close.
         if i < len(data)-1 and data.index[i].month != data.index[i+1].month:
-            traded = float(np.abs(held - target).sum())
+            # Count ETF buys and sells once each, but never the offsetting
+            # change in CASH as another traded leg. The old full-vector
+            # L1 distance incorrectly charged the cash transfer twice.
+            traded = float(np.abs(held[:-1] - target[:-1]).sum())
             value *= 1.0 - cost_bps / 10000 * traded
             held = target.copy()
         nav.append(value)
@@ -189,6 +193,8 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str) -> dict:
         "rebalance": "MONTH_END_CLOSE_EFFECTIVE_NEXT_SESSION",
         "per_side_costs_bps": list(COSTS_BPS),
         "inception_buys_charged": True,
+        "rebalance_turnover_definition": "SUM_ABS_ETF_WEIGHT_CHANGES_EXCLUDING_CASH",
+        "prior_c13_v1_cash_leg_cost_overstatement_corrected": True,
         "cash_nominal_return_assumed_zero": True,
         "shy_is_risky_bond_etf_not_cash": True,
         "no_current_broker_asset_eligibility_inferred": True,

@@ -61,6 +61,41 @@ def test_costs_charge_both_sides_and_never_improve_fixed_basket():
         assert hi["turnover"].sum() > sum(w[:-1])
 
 
+def test_month_end_cash_transfer_is_not_a_second_traded_etf_leg():
+    frame = prices()
+    frame.loc[:, :] = 100.0
+    frame.loc["2014-01-31":, "GLD"] = 110.0
+    weights = (0., 0., 0., .5, 0., .5)
+    result = mod.simulate(frame, weights, 15)
+    # GLD appreciates by 10% while cash is flat; rebalance sells only
+    # 0.0238095 of NAV in GLD. The cash receipt is NOT a second ETF sale.
+    etf_sale = .55 / 1.05 - .5
+    assert result["turnover"].loc["2014-01-31"] == pytest.approx(etf_sale)
+    expected = (1 - .0015 * .5) * 1.05 * (1 - .0015 * etf_sale)
+    assert result["nav"].loc["2014-01-31"] == pytest.approx(expected)
+    assert result["nav"].loc["2014-01-31"] > (1 - .0015 * .5) * 1.05 * (1 - .0015 * 2 * etf_sale)
+
+
+def test_month_end_etf_to_etf_switch_charges_both_real_security_legs():
+    frame = prices()
+    frame.loc[:, :] = 100.0
+    frame.loc["2014-01-31":, "XLK"] = 110.0
+    weights = (.5, .5, 0., 0., 0., 0.)
+    result = mod.simulate(frame, weights, 15)
+    one_side = .55 / 1.05 - .5
+    assert result["turnover"].loc["2014-01-31"] == pytest.approx(2 * one_side)
+    assert result["nav"].loc["2014-01-31"] == pytest.approx(
+        (1 - .0015) * 1.05 * (1 - .0015 * 2 * one_side))
+
+
+def test_cost_accounting_version_and_no_trading_authority():
+    report = mod.evaluate(prices(), acquired_at_utc="2025-01-02T12:00:00Z")
+    assert report["schema"].endswith("_V2")
+    assert report["rebalance_turnover_definition"] == "SUM_ABS_ETF_WEIGHT_CHANGES_EXCLUDING_CASH"
+    assert report["prior_c13_v1_cash_leg_cost_overstatement_corrected"]
+    assert not report["funded_trading_or_rebalance_authorized"]
+
+
 @pytest.mark.parametrize("corruption", ["duplicate", "missing", "gap", "future", "nonnumeric"])
 def test_reject_invalid_source(corruption):
     frame = prices()
