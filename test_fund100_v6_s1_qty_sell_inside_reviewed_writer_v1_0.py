@@ -1,5 +1,6 @@
 """Credentialless only mocked V6 ACWI SELL inside original V5 reviewed writer."""
 from io import BytesIO
+from copy import deepcopy
 import json
 from pathlib import Path
 from urllib.error import URLError, HTTPError
@@ -61,10 +62,12 @@ def fake_release(monkeypatch):
         monkeypatch.setattr(writer,key,True)
 
 
-def call(fake, signed=None):
+def call(fake, signed=None, owner=None):
+    authentic_owner,authentic_signed=fixture.claimed_owner_and_original_signed_prepost()
     return writer.submit_v6_s1_original_acwi_fractional_sell(
         original_qty=QTY,
-        signed_sources=fixture.signed() if signed is None else signed,
+        signed_sources=authentic_signed if signed is None else signed,
+        owner_sources=authentic_owner if owner is None else owner,
         key=TEST_KEY,secret=TEST_SECRET,
         transport=fake)
 
@@ -177,6 +180,41 @@ def test_fake_received_terminal_or_ambiguous_receipt_holds_no_retry(status,monke
     assert fake.calls==1
 
 
+@pytest.mark.parametrize("tamper",[
+    "missing","changed_owner_run","changed_nonce","changed_main_sha",
+    "changed_broker_source_run","claim_restarted_attempt","changed_fence_head",
+    "changed_first_signed_comment","changed_order_quantity",
+])
+def test_different_or_unverifiable_hmac_owner_never_reaches_mock_broker(tamper,monkeypatch):
+    fake_release(monkeypatch)
+    owner,signed=fixture.claimed_owner_and_original_signed_prepost()
+    owner=deepcopy(owner)
+    if tamper=="missing":owner={}
+    elif tamper=="changed_owner_run":owner["owner_run_id"]="39812340002"
+    elif tamper=="changed_nonce":owner["owner_nonce"]="b"*64
+    elif tamper=="changed_main_sha":owner["current_main_sha"]="f"*40
+    elif tamper=="changed_broker_source_run":owner["source_broker_run_id"]="39812340002"
+    elif tamper=="claim_restarted_attempt":owner["owner_attempt"]=2
+    elif tamper=="changed_fence_head":owner["current_fence_source"]["sha"]="0"*40
+    elif tamper=="changed_first_signed_comment":owner["first_comment"]["body"]="forged"
+    elif tamper=="changed_order_quantity":owner["original_qty"]="0.123456788"
+    fake=FakeBrokerPost()
+    with pytest.raises(writer.LiveWriterCandidateLocked,match="owner"):
+        call(fake,signed=signed,owner=owner)
+    assert fake.calls==0
+
+
+def test_owner_hmac_valid_but_mismatched_signed_prepost_source_cannot_submit(monkeypatch):
+    fake_release(monkeypatch)
+    owner,signed=fixture.claimed_owner_and_original_signed_prepost()
+    signed=deepcopy(signed)
+    signed["first_comment"]["body"]="forged"
+    fake=FakeBrokerPost()
+    with pytest.raises(writer.LiveWriterCandidateLocked,match="owner"):
+        call(fake,signed=signed,owner=owner)
+    assert fake.calls==0
+
+
 def test_original_v5_writer_entrypoint_and_hard_locks_preserved():
     source=Path(writer.__file__).read_text()
     assert "def submit_authorized_order_batch(" in source
@@ -186,6 +224,8 @@ def test_original_v5_writer_entrypoint_and_hard_locks_preserved():
     assert "V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED = False" in source
     assert "V6_S1_ACWI_FRESH_ACCOUNT_RISK_SOURCE_RELEASED = False" in source
     assert "V6_S1_ACWI_EXTERNAL_WATERMARK_RELEASED = False" in source
+    assert "owner_sources: dict" in source
+    assert "v6.owner_fence.verify_claimed_owner(**owner_sources)" in source
     assert "if __name__" not in source
     assert "def main(" not in source
     assert "ALPACA_LIVE_KEY" not in source
