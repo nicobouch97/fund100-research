@@ -88,9 +88,13 @@ def parse_index(raw: bytes, *, quarter: int = 1) -> dict[int, dict]:
         paths.add(path)
         tenk += 1
         ident = int(cik)
-        entry = found.setdefault(ident, {"company_names": set(), "filings": []})
+        entry = found.setdefault(ident, {
+            "company_names": set(), "filings": [], "filing_names": {}})
         entry["company_names"].add(company.strip())
         entry["filings"].append((filed, path))
+        # Keep the filing-date name attached to its accession, including
+        # historical renames; a set of names alone loses that relationship.
+        entry["filing_names"][path] = company.strip()
     if not found or tenk != sum(len(x["filings"]) for x in found.values()):
         raise PopulationStop("No reconciled original SEC 10-K filings")
     return found
@@ -192,50 +196,76 @@ def capture(output_dir: Path, agent: str) -> dict:
     return report
 
 
-def evaluate_annual(index_by_quarter: dict[int, bytes], registry_raw: bytes,
-                    *, captured_utc: str) -> dict:
-    """Census every original 2017 quarter without filtering on current tickers.
+def annual_filing_manifest(index_by_quarter: dict[int, bytes]) -> list[dict]:
+    """Original 2017 10-K accession-level identity, without a present-day ticker join.
 
-    Annual union membership is CIK-based; SEC filings are not investable shares.
-    The same CIK filing in multiple quarters counts once as an issuer, but
-    each distinct 10-K filing counts once. No absence implies delisting.
+    CIK is an SEC issuer identifier, not a security/share-class identifier.
+    The filing index name and date are original-source observations; neither
+    exchange listing nor executable stock returns are established here.
     """
     if (type(index_by_quarter) is not dict
         or set(index_by_quarter) != set(QUARTER_BOUNDS)
         or any(type(q) is not int for q in index_by_quarter)):
         raise PopulationStop("Exactly four original 2017 quarter indexes required")
-    # Retain original Q1 reconciliation and canonical capture-time checks.
-    first = evaluate(index_by_quarter[1], registry_raw, captured_utc=captured_utc)
-    current = parse_current_registry(registry_raw)
-    all_ciks: set[int] = set()
-    all_paths: set[str] = set()
-    counts: dict[str, int] = {}
-    distinct: dict[str, int] = {}
-    hashes: dict[str, str] = {}
-    q1_ciks: set[int] = set()
+    rows = []
+    paths = set()
     for quarter in sorted(QUARTER_BOUNDS):
-        raw = index_by_quarter[quarter]
-        cohort = parse_index(raw, quarter=quarter)
-        label = f"2017_Q{quarter}"
-        counts[label] = sum(len(v["filings"]) for v in cohort.values())
-        distinct[label] = len(cohort)
-        hashes[label] = sha256(raw).hexdigest()
+        cohort = parse_index(index_by_quarter[quarter], quarter=quarter)
         for cik, entry in cohort.items():
-            for _, path in entry["filings"]:
-                if path in all_paths:
+            for filed, path in entry["filings"]:
+                if path in paths:
                     raise PopulationStop("Repeated SEC accession across quarters")
-                all_paths.add(path)
-            all_ciks.add(cik)
-        if quarter == 1:
-            q1_ciks = set(cohort)
-    total = sum(counts.values())
-    if (total != len(all_paths)
+                paths.add(path)
+                rows.append({
+                    "cik": cik,
+                    "company_name_in_original_index": entry["filing_names"][path],
+                    "filing_date": filed,
+                    "quarter": f"2017_Q{quarter}",
+                    "sec_archive_path": path,
+                })
+    rows.sort(key=lambda r: (r["filing_date"], r["cik"], r["sec_archive_path"]))
+    return rows
+
+
+def _manifest_bytes(rows: list[dict]) -> bytes:
+    """Stable UTF-8 JSONL bytes; independent of SEC registry capture vintage."""
+    return "".join(
+        json.dumps(row, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n"
+        for row in rows
+    ).encode("utf-8")
+
+
+def evaluate_annual(index_by_quarter: dict[int, bytes], registry_raw: bytes,
+                    *, captured_utc: str) -> dict:
+    """Reconcile all 2017 10-K filings and preserve a source-bound issuer manifest.
+
+    This is an issuer/filing population, NOT a point-in-time listed-stock
+    universe or an investable survivorship-safe backtest.
+    """
+    first = evaluate(index_by_quarter[1], registry_raw, captured_utc=captured_utc) if (
+        type(index_by_quarter) is dict and 1 in index_by_quarter
+    ) else None
+    rows = annual_filing_manifest(index_by_quarter)
+    current = parse_current_registry(registry_raw)
+    all_ciks = {r["cik"] for r in rows}
+    all_paths = {r["sec_archive_path"] for r in rows}
+    counts = {f"2017_Q{q}": sum(r["quarter"] == f"2017_Q{q}" for r in rows)
+              for q in QUARTER_BOUNDS}
+    distinct = {f"2017_Q{q}": len({
+        r["cik"] for r in rows if r["quarter"] == f"2017_Q{q}"})
+        for q in QUARTER_BOUNDS}
+    hashes = {f"2017_Q{q}": sha256(index_by_quarter[q]).hexdigest()
+              for q in QUARTER_BOUNDS}
+    q1_ciks = {r["cik"] for r in rows if r["quarter"] == "2017_Q1"}
+    total = len(rows)
+    if (first is None or total != len(all_paths)
         or counts["2017_Q1"] != first["original_2017_q1_10k_filing_count"]
         or distinct["2017_Q1"] != first["original_2017_q1_distinct_10k_ciks"]
         or not q1_ciks.issubset(all_ciks)):
         raise PopulationStop("Original SEC annual filing reconciliation failed")
     overlap = all_ciks & current
     absent = all_ciks - current
+    manifest = _manifest_bytes(rows)
     return {
         "schema": ANNUAL_SCHEMA,
         "source_index_urls": {f"2017_Q{q}": INDEX_URLS[q] for q in QUARTER_BOUNDS},
@@ -252,6 +282,11 @@ def evaluate_annual(index_by_quarter: dict[int, bytes], registry_raw: bytes,
         "annual_new_ciks_outside_q1": len(all_ciks - q1_ciks),
         "annual_filing_and_cik_counts_reconciled": (
             total == len(all_paths) and len(overlap) + len(absent) == len(all_ciks)),
+        "historical_filing_manifest_file": "historical-2017-10k-filings.jsonl",
+        "historical_filing_manifest_sha256": sha256(manifest).hexdigest(),
+        "historical_filing_manifest_rows": len(rows),
+        "historical_filing_manifest_distinct_ciks": len(all_ciks),
+        "historical_filing_manifest_uses_current_tickers": False,
         "historical_population_selected_without_2026_ticker_filter": True,
         "current_registry_absence_not_proof_of_delisting_or_failure": True,
         "quarterly_10k_absence_not_proof_of_company_exit": True,
@@ -275,9 +310,14 @@ def capture_annual(output_dir: Path, agent: str) -> dict:
     registry = (output_dir / "original-sec-current-tickers.json").read_bytes()
     report = evaluate_annual(
         original, registry, captured_utc=first["capture_timestamp_utc"])
+    manifest = _manifest_bytes(annual_filing_manifest(original))
+    if (sha256(manifest).hexdigest() != report["historical_filing_manifest_sha256"]
+        or manifest.count(b"\n") != report["historical_filing_manifest_rows"]):
+        raise PopulationStop("Original SEC accession manifest reconciliation failed")
     for quarter in (2, 3, 4):
         (output_dir / f"original-sec-2017q{quarter}-master.idx").write_bytes(
             original[quarter])
+    (output_dir / report["historical_filing_manifest_file"]).write_bytes(manifest)
     (output_dir / "historical-2017-annual-filer-census.json").write_text(
         json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     return report

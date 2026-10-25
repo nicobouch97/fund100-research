@@ -54,6 +54,18 @@ jobs:
           root = Path("/tmp/fund100-p4t-original-sec")
           report = json.loads((root / "historical-filer-census.json").read_text())
           annual = json.loads((root / "historical-2017-annual-filer-census.json").read_text())
+          manifest_raw = (root / annual["historical_filing_manifest_file"]).read_bytes()
+          assert hashlib.sha256(manifest_raw).hexdigest() == annual[
+              "historical_filing_manifest_sha256"]
+          manifest_rows = [json.loads(line) for line in manifest_raw.decode("utf-8").splitlines()]
+          assert len(manifest_rows) == annual["historical_filing_manifest_rows"] == annual[
+              "annual_10k_filing_count"]
+          assert len({row["cik"] for row in manifest_rows}) == annual[
+              "historical_filing_manifest_distinct_ciks"] == annual["annual_distinct_10k_ciks"]
+          assert all(set(row) == {"cik", "company_name_in_original_index",
+                                 "filing_date", "quarter", "sec_archive_path"}
+                     for row in manifest_rows)
+          assert not annual["historical_filing_manifest_uses_current_tickers"]
           for quarter in (1, 2, 3, 4):
               label = f"2017_Q{quarter}"
               raw = (root / f"original-sec-2017q{quarter}-master.idx").read_bytes()

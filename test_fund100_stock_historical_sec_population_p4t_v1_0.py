@@ -1,5 +1,6 @@
 """Synthetic SEC index/registry regression; no source, broker or credentials."""
 import json
+from hashlib import sha256
 
 import pytest
 
@@ -171,3 +172,65 @@ def test_annual_keeps_non_10k_noise_out_of_each_quarter():
                               captured_utc="2026-10-25T12:00:00Z")
     assert out["annual_10k_filing_count"] == 5
     assert out["annual_distinct_10k_ciks"] == 4
+
+
+def test_annual_filing_manifest_preserves_original_accessions_and_renames():
+    quarters = annual_quarters()
+    quarters[2] = index(
+        "1001|RENAMED OLDCO LTD|10-K|2017-05-15|edgar/data/1001/0001001-17-000011.txt")
+    rows = p4t.annual_filing_manifest(quarters)
+    assert len(rows) == 5
+    assert len({r["cik"] for r in rows}) == 4
+    assert rows == sorted(rows, key=lambda r: (
+        r["filing_date"], r["cik"], r["sec_archive_path"]))
+    assert all(set(r) == {
+        "cik", "company_name_in_original_index", "filing_date",
+        "quarter", "sec_archive_path"} for r in rows)
+    old = [r for r in rows if r["cik"] == 1001]
+    assert [r["company_name_in_original_index"] for r in old] == [
+        "OLDCO INC", "RENAMED OLDCO LTD"]
+    assert [r["quarter"] for r in old] == ["2017_Q1", "2017_Q2"]
+    assert all("ticker" not in r and "listing" not in r for r in rows)
+    report = p4t.evaluate_annual(
+        quarters, registry((1001, "OLD"), (3003, "NEW")),
+        captured_utc="2026-10-25T12:00:00Z")
+    payload = p4t._manifest_bytes(rows)
+    assert sha256(payload).hexdigest() == report["historical_filing_manifest_sha256"]
+    assert report["historical_filing_manifest_rows"] == 5
+    assert report["historical_filing_manifest_distinct_ciks"] == 4
+    assert report["historical_filing_manifest_uses_current_tickers"] is False
+    assert report["no_survivorship_safe_investable_backtest_or_alpha_claim"]
+
+
+def test_annual_manifest_is_registry_independent_and_rejects_duplicate_accession():
+    quarters = annual_quarters()
+    payload = p4t._manifest_bytes(p4t.annual_filing_manifest(quarters))
+    report_a = p4t.evaluate_annual(
+        quarters, registry((1001, "OLD")),
+        captured_utc="2026-10-25T12:00:00Z")
+    report_b = p4t.evaluate_annual(
+        quarters, registry((4004, "LATER")),
+        captured_utc="2026-10-25T12:00:00Z")
+    assert sha256(payload).hexdigest() == report_a["historical_filing_manifest_sha256"]
+    assert report_a["historical_filing_manifest_sha256"] == report_b[
+        "historical_filing_manifest_sha256"]
+    quarters[2] = index(
+        "1001|OLDCO INC|10-K|2017-05-15|edgar/data/1001/0001001-17-000001.txt")
+    with pytest.raises(p4t.PopulationStop, match="Repeated SEC accession"):
+        p4t.annual_filing_manifest(quarters)
+
+
+def test_capture_annual_writes_source_bound_filing_manifest(tmp_path, monkeypatch):
+    quarters = annual_quarters()
+    sources = {p4t.INDEX_URLS[q]: data for q, data in quarters.items()}
+    sources[p4t.REGISTRY_URL] = registry((1001, "OLD"))
+    monkeypatch.setattr(
+        p4t, "_official_get", lambda url, agent, limit: sources[url])
+    report = p4t.capture_annual(tmp_path, "Research research@example.org")
+    raw = (tmp_path / report["historical_filing_manifest_file"]).read_bytes()
+    rows = [json.loads(line) for line in raw.decode("utf-8").splitlines()]
+    assert len(rows) == report["annual_10k_filing_count"] == 5
+    assert len({r["cik"] for r in rows}) == report["annual_distinct_10k_ciks"] == 4
+    assert sha256(raw).hexdigest() == report["historical_filing_manifest_sha256"]
+    assert raw == p4t._manifest_bytes(p4t.annual_filing_manifest(quarters))
+    assert not report["trading_authorized"] and not report["live_authorized"]
