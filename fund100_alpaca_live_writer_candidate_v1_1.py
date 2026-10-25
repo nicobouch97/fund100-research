@@ -1111,6 +1111,12 @@ def submit_v6_s1_original_acwi_fractional_sell(*,
         or order_time.get("original_open_market_and_no_pending_order_verified") is not True
         or order_time.get("original_strict_postfunding_6_20_35_risk_pass") is not True
         or order_time.get("broker_order_authorized") is not True
+        or order_time.get("sell_only_original_legacy_ACWI") is not True
+        or order_time.get("buy_authorized") is not False
+        or order_time.get("capital_ceiling_usd")!="130.30"
+        or order_time.get("max_single_sell_notional_usd")!="65.00"
+        or order_time.get("orders_submitted_here")!=0
+        or order_time.get("settled_cash_verified") is not False
         or order_time.get("broker_post_attempts")!=0):
         raise LiveWriterCandidateLocked(
             "Original order-time broker risk remains STOPPED; no LIVE POST")
