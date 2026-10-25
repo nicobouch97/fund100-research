@@ -100,6 +100,18 @@ def test_missing_secret_is_targeted_and_never_reads_original_state(e,source,miss
         scope.inspect(environ=e)
     assert source==[]
 
+def test_reports_every_missing_secret_name_in_single_protected_attempt(e,source):
+    del e["FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN"]
+    del e["FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"]
+    with pytest.raises(scope.PrincipalStop) as error:
+        scope.inspect(environ=e)
+    msg=str(error.value)
+    assert "MISSING_OR_MALFORMED_" in msg
+    assert "FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN" in msg
+    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" in msg
+    assert source==[]
+
+
 @pytest.mark.parametrize("duplicate",[
     "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN",
     "FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN",
