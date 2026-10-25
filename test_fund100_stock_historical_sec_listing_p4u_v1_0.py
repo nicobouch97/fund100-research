@@ -9,23 +9,24 @@ import pytest
 import fund100_stock_historical_sec_listing_p4u_v1_0 as p4u
 
 
-def make_sources(root):
+def make_sources(root, *, n_per_stratum=2):
     rows = [
         {"cik": cik, "company_name_in_original_index": f"2017 CO {cik}",
          "filing_date": "2017-03-10", "quarter": "2017_Q1",
          "sec_archive_path": f"edgar/data/{cik}/000{cik}-17-000001.txt"}
-        for cik in (1001, 1002, 2001, 2002)
+        for cik in ([1000 + i for i in range(1, n_per_stratum + 1)] +
+                    [2000 + i for i in range(1, n_per_stratum + 1)])
     ]
     raw = "".join(json.dumps(r, sort_keys=True, separators=(",", ":")) + "\n"
                   for r in rows).encode()
     registry = json.dumps({
-        "0": {"cik_str": 1001, "ticker": "ONE"},
-        "1": {"cik_str": 1002, "ticker": "TWO"},
+        str(i): {"cik_str": 1000 + i, "ticker": f"TEST{i}"}
+        for i in range(1, n_per_stratum + 1)
     }).encode()
     annual = {
         "historical_filing_manifest_sha256": sha256(raw).hexdigest(),
-        "historical_filing_manifest_rows": 4,
-        "annual_distinct_10k_ciks": 4,
+        "historical_filing_manifest_rows": len(rows),
+        "annual_distinct_10k_ciks": len(rows),
         "contemporary_registry_sha256": sha256(registry).hexdigest(),
     }
     (root / "historical-2017-10k-filings.jsonl").write_bytes(raw)
@@ -52,6 +53,38 @@ def test_predeclared_sampling_is_deterministic_and_not_survivor_filtered(tmp_pat
     assert annual["annual_distinct_10k_ciks"] == 4
     assert all(r["filing_date"] == "2017-03-10" for r in a)
 
+
+
+def test_expanded_predeclared_cohort_preserves_original_12_and_balances_strata(tmp_path):
+    # Precommit to 16 per stratum before looking at any additional SEC 10-K.
+    # The existing 6+6 observations must remain a subset, not be reranked.
+    make_sources(tmp_path, n_per_stratum=20)
+    original, _ = p4u.select_sample(tmp_path, per_stratum=6)
+    expanded, _ = p4u.select_sample(tmp_path, per_stratum=16)
+    assert len(original) == 12
+    assert len(expanded) == 32
+    assert {r["sec_archive_path"] for r in original} <= {
+        r["sec_archive_path"] for r in expanded}
+    assert p4u.select_sample(tmp_path, per_stratum=16)[0] == expanded
+    assert {s: sum(r["current_registry_stratum"] == s for r in expanded)
+            for s in ("in_current_registry", "absent_from_current_registry")} == {
+                "in_current_registry": 16, "absent_from_current_registry": 16}
+    raw = original_10k(
+        "<p>Securities registered pursuant to Section 12(b):</p>"
+        "<p>Common Stock Nasdaq</p>"
+        "<p>Securities registered pursuant to Section 12(g): None</p>")
+    report = p4u.capture(tmp_path, tmp_path / "expanded", "Research contact@example.com",
+                         per_stratum=16, getter=lambda path, agent: raw)
+    assert report["predeclared_filing_samples"] == 32
+    assert report["original_filing_sources_captured"] == 32
+    assert report["sample_by_current_registry_stratum"] == {
+        "absent_from_current_registry": 16, "in_current_registry": 16}
+    assert report["captured_by_current_registry_stratum"] == {
+        "absent_from_current_registry": 16, "in_current_registry": 16}
+    assert sum(report["sample_by_filing_quarter"].values()) == 32
+    assert report["sample_not_universe_or_delisting_estimate"]
+    assert report["broker_requests"] == report["broker_orders"] == 0
+    assert not report["trading_authorized"] and not report["live_authorized"]
 
 
 def test_original_2017_multicolor_cover_has_exchange_before_12b_heading():
@@ -259,7 +292,7 @@ def test_source_identity_or_provenance_tampering_fails_closed(tmp_path, tamper):
         p4u.select_sample(tmp_path, per_stratum=1)
 
 
-@pytest.mark.parametrize("bad", [0, -1, 9, True, "1"])
+@pytest.mark.parametrize("bad", [0, -1, 17, True, "1"])
 def test_bounded_sample_size_fails_closed(tmp_path, bad):
     make_sources(tmp_path)
     with pytest.raises(p4u.ListingEvidenceStop):
