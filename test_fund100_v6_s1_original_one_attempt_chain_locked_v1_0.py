@@ -101,6 +101,12 @@ def setup(monkeypatch):
             "original_acwi_exact_fractional_holdings_verified":True,
             "original_open_market_and_no_pending_order_verified":True,
             "original_strict_postfunding_6_20_35_risk_pass":True,
+            "sell_only_original_legacy_ACWI":True,
+            "buy_authorized":False,
+            "capital_ceiling_usd":"130.30",
+            "max_single_sell_notional_usd":"65.00",
+            "orders_submitted_here":0,
+            "settled_cash_verified":False,
             "broker_post_attempts":0,
         }
     monkeypatch.setattr(chain.risk,"inspect_actual_original_seven_get",broker_read)
@@ -183,7 +189,7 @@ def test_exact_one_attempt_all_valid_original_signed_heads_same_run(setup):
 @pytest.mark.parametrize("mode",[
     "bad_context","different_attempt","bad_main","duplicate_principal",
     "disabled_setting","tag_exists","broker_STOP","owner_already_claimed",
-    "reserved_rollback",
+    "reserved_rollback","issue_release_principal_reused",
 ])
 def test_preclaim_blockers_cannot_start_any_write(setup,monkeypatch,mode):
     state,args=setup
@@ -195,6 +201,8 @@ def test_preclaim_blockers_cannot_start_any_write(setup,monkeypatch,mode):
         monkeypatch.setenv("GITHUB_SHA","b"*40)
     if mode=="duplicate_principal":
         args["admin_read_token"]=WRITE
+    if mode=="issue_release_principal_reused":
+        args["public_issue_write_token"]=PUBLISH
     if mode=="disabled_setting":
         monkeypatch.setattr(chain.publisher,"_request",
            lambda **kwargs:{"enabled":False,"enforced_by_owner":False})
@@ -215,6 +223,30 @@ def test_preclaim_blockers_cannot_start_any_write(setup,monkeypatch,mode):
         chain.run_exact_first_acwi_attempt(**args)
     assert state["write_calls"]==0
     assert not any(x in state["events"] for x in ("claim","seq2","publish","writer"))
+
+
+@pytest.mark.parametrize("field,bad",[
+    ("sell_only_original_legacy_ACWI",False),
+    ("buy_authorized",True),
+    ("capital_ceiling_usd","999.00"),
+    ("max_single_sell_notional_usd","130.30"),
+    ("orders_submitted_here",1),
+    ("settled_cash_verified",True),
+])
+def test_active_high_broker_contract_requires_exact_sell_only_cap_before_owner_cas(
+        setup,monkeypatch,field,bad):
+    state,args=setup
+    original=chain.risk.inspect_actual_original_seven_get
+    def altered(**kwargs):
+        evidence=dict(original(**kwargs))
+        evidence[field]=bad
+        return evidence
+    monkeypatch.setattr(chain.risk,"inspect_actual_original_seven_get",altered)
+    with pytest.raises(chain.ChainStop,match="Fresh first-attempt broker risk unavailable"):
+        chain.run_exact_first_acwi_attempt(**args)
+    assert state["write_calls"]==0
+    assert "claim" not in state["events"]
+    assert "writer" not in state["events"]
 
 @pytest.mark.parametrize("after",["claim","seq2","publish","writer"])
 def test_lost_ack_at_each_irreversible_stage_permanent_hold_no_later_stage(
