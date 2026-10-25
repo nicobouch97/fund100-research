@@ -186,6 +186,8 @@ def test_all_eligible_original_captures_are_counted_and_repeated_filing_deduped(
     out=e5.aggregate_reports([first,second])
     assert out["original_captures_evaluated"]==2
     assert out["unique_original_filing_entry_events"]==1
+    assert out["unique_economic_stock_entry_positions"]==1
+    assert out["same_position_distinct_filing_events_collapsed"]==0
     assert out["duplicate_event_rows_removed"]==1
     assert out["modelled_one_session_stock_minus_untraded_SPY_by_one_way_cost_bps"]["15"]["observations"]==1
     assert out["no_cross_event_independence_or_multiple_testing_claim"]
@@ -200,14 +202,38 @@ def test_cohort_refuses_legacy_reports_without_verified_market_sessions():
         e5.aggregate_reports([report])
 
 
-def test_distinct_original_event_identity_increases_cohort_sample_size():
+def test_distinct_sec_filings_for_same_stock_entry_do_not_inflate_return_sample():
     first=_source_pinned_report()
     second=_source_pinned_report(source="f",price="1")
     second["hypothetical_marks"][0]["original_sec_accession"]="0000000000-26-000002"
     out=e5.aggregate_reports([first,second])
     assert out["unique_original_filing_entry_events"]==2
+    assert out["unique_economic_stock_entry_positions"]==1
+    assert out["same_position_distinct_filing_events_collapsed"]==1
     assert out["duplicate_event_rows_removed"]==0
-    assert out["modelled_one_session_stock_minus_untraded_SPY_by_one_way_cost_bps"]["5"]["observations"]==2
+    assert out["one_stock_entry_counted_once_even_with_multiple_sec_filings"]
+    assert out["modelled_one_session_stock_minus_untraded_SPY_by_one_way_cost_bps"]["5"]["observations"]==1
+
+
+def test_two_distinct_stocks_on_same_entry_are_two_economic_positions():
+    first=_source_pinned_report()
+    second=_source_pinned_report(source="f",price="1")
+    second["hypothetical_marks"][0]["ticker"]="AAPL"
+    second["hypothetical_marks"][0]["original_sec_accession"]="0000000000-26-000002"
+    out=e5.aggregate_reports([first,second])
+    assert out["unique_original_filing_entry_events"]==2
+    assert out["unique_economic_stock_entry_positions"]==2
+    assert out["same_position_distinct_filing_events_collapsed"]==0
+    assert out["modelled_one_session_stock_minus_untraded_SPY_by_one_way_cost_bps"]["35"]["observations"]==2
+
+
+def test_same_stock_entry_conflicting_filings_returns_fail_closed():
+    first=_source_pinned_report()
+    second=_source_pinned_report(source="f",price="1")
+    second["hypothetical_marks"][0]["original_sec_accession"]="0000000000-26-000002"
+    second["hypothetical_marks"][0]["one_completed_session_net_stock_minus_gross_SPY"]["15"]+=.01
+    with pytest.raises(e5.ForwardStop,match="one economic stock entry"):
+        e5.aggregate_reports([first,second])
 
 
 def test_all_no_signal_captures_produce_empty_descriptive_cohort():
