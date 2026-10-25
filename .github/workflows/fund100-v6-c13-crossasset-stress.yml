@@ -7,12 +7,17 @@ on:
       - "test_fund100_v6_crossasset_stress_diagnostic_v1_0.py"
       - "research_lab/V6_C13_CROSSASSET_STRESS_COMPARISON_PRE_REG_2026_10_24.md"
       - "research_lab/V6_C13_GOLD_RETURN_CONCENTRATION_DESIGN_2026_10_25.md"
+      - "fund100_v6_c13_dynamic_gold_cash_v1_0.py"
+      - "test_fund100_v6_c13_dynamic_gold_cash_v1_0.py"
+      - "research_lab/V6_C13_GOLD_CASH_TREND_CHALLENGER_2026_10_25.md"
       - ".github/workflows/fund100-v6-c13-crossasset-stress.yml"
   push:
     branches: [main]
     paths:
       - "fund100_v6_crossasset_stress_diagnostic_v1_0.py"
       - "test_fund100_v6_crossasset_stress_diagnostic_v1_0.py"
+      - "fund100_v6_c13_dynamic_gold_cash_v1_0.py"
+      - "test_fund100_v6_c13_dynamic_gold_cash_v1_0.py"
       - ".github/workflows/fund100-v6-c13-crossasset-stress.yml"
   workflow_dispatch:
 
@@ -37,7 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           test "${FUND100_BROKER_KILL_SWITCH}" = ENGAGED
-          python -m pytest -q test_fund100_v6_crossasset_stress_diagnostic_v1_0.py
+          python -m pytest -q test_fund100_v6_crossasset_stress_diagnostic_v1_0.py test_fund100_v6_c13_dynamic_gold_cash_v1_0.py
       - name: Retrieve real vendor ETF prices and calculate fixed historical risk
         run: |
           set -euo pipefail
@@ -74,6 +79,30 @@ jobs:
           assert not r['funded_trading_or_rebalance_authorized']
           print('Original price source captured; no trade permissions or orders')
           PY
+      - name: Evaluate causal portfolio-level gold versus cash challenger
+        run: |
+          set -euo pipefail
+          python fund100_v6_c13_dynamic_gold_cash_v1_0.py \
+            --prices /tmp/fund100-c13-price-source.csv \
+            --rates /tmp/fund100-c13-yahoo-irx-source.csv \
+            --source-report /tmp/fund100-c13-crossasset-risk.json \
+            --output /tmp/fund100-c13-gold-cash-trend.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          prior=json.loads(Path('/tmp/fund100-c13-crossasset-risk.json').read_text())
+          r=json.loads(Path('/tmp/fund100-c13-gold-cash-trend.json').read_text())
+          assert r['source_schema']==prior['schema']
+          assert r['price_sha256']==prior['price_sha256']
+          assert r['cash_rate_sha256']==prior['cash_rate_sha256']
+          assert r['historical_data_previously_inspected_no_clean_holdout']
+          assert set(r['results'])=={'5','15','35'}
+          for row in r['results'].values():
+              assert set(row)=={'ZERO','IRX_MINUS_50BP','IRX_GROSS'}
+          assert r['broker_requests']==r['paper_orders']==r['live_orders']==0
+          assert r['private_state_writes']==0
+          print('Gold/cash causal research evaluated; no orders')
+          PY
       - name: Preserve reproducible research-only source and risk output
         uses: actions/upload-artifact@v4
         with:
@@ -82,5 +111,6 @@ jobs:
             /tmp/fund100-c13-crossasset-risk.json
             /tmp/fund100-c13-price-source.csv
             /tmp/fund100-c13-yahoo-irx-source.csv
+            /tmp/fund100-c13-gold-cash-trend.json
           retention-days: 30
           if-no-files-found: error
