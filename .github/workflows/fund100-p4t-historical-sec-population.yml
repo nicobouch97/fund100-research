@@ -1,0 +1,83 @@
+name: Fund-100 P4T Historical SEC Filing Population (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_stock_historical_sec_population_p4t_v1_0.py"
+      - "test_fund100_stock_historical_sec_population_p4t_v1_0.py"
+      - ".github/workflows/fund100-p4t-historical-sec-population.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_stock_historical_sec_population_p4t_v1_0.py"
+      - "test_fund100_stock_historical_sec_population_p4t_v1_0.py"
+      - ".github/workflows/fund100-p4t-historical-sec-population.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-p4t-official-historical-sec
+  cancel-in-progress: false
+
+jobs:
+  historical-sec-filing-census:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate original SEC quarterly-index population parser offline
+        run: |
+          set -euo pipefail
+          python -m pip install pytest
+          python -m pytest -q test_fund100_stock_historical_sec_population_p4t_v1_0.py
+      - name: Capture real historical SEC master index and current ticker registry (main only)
+        id: source
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SEC_USER_AGENT}" ]; then
+            echo "SOURCE_BLOCKED: SEC contact is unavailable; no request attempted."
+            echo "captured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python fund100_stock_historical_sec_population_p4t_v1_0.py --output-dir /tmp/fund100-p4t-original-sec
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root = Path("/tmp/fund100-p4t-original-sec")
+          report = json.loads((root / "historical-filer-census.json").read_text())
+          assert report["historical_master_index_sha256"] == hashlib.sha256(
+              (root / "original-sec-2017q1-master.idx").read_bytes()).hexdigest()
+          assert report["contemporary_registry_sha256"] == hashlib.sha256(
+              (root / "original-sec-current-tickers.json").read_bytes()).hexdigest()
+          assert report["original_2017_q1_distinct_10k_ciks"] > 0
+          assert report["cik_count_reconciled"]
+          assert report["historical_population_selected_without_2026_ticker_filter"]
+          assert report["sec_10k_filer_not_proven_historically_listed_common_stock"]
+          assert report["current_registry_absence_not_proof_of_delisting_or_failure"]
+          assert report["no_survivorship_safe_investable_backtest_or_alpha_claim"]
+          assert not report["trading_authorized"] and not report["paper_authorized"]
+          assert not report["live_authorized"]
+          assert report["broker_requests"] == report["broker_orders"] == 0
+          print("Real original SEC 2017-Q1 10-K filing census:",
+                report["original_2017_q1_10k_filing_count"], "filings;",
+                report["original_2017_q1_distinct_10k_ciks"], "distinct CIKs;",
+                report["2017_q1_10k_ciks_absent_from_current_ticker_registry"],
+                "not present in the CURRENT registry (NOT a delisting count)")
+          PY
+          echo "captured=true" >> "$GITHUB_OUTPUT"
+      - name: Preserve official source bytes and reproducible census (90 days)
+        if: steps.source.outputs.captured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-p4t-official-sec-population-${{ github.run_id }}
+          path: /tmp/fund100-p4t-original-sec/
+          retention-days: 90
+          if-no-files-found: error
