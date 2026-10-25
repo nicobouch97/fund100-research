@@ -103,6 +103,15 @@ jobs:
           assert first['owner_claim_or_broker_POST_authorized'] is False
           assert first['real_private_Git_PUTs']==first['broker_orders']==0
           print('Same job: signed reserved original ACWI seq1 + unclaimed owner HMAC verified; no state mutation.')
+          if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch':
+              import fund100_v6_s1_original_one_attempt_chain_locked_v1_0 as chain
+              ctx=chain.prepare_original_acwi_context_getonly(
+                  private_read_token=os.environ['FUND100_PRIVATE_STATE_READ_TOKEN'],
+                  public_read_token=os.environ['GITHUB_TOKEN'],
+                  hmac_hex=os.environ['FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX'])
+              assert set(ctx)==chain.EXPECTED_CONTEXT
+              assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
+              print('Original signed context hydrated in SAME protected job memory; coordinator STILL STOP.')
           PY
       - name: Provider immutable setting MUST pass (Administration READ; NO WRITES)
         env:
