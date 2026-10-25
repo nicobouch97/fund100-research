@@ -58,12 +58,12 @@ def prices():
     return data
 
 
-def run(a=None, p=None, digest=None):
+def run(a=None, p=None, digest=None, rates=None):
     p = prices() if p is None else p
     a = annual() if a is None else a
     digest = hashlib.sha256(p4l.canonical_csv(p).encode()).hexdigest() if digest is None else digest
     return p4r.analyze(a, p, acquired_at_utc="2026-10-24T13:00:00Z",
-                       source_sha256=digest)
+                       source_sha256=digest, cash_rates=rates)
 
 
 def test_score_groups_use_only_next_close_and_same_126_session_spy_window():
@@ -367,7 +367,7 @@ def test_beta_unidentifiable_for_constant_market_or_missing_lookback():
 
 def test_six_slot_overlap_replay_is_costed_paired_and_stays_research_only():
     baseline = run()
-    assert baseline["schema"].endswith("_V2")
+    assert baseline["schema"].endswith("_V3")
     assert baseline["capacity_replay_is_hindsight_survivor_stress_not_alpha"]
     assert set(baseline["costed_six_slot_overlap_replay"]) == {"5", "15", "35"}
     assert baseline["costed_six_slot_overlap_replay"]["15"]["admitted_events"] == 0
@@ -457,3 +457,93 @@ def test_replay_rejects_mismatched_event_horizon_and_duplicate_accession():
         p4r._capacity_constrained_replay([row, row], p, 15)
     with pytest.raises(p4r.EventStudyStop, match="cost"):
         p4r._capacity_constrained_replay([row], p, 0)
+
+
+def synthetic_irx(percent=4.0):
+    # Vendor-style observed quote dates; not an actual account cash return.
+    ix = pd.bdate_range("2013-12-02", "2026-10-23")
+    return pd.DataFrame({"IRX": float(percent)}, index=ix)
+
+
+def test_original_zero_cash_portfolio_replay_unchanged_when_rates_are_supplied():
+    p = prices()
+    p.loc["2025-02-17", "CAT"] = 110.
+    original = run(p=p)
+    adjusted = run(p=p, rates=synthetic_irx())
+    assert adjusted["costed_six_slot_overlap_replay"] == original["costed_six_slot_overlap_replay"]
+    assert original["costed_six_slot_cash_carry_sensitivity"] == {}
+    assert adjusted["cash_rate_source"] == "YAHOO_IRX_13W_BILL_DISCOUNT_PROXY"
+    assert len(adjusted["cash_rate_source_canonical_sha256"]) == 64
+    assert adjusted["cash_rate_lag_weekdays"] == 3
+    assert adjusted["zero_cash_baseline_preserved"]
+    assert adjusted["cash_rate_not_actual_broker_interest_or_executable_rolled_bill"]
+    for bps in p4r.SIDE_COSTS_BPS:
+        rows = adjusted["costed_six_slot_cash_carry_sensitivity"][str(bps)]
+        assert set(rows) == {"IRX_GROSS", "IRX_MINUS_50BP"}
+        baseline = original["costed_six_slot_overlap_replay"][str(bps)]
+        for label, row in rows.items():
+            assert row["admitted_events"] == baseline["admitted_events"] == 1
+            assert row["cash_accrual_uses_prior_session_rate_and_actual_calendar_days"]
+            assert not row["cash_yield_assumed_zero_not_a_historical_bill_benchmark"]
+            assert row["stock"]["net_cagr_pct"] > baseline["stock"]["net_cagr_pct"]
+            assert (row["same_entry_dollar_matched_spy"]["net_cagr_pct"] >
+                    baseline["same_entry_dollar_matched_spy"]["net_cagr_pct"])
+            assert row["stock_cagr_minus_zero_cash_pp"] > 0
+            assert row["matched_spy_cagr_minus_zero_cash_pp"] > 0
+            assert abs(row["stock_minus_spy_cagr_change_from_zero_cash_pp"]) < 1
+
+
+def test_cash_compounds_actual_weekend_days_and_prior_session_rate_without_trades():
+    p = prices()
+    constant = pd.Series(4., index=p.index)
+    replay = p4r._capacity_constrained_replay([], p, 15, cash_annual_rate=constant)
+    cutoff = len(p) - p4r.HORIZON - 1
+    elapsed = (p.index[cutoff] - p.index[0]).days
+    expected = np.exp(.04 * elapsed / 365.25)
+    assert replay["stock"]["terminal_nav"] == round(expected, 6)
+    assert replay["same_entry_dollar_matched_spy"]["terminal_nav"] == round(expected, 6)
+    assert replay["stock_minus_paired_spy_cagr_pp"] == 0
+    # The last session's rate cannot affect cash that has already accrued.
+    changed = constant.copy()
+    changed.iloc[cutoff - 1:] = 20.
+    assert (p4r._capacity_constrained_replay([], p, 15, cash_annual_rate=changed)
+            ["stock"]["terminal_nav"] >
+            replay["stock"]["terminal_nav"])
+    changed = constant.copy()
+    changed.iloc[cutoff:] = 20.
+    assert (p4r._capacity_constrained_replay([], p, 15, cash_annual_rate=changed)
+            ["stock"]["terminal_nav"] == replay["stock"]["terminal_nav"])
+
+
+def test_cash_proxy_is_symmetric_and_rejects_misaligned_or_invalid_rates():
+    p = prices()
+    p.loc["2025-02-17", "CAT"] = 110.
+    i = int(p.index.get_loc(pd.Timestamp("2025-02-19")))
+    row = _synthetic_replay_event("CAT", i, p, "symmetric")
+    # Identical stock and SPY prices must produce exactly equal wealth
+    # even when both sides receive the same cash interest.
+    p["CAT"] = p["SPY"]
+    rate = pd.Series(5., index=p.index)
+    out = p4r._capacity_constrained_replay([row], p, 15, cash_annual_rate=rate)
+    assert out["stock"] == out["same_entry_dollar_matched_spy"]
+    for invalid in (rate.iloc[:-1], rate.rename_axis("other").set_axis(
+                    pd.date_range("2017-01-01", periods=len(rate))),
+                    rate.astype(object), rate.mask(rate.index == rate.index[3], np.nan),
+                    pd.Series(26., index=p.index),
+                    pd.Series(-1., index=p.index)):
+        with pytest.raises(p4r.EventStudyStop, match="Cash-rate|cash-rate"):
+            p4r._capacity_constrained_replay([row], p, 15, cash_annual_rate=invalid)
+
+
+def test_cash_rate_original_vendor_source_fails_closed_on_missing_or_stale_quotes():
+    rates = synthetic_irx()
+    with pytest.raises(p4r.EventStudyStop, match="cash-rate"):
+        run(rates=rates.loc["2018-01-01":])
+    with pytest.raises(p4r.EventStudyStop, match="cash-rate"):
+        run(rates=rates.loc[:"2026-09-01"])
+    broken = rates.copy()
+    broken.iloc[0, 0] = np.nan
+    with pytest.raises(p4r.EventStudyStop, match="cash-rate"):
+        run(rates=broken)
+    with pytest.raises(p4r.EventStudyStop, match="Cash-rate"):
+        run(rates=pd.Series(4., index=rates.index))
