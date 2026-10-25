@@ -707,7 +707,7 @@ def test_spy_overlay_issuer_deletion_is_in_research_report_only():
     p = prices()
     p.loc["2025-02-17", "CAT"] = 110.
     report = run(p=p)
-    assert report["schema"].endswith("_V5")
+    assert report["schema"].endswith("_V6")
     baseline = report["costed_six_slot_spy_idle_capital_overlay"]["15"]
     diag = report["spy_overlay_fixed_admission_issuer_deletion_15bps"]
     assert diag["all_issuers_baseline_cagr_advantage_pp"] == (
@@ -717,3 +717,56 @@ def test_spy_overlay_issuer_deletion_is_in_research_report_only():
     assert diag["per_excluded_issuer"]["CAT"]["replacement_minus_passive_cagr_pp"] == 0
     assert not report["trading_authorized"] and not report["live_authorized"]
     assert report["broker_requests"] == report["broker_orders"] == 0
+
+
+def test_paired_active_risk_identical_nav_has_zero_active_risk():
+    # Even with varying benchmark prices, identical NAVs have no active P&L.
+    nav = np.cumprod([1.0, 1.01, .99, 1.02, .985, 1.005]).tolist()
+    risk = p4r._paired_active_risk_diagnostic(nav, nav)
+    assert risk["daily_return_observations"] == 5
+    assert risk["realized_beta_to_passive_spy"] == 1.0
+    assert risk["realized_annual_tracking_error_pct"] == 0
+    assert risk["realized_annualized_arithmetic_active_return_pp"] == 0
+    assert risk["maximum_relative_wealth_drawdown_pct"] == 0
+    assert risk["realized_information_ratio"] is None
+    assert risk["realized_beta_adjusted_arithmetic_intercept_pp_annualized"] == 0
+    assert risk["zero_active_variation_has_no_information_ratio"]
+    assert risk["in_sample_survivor_selected_no_significance_or_alpha_claim"]
+
+
+def test_paired_active_risk_pure_beta_is_not_mistaken_for_alpha():
+    benchmark_returns = np.array([.01, -.02, .015, -.005, .02, -.01])
+    passive = np.r_[1.0, np.cumprod(1 + benchmark_returns)].tolist()
+    overlay = np.r_[1.0, np.cumprod(1 + 1.5 * benchmark_returns)].tolist()
+    risk = p4r._paired_active_risk_diagnostic(overlay, passive)
+    assert risk["realized_beta_to_passive_spy"] == 1.5
+    assert abs(risk["realized_beta_adjusted_arithmetic_intercept_pp_annualized"]) < 1e-5
+    assert risk["realized_annual_tracking_error_pct"] > 0
+    assert risk["realized_information_ratio"] is not None
+    assert risk["maximum_relative_wealth_drawdown_pct"] < 0
+    assert risk["fees_included_in_both_nav_paths"]
+
+
+def test_paired_active_risk_constant_benchmark_does_not_invent_beta():
+    risk = p4r._paired_active_risk_diagnostic([1, 1.01, 1.02, 1.01], [1, 1, 1, 1])
+    assert risk["realized_beta_to_passive_spy"] is None
+    assert risk["realized_beta_adjusted_arithmetic_intercept_pp_annualized"] is None
+    assert risk["benchmark_variance_unidentifiable"]
+    for a, b in [([1, 2], [1, 2]), ([1, 2, 3], [1, 2]), ([1, 0, 2], [1, 1, 1]),
+                 ([1, float("nan"), 2], [1, 1, 1])]:
+        with pytest.raises(p4r.EventStudyStop, match="paired NAV"):
+            p4r._paired_active_risk_diagnostic(a, b)
+
+
+def test_original_report_includes_costed_active_risk_for_each_overlay():
+    out = run()
+    assert out["schema"].endswith("_V6")
+    for cost in ("5", "15", "35"):
+        overlay = out["costed_six_slot_spy_idle_capital_overlay"][cost]
+        risk = overlay["paired_realized_active_risk"]
+        assert risk["method"] == "REALIZED_PAIRED_DAILY_ACTIVE_RISK_NOT_PREDICTIVE_ALPHA"
+        assert risk["daily_return_observations"] > 1000
+        assert risk["realized_annual_tracking_error_pct"] >= 0
+        assert risk["in_sample_survivor_selected_no_significance_or_alpha_claim"]
+        assert risk["fees_included_in_both_nav_paths"]
+    assert not out["live_authorized"] and out["broker_orders"] == 0
