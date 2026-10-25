@@ -321,7 +321,9 @@ def main() -> None:
         if key not in raw.columns:
             raise CrossAssetStop("Missing source-adjusted close: " + symbol)
         prices[symbol] = raw[key]
-    data = pd.DataFrame(prices).sort_index()
+    # ^IRX may quote on a date when no ETF traded. Remove only all-ETF-
+    # missing rows; any partial ETF gaps still fail closed below.
+    data = pd.DataFrame(prices).sort_index().dropna(how="all")
     if data.index.tz is not None:
         data.index = data.index.tz_convert("UTC").tz_localize(None).normalize()
     else:
