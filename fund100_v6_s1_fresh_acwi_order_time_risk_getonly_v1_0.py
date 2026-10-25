@@ -86,6 +86,13 @@ def inspect_actual_original_seven_get(*,original_qty:str,key:str,secret:str):
     cashflow-aware 6/20/35 sensitivity in memory, then validates the exact
     currently held ORIGINAL ACWI fractional quantity and an open clock.
     """
+    # A separately reviewed ACTIVE HIGH SELL-only source V2 can be selected
+    # only by its literal source-code release; current production remains
+    # the original STOP-only V1, with no operator/kill-switch bypass.
+    import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+    if active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is True:
+        return active.inspect_active_original_acwi_sell(
+            original_qty=original_qty,key=key,secret=secret)
     _environment()
     qty=_qty(original_qty)
     bootstrap,_=original.original(four.BOOT)
