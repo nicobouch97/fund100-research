@@ -1,5 +1,6 @@
 """Offline, credentialless P4U SEC cover evidence tests. No HTTP or broker."""
 from hashlib import sha256
+from http.client import IncompleteRead
 from urllib.error import HTTPError
 import json
 
@@ -121,6 +122,23 @@ def test_official_sec_bad_response_is_diagnostic_not_listing_evidence(
         p4u._official_filing_get(
             "edgar/data/1001/0001001-17-000001.txt", "Research contact@example.com")
     assert exc.value.reason_code == reason
+
+
+
+def test_interrupted_sec_download_does_not_become_partial_cover_evidence(monkeypatch):
+    class InterruptedResponse:
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def geturl(self):
+            return "https://www.sec.gov/Archives/edgar/data/1001/0001001-17-000001.txt"
+        def read(self, limit):
+            raise IncompleteRead(b"partial filing", 200)
+    monkeypatch.setattr(p4u, "urlopen", lambda request, timeout: InterruptedResponse())
+    with pytest.raises(p4u.FilingSourceFailure) as exc:
+        p4u._official_filing_get(
+            "edgar/data/1001/0001001-17-000001.txt", "Research contact@example.com")
+    assert exc.value.reason_code == "INCOMPLETE_SOURCE"
 
 
 def test_failed_source_reason_counts_do_not_label_issuers_unlisted(tmp_path):
