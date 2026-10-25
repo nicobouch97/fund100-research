@@ -10,6 +10,7 @@ on:
     paths:
       - ".github/workflows/fund100-v6-s1-first-execution-principals-getonly.yml"
       - "fund100_v6_s1_first_execution_principals_getonly_v1_0.py"
+  workflow_dispatch: # Safe recheck when protected secrets are rotated or added.
 
 permissions:
   contents: read
@@ -17,7 +18,9 @@ permissions:
 
 jobs:
   protected-distinct-principals-readability:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     environment: fund100-live-broker
     timeout-minutes: 10

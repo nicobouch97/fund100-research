@@ -100,6 +100,15 @@ def test_missing_secret_is_targeted_and_never_reads_original_state(e,source,miss
         scope.inspect(environ=e)
     assert source==[]
 
+
+def test_manual_recheck_uses_same_no_mutation_principal_contract(e,source):
+    e["GITHUB_EVENT_NAME"]="workflow_dispatch"
+    result=scope.inspect(environ=e)
+    assert result["funded_order_authorized"] is False
+    assert result["broker_orders"]==0
+    assert len(source)==8
+
+
 def test_reports_every_missing_secret_name_in_single_protected_attempt(e,source):
     del e["FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN"]
     del e["FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"]
@@ -154,10 +163,14 @@ def test_source_has_no_http_mutation_and_no_alpaca_credentials():
     assert "NO_HTTP_MUTATIONS=True" in s
     assert "NO_WRITE_PERMISSION_PROOF=True" in s
 
-def test_protected_capability_workflow_is_one_push_only_with_no_broker_secrets():
+def test_protected_capability_workflow_push_or_manual_recheck_with_no_broker_secrets():
     w=PATH.read_text()
     assert w.count("    branches: [main]")==1
-    assert "  workflow_dispatch:" not in w
+    assert w.count("  workflow_dispatch:")==1
+    assert "github.event_name == 'push'" in w
+    assert "github.event_name == 'workflow_dispatch'" in w
+    assert "github.ref == 'refs/heads/main'" in w
+    assert "GITHUB_RUN_ATTEMPT\" = '1'" in w
     assert "  schedule:" not in w
     assert "  pull_request:" not in w
     assert w.count("environment: fund100-live-broker")==1
