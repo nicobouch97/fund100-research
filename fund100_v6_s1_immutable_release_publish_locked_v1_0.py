@@ -33,7 +33,7 @@ class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self,req,fp,code,msg,headers,newurl):
         raise PublicationStop("GitHub publication redirect forbidden; NEVER RETRY")
 
-def _request(*,method,url,token,payload=None,content_type=None,transport=None):
+def _request(*,method,url,token,payload=None,content_type=None,transport=None,allow_missing=False):
     # Exact repository endpoints only. No user-provided or redirect URL.
     permitted=(IMMUTABLE_SETTING_URL,anchor.RELEASE_URL,METADATA_URL)
     if url not in permitted and re.fullmatch(
@@ -76,7 +76,12 @@ def _request(*,method,url,token,payload=None,content_type=None,transport=None):
         if type(data) is not dict:
             raise PublicationStop("Invalid original immutable release reply")
         return data
-    except (HTTPError,URLError,TimeoutError,OSError,UnicodeError,ValueError):
+    except HTTPError as exc:
+        if (allow_missing is True and method=="GET"
+            and url==anchor.RELEASE_URL and exc.code==404):
+            return None
+        raise PublicationStop("GitHub release request failed; NEVER RETRY") from None
+    except (URLError,TimeoutError,OSError,UnicodeError,ValueError):
         raise PublicationStop("GitHub release request ambiguous; NEVER RETRY") from None
 
 def _distinct_tokens(*tokens):
@@ -160,18 +165,82 @@ def publish_exact_acwi_signed_seq2_release_same_attempt_only(
                      token=admin_read_token,transport=public_transport)
     if setting.get("enabled") is not True or type(setting.get("enforced_by_owner")) is not bool:
         raise PublicationStop("GitHub provider release immutability NOT VERIFIED")
-    try:
-        # A preexisting release/tag MUST block, never adapt or overwrite.
-        _request(method="GET",url=anchor.RELEASE_URL,
-                 token=public_release_write_token,transport=public_transport)
-    except PublicationStop as exc:
-        # A 404 is not indistinguishable from a lost HTTP response: the
-        # low-level helper does NOT expose status. Fail closed on ALL errors.
-        # A future reviewed workflow must prove absence using a separately
-        # authenticated exact endpoint before this operation can be released.
-        raise PublicationStop("Cannot prove original tag unused; STOP") from None
-    raise PublicationStop("Unexpected preexisting release: STOP")
+    # Existing releases block; 404 is allowed only on this exact read URL.
+    # GitHub will enforce tag uniqueness during draft creation as well.
+    prior=_request(method="GET",url=anchor.RELEASE_URL,
+                   token=public_release_write_token,transport=public_transport,
+                   allow_missing=True)
+    if prior is not None:
+        raise PublicationStop("Original immutable release already exists; NEVER OVERWRITE")
+    payload=json.dumps({
+        "tag_name":anchor.TAG,
+        "target_commitish":owner_sources["current_main_sha"],
+        "name":"Fund-100 first original ACWI signed possible-POST HEAD",
+        "body":"Nonsecret original ACWI signed ledger HEAD witness. No trade authority.",
+        "draft":True,"prerelease":False,"make_latest":False,
+        "generate_release_notes":False,
+    },sort_keys=True,separators=(",",":")).encode("utf-8")
+    # First irreversible public step. After ANY ambiguity, never retry, even
+    # if API reports no release/asset on a subsequent GET.
+    draft=_request(method="POST",url=METADATA_URL,
+                   token=public_release_write_token,payload=payload,
+                   content_type="application/json",transport=public_transport)
+    release_id=draft.get("id")
+    if (type(release_id) is not int or release_id<=0
+        or draft.get("draft") is not True
+        or draft.get("tag_name")!=anchor.TAG
+        or draft.get("target_commitish")!=owner_sources["current_main_sha"]
+        or type(draft.get("assets")) is not list
+        or draft["assets"]):
+        raise PublicationStop("Draft may exist but not uniquely verified; NEVER RETRY")
+    # Upload exactly one canonical original HMAC-bound, nonsecret bytes.
+    upload=(
+        "https://uploads.github.com/repos/nicobouch97/fund100-research/releases/"
+        +str(release_id)+"/assets?name="+anchor.ASSET)
+    uploaded=_request(method="POST",url=upload,
+        token=public_release_write_token,payload=expected,
+        content_type="application/json",transport=public_transport)
+    if (uploaded.get("name")!=anchor.ASSET
+        or uploaded.get("size")!=len(expected)
+        or uploaded.get("state")!="uploaded"
+        or uploaded.get("digest")!="sha256:"+sha256(expected).hexdigest()
+        or uploaded.get("browser_download_url")!=anchor.DOWNLOAD_URL):
+        raise PublicationStop("Release asset may exist but invalid; NEVER RETRY")
+    # Publish ONCE, only after upload confirmation. Immutable release
+    # enforcement should freeze asset and tag at publication.
+    publish_url=METADATA_URL+"/"+str(release_id)
+    pub=_request(method="PATCH",url=publish_url,
+        token=public_release_write_token,
+        payload=b'{"draft":false}',content_type="application/json",
+        transport=public_transport)
+    if (pub.get("id")!=release_id or pub.get("draft") is not False
+        or pub.get("tag_name")!=anchor.TAG
+        or pub.get("immutable") is not True
+        or type(pub.get("published_at")) is not str):
+        raise PublicationStop("Published immutable release not acknowledged; NEVER RETRY")
 
-# Deliberately no runnable main, no release mutation call site, and no
-# production workflow. Once the check for an uncreated tag is independently
-# reviewed, the single-attempt draft/upload/publish sequence can be added.
+    try:
+        verified=anchor.verify_published_immutable_anchor(
+            expected_asset=expected,public_read_token=admin_read_token,
+            transport=immutable_read_transport)
+    except Exception:
+        raise PublicationStop("Published immutable HEAD reread failed; NEVER RETRY") from None
+    if (verified.get("provider_immutable_release_and_exact_asset_verified") is not True
+        or verified.get("first_live_broker_order_authorized") is not False):
+        raise PublicationStop("Original immutable HEAD not independently proven")
+    return {
+        "schema":SCHEMA,
+        "stage":"SIGNED_ORIGINAL_ACWI_SEQ2_PUBLISHED_IMMUTABLE_NO_BROKER",
+        "exact_original_unique_owner_and_seq2_bound":True,
+        "two_private_principals_same_original_HEAD_verified":True,
+        "provider_immutable_setting_authenticated_before_first_post":True,
+        "provider_immutable_asset_independent_GET_verified":True,
+        "publisher_draft_attempts":1,"publisher_asset_upload_attempts":1,
+        "publisher_release_attempts":1,"broker_POST_attempts":0,
+        "live_order_authorized":False,"retry_permitted":False,
+        "account_id":None,"original_qty":None,"private_hmac":None,
+        "owner_nonce":None,"private_source_contents":None,
+    }
+
+# Deliberately no runnable main, no production workflow, and no ALPACA key.
+# This one-time publisher is permanently HARD LOCKED in checked-in code.
