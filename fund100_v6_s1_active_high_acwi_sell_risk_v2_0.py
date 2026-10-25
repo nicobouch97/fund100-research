@@ -26,6 +26,7 @@ import fund100_v6_s1_live_private_xle_activity_getonly_v1_0 as six
 import fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 as seven
 import fund100_v6_s1_live_cashflow_risk_bounds_v1_0 as cashrisk
 import fund100_v6_s1_independent_high_exante_policy_v1_0 as limits
+import fund100_v6_s1_operator_control_v2_0 as v6_operator
 
 SCHEMA="FUND100_V6_S1_ACTIVE_HIGH_FIRST_ACWI_SELL_ORDER_TIME_RISK_V2"
 ACTIVE_HIGH_SELL_SOURCE_RELEASED=False
@@ -55,8 +56,13 @@ def _scope():
         or os.getenv("FUND100_ENABLE_LIVE_READONLY")!="YES_READ_ONLY_LIVE"):
         raise ActiveSellStop("First original ACTIVE sell-only HIGH source HARD LOCKED")
     try:
-        if operator.validate_control(operator.read_current_control()) is not True:
-            raise ActiveSellStop("Current LIVE operator not enabled")
+        # Preserve the original signed/bootstrap V5 STOP evidence forever.
+        # V6 uses a separate authenticated current-main GO latch, also
+        # revocable by the existing emergency-stop workflow.
+        if operator.validate_control(operator.read_current_control()) is not False:
+            raise ActiveSellStop("Original V5 STOP must remain engaged")
+        if v6_operator.require_s1_running() is not True:
+            raise ActiveSellStop("Independent V6 first ACWI operator STOP")
         broker.require_readonly_arm()
     except Exception:
         raise ActiveSellStop("LIVE operator or broker GET eligibility unavailable") from None

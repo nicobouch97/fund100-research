@@ -24,12 +24,17 @@ def mock_sources(monkeypatch, *, enabled=True, mutations=None):
         "FUND100_ENABLE_LIVE_READONLY":"YES_READ_ONLY_LIVE",
     }
     for k,v in env.items(): monkeypatch.setenv(k,v)
-    state={"operator":True,"reads":0,"operator_gets":0}
-    def control():
-        state["operator_gets"]+=1
+    state={"operator":True,"v5_stopped":True,"reads":0,"operator_gets":0}
+    def old_control():
         return {"schema":active.operator.CONTROL_SCHEMA,
-                "trading_enabled":state["operator"]}
-    monkeypatch.setattr(active.operator,"read_current_control",control)
+                "trading_enabled":not state["v5_stopped"]}
+    monkeypatch.setattr(active.operator,"read_current_control",old_control)
+    def v6_running():
+        state["operator_gets"]+=1
+        if not state["operator"]:
+            raise active.v6_operator.V6OperatorStop("V6 execution stopped")
+        return True
+    monkeypatch.setattr(active.v6_operator,"require_s1_running",v6_running)
     monkeypatch.setattr(active.broker,"require_readonly_arm",lambda:None)
     bound=sha256(("FUND100-LIVE-ACCOUNT|"+ACCOUNT).encode()).hexdigest()
     bootstrap={"bootstrap":"synthetic"}
@@ -133,7 +138,7 @@ def test_unauthorized_environment_never_contacts_broker(monkeypatch,key,value):
             original_qty=QTY,key=KEY,secret=SECRET)
     assert s["reads"]==0
 
-def test_current_main_operator_must_be_enabled_before_and_after_reads(monkeypatch):
+def test_independent_current_v6_operator_must_be_enabled_before_and_after_reads(monkeypatch):
     s,_=mock_sources(monkeypatch)
     s["operator"]=False
     with pytest.raises(active.ActiveSellStop):
@@ -151,6 +156,15 @@ def test_current_main_operator_must_be_enabled_before_and_after_reads(monkeypatc
         active.inspect_active_original_acwi_sell(
             original_qty=QTY,key=KEY,secret=SECRET)
     assert s["reads"]==7
+
+def test_original_v5_operator_must_remain_stop_even_if_v6_operator_enabled(monkeypatch):
+    state,_=mock_sources(monkeypatch)
+    state["v5_stopped"]=False
+    with pytest.raises(active.ActiveSellStop):
+        active.inspect_active_original_acwi_sell(
+            original_qty=QTY,key=KEY,secret=SECRET)
+    assert state["reads"]==0 and state["operator_gets"]==0
+
 
 @pytest.mark.parametrize("change",[
     lambda z:z[0].update(id="different-account"),
@@ -206,4 +220,6 @@ def test_live_source_cannot_send_broker_order_and_original_hist_evidence_is_unch
     assert "broker.get_json(" in code
     assert "cashrisk.inspect(" in code
     assert "operator.read_current_control()" in code
+    assert "v6_operator.require_s1_running()" in code
+    assert "operator.validate_control(operator.read_current_control()) is not False" in code
     assert "trading_enabled\":False" in code

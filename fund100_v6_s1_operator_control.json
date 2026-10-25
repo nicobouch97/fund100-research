@@ -1,0 +1,7 @@
+{
+  "schema": "FUND100_V6_S1_OPERATOR_CONTROL_V2",
+  "risk_level": "HIGH",
+  "pilot_capital_ceiling_usd": "130.30",
+  "trading_enabled": false,
+  "first_original_acwi_sell_enabled": false
+}
