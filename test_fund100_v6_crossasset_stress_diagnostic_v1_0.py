@@ -173,7 +173,8 @@ def test_reject_invalid_source(corruption):
         frame.iloc[200, 1] *= 2
     elif corruption == "future":
         with pytest.raises(mod.CrossAssetStop, match="incomplete"):
-            mod.evaluate(frame, acquired_at_utc="2024-01-01T00:00:00Z")
+            mod.evaluate(frame, acquired_at_utc="2024-01-01T00:00:00Z",
+                         cash_rates=cash_rates())
         return
     else:
         frame["SHY"] = "oops"
