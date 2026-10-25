@@ -210,7 +210,7 @@ def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
         if (type(public_issue_write_token) is not str
             or len(public_issue_write_token)<10
             or public_issue_write_token in (private_read_token,private_write_token,
-                                            admin_read_token)):
+                                            admin_read_token,public_release_write_token)):
             raise ChainStop("Original public issue principal not distinct")
         if (type(context["key"]) is not bytes or len(context["key"])<32):
             raise ChainStop("Original signed ledger HMAC key unavailable")
@@ -248,8 +248,14 @@ def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
             or ready.get("original_acwi_exact_fractional_holdings_verified") is not True
             or ready.get("original_open_market_and_no_pending_order_verified") is not True
             or ready.get("original_strict_postfunding_6_20_35_risk_pass") is not True
+            or ready.get("sell_only_original_legacy_ACWI") is not True
+            or ready.get("buy_authorized") is not False
+            or ready.get("capital_ceiling_usd")!="130.30"
+            or ready.get("max_single_sell_notional_usd")!="65.00"
+            or ready.get("orders_submitted_here")!=0
+            or ready.get("settled_cash_verified") is not False
             or ready.get("broker_post_attempts")!=0):
-            raise ChainStop("Current broker order-time V1 remains STOPPED")
+            raise ChainStop("Current broker order-time ACTIVE V2 HIGH SELL scope invalid")
     except Exception:
         raise ChainStop("Fresh first-attempt broker risk unavailable; no private claim") from None
 
