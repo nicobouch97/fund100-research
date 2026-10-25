@@ -210,11 +210,15 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
             raise CrossAssetStop("Original stress dates not in common trading sessions")
     # Freeze exactly the rates available through the last completed price day.
     rates_source = cash_rates.loc["2013-12-01":data.index[-1]].copy()
-    lagged_dff = validate_cash_rates(rates_source, data.index)
+    lagged_irx_discount = validate_cash_rates(rates_source, data.index)
+    # Convert a 91-day bank discount quote into an annual investment-yield
+    # proxy, not an executable bill roll or an actual broker cash yield.
+    bill_yield = (lagged_irx_discount * 365 /
+                  (360 - lagged_irx_discount * 91 / 100)).clip(lower=0)
     cash_yields = {
         "ZERO": pd.Series(0., index=data.index),
-        "IRX_MINUS_50BP": (lagged_dff - .5).clip(lower=0),
-        "IRX_GROSS": lagged_dff,
+        "IRX_MINUS_50BP": (bill_yield - .5).clip(lower=0),
+        "IRX_GROSS": bill_yield,
     }
     reference = data["SPY"] / float(data["SPY"].iloc[0])
     ref_returns = reference.pct_change(fill_method=None).iloc[1:]
