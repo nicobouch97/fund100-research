@@ -23,7 +23,7 @@ from urllib.request import Request, urlopen
 
 from fund100_stock_historical_sec_population_p4t_v1_0 import parse_current_registry
 
-SCHEMA = "FUND100_P4U_2017_ORIGINAL_10K_COVER_SOURCE_AUDIT_V1"
+SCHEMA = "FUND100_P4U_2017_ORIGINAL_10K_COVER_SOURCE_AUDIT_V2"
 MAX_FILING_BYTES = 12_000_000
 MAX_FILING_INDEX_BYTES = 2_000_000
 MAX_SAMPLES_PER_STRATUM = 16
