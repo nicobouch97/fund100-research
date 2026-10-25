@@ -97,7 +97,7 @@ def test_month_end_etf_to_etf_switch_charges_both_real_security_legs():
 def test_cost_accounting_version_and_no_trading_authority():
     report = mod.evaluate(prices(), acquired_at_utc="2025-01-02T12:00:00Z",
                           cash_rates=cash_rates())
-    assert report["schema"].endswith("_V3")
+    assert report["schema"].endswith("_V4")
     assert report["original_zero_cash_baseline_preserved"]
     assert report["cash_rate_source"] == "YAHOO_IRX_13W_BILL_DISCOUNT_YIELD_PROXY"
     assert report["rebalance_turnover_definition"] == "SUM_ABS_ETF_WEIGHT_CHANGES_EXCLUDING_CASH"
@@ -190,3 +190,45 @@ def test_no_trade_imports_or_live_policy_changes():
         assert term not in src.lower() if term == "alpaca" else term not in src
     assert mod.NO_BROKER_OR_PRIVATE_STATE_ACCESS and mod.NO_LIVE_OR_PAPER_AUTHORITY
     assert mod.WEIGHTS["S1_95_EQUITY_5_CASH"] == (.475, .285, .19, 0., 0., .05)
+
+
+def test_cash_adjusted_sleeve_ablation_is_equal_equity_and_arithmetically_consistent():
+    report = mod.evaluate(prices(), acquired_at_utc="2025-01-02T12:00:00Z",
+                          cash_rates=cash_rates())
+    assert report["post_result_sleeve_ablation_not_independent_holdout"]
+    assert report["sleeve_attribution_is_nonadditive_metric_diagnostic_not_alpha"]
+    control = mod.WEIGHTS[mod.CASH_CONTROL]
+    for name in (mod.GOLD_ONLY, mod.SHY_ONLY, mod.GOLD_SHY):
+        assert mod.WEIGHTS[name][:3] == control[:3]
+        assert sum(mod.WEIGHTS[name]) == pytest.approx(1)
+    assert mod.WEIGHTS[mod.GOLD_ONLY][3:] == (.10, 0., .15)
+    assert mod.WEIGHTS[mod.SHY_ONLY][3:] == (0., .10, .15)
+    for bps in ("5", "15", "35"):
+        for label in mod.CASH_SCENARIOS:
+            scenario = report["interest_bearing_cash_sensitivity"][bps][label]
+            attribution = scenario["equal_equity_sleeve_attribution"]
+            by_basket = scenario["by_basket"]
+            for metric, key in (("net_cagr_pct", "cagr_pp"),
+                                ("max_drawdown_pct", "max_drawdown_pp")):
+                base = by_basket[mod.CASH_CONTROL][metric]
+                gold = by_basket[mod.GOLD_ONLY][metric] - base
+                shy = by_basket[mod.SHY_ONLY][metric] - base
+                both = by_basket[mod.GOLD_SHY][metric] - base
+                assert attribution[key]["gold_10pct_minus_cash"] == pytest.approx(gold, abs=.00011)
+                assert attribution[key]["shy_10pct_minus_cash"] == pytest.approx(shy, abs=.00011)
+                assert attribution[key]["both_10pct_each_minus_cash"] == pytest.approx(both, abs=.00011)
+                assert attribution[key]["nonadditive_residual"] == pytest.approx(
+                    both - gold - shy, abs=.00011)
+            assert attribution["cagr_pp"]["both_10pct_each_minus_cash"] == (
+                scenario["diversified_minus_cash_control_cagr_pp"])
+
+
+def test_sleeve_attribution_rejects_incomplete_or_changed_equity_comparison(monkeypatch):
+    metrics = {name: {"net_cagr_pct": 1., "max_drawdown_pct": -2.}
+               for name in mod.WEIGHTS}
+    with pytest.raises(mod.CrossAssetStop, match="Missing"):
+        mod.sleeve_attribution({mod.CASH_CONTROL: metrics[mod.CASH_CONTROL]})
+    monkeypatch.setitem(mod.WEIGHTS, mod.GOLD_ONLY,
+                        (.40, .20, .15, .10, 0., .15))
+    with pytest.raises(mod.CrossAssetStop, match="equity mix"):
+        mod.sleeve_attribution(metrics)

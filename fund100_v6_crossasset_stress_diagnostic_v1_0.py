@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-SCHEMA = "FUND100_V6_CROSSASSET_FIXED_BASKET_STRESS_DIAGNOSTIC_V3"
+SCHEMA = "FUND100_V6_CROSSASSET_FIXED_BASKET_STRESS_DIAGNOSTIC_V4"
 CASH_SCENARIOS = ("ZERO", "IRX_MINUS_50BP", "IRX_GROSS")
 CASH_RATE_LAG_WEEKDAYS = 3  # conservative proxy, NOT verified historical release vintages
 SYMBOLS = ("XLK", "XLE", "IWM", "GLD", "SHY", "SPY")
@@ -28,6 +28,8 @@ COSTS_BPS = (5, 15, 35)
 WEIGHTS = {
     "S1_95_EQUITY_5_CASH": (.475, .285, .19, 0., 0., .05),
     "MATCHED_75_EQUITY_25_CASH": (.375, .225, .15, 0., 0., .25),
+    "MATCHED_75_EQUITY_10_GOLD_15_CASH": (.375, .225, .15, .10, 0., .15),
+    "MATCHED_75_EQUITY_10_SHY_15_CASH": (.375, .225, .15, 0., .10, .15),
     "MATCHED_75_EQUITY_10_GOLD_10_SHY_5_CASH":
         (.375, .225, .15, .10, .10, .05),
 }
@@ -37,6 +39,11 @@ STRESS_WINDOWS = {
     "EQUITY_BEAR_2022": ("2022-01-03", "2022-10-14"),
 }
 STRESS_SPY_DAILY_THRESHOLD = -.02
+# Post-result diagnostic controls, not new pre-registered strategies or a holdout.
+CASH_CONTROL = "MATCHED_75_EQUITY_25_CASH"
+GOLD_ONLY = "MATCHED_75_EQUITY_10_GOLD_15_CASH"
+SHY_ONLY = "MATCHED_75_EQUITY_10_SHY_15_CASH"
+GOLD_SHY = "MATCHED_75_EQUITY_10_GOLD_10_SHY_5_CASH"
 NO_BROKER_OR_PRIVATE_STATE_ACCESS = True
 NO_LIVE_OR_PAPER_AUTHORITY = True
 
@@ -193,6 +200,36 @@ def _risk_report(nav: pd.Series, spy: pd.Series, stress: pd.Series) -> dict:
     }
 
 
+def sleeve_attribution(by_basket: dict) -> dict:
+    """Descriptive 10% sleeve ablations at identical 75% equity exposure.
+
+    Compare replacing 10% cash with GLD, with SHY, and with both. The
+    interaction residual is arithmetic nonadditivity of CAGR/drawdown, NOT
+    a causal factor return, statistical interaction, or investable alpha.
+    """
+    if set(by_basket) != set(WEIGHTS):
+        raise CrossAssetStop("Missing or unreviewed sleeve counterfactual")
+    for name in (CASH_CONTROL, GOLD_ONLY, SHY_ONLY, GOLD_SHY):
+        if not np.isclose(sum(WEIGHTS[name][:3]), .75, atol=1e-12):
+            raise CrossAssetStop("Sleeve attribution equity exposure changed")
+        if WEIGHTS[name][:3] != WEIGHTS[CASH_CONTROL][:3]:
+            raise CrossAssetStop("Sleeve attribution equity mix changed")
+    output = {}
+    for metric, label in (("net_cagr_pct", "cagr"),
+                          ("max_drawdown_pct", "max_drawdown")):
+        base = by_basket[CASH_CONTROL][metric]
+        gold = by_basket[GOLD_ONLY][metric] - base
+        shy = by_basket[SHY_ONLY][metric] - base
+        combined = by_basket[GOLD_SHY][metric] - base
+        output[label + "_pp"] = {
+            "gold_10pct_minus_cash": round(gold, 4),
+            "shy_10pct_minus_cash": round(shy, 4),
+            "both_10pct_each_minus_cash": round(combined, 4),
+            "nonadditive_residual": round(combined - gold - shy, 4),
+        }
+    return output
+
+
 def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
              cash_rates: pd.DataFrame) -> dict:
     data = validate_prices(prices)
@@ -258,6 +295,7 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
             diverse = by_basket["MATCHED_75_EQUITY_10_GOLD_10_SHY_5_CASH"]
             scenario_rows[label] = {
                 "by_basket": by_basket,
+                "equal_equity_sleeve_attribution": sleeve_attribution(by_basket),
                 "diversified_minus_cash_control_cagr_pp": round(
                     diverse["net_cagr_pct"] - baseline["net_cagr_pct"], 4),
                 "diversified_minus_cash_control_max_drawdown_pp": round(
@@ -293,6 +331,8 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
         "rebalance_turnover_definition": "SUM_ABS_ETF_WEIGHT_CHANGES_EXCLUDING_CASH",
         "prior_c13_v1_cash_leg_cost_overstatement_corrected": True,
         "original_zero_cash_baseline_preserved": True,
+        "post_result_sleeve_ablation_not_independent_holdout": True,
+        "sleeve_attribution_is_nonadditive_metric_diagnostic_not_alpha": True,
         "shy_is_risky_bond_etf_not_cash": True,
         "no_current_broker_asset_eligibility_inferred": True,
         "original_s1_controller_not_modified_or_replayed": True,
@@ -359,6 +399,9 @@ def main() -> None:
     print("Sessions:", result["common_sessions"], "last:", result["last_completed_session"])
     print("15bp equal-equity comparison:", result["costed_historical_diagnostics"]["15"]
           ["equal_equity_exposure_diversification_vs_cash_control"])
+    print("15bp IRX gross sleeve attribution:",
+          result["interest_bearing_cash_sensitivity"]["15"]["IRX_GROSS"]
+          ["equal_equity_sleeve_attribution"])
     print("15bp cash-carry sensitivity:", {
         name: row["diversified_minus_cash_control_cagr_pp"]
         for name, row in result["interest_bearing_cash_sensitivity"]["15"].items()

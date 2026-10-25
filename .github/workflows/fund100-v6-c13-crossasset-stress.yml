@@ -54,6 +54,11 @@ jobs:
           assert set(r['interest_bearing_cash_sensitivity']['15']) == {
               'ZERO', 'IRX_MINUS_50BP', 'IRX_GROSS'}
           assert r['cash_rate_sha256'] and r['cash_rate_lag_weekdays'] == 3
+          assert r['schema'].endswith('_V4')
+          assert r['post_result_sleeve_ablation_not_independent_holdout']
+          for scenario in r['interest_bearing_cash_sensitivity']['15'].values():
+              assert 'equal_equity_sleeve_attribution' in scenario
+              assert len(scenario['by_basket']) == 5
           assert r['original_zero_cash_baseline_preserved']
           assert r['broker_requests'] == r['live_orders'] == r['paper_orders'] == 0
           assert r['private_state_writes'] == 0
