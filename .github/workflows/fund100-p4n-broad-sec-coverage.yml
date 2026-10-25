@@ -174,7 +174,8 @@ jobs:
           python fund100_stock_sec_quality_forward_p4r_v1_0.py \
             --source-dir /tmp/fund100-p4n-original-sec \
             --output /tmp/fund100-p4n-original-sec/quality-126-session-event-study.json \
-            --output-prices-csv /tmp/fund100-p4n-original-sec/original-revisable-historical-adjusted-prices.csv
+            --output-prices-csv /tmp/fund100-p4n-original-sec/original-revisable-historical-adjusted-prices.csv \
+            --output-rates-csv /tmp/fund100-p4n-original-sec/original-revisable-irx-bill-discount-quotes.csv
           python - <<'PY'
           import hashlib, json
           from pathlib import Path
@@ -182,6 +183,28 @@ jobs:
           d=json.loads((root/"quality-126-session-event-study.json").read_text())
           raw=(root/"original-revisable-historical-adjusted-prices.csv").read_bytes()
           assert hashlib.sha256(raw).hexdigest()==d["source_prices_canonical_csv_sha256"]
+          irx=(root/"original-revisable-irx-bill-discount-quotes.csv").read_bytes()
+          assert hashlib.sha256(irx).hexdigest()==d["cash_rate_source_canonical_sha256"]
+          assert d["cash_rate_source"]=="YAHOO_IRX_13W_BILL_DISCOUNT_PROXY"
+          assert d["cash_rate_lag_weekdays"]==3
+          assert d["cash_rate_is_revisable_vendor_quote_not_archived_historical_vintage"]
+          assert d["cash_rate_not_actual_broker_interest_or_executable_rolled_bill"]
+          assert d["zero_cash_baseline_preserved"]
+          assert set(d["costed_six_slot_cash_carry_sensitivity"])=={"5","15","35"}
+          for cost in ("5","15","35"):
+              original=d["costed_six_slot_overlap_replay"][cost]
+              scenarios=d["costed_six_slot_cash_carry_sensitivity"][cost]
+              assert set(scenarios)=={"IRX_GROSS","IRX_MINUS_50BP"}
+              for label,row in scenarios.items():
+                  assert row["admitted_events"]==original["admitted_events"]
+                  assert row["cash_accrual_uses_prior_session_rate_and_actual_calendar_days"]
+                  assert not row["cash_yield_assumed_zero_not_a_historical_bill_benchmark"]
+                  assert row["no_broker_or_trading_authority"]
+          print("15bp cash-carry sensitivity:",{
+              k: {"stock_cagr":v["stock"]["net_cagr_pct"],
+                  "paired_spy_cagr":v["same_entry_dollar_matched_spy"]["net_cagr_pct"],
+                  "stock_minus_spy_cagr":v["stock_minus_paired_spy_cagr_pp"]}
+              for k,v in d["costed_six_slot_cash_carry_sensitivity"]["15"].items()})
           assert d["predeclared_forward_sessions"]==126
           assert d["cost_per_side_bps"]==[5,15,35]
           assert 0 <= d["completed_event_returns"] <= d["original_annual_scores"]
