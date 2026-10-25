@@ -23,6 +23,21 @@ jobs:
         run: |
           set -euo pipefail
           python fund100_live_operator_control_v1_0.py
+      - name: Independently stop V6 first ACWI execution latch on current main
+        if: always()
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import fund100_v6_s1_operator_control_v2_0 as v6
+          assert v6.commit_stop_signal() in ('STOPPED','ALREADY_STOPPED')
+          assert v6.read_current_control()['trading_enabled'] is False
+          print('First original V6 ACWI STOP confirmed; no trade requested.')
+          PY
 
   cancel-fund100-orders:
     name: Cancel only outstanding Fund-100 Alpaca orders
