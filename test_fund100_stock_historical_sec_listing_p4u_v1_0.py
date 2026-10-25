@@ -548,3 +548,77 @@ def test_primary_10k_over_new_limit_fails_closed(monkeypatch):
     with pytest.raises(p4u.FilingSourceFailure) as exc:
         p4u._official_primary_10k_get(path, "Research contact@example.com")
     assert exc.value.reason_code == "PRIMARY_10K_OVERSIZED"
+
+
+def test_structured_12b_extracts_original_class_exchange_and_optional_symbol():
+    raw = original_10k(
+        "<p>Securities registered pursuant to Section 12(b) of the Act:</p>"
+        "<table><tr><th>Title of each class</th><th>Trading Symbol</th>"
+        "<th>Name of exchange</th></tr>"
+        "<tr><td>Class A Common Stock, $0.01 par</td><td>ABC.A</td>"
+        "<td>New York Stock Exchange</td></tr>"
+        "<tr><td>Common Shares</td><td>XYZ</td><td>Nasdaq Global Market</td></tr>"
+        "<tr><td>Senior Notes due 2029</td><td>NOTES</td><td>NYSE</td></tr>"
+        "</table><p>Securities registered pursuant to Section 12(g): None</p>")
+    out = p4u.inspect_original_10k(raw)
+    rows = out["possible_12b_security_class_rows"]
+    assert len(rows) == 2
+    assert [r["trading_symbol_in_original_10k"] for r in rows] == ["ABC.A", "XYZ"]
+    assert rows[0]["exchange_text"] == "New York Stock Exchange"
+    assert all(r["evidence_level"] == "ORIGINAL_10K_12B_ROW_REVIEW_ONLY" for r in rows)
+    assert out["structured_12b_rows_not_independent_listing_proof"]
+
+
+def test_structured_12b_no_symbol_not_filled_from_current_registry():
+    raw = original_10k(
+        "<p>Securities registered pursuant to Section 12(b):</p>"
+        "<table><tr><td>Common Stock</td><td>NYSE</td></tr></table>"
+        "<p>Securities registered pursuant to Section 12(g): None</p>")
+    rows = p4u.inspect_original_10k(raw)["possible_12b_security_class_rows"]
+    assert len(rows) == 1
+    assert rows[0]["trading_symbol_in_original_10k"] is None
+
+
+@pytest.mark.parametrize("body", [
+    # Common shares and exchange must be on the SAME row.
+    "<table><tr><td>Notes due 2030</td><td>NYSE</td></tr>"
+    "<tr><td>Common Stock</td><td>None</td></tr></table>",
+    # Exchange text only in prose is not a structured table mapping.
+    "<p>Common Stock is listed on Nasdaq</p>",
+    # Same row, but exchange and equity in the same cell is not a mapping.
+    "<table><tr><td>Common Stock Nasdaq</td><td>None</td></tr></table>",
+    # Malformed ticker must not be invented.
+    "<table><tr><td>Common Stock</td><td>Symbol unknown today</td>"
+    "<td>NYSE</td></tr></table>",
+])
+def test_structured_12b_abstains_on_ambiguous_or_unstructured_rows(body):
+    raw = original_10k(
+        "<p>Securities registered pursuant to Section 12(b):</p>"
+        + body + "<p>Securities registered pursuant to Section 12(g): None</p>")
+    assert p4u.inspect_original_10k(raw)["possible_12b_security_class_rows"] == []
+
+
+def test_structured_12b_never_uses_later_12g_or_earlier_exchange_table():
+    raw = original_10k(
+        "<table><tr><td>Common Stock</td><td>NYSE</td></tr></table>"
+        "<p>Securities registered pursuant to Section 12(b): None</p>"
+        "<p>Securities registered pursuant to Section 12(g):</p>"
+        "<table><tr><td>Common Stock</td><td>Nasdaq</td></tr></table>")
+    assert p4u.inspect_original_10k(raw)["possible_12b_security_class_rows"] == []
+
+
+def test_structured_12b_aggregates_only_captured_source_backed_rows(tmp_path):
+    make_sources(tmp_path)
+    raw = original_10k(
+        "<p>Securities registered pursuant to Section 12(b):</p>"
+        "<table><tr><td>Common Stock</td><td>Nasdaq</td></tr></table>"
+        "<p>Securities registered pursuant to Section 12(g): None</p>")
+    report = p4u.capture(tmp_path, tmp_path / "rows", "Research contact@example.com",
+                         per_stratum=1, getter=lambda path, agent: raw)
+    assert report["schema"].endswith("_V3")
+    assert report["possible_structured_12b_security_class_rows"] == 2
+    assert report["filings_with_structured_12b_rows"] == 2
+    assert report["structured_rows_not_historical_investable_security_master"]
+    assert all(len(r["possible_12b_security_class_rows"]) == 1
+               for r in report["observations"])
+    assert report["broker_orders"] == 0 and not report["live_authorized"]

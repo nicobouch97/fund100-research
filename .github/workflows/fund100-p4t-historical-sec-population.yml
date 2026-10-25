@@ -138,6 +138,20 @@ jobs:
           assert sum(report["source_failure_reason_counts"].values()) == report[
               "unavailable_or_unverifiable_sources"]
           assert report["section12g_common_class_covers"] >= 0
+          assert report["schema"].endswith("_V3")
+          assert report["structured_rows_not_historical_investable_security_master"]
+          assert report["possible_structured_12b_security_class_rows"] == sum(
+              len(row.get("possible_12b_security_class_rows", []))
+              for row in report["observations"])
+          assert report["filings_with_structured_12b_rows"] == sum(
+              bool(row.get("possible_12b_security_class_rows"))
+              for row in report["observations"])
+          for row in report["observations"]:
+              for candidate in row.get("possible_12b_security_class_rows", []):
+                  assert candidate["evidence_level"] == "ORIGINAL_10K_12B_ROW_REVIEW_ONLY"
+                  assert candidate["security_class_text"] and candidate["exchange_text"]
+                  assert candidate["trading_symbol_in_original_10k"] is None or (
+                      isinstance(candidate["trading_symbol_in_original_10k"], str))
           assert report["full_submission_sources_captured"] + report[
               "index_verified_primary_10k_sources_captured"] == report[
               "original_filing_sources_captured"]
