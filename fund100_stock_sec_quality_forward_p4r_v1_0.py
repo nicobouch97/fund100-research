@@ -22,8 +22,9 @@ import fund100_stock_broad_momentum_p4l_v1_0 as p4l
 import fund100_stock_broad_sec_annual_replay_p4q_v1_0 as p4q
 import fund100_stock_broad_sec_coverage_p4n_v1_0 as p4n
 import fund100_stock_quality_momentum_p4g_v1_0 as p4g
+import fund100_v6_crossasset_stress_diagnostic_v1_0 as c13
 
-SCHEMA = "FUND100_P4R_ORIGINAL_SEC_QUALITY_126_SESSION_EVENT_STUDY_V2"
+SCHEMA = "FUND100_P4R_ORIGINAL_SEC_QUALITY_126_SESSION_EVENT_STUDY_V3"
 HORIZON = 126
 # Fixed, predeclared relative-momentum window; no grid search or fitted threshold.
 MOMENTUM_LOOKBACK = 126
@@ -230,7 +231,8 @@ def _quality_momentum_interaction(rows: list[dict], bps: int) -> dict:
 
 
 def _capacity_constrained_replay(rows: list[dict], data: pd.DataFrame,
-                                 cost_bps: int) -> dict:
+                                 cost_bps: int, *,
+                                 cash_annual_rate: pd.Series | None = None) -> dict:
     """Cash-funded, paired-SPY overlapping SEC-event stress test; NOT alpha.
 
     Use only completed original events and stop 126 sessions before the
@@ -239,13 +241,25 @@ def _capacity_constrained_replay(rows: list[dict], data: pd.DataFrame,
     Mark only subsequent returns, exit after 126 sessions, charge each
     traded side and liquidate remaining positions at the evaluation cutoff.
     The matched SPY control buys the same dollars on the same dates.
-    Cash earns zero; the 2026 survivor roster remains a fatal alpha bias.
+    Optional cash earns the PREVIOUS session's lagged annual-rate proxy over
+    actual elapsed calendar days; neither proxy nor stock universe is alpha.
     """
     if type(cost_bps) is not int or cost_bps not in SIDE_COSTS_BPS:
         raise EventStudyStop("Unregistered replay cost scenario")
     if len(data) < 2 * HORIZON + 2 or p4l.MAX_NAMES != 6:
         raise EventStudyStop("Insufficient maturity buffer or changed slot cap")
     cutoff = len(data) - HORIZON - 1
+    if cash_annual_rate is None:
+        annual_rates = np.zeros(len(data), dtype=float)
+    else:
+        if (not isinstance(cash_annual_rate, pd.Series)
+            or not cash_annual_rate.index.equals(data.index)
+            or not pd.api.types.is_numeric_dtype(cash_annual_rate)):
+            raise EventStudyStop("Cash-rate proxy must align to every price session")
+        annual_rates = cash_annual_rate.to_numpy(dtype=float)
+        if (not np.isfinite(annual_rates).all() or (annual_rates < 0).any()
+            or (annual_rates > 25).any()):
+            raise EventStudyStop("Invalid annual cash-rate proxy")
     candidates = []
     for row in rows:
         try:
@@ -288,6 +302,15 @@ def _capacity_constrained_replay(rows: list[dict], data: pd.DataFrame,
              for ticker in {r[2] for r in candidates}}
 
     for t in range(cutoff + 1):
+        if t:
+            days = (data.index[t] - data.index[t - 1]).days
+            if days <= 0:
+                raise EventStudyStop("Nonpositive cash accrual interval")
+            # Both paired portfolios earn identical ex-ante cash carry,
+            # on cash only, before this close's exits and new entries.
+            factor = float(np.exp(annual_rates[t - 1] / 100 * days / 365.25))
+            cash_stock *= factor
+            cash_spy *= factor
         for ticker, (exit_i, stock_units, spy_units) in sorted(list(positions.items())):
             if exit_i <= t or t == cutoff:
                 stock_proceeds = stock_units * stock[ticker][t]
@@ -379,14 +402,18 @@ def _capacity_constrained_replay(rows: list[dict], data: pd.DataFrame,
         "paired_control_uses_identical_admissions_and_dollar_entries": True,
         "entry_after_original_filing_and_next_session_return_only": True,
         "terminal_liquidation_charged_both_sides": True,
-        "cash_yield_assumed_zero_not_a_historical_bill_benchmark": True,
+        "cash_yield_assumed_zero_not_a_historical_bill_benchmark":
+            cash_annual_rate is None,
+        "cash_accrual_uses_prior_session_rate_and_actual_calendar_days": True,
+        "cash_yield_proxy_is_not_achievable_broker_cash_rate": True,
         "2026_survivor_universe_and_revisable_prices_not_investable_alpha": True,
         "no_broker_or_trading_authority": True,
     }
 
 
 def analyze(annual: dict, prices: pd.DataFrame, *,
-            acquired_at_utc: str, source_sha256: str) -> dict:
+            acquired_at_utc: str, source_sha256: str,
+            cash_rates: pd.DataFrame | None = None) -> dict:
     """Pure deterministic event-return study; caller authenticates SEC archive."""
     try:
         data = p4l.validate_prices(prices)
@@ -552,6 +579,51 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
             "score_0_or_1": _summarize([r for r in rows if r["quality_score"] < 2], bps),
             "score_2_or_3": _summarize([r for r in rows if r["quality_score"] >= 2], bps),
         }
+    # Preserve the exact zero-carry P4R baseline; add the same interest
+    # proxy to BOTH stock and SPY control, not just the selected stocks.
+    zero_replays = {
+        str(bps): _capacity_constrained_replay(rows, data, bps)
+        for bps in SIDE_COSTS_BPS
+    }
+    cash_sensitivity: dict[str, dict] = {}
+    cash_source_sha = None
+    if cash_rates is not None:
+        if not isinstance(cash_rates, pd.DataFrame):
+            raise EventStudyStop("Cash-rate source must be a dated frame")
+        rates_source = cash_rates.loc["2013-12-01":data.index[-1]].copy()
+        try:
+            lagged_discount = c13.validate_cash_rates(rates_source, data.index)
+        except (c13.CrossAssetStop, KeyError, TypeError, ValueError) as exc:
+            raise EventStudyStop("Incomplete original cash-rate proxy") from exc
+        cash_source_sha = hashlib.sha256(
+            c13.canonical_cash_rates(rates_source).encode()).hexdigest()
+        # ^IRX is a 13-week discount quote, NOT an executable bill return.
+        # Conversion and three-weekday observation lag reuse the reviewed
+        # C13 original-source convention, without fitting parameters.
+        gross = (lagged_discount * 365 /
+                 (360 - lagged_discount * 91 / 100)).clip(lower=0)
+        scenarios = {
+            "IRX_MINUS_50BP": (gross - .5).clip(lower=0),
+            "IRX_GROSS": gross,
+        }
+        for bps in SIDE_COSTS_BPS:
+            cash_sensitivity[str(bps)] = {}
+            for label, annual_rate in scenarios.items():
+                replay = _capacity_constrained_replay(
+                    rows, data, bps, cash_annual_rate=annual_rate)
+                baseline = zero_replays[str(bps)]
+                cash_sensitivity[str(bps)][label] = {
+                    **replay,
+                    "stock_cagr_minus_zero_cash_pp": round(
+                        replay["stock"]["net_cagr_pct"] -
+                        baseline["stock"]["net_cagr_pct"], 6),
+                    "matched_spy_cagr_minus_zero_cash_pp": round(
+                        replay["same_entry_dollar_matched_spy"]["net_cagr_pct"] -
+                        baseline["same_entry_dollar_matched_spy"]["net_cagr_pct"], 6),
+                    "stock_minus_spy_cagr_change_from_zero_cash_pp": round(
+                        replay["stock_minus_paired_spy_cagr_pp"] -
+                        baseline["stock_minus_paired_spy_cagr_pp"], 6),
+                }
     return {
         "schema": SCHEMA,
         "status": "HINDSIGHT_SURVIVOR_EVENT_STUDY_NOT_VALIDATED_ALPHA",
@@ -585,10 +657,16 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
         "missing_pre_filing_momentum_lookback_events": sum(
             r["pre_filing_relative_momentum_positive"] is None for r in rows),
         "event_returns": rows,
-        "costed_six_slot_overlap_replay": {
-            str(bps): _capacity_constrained_replay(rows, data, bps)
-            for bps in SIDE_COSTS_BPS
-        },
+        "costed_six_slot_overlap_replay": zero_replays,
+        "costed_six_slot_cash_carry_sensitivity": cash_sensitivity,
+        "cash_rate_source": ("YAHOO_IRX_13W_BILL_DISCOUNT_PROXY"
+                             if cash_source_sha is not None else None),
+        "cash_rate_source_canonical_sha256": cash_source_sha,
+        "cash_rate_lag_weekdays": (c13.CASH_RATE_LAG_WEEKDAYS
+                                   if cash_source_sha is not None else None),
+        "cash_rate_is_revisable_vendor_quote_not_archived_historical_vintage": True,
+        "cash_rate_not_actual_broker_interest_or_executable_rolled_bill": True,
+        "zero_cash_baseline_preserved": True,
         "capacity_replay_is_hindsight_survivor_stress_not_alpha": True,
         "event_returns_are_overlapping_and_not_independent": True,
         "beta_adjusted_proxy_is_not_a_hedged_trade_or_alpha": True,
@@ -606,12 +684,12 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
 
 
 def evaluate(source_dir: Path, prices: pd.DataFrame, *,
-             acquired_at_utc: str) -> dict:
+             acquired_at_utc: str, cash_rates: pd.DataFrame | None = None) -> dict:
     """Require P4Q's original SEC file/hash verification before joining prices."""
     annual = p4q.evaluate(source_dir)
     digest = hashlib.sha256(p4l.canonical_csv(prices).encode()).hexdigest()
     return analyze(annual, prices, acquired_at_utc=acquired_at_utc,
-                   source_sha256=digest)
+                   source_sha256=digest, cash_rates=cash_rates)
 
 
 def main() -> None:
@@ -619,13 +697,42 @@ def main() -> None:
     parser.add_argument("--source-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--output-prices-csv", type=Path, required=True)
+    parser.add_argument("--output-rates-csv", type=Path, required=True)
     args = parser.parse_args()
     prices = p4l.public_prices(start=HISTORICAL_PRICE_START)
     p4g.verify_original_nyse_source_sessions(prices.index)
+    # Fetch historical USD short-bill quotes separately from stock prices.
+    # This is research-only; a quote is not an achievable deposit yield.
+    import yfinance as yf
+    raw = yf.download(tickers=["^IRX"], start="2013-12-01",
+                      end=datetime.now(timezone.utc).date().isoformat(),
+                      auto_adjust=True, interval="1d", actions=False,
+                      progress=False, threads=False)
+    if not isinstance(raw, pd.DataFrame) or raw.empty:
+        raise EventStudyStop("Missing original vendor bill-rate source")
+    if ("Close", "^IRX") in raw.columns:
+        irx = raw[("Close", "^IRX")]
+    elif "Close" in raw.columns and not isinstance(raw.columns, pd.MultiIndex):
+        irx = raw["Close"]
+    else:
+        raise EventStudyStop("Missing original ^IRX discount-yield column")
+    irx = irx.dropna()
+    if irx.empty:
+        raise EventStudyStop("Empty original ^IRX source")
+    if irx.index.tz is not None:
+        irx.index = irx.index.tz_convert("UTC").tz_localize(None).normalize()
+    else:
+        irx.index = irx.index.normalize()
+    cash_rates = pd.DataFrame({"IRX": irx.astype(float)})
+    cash_rates = cash_rates.loc["2013-12-01":prices.index[-1]].copy()
     captured = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    report = evaluate(args.source_dir, prices, acquired_at_utc=captured)
+    report = evaluate(args.source_dir, prices, acquired_at_utc=captured,
+                      cash_rates=cash_rates)
     args.output_prices_csv.parent.mkdir(parents=True, exist_ok=True)
     args.output_prices_csv.write_text(p4l.canonical_csv(prices), encoding="utf-8")
+    args.output_rates_csv.parent.mkdir(parents=True, exist_ok=True)
+    args.output_rates_csv.write_text(
+        c13.canonical_cash_rates(cash_rates), encoding="utf-8")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n")
     print("P4R ORIGINAL 10-K 126-SESSION MATCHED SPY EVENT STUDY")
@@ -635,7 +742,15 @@ def main() -> None:
     print("15bp score <2:", report["summary"]["15"]["score_0_or_1"])
     print("15bp pre-filing quality x relative momentum:",
           report["quality_by_pre_filing_relative_momentum"]["15"])
-    print("2026 SURVIVORS / REVISABLE PRICES / NO VALIDATED ALPHA OR ORDERS")
+    print("15bp interest-bearing cash comparison:", {
+        label: {"stock_cagr": round(row["stock"]["net_cagr_pct"], 4),
+                "paired_spy_cagr": round(
+                    row["same_entry_dollar_matched_spy"]["net_cagr_pct"], 4),
+                "stock_minus_spy_cagr": round(
+                    row["stock_minus_paired_spy_cagr_pp"], 4)}
+        for label, row in report["costed_six_slot_cash_carry_sensitivity"]["15"].items()
+    })
+    print("2026 SURVIVORS / REVISABLE PRICES AND RATES / NO VALIDATED ALPHA OR ORDERS")
 
 
 if __name__ == "__main__":
