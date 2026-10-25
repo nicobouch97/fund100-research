@@ -75,7 +75,6 @@ class FakeBrokerPost:
 def fake_release(monkeypatch):
     # Test-process monkeypatch ONLY. None of these changes reaches GitHub main.
     for key in (
-        "TRANSPORT_RELEASED","PUBLIC_EXECUTION_ENABLED",
         "V6_S1_ACWI_QTY_SELL_TRANSPORT_RELEASED",
         "V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED",
         "V6_S1_ACWI_FRESH_ACCOUNT_RISK_SOURCE_RELEASED",
@@ -115,7 +114,6 @@ def test_real_original_reviewed_writer_stays_hard_locked_by_default():
 
 
 @pytest.mark.parametrize("field",[
-    "TRANSPORT_RELEASED","PUBLIC_EXECUTION_ENABLED",
     "V6_S1_ACWI_QTY_SELL_TRANSPORT_RELEASED",
     "V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED",
     "V6_S1_ACWI_FRESH_ACCOUNT_RISK_SOURCE_RELEASED",
@@ -129,6 +127,31 @@ def test_any_single_unreleased_flag_blocks_before_mock_network(field,monkeypatch
         call(fake)
     assert fake.calls==0
 
+
+
+@pytest.mark.parametrize("legacy",["TRANSPORT_RELEASED","PUBLIC_EXECUTION_ENABLED"])
+def test_independent_v6_sell_never_unlocks_v5_global_writer(legacy,monkeypatch):
+    fake_release(monkeypatch)  # only V6-specific flags released in FAKE process
+    assert writer.TRANSPORT_RELEASED is False
+    assert writer.PUBLIC_EXECUTION_ENABLED is False
+    fake=FakeBrokerPost()
+    monkeypatch.setattr(writer,legacy,True)
+    with pytest.raises(writer.LiveWriterCandidateLocked,match="original V5 global writer STOP"):
+        call(fake)
+    assert fake.calls==0
+
+
+def test_v6_separate_release_uses_only_v6_flags_not_legacy_global_go(monkeypatch):
+    fake_release(monkeypatch)
+    assert writer.TRANSPORT_RELEASED is False
+    assert writer.PUBLIC_EXECUTION_ENABLED is False
+    # All remote reads/writes on the test path are synthetic; this is NOT
+    # a workflow release, a broker authorization or a funded order.
+    fake=FakeBrokerPost()
+    answer=call(fake)
+    assert fake.calls==1
+    assert answer["resubmission_permitted"] is False
+    assert writer.require_public_execution_released is not None
 
 def test_exact_original_qty_market_day_wire_then_redacted_fake_receipt(monkeypatch):
     fake_release(monkeypatch)
