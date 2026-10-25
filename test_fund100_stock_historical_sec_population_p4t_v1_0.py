@@ -44,6 +44,12 @@ def test_original_quarter_population_includes_filers_absent_today():
     assert not out["live_authorized"] and not out["paper_authorized"]
 
 
+def test_official_index_description_allows_sec_fixed_width_spacing():
+    padded = index(ONE).replace(
+        b"Description: Master Index", b"Description:           Master Index")
+    assert len(p4t.parse_index(padded)) == 1
+
+
 def test_multiple_10k_filings_per_cik_are_counted_without_double_counting_issuer():
     more = "1001|OLDCO INC|10-K|2017-03-20|edgar/data/1001/0001001-17-000009.txt"
     out = p4t.evaluate(index(ONE, more, TWO), registry((1001, "OLD")),
