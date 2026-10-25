@@ -367,7 +367,7 @@ def test_beta_unidentifiable_for_constant_market_or_missing_lookback():
 
 def test_six_slot_overlap_replay_is_costed_paired_and_stays_research_only():
     baseline = run()
-    assert baseline["schema"].endswith("_V5")
+    assert baseline["schema"].endswith("_V6")
     assert baseline["capacity_replay_is_hindsight_survivor_stress_not_alpha"]
     assert set(baseline["costed_six_slot_overlap_replay"]) == {"5", "15", "35"}
     assert baseline["costed_six_slot_overlap_replay"]["15"]["admitted_events"] == 0
