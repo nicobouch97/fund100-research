@@ -1,0 +1,70 @@
+name: Fund-100 V6-S1 First Original ACWI Credential Scope (GET ONLY; STOP)
+
+# One fresh protected main run checks the genuinely required original private
+# READ/WRITE-candidate and immutable release principals. GET proves token
+# presence/auth/read reachability only; it CANNOT certify WRITE rights.
+# NO BROKER SECRETS, NO GIT WRITES, NO ISSUE POSTS, NO LIVE ORDER.
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v6-s1-first-execution-principals-getonly.yml"
+      - "fund100_v6_s1_first_execution_principals_getonly_v1_0.py"
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  protected-distinct-principals-readability:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify protected original STOP before any GitHub source GET
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          test "$FUND100_RISK_LEVEL" = 'HIGH'
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          python - <<'PY'
+          import fund100_v6_s1_first_execution_principals_getonly_v1_0 as p
+          import fund100_v6_s1_original_first_acwi_entry_locked_v1_0 as entry
+          import fund100_v6_s1_original_one_attempt_chain_locked_v1_0 as chain
+          assert p.NO_HTTP_MUTATIONS and p.NO_BROKER_CONNECTION
+          assert p.NO_WRITE_PERMISSION_PROOF
+          assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
+          assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
+          print('Original first ACWI execution release HARD LOCKED. Principal GET only.')
+          PY
+      - name: Verify existing 5 independent GitHub principals by ORIGINAL authenticated READ
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}
+          FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_first_execution_principals_getonly_v1_0.py
+      - name: Confirm no real mutation released
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'Original private source READ + token auth only; no broker POST, no issue/release/private write.'
