@@ -103,12 +103,17 @@ def inspect(*,environ=None,transport=None)->dict:
         or e.get("FUND100_RISK_LEVEL")!="HIGH"):
         raise PrincipalStop("Original protected main STOP context unavailable")
     values={}
+    missing=[]
     for name in REQUIRED:
         value=e.get(name)
         if (type(value) is not str or len(value.strip())<10
             or value!=value.strip() or "\n" in value or "\r" in value):
-            raise PrincipalStop("MISSING_OR_MALFORMED_"+name)
-        values[name]=value
+            missing.append(name)
+        else:
+            values[name]=value
+    if missing:
+        # Enumerate missing secret NAMES in one run, never the secret values.
+        raise PrincipalStop("MISSING_OR_MALFORMED_"+",".join(missing))
     tokens=[values[k] for k in REQUIRED if k!="FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX"]
     if len(set(tokens))!=5:
         raise PrincipalStop("DISTINCT_GITHUB_PRINCIPALS_MISSING")
