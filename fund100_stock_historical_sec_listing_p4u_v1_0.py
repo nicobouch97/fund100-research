@@ -23,7 +23,7 @@ from urllib.request import Request, urlopen
 
 from fund100_stock_historical_sec_population_p4t_v1_0 import parse_current_registry
 
-SCHEMA = "FUND100_P4U_2017_ORIGINAL_10K_COVER_SOURCE_AUDIT_V2"
+SCHEMA = "FUND100_P4U_2017_ORIGINAL_10K_COVER_SOURCE_AUDIT_V3"
 MAX_FILING_BYTES = 12_000_000  # full submission remains tightly bounded
 # A separately verified primary 10-K can exceed 12 MB without its exhibits.
 # This independent ceiling never applies to full submissions or index pages.
@@ -129,6 +129,90 @@ def select_sample(source_dir: Path, *, per_stratum: int = 16) -> tuple[list[dict
         raise ListingEvidenceStop("P4T source manifest invalid") from exc
 
 
+class _Section12bRowParser(HTMLParser):
+    """Capture cell-level 12(b) evidence without joining different rows.
+
+    The output is deliberately a candidate class/exchange mapping from an
+    issuer's filing, NOT independent listing or security-master evidence.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.fragments = []
+        self.offset = 0
+        self.row_start = None
+        self.cells = []
+        self.cell_parts = None
+        self.rows = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "tr":
+            self.row_start = self.offset
+            self.cells = []
+            self.cell_parts = None
+        elif tag in ("td", "th") and self.row_start is not None:
+            self.cell_parts = []
+
+    def handle_data(self, data):
+        self.fragments.append(data + " ")
+        self.offset += len(data) + 1
+        if self.cell_parts is not None:
+            self.cell_parts.append(data)
+
+    def handle_endtag(self, tag):
+        if tag in ("td", "th") and self.cell_parts is not None:
+            self.cells.append(re.sub(r"\s+", " ", " ".join(self.cell_parts)).strip())
+            self.cell_parts = None
+        elif tag == "tr" and self.row_start is not None:
+            self.rows.append((self.row_start, self.offset, tuple(self.cells)))
+            self.row_start = None
+            self.cells = []
+            self.cell_parts = None
+
+
+def _structured_12b_common_rows(cover: str) -> list[dict]:
+    """Return only explicit common-share and exchange cells in the SAME row.
+
+    No inference from prose, adjacent rows, 12(g), or today's ticker registry.
+    A 2017 10-K generally need not disclose a trading symbol; missing symbols
+    remain null, never filled from the current registry.
+    """
+    parser = _Section12bRowParser()
+    parser.feed(cover)
+    text = "".join(parser.fragments)
+    start = SECTION_B.search(text)
+    if start is None:
+        return []
+    end = SECTION_G.search(text, start.end())
+    cutoff = min(start.end() + 6000, end.start() if end else len(text))
+    candidates = []
+    for row_start, row_end, cells in parser.rows:
+        if row_start < start.end() or row_end > cutoff or len(cells) not in (2, 3):
+            continue
+        class_text, exchange_text = cells[0], cells[-1]
+        if (not COMMON.search(class_text) or not EXCHANGE.search(exchange_text)
+            or EXCHANGE.search(class_text) or COMMON.search(exchange_text)
+            or len(class_text) > 180 or len(exchange_text) > 180):
+            continue
+        symbol = None
+        if len(cells) == 3:
+            raw_symbol = cells[1].strip()
+            if (raw_symbol and raw_symbol.upper() not in {"NONE", "N/A", "NOT APPLICABLE"}
+                and re.fullmatch(r"[A-Za-z][A-Za-z0-9.\-]{0,9}", raw_symbol)):
+                symbol = raw_symbol.upper()
+            elif raw_symbol:
+                # Do not turn a malformed or ambiguous symbol cell into
+                # a fabricated historical identifier.
+                continue
+        candidates.append({
+            "security_class_text": class_text,
+            "exchange_text": exchange_text,
+            "trading_symbol_in_original_10k": symbol,
+            "evidence_level": "ORIGINAL_10K_12B_ROW_REVIEW_ONLY",
+        })
+    return candidates
+
+
 def _inspect_cover_text(cover: str) -> dict:
     cover = cover[:250_000]
     cover = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", cover)
@@ -142,11 +226,14 @@ def _inspect_cover_text(cover: str) -> dict:
                if section_g is not None else "")
     g_block = re.split(r"(?i)indicate\s+by\s+check\s+mark", g_block)[0]
     g_common = bool(COMMON.search(g_block))
+    structured_rows = _structured_12b_common_rows(cover)
     heading = SECTION_B.search(clean)
     if heading is None:
         return {"cover_state": "SECTION_12B_NOT_LOCATED_IN_COVER",
                 "section_12b_excerpt": "",
-                "section12g_common_class_review_required": g_common}
+                "section12g_common_class_review_required": g_common,
+                "possible_12b_security_class_rows": structured_rows,
+                "structured_12b_rows_not_independent_listing_proof": True}
     block = clean[heading.end():heading.end() + 6000]
     end = SECTION_G.search(block)
     if end is not None:
@@ -188,6 +275,8 @@ def _inspect_cover_text(cover: str) -> dict:
         "cover_state": state,
         "section_12b_excerpt": block[:1200],
         "section12g_common_class_review_required": g_common,
+        "possible_12b_security_class_rows": structured_rows,
+        "structured_12b_rows_not_independent_listing_proof": True,
     }
 
 
@@ -492,6 +581,11 @@ def capture(source_dir: Path, output_dir: Path, agent: str,
                 "POSSIBLE_12B_COMMON_EQUITY_EXCHANGE_REVIEW_REQUIRED",
                 "POSSIBLE_12B_COMMON_PRECEDING_EXCHANGE_REVIEW_REQUIRED"}
             for r in observations),
+        "possible_structured_12b_security_class_rows": sum(
+            len(r.get("possible_12b_security_class_rows", [])) for r in observations),
+        "filings_with_structured_12b_rows": sum(
+            bool(r.get("possible_12b_security_class_rows")) for r in observations),
+        "structured_rows_not_historical_investable_security_master": True,
         "section12g_common_class_covers": sum(
             r.get("section12g_common_class_review_required") is True
             for r in observations),
