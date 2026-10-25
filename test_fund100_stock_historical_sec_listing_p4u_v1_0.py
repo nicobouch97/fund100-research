@@ -1,5 +1,7 @@
 """Offline, credentialless P4U SEC cover evidence tests. No HTTP or broker."""
 from hashlib import sha256
+from http.client import IncompleteRead
+from urllib.error import HTTPError
 import json
 
 import pytest
@@ -50,6 +52,112 @@ def test_predeclared_sampling_is_deterministic_and_not_survivor_filtered(tmp_pat
     assert annual["annual_distinct_10k_ciks"] == 4
     assert all(r["filing_date"] == "2017-03-10" for r in a)
 
+
+
+def test_original_2017_multicolor_cover_has_exchange_before_12b_heading():
+    # Short excerpt transcribed from original 2017 Multi-Color 10-K,
+    # accession 0001193125-17-187348 (archived in P4U source artifact).
+    raw = original_10k(
+        "<p>Name of Each Exchange on Which Registered</p>"
+        "<p>NASDAQ Global Select Market</p>"
+        "<p>Securities registered pursuant to Section 12(b) of the Act:</p>"
+        "<p>Common Stock, no par value</p>"
+        "<p>Securities registered pursuant to Section 12(g) of the Act: None</p>")
+    result = p4u.inspect_original_10k(raw)
+    assert result["cover_state"] == (
+        "POSSIBLE_12B_COMMON_PRECEDING_EXCHANGE_REVIEW_REQUIRED")
+    assert not result["section12g_common_class_review_required"]
+
+
+def test_original_2017_american_software_12g_common_not_a_12b_listing():
+    # The historical 10-K explicitly says 12(b) None/None and registers
+    # Class A Common Shares under 12(g); Nasdaq appears elsewhere in the
+    # filing. Neither a 12(g) class nor a narrative quote proves listing.
+    raw = original_10k(
+        "<p>Securities registered pursuant to Section 12(b) of the Act:"
+        " None None</p>"
+        "<p>Securities registered pursuant to Section 12(g) of the Act:"
+        " Class A Common Shares, $0.10 Par Value</p>"
+        "<p>Indicate by check mark whether the registrant is a filer.</p>"
+        "<p>Common Shares as quoted on the NASDAQ National Market System.</p>")
+    result = p4u.inspect_original_10k(raw)
+    assert result["cover_state"] == "NO_JOINT_12B_COMMON_EXCHANGE_TEXT_EVIDENCE"
+    assert result["section12g_common_class_review_required"]
+
+
+@pytest.mark.parametrize("status,reason", [
+    (403, "HTTP_403"), (404, "HTTP_404"), (429, "HTTP_429"),
+    (503, "HTTP_5XX"), (400, "HTTP_OTHER"),
+])
+def test_official_sec_http_failure_has_non_sensitive_reason(monkeypatch, status, reason):
+    def fake_urlopen(request, timeout):
+        raise HTTPError(request.full_url, status, "blocked", None, None)
+    monkeypatch.setattr(p4u, "urlopen", fake_urlopen)
+    with pytest.raises(p4u.FilingSourceFailure) as exc:
+        p4u._official_filing_get(
+            "edgar/data/1001/0001001-17-000001.txt", "Research contact@example.com")
+    assert exc.value.reason_code == reason
+
+
+@pytest.mark.parametrize("mode,reason", [
+    ("oversize", "OVER_12MB_SOURCE_LIMIT"),
+    ("empty", "EMPTY_SOURCE"),
+    ("redirect", "NONCANONICAL_HTTP_RESPONSE"),
+])
+def test_official_sec_bad_response_is_diagnostic_not_listing_evidence(
+        monkeypatch, mode, reason):
+    class Response:
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def geturl(self):
+            return ("https://www.sec.gov/Archives/edgar/data/1001/0001001-17-000001.txt"
+                    if mode != "redirect" else "https://example.invalid/not-sec")
+        def read(self, limit):
+            assert limit == p4u.MAX_FILING_BYTES + 1
+            return (b"x" * limit if mode == "oversize" else
+                    b"" if mode == "empty" else b"test")
+    monkeypatch.setattr(p4u, "urlopen", lambda request, timeout: Response())
+    with pytest.raises(p4u.FilingSourceFailure) as exc:
+        p4u._official_filing_get(
+            "edgar/data/1001/0001001-17-000001.txt", "Research contact@example.com")
+    assert exc.value.reason_code == reason
+
+
+
+def test_interrupted_sec_download_does_not_become_partial_cover_evidence(monkeypatch):
+    class InterruptedResponse:
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def geturl(self):
+            return "https://www.sec.gov/Archives/edgar/data/1001/0001001-17-000001.txt"
+        def read(self, limit):
+            raise IncompleteRead(b"partial filing", 200)
+    monkeypatch.setattr(p4u, "urlopen", lambda request, timeout: InterruptedResponse())
+    with pytest.raises(p4u.FilingSourceFailure) as exc:
+        p4u._official_filing_get(
+            "edgar/data/1001/0001001-17-000001.txt", "Research contact@example.com")
+    assert exc.value.reason_code == "INCOMPLETE_SOURCE"
+
+
+def test_failed_source_reason_counts_do_not_label_issuers_unlisted(tmp_path):
+    make_sources(tmp_path)
+    def fake_get(path, agent):
+        if any(f"/{cik}/" in path for cik in (1001, 1002)):
+            raise p4u.FilingSourceFailure("OVER_12MB_SOURCE_LIMIT")
+        raise p4u.FilingSourceFailure("HTTP_403")
+    report = p4u.capture(tmp_path, tmp_path / "diagnostics",
+                         "Research contact@example.com", per_stratum=1,
+                         getter=fake_get)
+    assert report["original_filing_sources_captured"] == 0
+    assert sum(report["source_failure_reason_counts"].values()) == 2
+    assert set(report["source_failure_reason_counts"]) == {
+        "OVER_12MB_SOURCE_LIMIT", "HTTP_403"}
+    assert all(row["cover_state"] == "NOT_EVALUATED"
+               for row in report["observations"])
+    assert all("source_failure_reason" in row for row in report["observations"])
+    assert report["no_verified_historical_total_returns_or_investable_backtest"]
 
 def test_section_12b_common_exchange_is_only_possible_not_eligibility():
     raw = original_10k(
@@ -121,6 +229,7 @@ def test_unavailable_source_is_not_interpreted_as_unlisted(tmp_path):
                          per_stratum=1, getter=fail_get)
     assert report["original_filing_sources_captured"] == 0
     assert report["unavailable_or_unverifiable_sources"] == 2
+    assert report["source_failure_reason_counts"] == {"OTHER_UNVERIFIABLE": 2}
     assert all(r["cover_state"] == "NOT_EVALUATED" for r in report["observations"])
 
 
