@@ -55,6 +55,127 @@ def _real_current(*,url,source,read,write,transport):
         raise ChainStop("Original two independently current private HEADs disagree")
     return a
 
+
+
+def prepare_original_acwi_context_getonly(*,private_read_token:str,
+        public_read_token:str,hmac_hex:str)->dict:
+    """Hydrate the original coordinator's exact context from authenticated READs.
+
+    This is the data-integration half of the SAME protected job, not an
+    execution permit. Return sensitive material only in process memory:
+    never log, serialize or persist the returned dictionary. Original
+    seq1/fence0 are not advanced; the real one-shot coordinator stays locked.
+    """
+    import os
+    import re
+    import secrets
+    import fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0 as recovery
+    import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent
+    import fund100_v6_s1_first_private_head_external_witness_offline_v1_0 as first
+    try:
+        owner_run_id=os.environ["GITHUB_RUN_ID"]
+        current_main_sha=os.environ["GITHUB_SHA"]
+        ownership._require_real_same_run(
+            owner_run_id=owner_run_id,owner_attempt=1,
+            current_main_sha=current_main_sha)
+        if (os.environ.get("FUND100_BROKER_KILL_SWITCH")!="ENGAGED"
+            or os.environ.get("FUND100_RISK_LEVEL")!="HIGH"
+            or type(hmac_hex) is not str
+            or re.fullmatch(r"[0-9a-f]{64}",hmac_hex) is None):
+            raise ChainStop("Original protected read-only scope or HMAC invalid")
+        key=bytes.fromhex(hmac_hex)
+        original_qty=intent.original_acwi_qty()
+        checked=recovery.recover_current_original_signed_head_readonly(
+            public_comment_id=intent.GENESIS_COMMENT_ID,
+            bootstrap_run_id=intent.GENESIS_RUN_ID,
+            read_token=private_read_token,hmac_hex=hmac_hex,
+            public_token=public_read_token)
+        if (checked.get("status")!=
+                "ORIGINAL_ACWI_SIGNED_SEQ1_AND_PUBLIC_HEAD_RECONFIRMED_READONLY"
+            or checked.get("original_ACWI_qty_commitment_verified") is not True
+            or checked.get("private_ledger_sequence")!=1
+            or checked.get("production_trade_order_submission_authorized") is not False):
+            raise ChainStop("Original independently recovered signed seq1 not authentic")
+        reserved=ownership._get_bounded_json(
+            url=ownership.ORIGINAL_ORDER_LEDGER_URL+"?ref=main",
+            token=private_read_token)
+        genesis_comment=recovery._get(
+            url=recovery.PUBLIC_COMMENT_PREFIX+intent.GENESIS_COMMENT_ID,
+            token=public_read_token)
+        source_sha,doc=ledger._read_source(
+            reserved,
+            private_genesis=witness.verify()["original_public_genesis_nonce"],
+            account_binding_sha256=witness.verify()["original_live_account_binding_sha256"],
+            key=key)
+        if (doc["sequence"]!=1 or set(doc["entries"])!={"ACWI"}):
+            raise ChainStop("Original current private signed reservation changed")
+        old=ledger.genesis(
+            private_genesis=witness.verify()["original_public_genesis_nonce"],
+            account_binding_sha256=witness.verify()["original_live_account_binding_sha256"],
+            key=key)
+        old_sha=ledger.blob_sha(old)
+        pages=recovery._complete_original_comment_pages(token=public_read_token,
+                                                        issue_page_get=None)
+        matches=[]
+        for comment in pages:
+            if type(comment) is not dict or type(comment.get("body")) is not str:
+                raise ChainStop("Original public successor evidence malformed")
+            if not comment["body"].startswith(first.COMMENT_DOMAIN):
+                continue
+            match=re.search(
+                r"(?m)^Source: https://github\.com/nicobouch97/"
+                r"fund100-research/actions/runs/([1-9][0-9]{0,18})$",
+                comment["body"])
+            if match is None:
+                raise ChainStop("Original public successor source invalid")
+            run_id=match.group(1)
+            expected=first.first_next_comment(
+                original_nonce=witness.verify()["original_public_genesis_nonce"],
+                old_private_sha=old_sha,new_private_sha=source_sha,run_id=run_id)
+            if (comment["body"]!=expected
+                or comment.get("issue_url")!=recovery.ORIGINAL_PUBLIC_ISSUE_URL
+                or comment.get("user",{}).get("login")!=recovery.USER_BOT
+                or type(comment.get("id")) is not int
+                or comment["id"]<=0):
+                raise ChainStop("Original successor witness identity invalid")
+            matches.append((comment,str(comment["id"]),run_id))
+        if len(matches)!=1:
+            raise ChainStop("Original first public signed successor ambiguous")
+        first_comment,first_comment_id,first_run_id=matches[0]
+        original_run=recovery._public_original_intent_run(
+            run_id=first_run_id,token=public_read_token)
+        recovery._verify_public_original_intent_run(
+            run=original_run,run_id=first_run_id)
+        bound=prepost.check_initial_reserved(
+            source=reserved,genesis_public_comment=genesis_comment,
+            first_public_comment=first_comment,
+            first_comment_id=first_comment_id,first_run_id=first_run_id,
+            original_qty=original_qty,key=key)
+        if bound.get("source_sha")!=source_sha:
+            raise ChainStop("Original signed ACWI source changed during context hydration")
+        signed_owner=ownership._get_signed_source(token=private_read_token)
+        _sha,owner_doc=fence._read(
+            signed_owner,
+            private_genesis=witness.verify()["original_public_genesis_nonce"],
+            account_binding_sha256=witness.verify()["original_live_account_binding_sha256"],
+            key=key)
+        if owner_doc["sequence"]!=0 or owner_doc["claim"] is not None:
+            raise ChainStop("Original one-time owner fence already used")
+        result={
+            "reserved_source":reserved,"genesis_comment":genesis_comment,
+            "first_comment":first_comment,"first_comment_id":first_comment_id,
+            "first_run_id":first_run_id,"original_qty":original_qty,"key":key,
+            "owner_run_id":owner_run_id,"owner_attempt":1,
+            "owner_nonce":secrets.token_hex(32),
+            "current_main_sha":current_main_sha,
+            "source_broker_run_id":owner_run_id,
+        }
+        if set(result)!=EXPECTED_CONTEXT:
+            raise ChainStop("Original coordinator context contract changed")
+        return result
+    except Exception:
+        raise ChainStop("Original protected coordinator source hydration STOP") from None
+
 def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
     private_write_token:str,public_issue_write_token:str,
     admin_read_token:str,public_release_write_token:str,

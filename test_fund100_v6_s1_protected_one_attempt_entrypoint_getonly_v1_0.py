@@ -103,3 +103,17 @@ def test_immutable_release_admin_proof_is_mandatory_and_stays_get_only():
     assert "IMMUTABLE_RELEASE_SETTING_ENABLED_PROVIDER_VERIFIED; STILL STOP." in scope
     assert "method='POST'" not in scope and "method='PATCH'" not in scope
     assert "BROKER_KILL_SWITCH: DISENGAGED" not in w
+
+
+def test_same_protected_job_hydrates_original_context_only_for_manual_run():
+    w=workflow()
+    source=w.split("      - name: Signed original seq1, owner fence")[1]
+    source=source.split("      - name: Provider immutable setting MUST pass")[0]
+    assert "if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch':" in source
+    assert "chain.prepare_original_acwi_context_getonly(" in source
+    assert "private_read_token=os.environ['FUND100_PRIVATE_STATE_READ_TOKEN']" in source
+    assert "hmac_hex=os.environ['FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX']" in source
+    assert "assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False" in source
+    assert "Original signed context hydrated in SAME protected job memory" in source
+    assert "chain.run_exact_first_acwi_attempt(" not in source
+    assert "FUND100_PRIVATE_STATE_WRITE_TOKEN" not in source
