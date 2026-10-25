@@ -574,7 +574,7 @@ def _spy_idle_capital_overlay(admissions: list[dict], data: pd.DataFrame,
     }
 
 
-def analyze(annual: dict, prices: pd.DataFrame, *
+def analyze(annual: dict, prices: pd.DataFrame, *,
             acquired_at_utc: str, source_sha256: str,
             cash_rates: pd.DataFrame | None = None) -> dict:
     """Pure deterministic event-return study; caller authenticates SEC archive."""
