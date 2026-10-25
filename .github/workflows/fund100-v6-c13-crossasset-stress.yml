@@ -43,7 +43,7 @@ jobs:
           python fund100_v6_crossasset_stress_diagnostic_v1_0.py \
             --output /tmp/fund100-c13-crossasset-risk.json \
             --prices-output /tmp/fund100-c13-price-source.csv \
-            --rates-output /tmp/fund100-c13-fred-dff-source.csv
+            --rates-output /tmp/fund100-c13-yahoo-irx-source.csv
           python - <<'PY'
           import json
           from pathlib import Path
@@ -52,7 +52,7 @@ jobs:
           assert set(r['costed_historical_diagnostics']) == {'5','15','35'}
           assert set(r['interest_bearing_cash_sensitivity']) == {'5','15','35'}
           assert set(r['interest_bearing_cash_sensitivity']['15']) == {
-              'ZERO', 'DFF_MINUS_50BP', 'DFF_GROSS'}
+              'ZERO', 'IRX_MINUS_50BP', 'IRX_GROSS'}
           assert r['cash_rate_sha256'] and r['cash_rate_lag_weekdays'] == 3
           assert r['original_zero_cash_baseline_preserved']
           assert r['broker_requests'] == r['live_orders'] == r['paper_orders'] == 0
@@ -67,6 +67,6 @@ jobs:
           path: |
             /tmp/fund100-c13-crossasset-risk.json
             /tmp/fund100-c13-price-source.csv
-            /tmp/fund100-c13-fred-dff-source.csv
+            /tmp/fund100-c13-yahoo-irx-source.csv
           retention-days: 30
           if-no-files-found: error
