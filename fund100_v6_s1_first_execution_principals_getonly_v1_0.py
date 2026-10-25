@@ -52,7 +52,9 @@ def _public_issue_get(*,token,transport=None):
         with sender(req,timeout=12) as response:
             if getattr(response,"status",None)!=200:
                 raise PrincipalStop("Public issue read unavailable")
-            body=response.read(4000)
+            body=response.read(65537)
+            if len(body)>65536:
+                raise PrincipalStop("Public issue metadata oversized")
     except (HTTPError,URLError,TimeoutError,OSError):
         raise PrincipalStop("Public issue read failed") from None
     import json
