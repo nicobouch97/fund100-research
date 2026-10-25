@@ -41,7 +41,9 @@ def parse_index(raw: bytes) -> dict[int, dict]:
         header = lines.index(HEADER)
     except (ValueError, UnicodeError) as exc:
         raise PopulationStop("Original SEC master-index header missing") from exc
-    if (header < 1 or not lines[0].startswith("Description: Master Index")
+    if (header < 1 or re.fullmatch(
+            r"Description:\s+Master Index of EDGAR Dissemination Feed\s*",
+            lines[0]) is None
         or header + 1 >= len(lines)
         or not lines[header + 1].strip()
         or set(lines[header + 1].strip()) != {"-"}):
