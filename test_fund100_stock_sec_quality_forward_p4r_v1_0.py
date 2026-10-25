@@ -367,7 +367,7 @@ def test_beta_unidentifiable_for_constant_market_or_missing_lookback():
 
 def test_six_slot_overlap_replay_is_costed_paired_and_stays_research_only():
     baseline = run()
-    assert baseline["schema"].endswith("_V4")
+    assert baseline["schema"].endswith("_V5")
     assert baseline["capacity_replay_is_hindsight_survivor_stress_not_alpha"]
     assert set(baseline["costed_six_slot_overlap_replay"]) == {"5", "15", "35"}
     assert baseline["costed_six_slot_overlap_replay"]["15"]["admitted_events"] == 0
@@ -629,3 +629,91 @@ def test_spy_funded_overlay_censoring_and_rejects_invalid_admissions():
         p4r._spy_idle_capital_overlay(schedule + schedule, p, 15)
     with pytest.raises(p4r.EventStudyStop, match="cost"):
         p4r._spy_idle_capital_overlay(schedule, p, 0)
+
+
+def test_spy_overlay_issuer_deletion_no_events_is_explicitly_unavailable():
+    p = prices()
+    baseline = p4r._spy_idle_capital_overlay([], p, 15)
+    diag = p4r._overlay_fixed_admission_issuer_deletion([], p, 15, baseline)
+    assert diag["all_issuers_admitted_events"] == 0
+    assert diag["distinct_admitted_issuers"] == 0
+    assert diag["per_excluded_issuer"] == {}
+    assert diag["exclusion_advantage_range_pp"] is None
+    assert diag["exclusions_with_positive_cagr_advantage"] == 0
+    assert diag["research_only_no_broker_or_live_authority"]
+
+
+def test_spy_overlay_issuer_deletion_replays_exact_fixed_admissions():
+    p = prices()
+    names = sorted(p4n.SOURCE_MATCHED_TAGS)
+    assert len(names) >= 2
+    first, second = names[:2]
+    i = int(p.index.get_loc(pd.Timestamp("2025-02-19")))
+    rows = [
+        _synthetic_replay_event(first, i, p, "first"),
+        _synthetic_replay_event(second, i + 10, p, "second"),
+    ]
+    # Give the first issuer a distinct return path, so its removal matters.
+    p.loc[p.index[i + 1:i + 127], first] *= np.linspace(1.001, 1.3, 126)
+    schedule = p4r._capacity_constrained_replay(rows, p, 15)["admission_schedule"]
+    assert len(schedule) == 2
+    base = p4r._spy_idle_capital_overlay(schedule, p, 15)
+    diag = p4r._overlay_fixed_admission_issuer_deletion(schedule, p, 15, base)
+    assert diag["all_issuers_admitted_events"] == 2
+    assert diag["distinct_admitted_issuers"] == 2
+    assert set(diag["per_excluded_issuer"]) == {first, second}
+    assert diag["exclusion_advantage_range_pp"] == [
+        min(row["replacement_minus_passive_cagr_pp"]
+            for row in diag["per_excluded_issuer"].values()),
+        max(row["replacement_minus_passive_cagr_pp"]
+            for row in diag["per_excluded_issuer"].values())]
+    for ticker in (first, second):
+        remaining = [r for r in schedule if r["ticker"] != ticker]
+        direct = p4r._spy_idle_capital_overlay(remaining, p, 15)
+        cell = diag["per_excluded_issuer"][ticker]
+        assert cell["removed_admitted_events"] == 1
+        assert cell["remaining_admitted_events"] == 1
+        assert cell["replacement_minus_passive_cagr_pp"] == (
+            direct["replacement_minus_passive_cagr_pp"])
+        assert cell["overlay_max_drawdown_pct"] == (
+            direct["stock_replacement_plus_spy_core"]["max_drawdown_pct"])
+        assert direct["passive_buy_and_hold_spy"] == base["passive_buy_and_hold_spy"]
+    assert diag["removed_positions_remain_in_spy_no_replacement_signals"]
+    assert diag["identical_passive_spy_benchmark_and_transaction_costs"]
+    assert diag["retrospective_deletion_not_investable_issuer_selection"]
+    assert diag["survivor_universe_and_revisable_prices_preclude_alpha"]
+    assert diag["not_a_confidence_interval_or_independent_holdout"]
+
+
+def test_spy_overlay_deleting_only_issuer_reverts_to_passive_not_alpha():
+    p = prices()
+    i = int(p.index.get_loc(pd.Timestamp("2025-02-19")))
+    row = _synthetic_replay_event("CAT", i, p, "only")
+    schedule = p4r._capacity_constrained_replay([row], p, 15)["admission_schedule"]
+    base = p4r._spy_idle_capital_overlay(schedule, p, 15)
+    diag = p4r._overlay_fixed_admission_issuer_deletion(schedule, p, 15, base)
+    assert diag["per_excluded_issuer"]["CAT"]["replacement_minus_passive_cagr_pp"] == 0
+    assert diag["per_excluded_issuer"]["CAT"]["remaining_admitted_events"] == 0
+    assert diag["exclusion_advantage_range_pp"] == [0, 0]
+    assert diag["exclusions_with_nonpositive_cagr_advantage"] == 1
+    with pytest.raises(p4r.EventStudyStop, match="baseline"):
+        p4r._overlay_fixed_admission_issuer_deletion(
+            schedule, p, 15, dict(base, admitted_events=0))
+    with pytest.raises(p4r.EventStudyStop, match="baseline"):
+        p4r._overlay_fixed_admission_issuer_deletion(schedule, p, 5, base)
+
+
+def test_spy_overlay_issuer_deletion_is_in_research_report_only():
+    p = prices()
+    p.loc["2025-02-17", "CAT"] = 110.
+    report = run(p=p)
+    assert report["schema"].endswith("_V5")
+    baseline = report["costed_six_slot_spy_idle_capital_overlay"]["15"]
+    diag = report["spy_overlay_fixed_admission_issuer_deletion_15bps"]
+    assert diag["all_issuers_baseline_cagr_advantage_pp"] == (
+        baseline["replacement_minus_passive_cagr_pp"])
+    assert diag["all_issuers_admitted_events"] == baseline["admitted_events"]
+    assert diag["distinct_admitted_issuers"] == 1
+    assert diag["per_excluded_issuer"]["CAT"]["replacement_minus_passive_cagr_pp"] == 0
+    assert not report["trading_authorized"] and not report["live_authorized"]
+    assert report["broker_requests"] == report["broker_orders"] == 0
