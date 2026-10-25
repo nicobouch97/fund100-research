@@ -224,6 +224,12 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml",
         "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
     ): "162b90ab620ab0708543f34e79bfd7cfdd64f053",
+    # Single-job S1 readiness: exact already-pinned seven-GET reader only,
+    # zero Git writes or live broker orders; mutation coordinator HARD LOCKED.
+    (
+        ".github/workflows/fund100-v6-s1-original-one-attempt-protected-entrypoint.yml",
+        "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
+    ): "162b90ab620ab0708543f34e79bfd7cfdd64f053",
     # Original BUY receipt ↔ actual FILL matching, precisely six GET, no writes.
     (
         ".github/workflows/fund100-v6-s1-real-buy-receipt-fill-six-get.yml",
@@ -393,8 +399,47 @@ def approved_scoped_live_script(
                 return False
 
     if script == "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py":
-        if workflow != ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml":
+        original = ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml"
+        single_job = ".github/workflows/fund100-v6-s1-original-one-attempt-protected-entrypoint.yml"
+        if workflow not in (original,single_job):
             return False
+        # The new protected single-run admission has no mutation authority;
+        # require literal source-code execution locks and NO private WRITE
+        # principal even while credential-scoped seven-GETs are available.
+        if workflow == single_job:
+            for evidence in (
+                "permissions:",
+                "  contents: read",
+                "environment: fund100-live-broker",
+                "if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'",
+                "GITHUB_RUN_ATTEMPT",
+                "test \"$FUND100_BROKER_KILL_SWITCH\" = 'ENGAGED'",
+                "chain.ONE_ATTEMPT_EXECUTION_RELEASED is False",
+                "owner.SIGNED_OWNER_CLAIM_TRANSPORT_RELEASED is False",
+                "owner.PREPOST_PRIVATE_CAS_RELEASED is False",
+                "publish.PUBLISH_SIGNED_HEAD_RELEASED is False",
+                "active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is False",
+                "FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}",
+                "FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}",
+                "python fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
+                "recover_current_original_signed_head_readonly(",
+                "read_current_original_acwi_owner_fence_getonly(",
+                "NO LIVE orders.",
+            ):
+                if evidence not in source:
+                    return False
+            for forbidden in (
+                "contents: write",
+                "issues: write",
+                "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN",
+                "FUND100_PRIVATE_STATE_WRITE_TOKEN",
+                "FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN",
+                "ALPACA_LIVE_ORDER",
+                "schedule:",
+                "python fund100_v6_s1_original_one_attempt_chain_locked_v1_0.py",
+            ):
+                if forbidden in source:
+                    return False
         # The separate HMAC principal authenticates this *conditional*
         # step in the reviewed seven-GET job, not an unverified log string.
         # A missing/always-green indicator revokes the LIVE key scope.
@@ -420,7 +465,10 @@ def approved_scoped_live_script(
             "        github.event.workflow_run.head_repository.full_name == github.repository &&\n"
             "        github.event.workflow_run.head_sha == github.sha))"
         )
-        if "  workflow_run:" in source:
+        if workflow == single_job:
+            if old_main_condition not in source:
+                return False
+        elif "  workflow_run:" in source:
             if (original_first_intent_followup not in source
                 or ('      - "Fund-100 V6-S1 ONE ACWI Original Intent Signed CAS '
                     '(STORAGE ONLY; NO BROKER)"') not in source
