@@ -59,6 +59,12 @@ def parse_index(raw: bytes) -> dict[int, dict]:
         if len(fields) != 5:
             raise PopulationStop("Malformed original SEC filing row")
         cik, company, form, filed, path = fields
+        # A full SEC master index includes hundreds of thousands of other
+        # forms. The research population is strictly original 10-K filings;
+        # non-10-K filing-agent metadata must not censor this cohort.
+        all_rows += 1
+        if form != "10-K":
+            continue
         if (not re.fullmatch(r"[0-9]{1,10}", cik)
             or int(cik) == 0 or not company.strip()
             or len(company) > 250 or not form.strip()
@@ -68,13 +74,11 @@ def parse_index(raw: bytes) -> dict[int, dict]:
             or path in paths):
             raise PopulationStop("Unverifiable, duplicated or out-of-quarter SEC filing")
         paths.add(path)
-        all_rows += 1
-        if form == "10-K":
-            tenk += 1
-            ident = int(cik)
-            entry = found.setdefault(ident, {"company_names": set(), "filings": []})
-            entry["company_names"].add(company.strip())
-            entry["filings"].append((filed, path))
+        tenk += 1
+        ident = int(cik)
+        entry = found.setdefault(ident, {"company_names": set(), "filings": []})
+        entry["company_names"].add(company.strip())
+        entry["filings"].append((filed, path))
     if not found or tenk != sum(len(x["filings"]) for x in found.values()):
         raise PopulationStop("No reconciled original SEC 10-K filings")
     return found
