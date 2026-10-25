@@ -770,3 +770,55 @@ def test_original_report_includes_costed_active_risk_for_each_overlay():
         assert risk["in_sample_survivor_selected_no_significance_or_alpha_claim"]
         assert risk["fees_included_in_both_nav_paths"]
     assert not out["live_authorized"] and out["broker_orders"] == 0
+
+
+def test_paired_block_sensitivity_zero_and_constant_active_return():
+    zero = p4r._paired_active_return_block_sensitivity(np.zeros(252))
+    assert zero["block_sessions"] == p4r.HORIZON == 126
+    assert zero["resamples"] == 2000
+    assert zero["annualized_arithmetic_active_return_pp_resample_p025"] == 0
+    assert zero["annualized_arithmetic_active_return_pp_resample_p975"] == 0
+    assert zero["resample_fraction_nonpositive"] == 1
+    constant = p4r._paired_active_return_block_sensitivity(np.full(300, .001))
+    assert constant["annualized_arithmetic_active_return_pp_resample_p025"] == 25.2
+    assert constant["annualized_arithmetic_active_return_pp_resample_p975"] == 25.2
+    assert constant["resample_fraction_nonpositive"] == 0
+    assert constant["historical_conditional_range_not_confidence_interval"]
+    assert constant["survivor_selected_issuer_universe_not_resampled"]
+    assert constant["no_predictive_alpha_or_statistical_significance_claim"]
+
+
+def test_paired_block_sensitivity_preserves_sign_variation_and_is_reproducible():
+    x = np.r_[np.full(126, .01), np.full(126, -.01)]
+    a = p4r._paired_active_return_block_sensitivity(x)
+    b = p4r._paired_active_return_block_sensitivity(x)
+    assert a == b
+    assert a["annualized_arithmetic_active_return_pp_resample_p025"] < 0
+    assert a["annualized_arithmetic_active_return_pp_resample_p975"] > 0
+    assert 0 < a["resample_fraction_nonpositive"] < 1
+    assert a["same_day_stock_and_spy_returns_kept_paired"]
+    assert a["nonwrapping_contiguous_blocks"]
+
+
+@pytest.mark.parametrize("bad", [
+    np.array([.01]), np.array([.01, np.nan]),
+    np.array([.01, np.inf]), np.zeros((2, 2)),
+])
+def test_paired_block_sensitivity_rejects_invalid_active_returns(bad):
+    with pytest.raises(p4r.EventStudyStop, match="Invalid paired active returns"):
+        p4r._paired_active_return_block_sensitivity(bad)
+
+
+def test_paired_block_sensitivity_is_reported_for_all_costed_spy_overlays():
+    report = run()
+    for cost in ("5", "15", "35"):
+        diag = report["costed_six_slot_spy_idle_capital_overlay"][cost][
+            "paired_realized_active_risk"]["paired_block_active_return_sensitivity"]
+        assert diag["method"] == (
+            "FIXED_126_SESSION_PAIRED_MOVING_BLOCK_ACTIVE_RETURN_SENSITIVITY")
+        assert diag["block_sessions"] == 126
+        assert diag["resamples"] == 2000
+        assert diag["historical_conditional_range_not_confidence_interval"]
+        assert diag["no_predictive_alpha_or_statistical_significance_claim"]
+    assert not report["trading_authorized"]
+    assert report["broker_orders"] == 0
