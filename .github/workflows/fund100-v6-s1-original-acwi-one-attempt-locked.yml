@@ -1,0 +1,89 @@
+name: Fund-100 V6-S1 ORIGINAL ACWI First Execution (LOCKED; NO ORDERS)
+
+# PRE-RELEASE WORKFLOW ONLY: the same final single-process entrypoint that will
+# eventually be separately authorised is inspected with NO broker/private
+# mutation credentials. A dispatch NEVER places an order in this version.
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type INSPECT_ORIGINAL_ACWI_LOCKED_NO_ORDERS (this does NOT trade)'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  issues: read
+
+# Share the EXISTING V5 real execution mutex, not a parallel competing one.
+# Retain the mutex when this V6 workflow is ever separately authorised.
+concurrency:
+  group: fund100-v5-002-live-production
+  cancel-in-progress: false
+
+jobs:
+  original-acwi-first-attempt-locked-admission:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.confirmation == 'INSPECT_ORIGINAL_ACWI_LOCKED_NO_ORDERS'
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Original manual first-attempt main scope; STOP-only source contract
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          test "$FUND100_RISK_LEVEL" = 'HIGH'
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          grep -Eq '"first_original_acwi_sell_enabled": false' fund100_v6_s1_operator_control.json
+          python - <<'PY'
+          import fund100_v6_s1_original_first_acwi_entry_locked_v1_0 as entry
+          import fund100_v6_s1_original_one_attempt_chain_locked_v1_0 as chain
+          import fund100_v6_s1_one_time_owner_claim_cas_v1_0 as owner
+          import fund100_v6_s1_immutable_release_publish_locked_v1_0 as release
+          import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+          assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
+          assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
+          assert entry.RETRY_AFTER_UNCERTAIN_OUTCOME is False
+          assert owner.SIGNED_OWNER_CLAIM_TRANSPORT_RELEASED is False
+          assert owner.PREPOST_PRIVATE_CAS_RELEASED is False
+          assert owner.PREPOST_PUBLIC_WITNESS_RELEASED is False
+          assert release.PUBLISH_SIGNED_HEAD_RELEASED is False
+          assert active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is False
+          # The separately run V1.14+ LIVE audit enforces both frozen V5
+          # writer globals and the V6 release switches without allowing an
+          # unapproved direct writer import in any LIVE Actions workflow.
+          print('Original V6 one-shot entry and every order mutation gate remain hard-locked.')
+          PY
+      - name: Invoke EXACT original one-attempt entry; REQUIRE fail before any network
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from fund100_v6_s1_original_first_acwi_entry_locked_v1_0 import (
+              EntryStop, run_protected_first_acwi_once)
+          try:
+              run_protected_first_acwi_once()
+          except EntryStop as error:
+              if str(error)!='Original ACWI protected LIVE entry HARD LOCKED':
+                  raise SystemExit('UNEXPECTED FIRST ACWI ERROR; STOP') from None
+              print('FIRST ACWI ENTRY HARD LOCK VERIFIED; no state writes or broker orders.')
+          else:
+              raise SystemExit('UNEXPECTED EXECUTION RELEASE; STOP')
+          PY
