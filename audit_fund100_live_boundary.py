@@ -426,7 +426,7 @@ def approved_scoped_live_script(
                 "python fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
                 "recover_current_original_signed_head_readonly(",
                 "read_current_original_acwi_owner_fence_getonly(",
-                "No LIVE orders.",
+                "NO LIVE orders.",
             ):
                 if evidence not in source:
                     return False
