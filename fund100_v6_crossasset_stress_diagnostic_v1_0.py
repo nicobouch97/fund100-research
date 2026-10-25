@@ -331,8 +331,9 @@ def main() -> None:
     # Public FRED CSV, no API token or broker/private credentials.
     from io import StringIO
     import requests
-    response = requests.get("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFF",
-                            timeout=40, headers={"User-Agent": "Fund100Research/1.0"})
+    response = requests.get("https://fred.stlouisfed.org/graph/fredgraph.csv",
+                            params={"id": "DFF", "cosd": "2013-12-01"},
+                            timeout=60, headers={"User-Agent": "Mozilla/5.0 (research)"})
     response.raise_for_status()
     raw_rates = pd.read_csv(StringIO(response.text))
     if (list(raw_rates.columns) not in (["DATE", "DFF"],
