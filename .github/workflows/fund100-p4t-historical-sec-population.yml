@@ -133,16 +133,29 @@ jobs:
           assert sum(report["source_failure_reason_counts"].values()) == report[
               "unavailable_or_unverifiable_sources"]
           assert report["section12g_common_class_covers"] >= 0
+          assert report["full_submission_sources_captured"] + report[
+              "index_verified_primary_10k_sources_captured"] == report[
+              "original_filing_sources_captured"]
+          assert report["index_verified_primary_is_not_complete_submission"]
           assert report["sample_not_universe_or_delisting_estimate"]
           assert report["cover_text_not_independent_listing_or_security_master"]
           assert report["no_verified_historical_total_returns_or_investable_backtest"]
           assert not report["live_authorized"] and not report["paper_authorized"]
           assert report["broker_requests"] == report["broker_orders"] == 0
           for row in report["observations"]:
-              if row["source_state"] == "ORIGINAL_10K_BYTES_CAPTURED":
+              if row["source_state"] in {
+                      "ORIGINAL_10K_BYTES_CAPTURED", "ORIGINAL_PRIMARY_10K_BYTES_CAPTURED"}:
                   raw = (root / row["local_original_file"]).read_bytes()
                   assert hashlib.sha256(raw).hexdigest() == row["original_sha256"]
                   assert len(raw) == row["original_bytes"]
+                  if row["source_state"] == "ORIGINAL_PRIMARY_10K_BYTES_CAPTURED":
+                      index = (root / row["primary_index_file"]).read_bytes()
+                      assert hashlib.sha256(index).hexdigest() == row["primary_index_sha256"]
+                      assert len(index) == row["primary_index_bytes"]
+                      assert row["source_kind"] == "INDEX_VERIFIED_PRIMARY_10K"
+                      assert row["original_submission_failure_reason"] == "OVER_12MB_SOURCE_LIMIT"
+                  else:
+                      assert row["source_kind"] == "FULL_SUBMISSION"
               else:
                   assert row["cover_state"] == "NOT_EVALUATED"
                   assert row["source_failure_reason"] in report["source_failure_reason_counts"]
@@ -150,6 +163,8 @@ jobs:
                 report["original_filing_sources_captured"], "/ 12;",
                 report["possible_section12b_common_equity_exchange_covers"],
                 "possible Section 12(b) matches requiring independent review; ",
+                report["index_verified_primary_10k_sources_captured"],
+                "index-verified primary documents (not full submissions);",
                 report["section12g_common_class_covers"], "12(g) common-class covers.")
           print("Unverifiable original SEC source reasons (NOT listing status):",
                 json.dumps(report["source_failure_reason_counts"], sort_keys=True))
