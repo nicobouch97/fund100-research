@@ -118,9 +118,24 @@ class Scenario:
         if self.mode=="publish_mutable":data["immutable"]=False
         return Reply(200,data)
     def immutable(self,req,timeout):
+        assert timeout==12 and req.get_method()=="GET"
         if self.verification is None:
             self.verification=f.GitHubImmutable(self.asset)
-        return self.verification.transport(req,timeout)
+        self.verification.requests.append(req.full_url)
+        if req.full_url==anchor.RELEASE_URL:
+            assert req.get_header("Authorization")=="Bearer "+ADMIN
+            return Reply(200,self.verification.reply)
+        assert req.full_url==anchor.DOWNLOAD_URL
+        assert req.get_header("Authorization") is None
+        return BinaryReply(200,self.asset)
+
+class BinaryReply:
+    def __init__(self,status,data):
+        self.status=status
+        self.buffer=BytesIO(data)
+    def __enter__(self):return self
+    def __exit__(self,*a):return False
+    def read(self,lim):return self.buffer.read(lim)
 
 @pytest.fixture(autouse=True)
 def first_original_actions_run(monkeypatch):
