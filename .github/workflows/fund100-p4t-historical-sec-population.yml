@@ -138,7 +138,13 @@ jobs:
           assert sum(report["source_failure_reason_counts"].values()) == report[
               "unavailable_or_unverifiable_sources"]
           assert report["section12g_common_class_covers"] >= 0
-          assert report["schema"].endswith("_V3")
+          assert report["schema"].endswith("_V4")
+          assert report["original_xbrl_ticker_not_historical_security_master"]
+          assert report["original_xbrl_ticker_review_candidates"] == sum(
+              row.get("original_xbrl_ticker_state") ==
+              "ONE_ORIGINAL_XBRL_TICKER_REVIEW_ONLY" for row in report["observations"])
+          assert report["original_xbrl_not_evaluated_primary_only"] == report[
+              "index_verified_primary_10k_sources_captured"]
           assert report["structured_rows_not_historical_investable_security_master"]
           assert report["possible_structured_12b_security_class_rows"] == sum(
               len(row.get("possible_12b_security_class_rows", []))
@@ -185,6 +191,9 @@ jobs:
                 report["index_verified_primary_10k_sources_captured"],
                 "index-verified primary documents (not full submissions);",
                 report["section12g_common_class_covers"], "12(g) common-class covers.")
+          print("Original EX-101.INS issuer-reported ticker hints (NOT verified",
+                "security IDs, share classes or exchange listings):",
+                report["original_xbrl_ticker_review_candidates"])
           print("Unverifiable original SEC source reasons (NOT listing status):",
                 json.dumps(report["source_failure_reason_counts"], sort_keys=True))
           PY
