@@ -15,6 +15,8 @@ on:
       - "test_fund100_v6_s1_fresh_acwi_order_time_risk_getonly_v1_0.py"
       - "fund100_v6_s1_original_one_attempt_chain_locked_v1_0.py"
       - "test_fund100_v6_s1_original_one_attempt_chain_locked_v1_0.py"
+      - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
+      - "test_fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "fund100_alpaca_live_writer_candidate_v1_1.py"
       - "test_fund100_v6_s1_qty_sell_inside_reviewed_writer_v1_0.py"
       - "research_lab/V6_S1_APPROVED_WRITER_ACWI_FRACTIONAL_SELL_TRANSPORT_LOCKED_PROTOCOL_2026_10_21.md"
@@ -46,6 +48,7 @@ jobs:
             test_fund100_v6_s1_immutable_release_anchor_v1_0.py \
             test_fund100_v6_s1_immutable_release_publish_locked_v1_0.py \
             test_fund100_v6_s1_fresh_acwi_order_time_risk_getonly_v1_0.py \
-            test_fund100_v6_s1_original_one_attempt_chain_locked_v1_0.py
+            test_fund100_v6_s1_original_one_attempt_chain_locked_v1_0.py \
+            test_fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
           echo 'Dummy response/keys only: no LIVE writer command, no Alpaca secrets, no real POST.'
