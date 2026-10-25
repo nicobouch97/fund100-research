@@ -97,7 +97,7 @@ def test_month_end_etf_to_etf_switch_charges_both_real_security_legs():
 def test_cost_accounting_version_and_no_trading_authority():
     report = mod.evaluate(prices(), acquired_at_utc="2025-01-02T12:00:00Z",
                           cash_rates=cash_rates())
-    assert report["schema"].endswith("_V4")
+    assert report["schema"].endswith("_V5")
     assert report["original_zero_cash_baseline_preserved"]
     assert report["cash_rate_source"] == "YAHOO_IRX_13W_BILL_DISCOUNT_YIELD_PROXY"
     assert report["rebalance_turnover_definition"] == "SUM_ABS_ETF_WEIGHT_CHANGES_EXCLUDING_CASH"
@@ -232,3 +232,76 @@ def test_sleeve_attribution_rejects_incomplete_or_changed_equity_comparison(monk
                         (.40, .20, .15, .10, 0., .15))
     with pytest.raises(mod.CrossAssetStop, match="equity mix"):
         mod.sleeve_attribution(metrics)
+
+
+def test_calendar_year_relative_log_wealth_telescopes_with_inception_cost():
+    idx = pd.to_datetime(["2020-01-02", "2020-12-31",
+                          "2021-01-04", "2021-12-31"])
+    baseline = pd.Series([1., 1.02, 1.03, 1.04], index=idx)
+    # Start below baseline to represent higher initial ETF buy costs.
+    gold = pd.Series([.998, 1.06, 1.07, 1.08], index=idx)
+    shy = pd.Series([.999, 1.01, 1.00, .98], index=idx)
+    both = pd.Series([.997, 1.05, 1.06, 1.07], index=idx)
+    navs = {mod.CASH_CONTROL: baseline, mod.GOLD_ONLY: gold,
+            mod.SHY_ONLY: shy, mod.GOLD_SHY: both}
+    report = mod.calendar_year_relative_log_wealth(navs)
+    row = report[mod.GOLD_ONLY]
+    expected = 100 * np.log(gold.iloc[-1] / baseline.iloc[-1])
+    assert row["terminal_relative_log_wealth_pct"] == pytest.approx(expected, abs=1e-6)
+    assert row["inception_cost_relative_log_wealth_pct"] == pytest.approx(
+        100 * np.log(.998), abs=1e-6)
+    assert sum(row["calendar_year_log_relative_wealth_pct"].values()) == pytest.approx(
+        expected, abs=2e-6)
+    assert row["largest_positive_year"] == 2020
+    assert row["total_ex_largest_positive_year_log_relative_wealth_pct"] == pytest.approx(
+        row["calendar_year_log_relative_wealth_pct"]["2021"], abs=2e-6)
+    assert report[mod.SHY_ONLY]["negative_years"] >= 1
+
+
+def test_calendar_year_concentration_no_future_leak_into_prior_year():
+    idx = pd.to_datetime(["2020-01-02", "2020-12-31",
+                          "2021-01-04", "2021-12-31"])
+    baseline = pd.Series([1., 1., 1., 1.], index=idx)
+    navs = {name: pd.Series([.999, 1.01, 1.02, 1.03], index=idx)
+            for name in (mod.GOLD_ONLY, mod.SHY_ONLY, mod.GOLD_SHY)}
+    navs[mod.CASH_CONTROL] = baseline
+    original = mod.calendar_year_relative_log_wealth(navs)
+    navs[mod.GOLD_ONLY] = navs[mod.GOLD_ONLY].copy()
+    navs[mod.GOLD_ONLY].iloc[-1] *= 1.10
+    changed = mod.calendar_year_relative_log_wealth(navs)
+    assert (original[mod.GOLD_ONLY]["calendar_year_log_relative_wealth_pct"]["2020"]
+            == changed[mod.GOLD_ONLY]["calendar_year_log_relative_wealth_pct"]["2020"])
+    assert (original[mod.GOLD_ONLY]["terminal_relative_log_wealth_pct"]
+            != changed[mod.GOLD_ONLY]["terminal_relative_log_wealth_pct"])
+
+
+@pytest.mark.parametrize("corruption", ["missing", "negative", "nan", "duplicate"])
+def test_calendar_year_concentration_rejects_bad_nav(corruption):
+    idx = pd.to_datetime(["2020-01-02", "2020-12-31", "2021-12-31"])
+    navs = {name: pd.Series([1., 1.1, 1.2], index=idx)
+            for name in (mod.CASH_CONTROL, mod.GOLD_ONLY,
+                         mod.SHY_ONLY, mod.GOLD_SHY)}
+    if corruption == "missing":
+        navs.pop(mod.GOLD_ONLY)
+    elif corruption == "negative":
+        navs[mod.GOLD_ONLY].iloc[-1] = -1
+    elif corruption == "nan":
+        navs[mod.GOLD_ONLY].iloc[-1] = np.nan
+    else:
+        navs[mod.GOLD_ONLY].index = pd.to_datetime(
+            ["2020-01-02", "2020-12-31", "2020-12-31"])
+    with pytest.raises(mod.CrossAssetStop):
+        mod.calendar_year_relative_log_wealth(navs)
+
+
+def test_original_source_report_includes_concentration_diagnostics():
+    report = mod.evaluate(prices(), acquired_at_utc="2025-01-02T12:00:00Z",
+                          cash_rates=cash_rates())
+    assert report["calendar_year_concentration_is_post_result_not_holdout"]
+    assert report["calendar_year_log_wealth_not_cagr_or_executable_leave_year_out"]
+    rows = report["year_concentration_15bp_irx_gross"]
+    assert set(rows) == {mod.GOLD_ONLY, mod.SHY_ONLY, mod.GOLD_SHY}
+    for row in rows.values():
+        assert len(row["calendar_year_log_relative_wealth_pct"]) == 11
+        assert sum(row["calendar_year_log_relative_wealth_pct"].values()) == pytest.approx(
+            row["terminal_relative_log_wealth_pct"], abs=1e-5)
