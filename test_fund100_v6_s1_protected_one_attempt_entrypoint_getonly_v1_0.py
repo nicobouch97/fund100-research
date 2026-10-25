@@ -89,3 +89,17 @@ def test_locked_coordinator_not_executed_and_hard_stop_unchanged():
     assert publisher.PUBLISH_SIGNED_HEAD_RELEASED is False
     assert active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is False
     assert writer.V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED is False
+
+def test_immutable_release_admin_proof_is_mandatory_and_stays_get_only():
+    w=workflow()
+    scope=w.split("      - name: Provider immutable setting MUST pass")[1]
+    scope=scope.split("      - name: Non-executable readiness only")[0]
+    assert "FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}" in scope
+    assert "p._request(method='GET',url=p.IMMUTABLE_SETTING_URL,token=token)" in scope
+    assert "IMMUTABLE_RELEASE_ADMIN_READ_TOKEN_MISSING: STOP." in scope
+    assert "IMMUTABLE_RELEASE_ADMIN_READ_DENIED_OR_UNAVAILABLE: STOP." in scope
+    assert "IMMUTABLE_RELEASE_SETTING_DISABLED_OR_UNKNOWN: STOP." in scope
+    assert "raise SystemExit" in scope
+    assert "IMMUTABLE_RELEASE_SETTING_ENABLED_PROVIDER_VERIFIED; STILL STOP." in scope
+    assert "method='POST'" not in scope and "method='PATCH'" not in scope
+    assert "BROKER_KILL_SWITCH: DISENGAGED" not in w
