@@ -107,3 +107,67 @@ def test_noncanonical_capture_clock_and_missing_contact_stop():
         p4t._official_get(p4t.INDEX_URL, "", p4t.MAX_INDEX)
     with pytest.raises(p4t.PopulationStop, match="official SEC"):
         p4t._official_get("https://example.com", "Research contact@example.org", 500)
+
+
+def annual_quarters():
+    return {
+        1: index(ONE, TWO),
+        2: index("1001|OLDCO INC|10-K|2017-05-15|edgar/data/1001/0001001-17-000011.txt"),
+        3: index("3003|NEWCO INC|10-K|2017-08-15|edgar/data/3003/0003003-17-000012.txt"),
+        4: index("4004|LATER INC|10-K|2017-11-15|edgar/data/4004/0004004-17-000013.txt"),
+    }
+
+
+def test_annual_union_counts_each_original_filing_but_deduplicates_issuers():
+    out = p4t.evaluate_annual(
+        annual_quarters(), registry((1001, "OLD"), (3003, "NEW")),
+        captured_utc="2026-10-25T12:00:00Z")
+    assert out["annual_10k_filing_count"] == 5
+    assert out["annual_distinct_10k_ciks"] == 4
+    assert out["annual_new_ciks_outside_q1"] == 2
+    assert out["annual_ciks_also_in_current_ticker_registry"] == 2
+    assert out["annual_ciks_absent_from_current_ticker_registry"] == 2
+    assert out["quarter_10k_filing_counts"] == {
+        "2017_Q1": 2, "2017_Q2": 1, "2017_Q3": 1, "2017_Q4": 1}
+    assert len(set(out["quarter_source_sha256"].values())) == 4
+    assert out["annual_filing_and_cik_counts_reconciled"]
+    assert out["quarterly_10k_absence_not_proof_of_company_exit"]
+    assert out["no_survivorship_safe_investable_backtest_or_alpha_claim"]
+    assert out["broker_requests"] == out["broker_orders"] == 0
+    assert not out["live_authorized"] and not out["paper_authorized"]
+
+
+def test_annual_rejects_missing_quarter_and_cross_quarter_duplicate_accession():
+    quarters = annual_quarters()
+    quarters.pop(3)
+    with pytest.raises(p4t.PopulationStop, match="four original"):
+        p4t.evaluate_annual(quarters, registry((1001, "OLD")),
+                            captured_utc="2026-10-25T12:00:00Z")
+    quarters = annual_quarters()
+    quarters[2] = index(
+        "1001|OLDCO INC|10-K|2017-05-15|edgar/data/1001/0001001-17-000001.txt")
+    with pytest.raises(p4t.PopulationStop, match="Repeated SEC accession"):
+        p4t.evaluate_annual(quarters, registry((1001, "OLD")),
+                            captured_utc="2026-10-25T12:00:00Z")
+
+
+def test_quarter_validation_rejects_wrong_date_and_unsupported_quarter():
+    quarters = annual_quarters()
+    quarters[2] = index(ONE)  # Q1 filing cannot be silently included in Q2.
+    with pytest.raises(p4t.PopulationStop, match="out-of-quarter"):
+        p4t.evaluate_annual(quarters, registry((1001, "OLD")),
+                            captured_utc="2026-10-25T12:00:00Z")
+    for quarter in (0, 5, True):
+        with pytest.raises(p4t.PopulationStop, match="Unsupported"):
+            p4t.parse_index(index(ONE), quarter=quarter)
+
+
+def test_annual_keeps_non_10k_noise_out_of_each_quarter():
+    quarters = annual_quarters()
+    quarters[3] = index(
+        "9999|UNRELATED|4|2017-08-15|not/an/edgar/path",
+        "3003|NEWCO INC|10-K|2017-08-15|edgar/data/3003/0003003-17-000012.txt")
+    out = p4t.evaluate_annual(quarters, registry((1001, "OLD")),
+                              captured_utc="2026-10-25T12:00:00Z")
+    assert out["annual_10k_filing_count"] == 5
+    assert out["annual_distinct_10k_ciks"] == 4

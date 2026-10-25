@@ -24,7 +24,7 @@ concurrency:
 jobs:
   historical-sec-filing-census:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -47,12 +47,28 @@ jobs:
             echo "captured=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          python fund100_stock_historical_sec_population_p4t_v1_0.py --output-dir /tmp/fund100-p4t-original-sec
+          python fund100_stock_historical_sec_population_p4t_v1_0.py --annual-2017 --output-dir /tmp/fund100-p4t-original-sec
           python - <<'PY'
           import hashlib, json
           from pathlib import Path
           root = Path("/tmp/fund100-p4t-original-sec")
           report = json.loads((root / "historical-filer-census.json").read_text())
+          annual = json.loads((root / "historical-2017-annual-filer-census.json").read_text())
+          for quarter in (1, 2, 3, 4):
+              label = f"2017_Q{quarter}"
+              raw = (root / f"original-sec-2017q{quarter}-master.idx").read_bytes()
+              assert annual["quarter_source_sha256"][label] == hashlib.sha256(raw).hexdigest()
+              assert annual["quarter_distinct_10k_ciks"][label] > 0
+          assert annual["annual_10k_filing_count"] == sum(
+              annual["quarter_10k_filing_counts"].values())
+          assert annual["annual_distinct_10k_ciks"] >= report["original_2017_q1_distinct_10k_ciks"]
+          assert annual["annual_filing_and_cik_counts_reconciled"]
+          assert annual["historical_population_selected_without_2026_ticker_filter"]
+          assert annual["quarterly_10k_absence_not_proof_of_company_exit"]
+          assert annual["no_survivorship_safe_investable_backtest_or_alpha_claim"]
+          assert not annual["trading_authorized"] and not annual["paper_authorized"]
+          assert not annual["live_authorized"]
+          assert annual["broker_requests"] == annual["broker_orders"] == 0
           assert report["historical_master_index_sha256"] == hashlib.sha256(
               (root / "original-sec-2017q1-master.idx").read_bytes()).hexdigest()
           assert report["contemporary_registry_sha256"] == hashlib.sha256(
@@ -71,6 +87,12 @@ jobs:
                 report["original_2017_q1_distinct_10k_ciks"], "distinct CIKs;",
                 report["2017_q1_10k_ciks_absent_from_current_ticker_registry"],
                 "not present in the CURRENT registry (NOT a delisting count)")
+          print("Full-year 2017 original SEC 10-K population:",
+                annual["annual_10k_filing_count"], "filings;",
+                annual["annual_distinct_10k_ciks"], "distinct CIKs;",
+                annual["annual_new_ciks_outside_q1"], "additional CIKs outside Q1;",
+                annual["annual_ciks_absent_from_current_ticker_registry"],
+                "not in CURRENT registry (NOT a delisting count)")
           PY
           echo "captured=true" >> "$GITHUB_OUTPUT"
       - name: Preserve official source bytes and reproducible census (90 days)
