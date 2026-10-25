@@ -134,6 +134,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          test "${{ steps.risk_source.outputs.risk_pass }}" = 'true'
           grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
           echo 'ONE protected job checked real account and signed state GET only.'
           echo 'Original first ACWI one-attempt coordinator NOT CALLED; NO LIVE orders.'
