@@ -31,7 +31,7 @@ TAG="fund100-v6-s1-first-acwi-prepost-head-v1"
 ASSET="fund100-v6-s1-first-acwi-head.json"
 API="https://api.github.com/repos/"+REPOSITORY
 RELEASE_URL=API+"/releases/tags/"+TAG
-ASSET_URL=API+"/releases/assets/"
+DOWNLOAD_URL="https://github.com/"+REPOSITORY+"/releases/download/"+TAG+"/"+ASSET
 MAX_METADATA_BYTES=26000
 MAX_ASSET_BYTES=2200
 PUBLIC_RELEASE_CREATION_RELEASED=False
@@ -125,17 +125,23 @@ def original_signed_anchor_asset(*,signed_owner_sources:dict,prepost_source:dict
     return public_bytes
 
 def _get(*,url:str,token:str,accept:str,limit:int,transport=None)->bytes:
-    if (url!=RELEASE_URL and
-        not (url.startswith(ASSET_URL) and
-             re.fullmatch("[1-9][0-9]{0,18}",url[len(ASSET_URL):]) is not None)):
+    if url not in (RELEASE_URL,DOWNLOAD_URL):
         raise AnchorStop("Untrusted external anchor host or endpoint")
-    if (type(token) is not str or len(token.strip())<10 or "\n" in token
-        or "\r" in token):
-        raise AnchorStop("Independent public repository READ principal missing")
-    req=Request(url,method="GET",headers={
-        "Accept":accept,"Authorization":"Bearer "+token,
-        "X-GitHub-Api-Version":"2022-11-28",
-        "User-Agent":"fund100-v6-s1-readonly-immutable-head-anchor"})
+    headers={
+        "Accept":accept,
+        "User-Agent":"fund100-v6-s1-readonly-immutable-head-anchor",
+    }
+    if url==RELEASE_URL:
+        if (type(token) is not str or len(token.strip())<10
+            or "\n" in token or "\r" in token):
+            raise AnchorStop("Independent public repository READ principal missing")
+        headers["Authorization"]="Bearer "+token
+        headers["X-GitHub-Api-Version"]="2022-11-28"
+    elif token is not None:
+        # Public release download may redirect to GitHub's asset CDN. Never
+        # forward a credential across the redirect, regardless of host.
+        raise AnchorStop("Public release asset must be fetched WITHOUT credentials")
+    req=Request(url,method="GET",headers=headers)
     try:
         with (urlopen if transport is None else transport)(req,timeout=12) as resp:
             if getattr(resp,"status",None)!=200:
@@ -191,10 +197,11 @@ def verify_published_immutable_anchor(*,expected_asset:bytes,public_read_token:s
             entry.get("state")!="uploaded" or
             type(entry.get("id")) is not int or entry["id"]<=0 or
             entry.get("size")!=len(expected_asset) or
-            entry.get("digest")!="sha256:"+expected_digest):
+            entry.get("digest")!="sha256:"+expected_digest or
+            entry.get("browser_download_url")!=DOWNLOAD_URL):
             raise AnchorStop("Immutable release asset identity/digest mismatch")
-        downloaded=_get(url=ASSET_URL+str(entry["id"]),
-                        token=public_read_token,
+        downloaded=_get(url=DOWNLOAD_URL,
+                        token=None, # never place READ credentials on CDN redirect
                         accept="application/octet-stream",
                         limit=MAX_ASSET_BYTES,transport=transport)
         if downloaded!=expected_asset:
