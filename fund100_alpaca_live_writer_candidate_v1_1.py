@@ -973,8 +973,16 @@ V6_S1_ACWI_EXTERNAL_WATERMARK_RELEASED = False
 
 
 def require_v6_s1_acwi_live_release() -> None:
-    """The FIRST executable call in the V6 LIVE adapter."""
-    require_public_execution_released()  # original V5 hard locks
+    """FIRST guard for the separate first V6 ACWI SELL, never old V5 BUYs.
+
+    The legacy V5 writer remains locked even when a future independently
+    reviewed V6 SELL release is authorized. V5 submit_authorized_order_batch
+    still starts with require_public_execution_released() unchanged.
+    """
+    if (TRANSPORT_RELEASED is not False
+        or PUBLIC_EXECUTION_ENABLED is not False):
+        raise LiveWriterCandidateLocked(
+            "V6 ACWI first SELL requires original V5 global writer STOP")
     if (V6_S1_ACWI_QTY_SELL_TRANSPORT_RELEASED is not True
         or V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED is not True
         or V6_S1_ACWI_FRESH_ACCOUNT_RISK_SOURCE_RELEASED is not True
