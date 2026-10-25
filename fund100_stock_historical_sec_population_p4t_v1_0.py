@@ -26,14 +26,26 @@ HEADER = "CIK|Company Name|Form Type|Date Filed|Filename"
 MAX_INDEX = 40_000_000
 MAX_REGISTRY = 6_000_000
 START, END = "2017-01-01", "2017-03-31"
+INDEX_URLS = {q: f"https://www.sec.gov/Archives/edgar/full-index/2017/QTR{q}/master.idx"
+              for q in (1, 2, 3, 4)}
+QUARTER_BOUNDS = {
+    1: ("2017-01-01", "2017-03-31"),
+    2: ("2017-04-01", "2017-06-30"),
+    3: ("2017-07-01", "2017-09-30"),
+    4: ("2017-10-01", "2017-12-31"),
+}
+ANNUAL_SCHEMA = "FUND100_P4T_ORIGINAL_2017_FULL_YEAR_10K_CENSUS_V1"
 
 
 class PopulationStop(ValueError):
     pass
 
 
-def parse_index(raw: bytes) -> dict[int, dict]:
-    """Validate every archived filing line; retain all original 10-K CIKs."""
+def parse_index(raw: bytes, *, quarter: int = 1) -> dict[int, dict]:
+    """Validate original 10-K filings in a specified 2017 SEC quarter."""
+    if type(quarter) is not int or quarter not in QUARTER_BOUNDS:
+        raise PopulationStop("Unsupported original SEC quarter")
+    start, end = QUARTER_BOUNDS[quarter]
     if type(raw) is not bytes or not 0 < len(raw) <= MAX_INDEX:
         raise PopulationStop("Original SEC quarterly master index missing or oversized")
     try:
@@ -68,7 +80,7 @@ def parse_index(raw: bytes) -> dict[int, dict]:
         if (not re.fullmatch(r"[0-9]{1,10}", cik)
             or int(cik) == 0 or not company.strip()
             or len(company) > 250 or not form.strip()
-            or not START <= filed <= END
+            or not start <= filed <= end
             or not re.fullmatch(r"edgar/data/[0-9]+/[0-9-]+\.txt", path)
             or int(path.split("/")[2]) != int(cik)
             or path in paths):
@@ -148,7 +160,7 @@ def evaluate(index_raw: bytes, registry_raw: bytes, *, captured_utc: str) -> dic
 
 
 def _official_get(url: str, agent: str, limit: int) -> bytes:
-    if url not in (INDEX_URL, REGISTRY_URL):
+    if url not in (*INDEX_URLS.values(), REGISTRY_URL):
         raise PopulationStop("Only predeclared official SEC source URLs permitted")
     if (type(agent) is not str or len(agent) < 10 or "@" not in agent
         or "\r" in agent or "\n" in agent):
@@ -180,9 +192,104 @@ def capture(output_dir: Path, agent: str) -> dict:
     return report
 
 
+def evaluate_annual(index_by_quarter: dict[int, bytes], registry_raw: bytes,
+                    *, captured_utc: str) -> dict:
+    """Census every original 2017 quarter without filtering on current tickers.
+
+    Annual union membership is CIK-based; SEC filings are not investable shares.
+    The same CIK filing in multiple quarters counts once as an issuer, but
+    each distinct 10-K filing counts once. No absence implies delisting.
+    """
+    if (type(index_by_quarter) is not dict
+        or set(index_by_quarter) != set(QUARTER_BOUNDS)
+        or any(type(q) is not int for q in index_by_quarter)):
+        raise PopulationStop("Exactly four original 2017 quarter indexes required")
+    # Retain original Q1 reconciliation and canonical capture-time checks.
+    first = evaluate(index_by_quarter[1], registry_raw, captured_utc=captured_utc)
+    current = parse_current_registry(registry_raw)
+    all_ciks: set[int] = set()
+    all_paths: set[str] = set()
+    counts: dict[str, int] = {}
+    distinct: dict[str, int] = {}
+    hashes: dict[str, str] = {}
+    q1_ciks: set[int] = set()
+    for quarter in sorted(QUARTER_BOUNDS):
+        raw = index_by_quarter[quarter]
+        cohort = parse_index(raw, quarter=quarter)
+        label = f"2017_Q{quarter}"
+        counts[label] = sum(len(v["filings"]) for v in cohort.values())
+        distinct[label] = len(cohort)
+        hashes[label] = sha256(raw).hexdigest()
+        for cik, entry in cohort.items():
+            for _, path in entry["filings"]:
+                if path in all_paths:
+                    raise PopulationStop("Repeated SEC accession across quarters")
+                all_paths.add(path)
+            all_ciks.add(cik)
+        if quarter == 1:
+            q1_ciks = set(cohort)
+    total = sum(counts.values())
+    if (total != len(all_paths)
+        or counts["2017_Q1"] != first["original_2017_q1_10k_filing_count"]
+        or distinct["2017_Q1"] != first["original_2017_q1_distinct_10k_ciks"]
+        or not q1_ciks.issubset(all_ciks)):
+        raise PopulationStop("Original SEC annual filing reconciliation failed")
+    overlap = all_ciks & current
+    absent = all_ciks - current
+    return {
+        "schema": ANNUAL_SCHEMA,
+        "source_index_urls": {f"2017_Q{q}": INDEX_URLS[q] for q in QUARTER_BOUNDS},
+        "capture_timestamp_utc": captured_utc,
+        "quarter_source_sha256": hashes,
+        "contemporary_registry_url": REGISTRY_URL,
+        "contemporary_registry_sha256": sha256(registry_raw).hexdigest(),
+        "quarter_10k_filing_counts": counts,
+        "quarter_distinct_10k_ciks": distinct,
+        "annual_10k_filing_count": total,
+        "annual_distinct_10k_ciks": len(all_ciks),
+        "annual_ciks_also_in_current_ticker_registry": len(overlap),
+        "annual_ciks_absent_from_current_ticker_registry": len(absent),
+        "annual_new_ciks_outside_q1": len(all_ciks - q1_ciks),
+        "annual_filing_and_cik_counts_reconciled": (
+            total == len(all_paths) and len(overlap) + len(absent) == len(all_ciks)),
+        "historical_population_selected_without_2026_ticker_filter": True,
+        "current_registry_absence_not_proof_of_delisting_or_failure": True,
+        "quarterly_10k_absence_not_proof_of_company_exit": True,
+        "sec_10k_filer_not_proven_historically_listed_common_stock": True,
+        "missing_historical_listing_security_master_and_total_return_prices": True,
+        "no_survivorship_safe_investable_backtest_or_alpha_claim": True,
+        "trading_authorized": False,
+        "paper_authorized": False,
+        "live_authorized": False,
+        "broker_requests": 0,
+        "broker_orders": 0,
+    }
+
+
+def capture_annual(output_dir: Path, agent: str) -> dict:
+    """Read four official SEC quarter indexes; preserve raw reproducible bytes."""
+    first = capture(output_dir, agent)
+    original = {1: (output_dir / "original-sec-2017q1-master.idx").read_bytes()}
+    for quarter in (2, 3, 4):
+        original[quarter] = _official_get(INDEX_URLS[quarter], agent, MAX_INDEX)
+    registry = (output_dir / "original-sec-current-tickers.json").read_bytes()
+    report = evaluate_annual(
+        original, registry, captured_utc=first["capture_timestamp_utc"])
+    for quarter in (2, 3, 4):
+        (output_dir / f"original-sec-2017q{quarter}-master.idx").write_bytes(
+            original[quarter])
+    (output_dir / "historical-2017-annual-filer-census.json").write_text(
+        json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    return report
+
+
 if __name__ == "__main__":
     cli = argparse.ArgumentParser(description="Official SEC filing census, no broker")
     cli.add_argument("--output-dir", required=True, type=Path)
+    cli.add_argument("--annual-2017", action="store_true",
+                     help="Capture all four 2017 quarters, preserving Q1 legacy census")
     args = cli.parse_args()
-    result = capture(args.output_dir, os.environ.get("SEC_USER_AGENT", ""))
+    agent = os.environ.get("SEC_USER_AGENT", "")
+    result = (capture_annual(args.output_dir, agent) if args.annual_2017
+              else capture(args.output_dir, agent))
     print(json.dumps(result, sort_keys=True))
