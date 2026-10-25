@@ -105,7 +105,7 @@ def original_signed_anchor_asset(*,signed_owner_sources:dict,prepost_source:dict
         or owner_doc["claim"]["signed_prepost_blob_sha"]!=new_sha
         or owner_doc["claim"]["signed_reserved_blob_sha"]!=bound["source_sha"]
         or owner_doc["claim"]["source_main_sha"]!=a["current_main_sha"]
-        or owner_doc["claim"]["owner_workflow_run_id"]!=int(_run_id(a["owner_run_id"]))
+        or owner_doc["claim"]["owner_workflow_run_id"]!=_run_id(a["owner_run_id"])
         or a["owner_attempt"]!=1):
         raise AnchorStop("Signed ACWI POST boundary or claimed owner is not the original")
     public_bytes=json.dumps({
