@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-SCHEMA = "FUND100_V6_CROSSASSET_FIXED_BASKET_STRESS_DIAGNOSTIC_V4"
+SCHEMA = "FUND100_V6_CROSSASSET_FIXED_BASKET_STRESS_DIAGNOSTIC_V5"
 CASH_SCENARIOS = ("ZERO", "IRX_MINUS_50BP", "IRX_GROSS")
 CASH_RATE_LAG_WEEKDAYS = 3  # conservative proxy, NOT verified historical release vintages
 SYMBOLS = ("XLK", "XLE", "IWM", "GLD", "SHY", "SPY")
@@ -230,6 +230,65 @@ def sleeve_attribution(by_basket: dict) -> dict:
     return output
 
 
+def calendar_year_relative_log_wealth(navs: dict[str, pd.Series]) -> dict:
+    """Attribute fixed-basket net relative log wealth by calendar year.
+
+    Includes inception trading-cost differences in the first year. Omitting
+    the strongest year is descriptive arithmetic, NOT an executable strategy.
+    """
+    names = (CASH_CONTROL, GOLD_ONLY, SHY_ONLY, GOLD_SHY)
+    if set(navs) != set(names):
+        raise CrossAssetStop("Missing or unexpected net NAV for year attribution")
+    baseline = navs[CASH_CONTROL]
+    if (not isinstance(baseline, pd.Series)
+        or not isinstance(baseline.index, pd.DatetimeIndex)
+        or baseline.index.has_duplicates or not baseline.index.is_monotonic_increasing
+        or baseline.index.tz is not None or len(baseline) < 2):
+        raise CrossAssetStop("Invalid baseline NAV dates")
+    for name in names:
+        path = navs[name]
+        if (not isinstance(path, pd.Series)
+            or not path.index.equals(baseline.index)
+            or not pd.api.types.is_numeric_dtype(path)):
+            raise CrossAssetStop("NAVs must have identical dates and numeric values")
+        values = path.to_numpy(dtype=float)
+        if not np.isfinite(values).all() or (values <= 0).any():
+            raise CrossAssetStop("Nonpositive or nonfinite NAV")
+    out = {}
+    for name in (GOLD_ONLY, SHY_ONLY, GOLD_SHY):
+        relative_log = np.log(navs[name].to_numpy(dtype=float) /
+                              baseline.to_numpy(dtype=float))
+        # Each period's log relative return, plus the one-off inception
+        # ETF purchase-cost difference in the first calendar year.
+        increments = np.diff(relative_log, prepend=0.0)
+        contributions = pd.Series(increments, index=baseline.index)
+        yearly = contributions.groupby(contributions.index.year).sum()
+        total = float(relative_log[-1])
+        if not np.isclose(float(yearly.sum()), total, rtol=0, atol=1e-10):
+            raise CrossAssetStop("Annual log attribution does not reconcile")
+        positive = yearly[yearly > 0]
+        strongest = int(positive.idxmax()) if len(positive) else None
+        excluded = total - float(positive.loc[strongest]) if strongest else total
+        out[name] = {
+            "terminal_relative_log_wealth_pct": round(100 * total, 6),
+            "inception_cost_relative_log_wealth_pct": round(
+                100 * float(relative_log[0]), 6),
+            "calendar_year_log_relative_wealth_pct": {
+                str(int(year)): round(100 * float(value), 6)
+                for year, value in yearly.items()
+            },
+            "positive_years": int((yearly > 0).sum()),
+            "negative_years": int((yearly < 0).sum()),
+            "largest_positive_year": strongest,
+            "largest_positive_year_log_relative_wealth_pct": (
+                round(100 * float(positive.loc[strongest]), 6)
+                if strongest is not None else None),
+            "total_ex_largest_positive_year_log_relative_wealth_pct":
+                round(100 * excluded, 6),
+        }
+    return out
+
+
 def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
              cash_rates: pd.DataFrame) -> dict:
     data = validate_prices(prices)
@@ -262,6 +321,7 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
     stress = ref_returns <= STRESS_SPY_DAILY_THRESHOLD
     results = {}
     carry_results = {}
+    year_concentration = None
     for bps in COSTS_BPS:
         rows = {}
         for name, weights in WEIGHTS.items():
@@ -286,11 +346,18 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
         results[str(bps)] = rows
         scenario_rows = {}
         for label in CASH_SCENARIOS:
+            concentration_navs = {}
             by_basket = {}
             for name, weights in WEIGHTS.items():
                 trial = simulate(data, weights, bps,
                                  cash_annual_rate=cash_yields[label])
                 by_basket[name] = _risk_report(trial["nav"], reference, stress)
+                if bps == 15 and label == "IRX_GROSS" and name in (
+                    CASH_CONTROL, GOLD_ONLY, SHY_ONLY, GOLD_SHY):
+                    concentration_navs[name] = trial["nav"]
+            if bps == 15 and label == "IRX_GROSS":
+                year_concentration = calendar_year_relative_log_wealth(
+                    concentration_navs)
             baseline = by_basket["MATCHED_75_EQUITY_25_CASH"]
             diverse = by_basket["MATCHED_75_EQUITY_10_GOLD_10_SHY_5_CASH"]
             scenario_rows[label] = {
@@ -309,6 +376,8 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
             }:
                 raise CrossAssetStop("Original zero-carry result changed")
         carry_results[str(bps)] = scenario_rows
+    if year_concentration is None:
+        raise CrossAssetStop("Required historical concentration missing")
     return {
         "schema": SCHEMA, "status": "DESCRIPTIVE_HISTORICAL_CROSSASSET_NOT_ALPHA",
         "source": "YAHOO_YFINANCE_AUTO_ADJUSTED_REVISABLE_CLOSES",
@@ -333,6 +402,10 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
         "original_zero_cash_baseline_preserved": True,
         "post_result_sleeve_ablation_not_independent_holdout": True,
         "sleeve_attribution_is_nonadditive_metric_diagnostic_not_alpha": True,
+        "calendar_year_concentration_is_post_result_not_holdout": True,
+        "calendar_year_log_wealth_not_cagr_or_executable_leave_year_out": True,
+        "calendar_year_first_and_last_may_be_partial": True,
+        "year_concentration_15bp_irx_gross": year_concentration,
         "shy_is_risky_bond_etf_not_cash": True,
         "no_current_broker_asset_eligibility_inferred": True,
         "original_s1_controller_not_modified_or_replayed": True,
@@ -406,6 +479,8 @@ def main() -> None:
         name: row["diversified_minus_cash_control_cagr_pp"]
         for name, row in result["interest_bearing_cash_sensitivity"]["15"].items()
     })
+    print("15bp IRX gross relative log-wealth year concentration:",
+          result["year_concentration_15bp_irx_gross"])
     print("No alpha or trading authority")
 
 
