@@ -124,3 +124,34 @@ are descriptive **cash-rate sensitivities**, not verified historical
 investable T-bill or cash-account returns. Archive original quotes
 and their SHA256 with the ETF price source. Do not merge without
 successful source acquisition and full LIVE static safety audit.
+
+
+## C13-V4 sleeve-ablation extension — 25 October 2026 UTC (after V3 results)
+
+**This is explicitly post-result, exploratory analysis, not a pre-registered
+out-of-sample test or an optimized allocation.** The 25 October V3 results
+showed that the GLD+SHY mix had a smaller return advantage over cash after
+realistic T-bill-rate carry. They did **not** identify whether GLD, SHY, or
+their combination accounted for that difference.
+
+Before collecting V4 results, retain the original three baskets, the
+exact 75% equity mix, fixed 5/15/35bp ETF-only costs, 2014+ dates, monthly
+rebalance, historical IRX lag and cash-rate assumptions. Add exactly two
+**diagnostic-only** counterfactuals: (i) 75% same equities + 10% GLD +
+15% cash; (ii) 75% same equities + 10% SHY + 15% cash. Compare these with
+the original 75% equities + 25% cash control and 75% equities + 10% GLD
++ 10% SHY + 5% cash combined basket. No selection, fitting or optimization.
+
+For each existing cash-rate and trading-cost scenario, report the
+difference from the cash control in CAGR and maximum drawdown for each
+10% sleeve and for both sleeves together. Also report the arithmetic
+nonadditivity residual (combined difference minus the two individual
+differences). This residual is **not** a statistical interaction estimate:
+CAGR and maximum drawdown are nonlinear path statistics, and trading
+costs differ. It cannot identify a causal source of investment alpha.
+
+The previously published original three-basket V3 results must remain
+numerically unchanged for the same source vintage. V4 results will
+inherit the existing retrospective selection, vendor revisions and
+non-executable cash-yield proxy limitations. No strategy promotion,
+broker access, private-state write or LIVE control change is authorized.
