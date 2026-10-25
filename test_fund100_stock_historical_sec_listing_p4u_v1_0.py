@@ -126,7 +126,7 @@ def test_official_sec_bad_response_is_diagnostic_not_listing_evidence(
 def test_failed_source_reason_counts_do_not_label_issuers_unlisted(tmp_path):
     make_sources(tmp_path)
     def fake_get(path, agent):
-        if "/1001/" in path:
+        if any(f"/{cik}/" in path for cik in (1001, 1002)):
             raise p4u.FilingSourceFailure("OVER_12MB_SOURCE_LIMIT")
         raise p4u.FilingSourceFailure("HTTP_403")
     report = p4u.capture(tmp_path, tmp_path / "diagnostics",
