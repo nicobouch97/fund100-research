@@ -247,3 +247,101 @@ def test_no_secret_workflow_or_prod_unlock_in_chain():
     assert "urlopen(" not in source
     assert "method=\"POST\"" not in source
     assert "https://api.alpaca.markets" not in source
+
+
+def test_hydrate_exact_original_chain_context_from_signed_read_sources(monkeypatch):
+    import json
+    import fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0 as rec
+    import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent
+    source=fx.setup()
+    c={k:source[k] for k in chain.EXPECTED_CONTEXT}
+    for name,value in (
+        ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
+        ("GITHUB_REF","refs/heads/main"),
+        ("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_RUN_ATTEMPT","1"),
+        ("GITHUB_RUN_ID",c["owner_run_id"]),
+        ("GITHUB_SHA",c["current_main_sha"]),
+        ("FUND100_BROKER_KILL_SWITCH","ENGAGED"),
+        ("FUND100_RISK_LEVEL","HIGH"),
+    ):
+        monkeypatch.setenv(name,str(value))
+    monkeypatch.setattr(intent,"original_acwi_qty",lambda:c["original_qty"])
+    verified={
+        "status":"ORIGINAL_ACWI_SIGNED_SEQ1_AND_PUBLIC_HEAD_RECONFIRMED_READONLY",
+        "private_ledger_sequence":1,
+        "original_ACWI_qty_commitment_verified":True,
+        "production_trade_order_submission_authorized":False,
+    }
+    monkeypatch.setattr(rec,"recover_current_original_signed_head_readonly",
+                        lambda **kwargs:dict(verified))
+    monkeypatch.setattr(chain.ownership,"_get_bounded_json",
+                        lambda **kwargs:deepcopy(c["reserved_source"]))
+    monkeypatch.setattr(chain.ownership,"_get_signed_source",
+                        lambda **kwargs:deepcopy(source["fence_source"]))
+    monkeypatch.setattr(rec,"_get",lambda **kwargs:deepcopy(c["genesis_comment"]))
+    monkeypatch.setattr(rec,"_complete_original_comment_pages",
+                        lambda **kwargs:[deepcopy(c["first_comment"])])
+    monkeypatch.setattr(rec,"_public_original_intent_run",
+                        lambda **kwargs:{"id":int(c["first_run_id"]),"path":rec.ORIGINAL_INTENT_WORKFLOW_PATH,
+                            "name":rec.ORIGINAL_INTENT_WORKFLOW_NAME,"event":"workflow_dispatch",
+                            "head_branch":"main","status":"completed","conclusion":"success",
+                            "run_attempt":1,"repository":{"full_name":"nicobouch97/fund100-research"},
+                            "head_repository":{"full_name":"nicobouch97/fund100-research"},
+                            "head_sha":"a"*40})
+    monkeypatch.setattr(rec,"_verify_public_original_intent_run",lambda **kwargs:None)
+    result=chain.prepare_original_acwi_context_getonly(
+        private_read_token="test-private-read-token",
+        public_read_token="test-issue-public-read-token",
+        hmac_hex=c["key"].hex())
+    assert set(result)==chain.EXPECTED_CONTEXT
+    assert result["reserved_source"]["sha"]==c["reserved_source"]["sha"]
+    assert result["first_comment_id"]==c["first_comment_id"]
+    assert result["original_qty"]==c["original_qty"]
+    assert result["owner_run_id"]==c["owner_run_id"]
+    assert result["source_broker_run_id"]==result["owner_run_id"]
+    assert result["owner_attempt"]==1
+    assert len(result["owner_nonce"])==64
+    assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
+    return result
+
+
+@pytest.mark.parametrize("tamper",["second_run","wrong_main","no_risk","wrong_reservation","claimed_owner"])
+def test_context_hydration_fails_closed_without_any_order(monkeypatch,tamper):
+    import fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0 as rec
+    import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent
+    source=fx.setup()
+    for name,value in (
+        ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
+        ("GITHUB_REF","refs/heads/main"),("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_RUN_ATTEMPT","1"),("GITHUB_RUN_ID",source["owner_run_id"]),
+        ("GITHUB_SHA",source["current_main_sha"]),
+        ("FUND100_BROKER_KILL_SWITCH","ENGAGED"),("FUND100_RISK_LEVEL","HIGH"),
+    ):monkeypatch.setenv(name,str(value))
+    monkeypatch.setattr(intent,"original_acwi_qty",lambda:source["original_qty"])
+    monkeypatch.setattr(rec,"recover_current_original_signed_head_readonly",
+        lambda **kwargs:{"status":"ORIGINAL_ACWI_SIGNED_SEQ1_AND_PUBLIC_HEAD_RECONFIRMED_READONLY",
+            "private_ledger_sequence":1,"original_ACWI_qty_commitment_verified":True,
+            "production_trade_order_submission_authorized":False})
+    reserved=deepcopy(source["reserved_source"])
+    owner=deepcopy(source["fence_source"])
+    if tamper=="wrong_reservation":reserved["sha"]="0"*40
+    if tamper=="claimed_owner":
+        planned=fence.plan_unique_owner(**source)
+        owner=fx.as_fence(b64decode(planned["fake_only_commit"]["content_base64"]))
+    monkeypatch.setattr(chain.ownership,"_get_bounded_json",lambda **kwargs:reserved)
+    monkeypatch.setattr(chain.ownership,"_get_signed_source",lambda **kwargs:owner)
+    monkeypatch.setattr(rec,"_get",lambda **kwargs:deepcopy(source["genesis_comment"]))
+    monkeypatch.setattr(rec,"_complete_original_comment_pages",
+                        lambda **kwargs:[deepcopy(source["first_comment"])])
+    monkeypatch.setattr(rec,"_public_original_intent_run",lambda **kwargs:{})
+    monkeypatch.setattr(rec,"_verify_public_original_intent_run",lambda **kwargs:None)
+    if tamper=="second_run":monkeypatch.setenv("GITHUB_RUN_ATTEMPT","2")
+    if tamper=="wrong_main":monkeypatch.setenv("GITHUB_SHA","b"*40)
+    if tamper=="no_risk":monkeypatch.setenv("FUND100_RISK_LEVEL","LOW")
+    with pytest.raises(chain.ChainStop,match="hydration STOP"):
+        chain.prepare_original_acwi_context_getonly(
+            private_read_token="synthetic-private-read",
+            public_read_token="synthetic-public-read",
+            hmac_hex=source["key"].hex())
+    assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
