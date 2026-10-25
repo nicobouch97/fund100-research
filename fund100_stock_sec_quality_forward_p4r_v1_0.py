@@ -419,6 +419,55 @@ def _capacity_constrained_replay(rows: list[dict], data: pd.DataFrame,
 
 
 
+def _paired_active_risk_diagnostic(overlay_nav: list[float],
+                                   passive_nav: list[float]) -> dict:
+    """Realized paired daily risk, not a survivorship-safe alpha estimate.
+
+    Compare the SAME close-to-close NAV path and fees. An annualized
+    arithmetic regression intercept is descriptive only: the 2026-selected
+    issuers, overlapping events and reused historical period invalidate
+    statistical-significance or predictive-alpha claims.
+    """
+    a = np.asarray(overlay_nav, dtype=float)
+    b = np.asarray(passive_nav, dtype=float)
+    if (a.ndim != 1 or b.ndim != 1 or len(a) != len(b) or len(a) < 3
+        or not np.isfinite(a).all() or not np.isfinite(b).all()
+        or (a <= 0).any() or (b <= 0).any()):
+        raise EventStudyStop("Invalid paired NAV path for active risk")
+    ar = a[1:] / a[:-1] - 1
+    br = b[1:] / b[:-1] - 1
+    active = ar - br
+    bvar = float(np.var(br, ddof=1))
+    beta = float(np.cov(ar, br, ddof=1)[0, 1] / bvar) if bvar > 1e-16 else None
+    active_std = float(np.std(active, ddof=1))
+    tracking_error = active_std * np.sqrt(252) * 100
+    relative = (a / b) / (a[0] / b[0])
+    relative_drawdown = float(np.min(relative / np.maximum.accumulate(relative) - 1))
+    return {
+        "method": "REALIZED_PAIRED_DAILY_ACTIVE_RISK_NOT_PREDICTIVE_ALPHA",
+        "daily_return_observations": len(active),
+        "overlay_realized_annual_volatility_pct": round(
+            float(np.std(ar, ddof=1) * np.sqrt(252) * 100), 6),
+        "passive_realized_annual_volatility_pct": round(
+            float(np.std(br, ddof=1) * np.sqrt(252) * 100), 6),
+        "realized_beta_to_passive_spy": round(beta, 6) if beta is not None else None,
+        "realized_annualized_arithmetic_active_return_pp": round(
+            float(np.mean(active) * 252 * 100), 6),
+        "realized_annual_tracking_error_pct": round(float(tracking_error), 6),
+        "realized_information_ratio": (
+            round(float(np.mean(active) / active_std * np.sqrt(252)), 6)
+            if active_std > 1e-12 else None),
+        "realized_beta_adjusted_arithmetic_intercept_pp_annualized": (
+            round(float((np.mean(ar) - beta * np.mean(br)) * 252 * 100), 6)
+            if beta is not None else None),
+        "maximum_relative_wealth_drawdown_pct": round(100 * relative_drawdown, 6),
+        "benchmark_variance_unidentifiable": beta is None,
+        "zero_active_variation_has_no_information_ratio": active_std <= 1e-12,
+        "fees_included_in_both_nav_paths": True,
+        "in_sample_survivor_selected_no_significance_or_alpha_claim": True,
+    }
+
+
 def _spy_idle_capital_overlay(admissions: list[dict], data: pd.DataFrame,
                               cost_bps: int) -> dict:
     """Research-only self-financing stock replacement of a passive SPY core.
@@ -558,6 +607,8 @@ def _spy_idle_capital_overlay(admissions: list[dict], data: pd.DataFrame,
             stock_fraction_sum / (cutoff + 1), 6),
         "stock_replacement_plus_spy_core": selected,
         "passive_buy_and_hold_spy": passive,
+        "paired_realized_active_risk": _paired_active_risk_diagnostic(
+            nav_overlay, nav_passive),
         "replacement_minus_passive_cagr_pp": round(
             selected["net_cagr_pct"] - passive["net_cagr_pct"], 6),
         "replacement_minus_passive_terminal_wealth_pp": round(
