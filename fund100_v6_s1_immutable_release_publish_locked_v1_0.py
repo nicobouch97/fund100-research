@@ -36,12 +36,13 @@ class _NoRedirect(HTTPRedirectHandler):
 def _request(*,method,url,token,payload=None,content_type=None,transport=None,allow_missing=False):
     # Exact repository endpoints only. No user-provided or redirect URL.
     permitted=(IMMUTABLE_SETTING_URL,anchor.RELEASE_URL,METADATA_URL)
-    if url not in permitted and re.fullmatch(
-            re.escape(anchor.API)+r"/releases/[1-9][0-9]{0,18}",url) is None and
-            re.fullmatch(
-                r"https://uploads\.github\.com/repos/nicobouch97/"
-                r"fund100-research/releases/[1-9][0-9]{0,18}/assets"
-                r"\?name=fund100-v6-s1-first-acwi-head\.json",url) is None:
+    if (url not in permitted
+        and re.fullmatch(
+            re.escape(anchor.API)+r"/releases/[1-9][0-9]{0,18}",url) is None
+        and re.fullmatch(
+            r"https://uploads\.github\.com/repos/nicobouch97/"
+            r"fund100-research/releases/[1-9][0-9]{0,18}/assets"
+            r"\?name=fund100-v6-s1-first-acwi-head\.json",url) is None):
         raise PublicationStop("Nonoriginal release publisher endpoint")
     if type(token) is not str or len(token.strip())<10 or "\r" in token or "\n" in token:
         raise PublicationStop("Missing exact GitHub publisher credential")
