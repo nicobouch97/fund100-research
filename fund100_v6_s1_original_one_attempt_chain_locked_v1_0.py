@@ -58,7 +58,8 @@ def _real_current(*,url,source,read,write,transport):
 
 
 def prepare_original_acwi_context_getonly(*,private_read_token:str,
-        public_read_token:str,hmac_hex:str)->dict:
+        public_read_token:str,hmac_hex:str,
+        active_execution:bool=False)->dict:
     """Hydrate the original coordinator's exact context from authenticated READs.
 
     This is the data-integration half of the SAME protected job, not an
@@ -78,11 +79,40 @@ def prepare_original_acwi_context_getonly(*,private_read_token:str,
         ownership._require_real_same_run(
             owner_run_id=owner_run_id,owner_attempt=1,
             current_main_sha=current_main_sha)
-        if (os.environ.get("FUND100_BROKER_KILL_SWITCH")!="ENGAGED"
+        if (type(active_execution) is not bool
             or os.environ.get("FUND100_RISK_LEVEL")!="HIGH"
             or type(hmac_hex) is not str
             or re.fullmatch(r"[0-9a-f]{64}",hmac_hex) is None):
-            raise ChainStop("Original protected read-only scope or HMAC invalid")
+            raise ChainStop("Original protected first ACWI scope or HMAC invalid")
+        if not active_execution:
+            # Preserve the independently verified GET-only main workflow.
+            if os.environ.get("FUND100_BROKER_KILL_SWITCH")!="ENGAGED":
+                raise ChainStop("Original protected read-only broker STOP changed")
+        else:
+            # This path is unreachable on production main until separately
+            # reviewed source releases, V6 current-main GO and kill disengage.
+            # All mutation-stage source locks must be examined BEFORE
+            # authenticating any private source or planning an owner claim.
+            import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+            import fund100_v6_s1_operator_control_v2_0 as v6_operator
+            if (ONE_ATTEMPT_EXECUTION_RELEASED is not True
+                or ownership.SIGNED_OWNER_CLAIM_TRANSPORT_RELEASED is not True
+                or ownership.PREPOST_PRIVATE_CAS_RELEASED is not True
+                or ownership.PREPOST_PUBLIC_WITNESS_RELEASED is not True
+                or publisher.PUBLISH_SIGNED_HEAD_RELEASED is not True
+                or active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is not True
+                or writer.V6_S1_ACWI_QTY_SELL_TRANSPORT_RELEASED is not True
+                or writer.V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED is not True
+                or writer.V6_S1_ACWI_FRESH_ACCOUNT_RISK_SOURCE_RELEASED is not True
+                or writer.V6_S1_ACWI_EXTERNAL_WATERMARK_RELEASED is not True
+                or writer.TRANSPORT_RELEASED is not False
+                or writer.PUBLIC_EXECUTION_ENABLED is not False
+                or os.environ.get("GITHUB_ACTIONS")!="true"
+                or os.environ.get("FUND100_BROKER_KILL_SWITCH")!="DISENGAGED"
+                or os.environ.get("FUND100_ENABLE_LIVE_READONLY")!="YES_READ_ONLY_LIVE"):
+                raise ChainStop("Original V6 ACTIVE first-ACWI source HARD LOCKED")
+            if v6_operator.require_s1_running() is not True:
+                raise ChainStop("Original V6 current-main operator not RUNNING")
         key=bytes.fromhex(hmac_hex)
         original_qty=intent.original_acwi_qty()
         checked=recovery.recover_current_original_signed_head_readonly(
@@ -172,6 +202,12 @@ def prepare_original_acwi_context_getonly(*,private_read_token:str,
         }
         if set(result)!=EXPECTED_CONTEXT:
             raise ChainStop("Original coordinator context contract changed")
+        if active_execution:
+            # Revocation can occur during the authenticated GET sequence;
+            # the coordinator's seven-GET active source checks again later.
+            if (os.environ.get("FUND100_BROKER_KILL_SWITCH")!="DISENGAGED"
+                or v6_operator.require_s1_running() is not True):
+                raise ChainStop("Original V6 GO revoked during source hydration")
         return result
     except Exception:
         raise ChainStop("Original protected coordinator source hydration STOP") from None
