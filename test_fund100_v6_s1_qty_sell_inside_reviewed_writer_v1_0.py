@@ -29,6 +29,12 @@ def fake_FUTURE_risk_V2_release_only_in_credentialless_test(monkeypatch):
             "original_open_market_and_no_pending_order_verified":True,
             "original_strict_postfunding_6_20_35_risk_pass":True,
             "broker_order_authorized":True,
+            "sell_only_original_legacy_ACWI":True,
+            "buy_authorized":False,
+            "capital_ceiling_usd":"130.30",
+            "max_single_sell_notional_usd":"65.00",
+            "orders_submitted_here":0,
+            "settled_cash_verified":False,
             "broker_post_attempts":0,
         }
     monkeypatch.setattr(risk,"inspect_actual_original_seven_get",fake_approved)
@@ -329,6 +335,12 @@ def test_final_writer_broker_risk_source_unavailable_blocks_any_post(monkeypatch
     ("original_open_market_and_no_pending_order_verified",False),
     ("original_strict_postfunding_6_20_35_risk_pass",False),
     ("broker_order_authorized",False),("broker_post_attempts",1),
+    ("sell_only_original_legacy_ACWI",False),
+    ("buy_authorized",True),
+    ("capital_ceiling_usd","999.00"),
+    ("max_single_sell_notional_usd","130.30"),
+    ("orders_submitted_here",1),
+    ("settled_cash_verified",True),
 ])
 def test_final_writer_rejects_incomplete_or_stale_same_process_broker_risk(
         monkeypatch,tamper):
@@ -342,6 +354,12 @@ def test_final_writer_rejects_incomplete_or_stale_same_process_broker_risk(
             "original_open_market_and_no_pending_order_verified":True,
             "original_strict_postfunding_6_20_35_risk_pass":True,
             "broker_order_authorized":True,
+            "sell_only_original_legacy_ACWI":True,
+            "buy_authorized":False,
+            "capital_ceiling_usd":"130.30",
+            "max_single_sell_notional_usd":"65.00",
+            "orders_submitted_here":0,
+            "settled_cash_verified":False,
             "broker_post_attempts":0,
         }
         r[tamper[0]]=tamper[1]
@@ -351,6 +369,38 @@ def test_final_writer_rejects_incomplete_or_stale_same_process_broker_risk(
         call(fake)
     assert fake.calls==0
 
+
+
+@pytest.mark.parametrize("missing",[
+    "sell_only_original_legacy_ACWI","buy_authorized","capital_ceiling_usd",
+    "max_single_sell_notional_usd","orders_submitted_here","settled_cash_verified",
+])
+def test_final_writer_rejects_missing_original_active_high_sell_scope_before_any_post(
+        monkeypatch,missing):
+    fake_release(monkeypatch)
+    fake=FakeBrokerPost()
+    def report(**kwargs):
+        r={
+            "status":"ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2",
+            "same_process_real_broker_gets":7,
+            "original_acwi_exact_fractional_holdings_verified":True,
+            "original_open_market_and_no_pending_order_verified":True,
+            "original_strict_postfunding_6_20_35_risk_pass":True,
+            "broker_order_authorized":True,
+            "sell_only_original_legacy_ACWI":True,
+            "buy_authorized":False,
+            "capital_ceiling_usd":"130.30",
+            "max_single_sell_notional_usd":"65.00",
+            "orders_submitted_here":0,
+            "settled_cash_verified":False,
+            "broker_post_attempts":0,
+        }
+        r.pop(missing)
+        return r
+    monkeypatch.setattr(risk,"inspect_actual_original_seven_get",report)
+    with pytest.raises(writer.LiveWriterCandidateLocked,match="risk remains STOPPED"):
+        call(fake)
+    assert fake.calls==0
 
 def test_original_v5_writer_entrypoint_and_hard_locks_preserved():
     source=Path(writer.__file__).read_text()
