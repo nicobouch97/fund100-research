@@ -301,7 +301,7 @@ def _original_submission_xbrl_symbol(raw: bytes) -> dict:
     instances = []
     for match in re.finditer(rb"<DOCUMENT>(.*?)</DOCUMENT>", raw, re.I | re.S):
         doc = match.group(1)
-        if not re.search(rb"(?im)<TYPE>\\s*EX-101\\.INS\\s*(?:\\r?\\n|<)", doc):
+        if not re.search(rb"(?im)<TYPE>\s*EX-101\.INS\s*(?:\r?\n|<)", doc):
             continue
         body = re.search(rb"<TEXT>(.*?)</TEXT>", doc, re.I | re.S)
         if body is not None:
@@ -316,10 +316,10 @@ def _original_submission_xbrl_symbol(raw: bytes) -> dict:
         return result
     # An original EX-101.INS may use a namespace prefix other than 'dei'.
     # Require a matching XML closing tag and a conservative ticker alphabet.
-    tag = re.compile(rb"<([A-Za-z][A-Za-z0-9_.-]*):TradingSymbol\\b[^>]*>", re.I)
+    tag = re.compile(rb"<([A-Za-z][A-Za-z0-9_.-]*):TradingSymbol\b[^>]*>", re.I)
     valid = re.compile(
-        rb"<([A-Za-z][A-Za-z0-9_.-]*):TradingSymbol\\b[^>]*>\\s*"
-        rb"([A-Za-z][A-Za-z0-9.\\-]{0,9})\\s*</\\1:TradingSymbol\\s*>", re.I)
+        rb"<([A-Za-z][A-Za-z0-9_.-]*):TradingSymbol\b[^>]*>\s*"
+        rb"([A-Za-z][A-Za-z0-9.\-]{0,9})\s*</\1:TradingSymbol\s*>", re.I)
     tags = sum(len(tag.findall(xml)) for xml in instances)
     matches = [m.group(2).decode("ascii").upper()
                for xml in instances for m in valid.finditer(xml)]
