@@ -44,6 +44,15 @@ def test_original_quarter_population_includes_filers_absent_today():
     assert not out["live_authorized"] and not out["paper_authorized"]
 
 
+def test_non_10k_filing_metadata_cannot_censor_original_10k_population():
+    # Full master.idx includes unrelated SEC forms; they are not stock candidates.
+    other = "123|UNRELATED FILER|4|2017-01-05|other/source/location.txt"
+    out = p4t.evaluate(index(ONE, TWO, other), registry((1001, "OLD")),
+                       captured_utc="2026-10-25T12:00:00Z")
+    assert out["original_2017_q1_10k_filing_count"] == 2
+    assert out["original_2017_q1_distinct_10k_ciks"] == 2
+
+
 def test_official_index_description_allows_sec_fixed_width_spacing():
     padded = index(ONE).replace(
         b"Description: Master Index", b"Description:           Master Index")
