@@ -23,7 +23,7 @@ def prices():
 
 def cash_rates():
     dates = pd.date_range("2013-11-01", "2025-01-01", freq="D")
-    return pd.DataFrame({"DFF": np.full(len(dates), 5.)}, index=dates)
+    return pd.DataFrame({"IRX": np.full(len(dates), 5.)}, index=dates)
 
 
 def test_complete_costed_stress_report_no_broker():
@@ -99,7 +99,7 @@ def test_cost_accounting_version_and_no_trading_authority():
                           cash_rates=cash_rates())
     assert report["schema"].endswith("_V3")
     assert report["original_zero_cash_baseline_preserved"]
-    assert report["cash_rate_source"] == "FRED_DFF_REVISABLE_OVERNIGHT_INTERBANK_PROXY"
+    assert report["cash_rate_source"] == "YAHOO_IRX_13W_BILL_DISCOUNT_YIELD_PROXY"
     assert report["rebalance_turnover_definition"] == "SUM_ABS_ETF_WEIGHT_CHANGES_EXCLUDING_CASH"
     assert report["prior_c13_v1_cash_leg_cost_overstatement_corrected"]
     assert not report["funded_trading_or_rebalance_authorized"]
@@ -110,10 +110,10 @@ def test_cash_carry_raises_cash_control_and_reduces_apparent_diversification_adv
                           cash_rates=cash_rates())
     variants = report["interest_bearing_cash_sensitivity"]["15"]
     control = "MATCHED_75_EQUITY_25_CASH"
-    assert (variants["DFF_GROSS"]["by_basket"][control]["net_cagr_pct"]
-            > variants["DFF_MINUS_50BP"]["by_basket"][control]["net_cagr_pct"]
+    assert (variants["IRX_GROSS"]["by_basket"][control]["net_cagr_pct"]
+            > variants["IRX_MINUS_50BP"]["by_basket"][control]["net_cagr_pct"]
             > variants["ZERO"]["by_basket"][control]["net_cagr_pct"])
-    assert (variants["DFF_GROSS"]["diversified_minus_cash_control_cagr_pp"]
+    assert (variants["IRX_GROSS"]["diversified_minus_cash_control_cagr_pp"]
             < variants["ZERO"]["diversified_minus_cash_control_cagr_pp"])
     assert variants["ZERO"]["by_basket"][control]["net_cagr_pct"] == (
         report["costed_historical_diagnostics"]["15"][control]["net_cagr_pct"])
@@ -138,7 +138,7 @@ def test_cash_rate_last_observation_cannot_affect_earlier_results():
     a = mod.evaluate(frame, acquired_at_utc="2025-01-02T12:00:00Z",
                      cash_rates=original)
     changed = original.copy()
-    changed.loc["2024-12-31", "DFF"] = 20.
+    changed.loc["2024-12-31", "IRX"] = 20.
     b = mod.evaluate(frame, acquired_at_utc="2025-01-02T12:00:00Z",
                      cash_rates=changed)
     assert a["interest_bearing_cash_sensitivity"] == b["interest_bearing_cash_sensitivity"]
@@ -151,13 +151,13 @@ def test_reject_bad_cash_rate_source(kind):
     if kind == "duplicate":
         raw = pd.concat([raw, raw.iloc[[-1]]])
     elif kind == "missing":
-        raw.loc["2024-06-01", "DFF"] = np.nan
+        raw.loc["2024-06-01", "IRX"] = np.nan
     elif kind == "stale":
         raw = raw.loc[:"2024-11-01"]
     elif kind == "nonnumeric":
-        raw["DFF"] = "invalid"
+        raw["IRX"] = "invalid"
     else:
-        raw.loc["2024-06-01", "DFF"] = -1.
+        raw.loc["2024-06-01", "IRX"] = -5.
     with pytest.raises(mod.CrossAssetStop):
         mod.validate_cash_rates(raw, mod.validate_prices(prices()).index)
 
