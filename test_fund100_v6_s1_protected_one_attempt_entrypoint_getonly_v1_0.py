@@ -82,7 +82,7 @@ def test_locked_coordinator_not_executed_and_hard_stop_unchanged():
     assert "publish_exact_acwi_signed_seq2_release_same_attempt_only(" not in w
     assert "private_git_writes']==signed['broker_orders']==0" in w
     assert "first['real_private_Git_PUTs']==first['broker_orders']==0" in w
-    assert "No LIVE orders." in w
+    assert "NO LIVE orders." in w
     assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
     assert owner.SIGNED_OWNER_CLAIM_TRANSPORT_RELEASED is False
     assert owner.PREPOST_PRIVATE_CAS_RELEASED is False
