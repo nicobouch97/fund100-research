@@ -23,7 +23,7 @@ import fund100_stock_broad_sec_annual_replay_p4q_v1_0 as p4q
 import fund100_stock_broad_sec_coverage_p4n_v1_0 as p4n
 import fund100_stock_quality_momentum_p4g_v1_0 as p4g
 
-SCHEMA = "FUND100_P4R_ORIGINAL_SEC_QUALITY_126_SESSION_EVENT_STUDY_V1"
+SCHEMA = "FUND100_P4R_ORIGINAL_SEC_QUALITY_126_SESSION_EVENT_STUDY_V2"
 HORIZON = 126
 # Fixed, predeclared relative-momentum window; no grid search or fitted threshold.
 MOMENTUM_LOOKBACK = 126
@@ -228,6 +228,163 @@ def _quality_momentum_interaction(rows: list[dict], bps: int) -> dict:
     }
 
 
+
+def _capacity_constrained_replay(rows: list[dict], data: pd.DataFrame,
+                                 cost_bps: int) -> dict:
+    """Cash-funded, paired-SPY overlapping SEC-event stress test; NOT alpha.
+
+    Use only completed original events and stop 126 sessions before the
+    source end so right-censored signals cannot influence admissions.
+    At the first close AFTER filing, buy one of six unlevered slots.
+    Mark only subsequent returns, exit after 126 sessions, charge each
+    traded side and liquidate remaining positions at the evaluation cutoff.
+    The matched SPY control buys the same dollars on the same dates.
+    Cash earns zero; the 2026 survivor roster remains a fatal alpha bias.
+    """
+    if type(cost_bps) is not int or cost_bps not in SIDE_COSTS_BPS:
+        raise EventStudyStop("Unregistered replay cost scenario")
+    if len(data) < 2 * HORIZON + 2 or p4l.MAX_NAMES != 6:
+        raise EventStudyStop("Insufficient maturity buffer or changed slot cap")
+    cutoff = len(data) - HORIZON - 1
+    candidates = []
+    for row in rows:
+        try:
+            ticker = row["ticker"]
+            entry = _date(row["entry_next_session_close"])
+            exit_day = _date(row["exit_126_sessions_later"])
+            entry_i = int(data.index.get_loc(entry))
+            exit_i = int(data.index.get_loc(exit_day))
+            score = row["quality_score"]
+            momentum = row["pre_filing_relative_momentum_positive"]
+            accession = row["original_10k_accession"]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise EventStudyStop("Malformed dated SEC replay event") from exc
+        if (ticker not in p4n.SOURCE_MATCHED_TAGS or type(score) is not int
+            or score not in range(4) or momentum not in (True, False, None)
+            or type(accession) is not str or not accession
+            or exit_i - entry_i != HORIZON):
+            raise EventStudyStop("Invalid causal replay event contract")
+        if score >= 2 and momentum is True and entry_i < cutoff:
+            prior = row["pre_filing_126_session_stock_minus_spy_pp"]
+            if type(prior) not in (float, int) or not np.isfinite(prior) or prior <= 0:
+                raise EventStudyStop("Missing positive pre-filing momentum")
+            candidates.append((entry_i, -float(prior), ticker, accession, exit_i))
+    candidates.sort()
+    if len(set((a, c, d) for a, _, c, d, _ in candidates)) != len(candidates):
+        raise EventStudyStop("Duplicate accession event at replay entry")
+
+    fee = cost_bps / 10000
+    cash_stock = cash_spy = 1.0
+    # ticker -> (scheduled exit index, stock shares, SPY shares)
+    positions: dict[str, tuple[int, float, float]] = {}
+    admitted = blocked_capacity = blocked_same_issuer = terminal_exits = 0
+    traded_stock = traded_spy = 0.0
+    peak_concurrent = active_sessions = 0
+    gross_exposure_sum = 0.0
+    nav_stock, nav_spy = [], []
+    event_cursor = 0
+    spy = data["SPY"].to_numpy(dtype=float)
+    stock = {ticker: data[ticker].to_numpy(dtype=float)
+             for ticker in {r[2] for r in candidates}}
+
+    for t in range(cutoff + 1):
+        for ticker, (exit_i, stock_units, spy_units) in sorted(list(positions.items())):
+            if exit_i <= t or t == cutoff:
+                stock_proceeds = stock_units * stock[ticker][t]
+                spy_proceeds = spy_units * spy[t]
+                cash_stock += stock_proceeds * (1 - fee)
+                cash_spy += spy_proceeds * (1 - fee)
+                traded_stock += stock_proceeds
+                traded_spy += spy_proceeds
+                terminal_exits += int(t == cutoff and exit_i > t)
+                del positions[ticker]
+
+        while event_cursor < len(candidates) and candidates[event_cursor][0] == t:
+            _, _, ticker, _, exit_i = candidates[event_cursor]
+            event_cursor += 1
+            if ticker in positions:
+                blocked_same_issuer += 1
+                continue
+            if len(positions) >= 6:
+                blocked_capacity += 1
+                continue
+            equity_stock = cash_stock + sum(
+                units * stock[name][t] for name, (_, units, _) in positions.items())
+            equity_spy = cash_spy + sum(
+                units * spy[t] for _, (_, _, units) in positions.items())
+            notional = min(equity_stock / 6, equity_spy / 6,
+                           cash_stock / (1 + fee), cash_spy / (1 + fee))
+            if not np.isfinite(notional) or notional <= 1e-12:
+                blocked_capacity += 1
+                continue
+            cash_stock -= notional * (1 + fee)
+            cash_spy -= notional * (1 + fee)
+            traded_stock += notional
+            traded_spy += notional
+            positions[ticker] = (exit_i, notional / stock[ticker][t],
+                                 notional / spy[t])
+            admitted += 1
+
+        held_stock = sum(
+            units * stock[name][t] for name, (_, units, _) in positions.items())
+        held_spy = sum(units * spy[t] for _, (_, _, units) in positions.items())
+        equity_stock, equity_spy = cash_stock + held_stock, cash_spy + held_spy
+        if (not np.isfinite([equity_stock, equity_spy, cash_stock, cash_spy]).all()
+            or min(equity_stock, equity_spy) <= 0
+            or min(cash_stock, cash_spy) < -1e-10
+            or held_stock > equity_stock * (1 + 1e-10)
+            or held_spy > equity_spy * (1 + 1e-10)):
+            raise EventStudyStop("Non-self-financing research replay")
+        peak_concurrent = max(peak_concurrent, len(positions))
+        active_sessions += bool(positions)
+        gross_exposure_sum += held_stock / equity_stock
+        nav_stock.append(equity_stock)
+        nav_spy.append(equity_spy)
+    if admitted + blocked_capacity + blocked_same_issuer != len(candidates):
+        raise EventStudyStop("Unreconciled original replay admissions")
+
+    def metrics(path: list[float]) -> dict:
+        values = np.asarray(path, dtype=float)
+        years = (data.index[cutoff] - data.index[0]).days / 365.25
+        return {
+            "terminal_nav": round(float(values[-1]), 6),
+            "net_cagr_pct": round(100 * (float(values[-1]) ** (1 / years) - 1), 6),
+            "max_drawdown_pct": round(
+                100 * float(np.min(values / np.maximum.accumulate(values) - 1)), 6),
+        }
+    stock_metrics, spy_metrics = metrics(nav_stock), metrics(nav_spy)
+    return {
+        "method": "SIX_SLOT_CASH_FUNDED_ORIGINAL_EVENT_CLOSE_REPLAY_WITH_PAIRED_SPY",
+        "cost_per_traded_side_bps": cost_bps,
+        "first_session": data.index[0].date().isoformat(),
+        "last_session_maturity_cutoff": data.index[cutoff].date().isoformat(),
+        "maturity_buffer_sessions": HORIZON,
+        "eligible_high_quality_positive_prior_momentum_events": len(candidates),
+        "admitted_events": admitted,
+        "blocked_by_six_slot_capacity": blocked_capacity,
+        "blocked_by_same_issuer_overlap": blocked_same_issuer,
+        "forced_terminal_liquidations": terminal_exits,
+        "peak_concurrent_positions": peak_concurrent,
+        "sessions_with_positions": active_sessions,
+        "average_gross_stock_exposure_fraction": round(
+            gross_exposure_sum / (cutoff + 1), 6),
+        "stock": stock_metrics,
+        "same_entry_dollar_matched_spy": spy_metrics,
+        "stock_minus_paired_spy_terminal_wealth_pp": round(
+            100 * (nav_stock[-1] - nav_spy[-1]), 6),
+        "stock_minus_paired_spy_cagr_pp": round(
+            stock_metrics["net_cagr_pct"] - spy_metrics["net_cagr_pct"], 6),
+        "stock_total_traded_notional_per_initial_nav": round(traded_stock, 6),
+        "spy_total_traded_notional_per_initial_nav": round(traded_spy, 6),
+        "paired_control_uses_identical_admissions_and_dollar_entries": True,
+        "entry_after_original_filing_and_next_session_return_only": True,
+        "terminal_liquidation_charged_both_sides": True,
+        "cash_yield_assumed_zero_not_a_historical_bill_benchmark": True,
+        "2026_survivor_universe_and_revisable_prices_not_investable_alpha": True,
+        "no_broker_or_trading_authority": True,
+    }
+
+
 def analyze(annual: dict, prices: pd.DataFrame, *,
             acquired_at_utc: str, source_sha256: str) -> dict:
     """Pure deterministic event-return study; caller authenticates SEC archive."""
@@ -428,6 +585,11 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
         "missing_pre_filing_momentum_lookback_events": sum(
             r["pre_filing_relative_momentum_positive"] is None for r in rows),
         "event_returns": rows,
+        "costed_six_slot_overlap_replay": {
+            str(bps): _capacity_constrained_replay(rows, data, bps)
+            for bps in SIDE_COSTS_BPS
+        },
+        "capacity_replay_is_hindsight_survivor_stress_not_alpha": True,
         "event_returns_are_overlapping_and_not_independent": True,
         "beta_adjusted_proxy_is_not_a_hedged_trade_or_alpha": True,
         "retrospectively_selected_2026_survivors": True,

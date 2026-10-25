@@ -363,3 +363,97 @@ def test_beta_unidentifiable_for_constant_market_or_missing_lookback():
     assert early["prefiling_market_beta_status"] == "INSUFFICIENT_PREFILING_SESSIONS"
     assert early["prefiling_126_session_spy_beta"] is None
     assert not result["live_authorized"] and result["broker_orders"] == 0
+
+
+def test_six_slot_overlap_replay_is_costed_paired_and_stays_research_only():
+    baseline = run()
+    assert baseline["schema"].endswith("_V2")
+    assert baseline["capacity_replay_is_hindsight_survivor_stress_not_alpha"]
+    assert set(baseline["costed_six_slot_overlap_replay"]) == {"5", "15", "35"}
+    assert baseline["costed_six_slot_overlap_replay"]["15"]["admitted_events"] == 0
+    assert baseline["costed_six_slot_overlap_replay"]["15"]["stock"]["terminal_nav"] == 1
+    p = prices()
+    p.loc["2025-02-17", "CAT"] = 110.
+    report = run(p=p)
+    for bps in p4r.SIDE_COSTS_BPS:
+        row = report["costed_six_slot_overlap_replay"][str(bps)]
+        assert row["eligible_high_quality_positive_prior_momentum_events"] == 1
+        assert row["admitted_events"] == 1
+        assert row["peak_concurrent_positions"] == 1
+        assert row["stock_minus_paired_spy_cagr_pp"] > 0
+        assert row["paired_control_uses_identical_admissions_and_dollar_entries"]
+        assert row["maturity_buffer_sessions"] == p4r.HORIZON
+        assert row["2026_survivor_universe_and_revisable_prices_not_investable_alpha"]
+        assert row["no_broker_or_trading_authority"]
+    assert (report["costed_six_slot_overlap_replay"]["5"]["stock"]["terminal_nav"]
+            > report["costed_six_slot_overlap_replay"]["35"]["stock"]["terminal_nav"])
+    assert not report["live_authorized"] and report["broker_orders"] == 0
+
+
+def test_paired_spy_control_has_identical_return_when_selected_stock_matches_spy():
+    p = prices()
+    p.loc["2025-02-17", "CAT"] = 110.
+    p.loc["2025-02-19":, "CAT"] = 100.
+    report = run(p=p)["costed_six_slot_overlap_replay"]["15"]
+    assert report["admitted_events"] == 1
+    assert report["stock"]["terminal_nav"] == report["same_entry_dollar_matched_spy"]["terminal_nav"]
+    assert report["stock_minus_paired_spy_terminal_wealth_pp"] == 0
+    assert report["stock_minus_paired_spy_cagr_pp"] == 0
+
+
+def _synthetic_replay_event(ticker, entry_i, frame, accession):
+    return {
+        "ticker": ticker, "original_10k_accession": accession,
+        "quality_score": 3,
+        "pre_filing_relative_momentum_positive": True,
+        "pre_filing_126_session_stock_minus_spy_pp": 5.0,
+        "entry_next_session_close": frame.index[entry_i].date().isoformat(),
+        "exit_126_sessions_later": frame.index[entry_i + p4r.HORIZON].date().isoformat(),
+    }
+
+
+def test_six_slot_capacity_rejects_seventh_concurrent_signal_without_leverage():
+    p = prices()
+    symbols = sorted(p4n.SOURCE_MATCHED_TAGS)[:7]
+    i = int(p.index.get_loc(pd.Timestamp("2025-02-19")))
+    rows = [_synthetic_replay_event(ticker, i, p, str(n))
+            for n, ticker in enumerate(symbols)]
+    result = p4r._capacity_constrained_replay(rows, p, 15)
+    assert result["eligible_high_quality_positive_prior_momentum_events"] == 7
+    assert result["admitted_events"] == 6
+    assert result["blocked_by_six_slot_capacity"] == 1
+    assert result["peak_concurrent_positions"] == 6
+    assert result["stock"]["terminal_nav"] > 0
+    assert result["same_entry_dollar_matched_spy"]["terminal_nav"] > 0
+    assert 0 < result["average_gross_stock_exposure_fraction"] <= 1
+
+
+def test_replay_censor_guard_ignores_future_source_changes_and_liquidates_open_positions():
+    p = prices()
+    cutoff = len(p) - p4r.HORIZON - 1
+    i = cutoff - 10
+    row = _synthetic_replay_event("CAT", i, p, "terminal")
+    a = p4r._capacity_constrained_replay([row], p, 15)
+    assert a["admitted_events"] == 1
+    assert a["forced_terminal_liquidations"] == 1
+    assert a["last_session_maturity_cutoff"] == p.index[cutoff].date().isoformat()
+    altered = p.copy()
+    altered.loc[p.index[cutoff + 1]:, "CAT"] *= 1.1
+    b = p4r._capacity_constrained_replay([row], altered, 15)
+    assert a == b
+    # A later event is excluded rather than accepted only if its outcome matured.
+    late = _synthetic_replay_event("CAT", cutoff, p, "late")
+    assert p4r._capacity_constrained_replay([late], p, 15)["admitted_events"] == 0
+
+
+def test_replay_rejects_mismatched_event_horizon_and_duplicate_accession():
+    p = prices()
+    i = int(p.index.get_loc(pd.Timestamp("2025-02-19")))
+    row = _synthetic_replay_event("CAT", i, p, "same")
+    invalid = dict(row, exit_126_sessions_later=p.index[i + 125].date().isoformat())
+    with pytest.raises(p4r.EventStudyStop, match="contract"):
+        p4r._capacity_constrained_replay([invalid], p, 15)
+    with pytest.raises(p4r.EventStudyStop, match="Duplicate"):
+        p4r._capacity_constrained_replay([row, row], p, 15)
+    with pytest.raises(p4r.EventStudyStop, match="cost"):
+        p4r._capacity_constrained_replay([row], p, 0)
