@@ -615,7 +615,7 @@ def test_structured_12b_aggregates_only_captured_source_backed_rows(tmp_path):
         "<p>Securities registered pursuant to Section 12(g): None</p>")
     report = p4u.capture(tmp_path, tmp_path / "rows", "Research contact@example.com",
                          per_stratum=1, getter=lambda path, agent: raw)
-    assert report["schema"].endswith("_V3")
+    assert report["schema"].endswith("_V4")
     assert report["possible_structured_12b_security_class_rows"] == 2
     assert report["filings_with_structured_12b_rows"] == 2
     assert report["structured_rows_not_historical_investable_security_master"]
@@ -643,3 +643,70 @@ def test_structured_12b_excludes_non_share_common_stock_instruments(non_share_ti
     assert len(rows) == 1
     assert rows[0]["security_class_text"] == "Common Stock, $1 par value"
     assert rows[0]["trading_symbol_in_original_10k"] is None
+
+def _submission_with_xbrl(symbol_xml, *, exhibit_type="EX-101.INS"):
+    base = original_10k(
+        "<p>Securities registered pursuant to Section 12(b):</p>"
+        "<table><tr><td>Common Stock</td><td>NYSE</td></tr></table>")
+    exhibit = (f"<DOCUMENT>\\n<TYPE>{exhibit_type}\\n<TEXT>"
+               f"<xbrl xmlns:dei='http://xbrl.sec.gov/dei/2014-01-31'>"
+               f"{symbol_xml}</xbrl></TEXT></DOCUMENT>").replace("\\n", "\n").encode()
+    return base.replace(b"</SEC-DOCUMENT>", exhibit + b"</SEC-DOCUMENT>")
+
+
+def test_original_ex101_instance_recovers_filing_vintage_issuer_ticker_not_share_mapping():
+    raw = _submission_with_xbrl(
+        '<dei:TradingSymbol contextRef="AsOf2017">ABC.A</dei:TradingSymbol>'
+        '<dei:TradingSymbol contextRef="AsOf2016">abc.a</dei:TradingSymbol>')
+    result = p4u.inspect_original_10k(raw)
+    assert result["original_xbrl_instance_count"] == 1
+    assert result["original_xbrl_ticker_state"] == "ONE_ORIGINAL_XBRL_TICKER_REVIEW_ONLY"
+    assert result["original_xbrl_trading_symbol"] == "ABC.A"
+    assert result["original_xbrl_ticker_not_security_class_or_listing_proof"]
+    assert result["possible_12b_security_class_rows"][0]["trading_symbol_in_original_10k"] is None
+
+
+@pytest.mark.parametrize("symbol_xml,state", [
+    ("<dei:TradingSymbol>AAA</dei:TradingSymbol>"
+     "<dei:TradingSymbol>BBB</dei:TradingSymbol>", "CONFLICTING_ORIGINAL_XBRL_SYMBOLS"),
+    ("<dei:TradingSymbol>ABC/DEF</dei:TradingSymbol>",
+     "INVALID_OR_AMBIGUOUS_ORIGINAL_XBRL_SYMBOL"),
+    ("<dei:EntityRegistrantName>Issuer</dei:EntityRegistrantName>",
+     "NO_ORIGINAL_XBRL_TRADING_SYMBOL_TAG"),
+    ("<dei:TradingSymbol>ABC</other:TradingSymbol>",
+     "INVALID_OR_AMBIGUOUS_ORIGINAL_XBRL_SYMBOL"),
+])
+def test_original_ex101_conflict_invalid_or_absent_symbol_abstains(symbol_xml, state):
+    result = p4u.inspect_original_10k(_submission_with_xbrl(symbol_xml))
+    assert result["original_xbrl_ticker_state"] == state
+    assert result["original_xbrl_trading_symbol"] is None
+
+
+def test_original_ticker_not_read_from_cover_or_unrelated_exhibit():
+    raw = _submission_with_xbrl(
+        "<dei:TradingSymbol>FAKE</dei:TradingSymbol>", exhibit_type="EX-99")
+    result = p4u.inspect_original_10k(raw)
+    assert result["original_xbrl_ticker_state"] == "NO_ORIGINAL_EX101_INS"
+    assert result["original_xbrl_trading_symbol"] is None
+
+
+def test_original_primary_only_is_not_misclassified_as_no_historical_ticker():
+    raw = b"<html><body>Securities registered pursuant to Section 12(b): None</body></html>"
+    result = p4u.inspect_primary_10k(raw)
+    assert result["original_xbrl_ticker_state"] == "NOT_EVALUATED_PRIMARY_10K_ONLY"
+    assert result["original_xbrl_trading_symbol"] is None
+
+
+def test_capture_counts_only_original_xbrl_symbols_from_full_submissions(tmp_path):
+    make_sources(tmp_path)
+    raw = _submission_with_xbrl(
+        "<dei:TradingSymbol contextRef='2017'>OLD</dei:TradingSymbol>")
+    report = p4u.capture(tmp_path, tmp_path / "xbrl", "Research contact@example.com",
+                         per_stratum=1, getter=lambda path, agent: raw)
+    assert report["schema"].endswith("_V4")
+    assert report["original_xbrl_ticker_review_candidates"] == 2
+    assert report["original_xbrl_not_evaluated_primary_only"] == 0
+    assert report["original_xbrl_ticker_not_historical_security_master"]
+    assert all(row["original_xbrl_trading_symbol"] == "OLD"
+               for row in report["observations"])
+    assert report["broker_orders"] == 0 and not report["live_authorized"]
