@@ -190,7 +190,7 @@ jobs:
           assert d["cash_rate_is_revisable_vendor_quote_not_archived_historical_vintage"]
           assert d["cash_rate_not_actual_broker_interest_or_executable_rolled_bill"]
           assert d["zero_cash_baseline_preserved"]
-          assert d["schema"].endswith("_V4")
+          assert d["schema"].endswith("_V5")
           assert set(d["costed_six_slot_spy_idle_capital_overlay"])=={"5","15","35"}
           for cost,overlay in d["costed_six_slot_spy_idle_capital_overlay"].items():
               original=d["costed_six_slot_overlap_replay"][cost]
@@ -201,6 +201,23 @@ jobs:
               assert overlay["not_a_validated_point_in_time_survivorship_free_strategy"]
               assert overlay["not_risk_matched_to_low_equity_cash_portfolio"]
               assert overlay["research_only_no_broker_or_live_authority"]
+          deletion=d["spy_overlay_fixed_admission_issuer_deletion_15bps"]
+          base=d["costed_six_slot_spy_idle_capital_overlay"]["15"]
+          assert deletion["method"]=="FIXED_ADMISSIONS_WHOLE_ISSUER_DELETION_SPY_FUNDED_15BPS"
+          assert deletion["all_issuers_admitted_events"]==base["admitted_events"]
+          assert deletion["all_issuers_baseline_cagr_advantage_pp"]==base["replacement_minus_passive_cagr_pp"]
+          assert deletion["distinct_admitted_issuers"]==len(deletion["per_excluded_issuer"])
+          assert sum(v["removed_admitted_events"] for v in deletion["per_excluded_issuer"].values())==base["admitted_events"]
+          values=[v["replacement_minus_passive_cagr_pp"] for v in deletion["per_excluded_issuer"].values()]
+          assert deletion["exclusion_advantage_range_pp"]==([min(values),max(values)] if values else None)
+          assert deletion["exclusions_with_positive_cagr_advantage"]+deletion["exclusions_with_nonpositive_cagr_advantage"]==len(values)
+          assert deletion["removed_positions_remain_in_spy_no_replacement_signals"]
+          assert deletion["identical_passive_spy_benchmark_and_transaction_costs"]
+          assert deletion["retrospective_deletion_not_investable_issuer_selection"]
+          assert deletion["survivor_universe_and_revisable_prices_preclude_alpha"]
+          assert deletion["not_a_confidence_interval_or_independent_holdout"]
+          assert deletion["research_only_no_broker_or_live_authority"]
+          print("15bp fixed-admission issuer-deletion fragility:", deletion)
           print("15bp SPY-funded stock replacement vs fully invested passive SPY:",
                 d["costed_six_slot_spy_idle_capital_overlay"]["15"])
           assert set(d["costed_six_slot_cash_carry_sensitivity"])=={"5","15","35"}
