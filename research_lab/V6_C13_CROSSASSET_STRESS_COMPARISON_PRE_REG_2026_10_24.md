@@ -95,3 +95,32 @@ investment alpha or a LIVE candidate. Do not change protected execution
 policy, holdings, the USD 130.30 capital ceiling, operator STOP, the
 ENGAGED kill switch or any LIVE release lock. No broker requests,
 private-state writes or orders are authorized.
+
+### C13-V3 source-access amendment — 25 October 2026 UTC, before any rate-adjusted results
+
+The first two original-source runs could not acquire FRED DFF: GitHub
+Actions timed out reading the official CSV after 40 and 60 seconds,
+respectively. No cash-carry performance observations were produced.
+Rather than substitute invented cash rates, this extension switches to
+a different **pre-result** source: public Yahoo Finance `^IRX` daily
+**13-week US Treasury bill bank-discount-yield quotes** in the same
+market-data acquisition as the six ETFs. The `^IRX` quotes are
+vendor-revisable and are **not** an investable total-return series,
+bank deposit, guaranteed cash sweep or broker cash rate.
+
+The three fixed scenarios are now `ZERO`, `IRX_MINUS_50BP` and
+`IRX_GROSS`. Convert annual discount quotes in percent to a
+91-day investment-yield proxy as `r * 365 / (360 - r * 91 / 100)`;
+floor negative yields at zero before the fixed 50bp haircut.
+Keep the **same** three-weekday observation lag, prior-session
+accrual, 365.25-day denominator, fixed baskets, 5/15/35bp ETF costs,
+source-age validation, zero-carry parity and all downside metrics.
+No return or signal threshold is selected from results.
+
+The 50bp haircut remains an unverified scenario assumption. Even
+the gross converted bill quote omits rolling 13-week bills, bid/ask,
+roll slippage, financing, taxes and account constraints. These
+are descriptive **cash-rate sensitivities**, not verified historical
+investable T-bill or cash-account returns. Archive original quotes
+and their SHA256 with the ETF price source. Do not merge without
+successful source acquisition and full LIVE static safety audit.
