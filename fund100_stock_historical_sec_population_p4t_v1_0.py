@@ -22,7 +22,8 @@ SCHEMA = "FUND100_P4T_OFFICIAL_2017Q1_SEC_10K_POPULATION_V1"
 INDEX_URL = "https://www.sec.gov/Archives/edgar/full-index/2017/QTR1/master.idx"
 REGISTRY_URL = "https://www.sec.gov/files/company_tickers.json"
 HEADER = "CIK|Company Name|Form Type|Date Filed|Filename"
-MAX_INDEX = 25_000_000
+# Official SEC 2017-Q1 master.idx is 26,803 KiB; allow bounded raw transfer.
+MAX_INDEX = 40_000_000
 MAX_REGISTRY = 6_000_000
 START, END = "2017-01-01", "2017-03-31"
 
