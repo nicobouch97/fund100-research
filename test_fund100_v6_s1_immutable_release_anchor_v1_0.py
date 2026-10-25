@@ -56,13 +56,18 @@ class GitHubImmutable:
             "assets":[{
                 "name":anchor.ASSET,"state":"uploaded","id":987654321,
                 "size":len(asset),
+                "browser_download_url":anchor.DOWNLOAD_URL,
                 "digest":"sha256:"+__import__("hashlib").sha256(asset).hexdigest(),
             }],
         }
         self.change=change
     def transport(self,request,timeout):
         assert timeout==12 and request.get_method()=="GET"
-        assert request.get_header("Authorization")=="Bearer "+READ
+        if request.full_url==anchor.RELEASE_URL:
+            assert request.get_header("Authorization")=="Bearer "+READ
+        else:
+            # GitHub's CDN redirects must never carry a scoped token.
+            assert request.get_header("Authorization") is None
         self.requests.append(request.full_url)
         if self.change=="404":
             raise HTTPError(request.full_url,404,"Not Found",None,None)
@@ -78,10 +83,11 @@ class GitHubImmutable:
             elif self.change=="wrong_size":metadata["assets"][0]["size"]=1
             elif self.change=="extra_asset":metadata["assets"].append({"name":"bad"})
             elif self.change=="asset_not_uploaded":metadata["assets"][0]["state"]="starter"
+            elif self.change=="wrong_download_url":metadata["assets"][0]["browser_download_url"]="https://evil.invalid/test"
             elif self.change=="oversized_metadata":
                 metadata["body"]="x"*anchor.MAX_METADATA_BYTES
             return Response(200,json.dumps(metadata).encode("utf-8"))
-        assert request.full_url==anchor.ASSET_URL+"987654321"
+        assert request.full_url==anchor.DOWNLOAD_URL
         assert request.get_header("Accept")=="application/octet-stream"
         if self.change=="bad_bytes":return Response(200,self.asset+b"forged")
         if self.change=="asset_403":
@@ -113,7 +119,7 @@ def test_exact_published_immutable_release_asset_verified_without_any_writes():
     mock=GitHubImmutable(asset)
     report=anchor.verify_published_immutable_anchor(
         expected_asset=asset,public_read_token=READ,transport=mock.transport)
-    assert mock.requests==[anchor.RELEASE_URL,anchor.ASSET_URL+"987654321"]
+    assert mock.requests==[anchor.RELEASE_URL,anchor.DOWNLOAD_URL]
     assert report["provider_immutable_release_and_exact_asset_verified"]
     assert report["status"]=="GITHUB_PROVIDER_IMMUTABLE_ACWI_HEAD_MATCHES_ORIGINAL_SIGNED_SEQ2"
     assert report["anchor_outside_github_proven"] is False
@@ -126,7 +132,7 @@ def test_exact_published_immutable_release_asset_verified_without_any_writes():
 @pytest.mark.parametrize("change",[
     "404","mutable","no_immutable_field","draft","wrong_tag","wrong_sha",
     "wrong_actor","wrong_digest","wrong_size","extra_asset",
-    "asset_not_uploaded","oversized_metadata","bad_bytes","asset_403",
+    "asset_not_uploaded","wrong_download_url","oversized_metadata","bad_bytes","asset_403",
 ])
 def test_deleted_mutable_or_changed_github_release_is_terminal_stop(change):
     signed,seq2=original()
