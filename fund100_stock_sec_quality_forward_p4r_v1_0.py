@@ -24,7 +24,7 @@ import fund100_stock_broad_sec_coverage_p4n_v1_0 as p4n
 import fund100_stock_quality_momentum_p4g_v1_0 as p4g
 import fund100_v6_crossasset_stress_diagnostic_v1_0 as c13
 
-SCHEMA = "FUND100_P4R_ORIGINAL_SEC_QUALITY_126_SESSION_EVENT_STUDY_V4"
+SCHEMA = "FUND100_P4R_ORIGINAL_SEC_QUALITY_126_SESSION_EVENT_STUDY_V5"
 HORIZON = 126
 # Fixed, predeclared relative-momentum window; no grid search or fitted threshold.
 MOMENTUM_LOOKBACK = 126
@@ -574,6 +574,73 @@ def _spy_idle_capital_overlay(admissions: list[dict], data: pd.DataFrame,
     }
 
 
+
+def _overlay_fixed_admission_issuer_deletion(
+        admissions: list[dict], data: pd.DataFrame,
+        cost_bps: int, baseline: dict) -> dict:
+    """Stress-test the 15bp SPY-funded result against whole-issuer deletion.
+
+    Remove each issuer's ALREADY ADMITTED events, leave its allocation in
+    SPY, and replay the same historical prices and transaction costs.
+    Crucially, do NOT re-run signal selection or admit a replacement for
+    a removed issuer: this is a retrospective concentration diagnostic,
+    not a portfolio a trader could have chosen with historical foresight.
+    """
+    if (cost_bps != 15 or baseline.get("cost_per_traded_side_bps") != cost_bps
+        or baseline.get("admitted_events") != len(admissions)
+        or baseline.get("method") !=
+            "EXACT_SIX_SLOT_ADMISSIONS_SPY_FUNDED_STOCK_REPLACEMENT"):
+        raise EventStudyStop("Mismatched issuer-deletion overlay baseline")
+    issuers = sorted({row["ticker"] for row in admissions})
+    deletions = {}
+    for ticker in issuers:
+        retained = [row for row in admissions if row["ticker"] != ticker]
+        omitted = len(admissions) - len(retained)
+        if omitted <= 0:
+            raise EventStudyStop("Issuer deletion removed no admissions")
+        result = _spy_idle_capital_overlay(retained, data, cost_bps)
+        if (result["admitted_events"] != len(retained)
+            or result["passive_buy_and_hold_spy"] !=
+               baseline["passive_buy_and_hold_spy"]):
+            raise EventStudyStop("Issuer deletion changed passive benchmark")
+        deletions[ticker] = {
+            "removed_admitted_events": omitted,
+            "remaining_admitted_events": len(retained),
+            "replacement_minus_passive_cagr_pp":
+                result["replacement_minus_passive_cagr_pp"],
+            "replacement_minus_passive_terminal_wealth_pp":
+                result["replacement_minus_passive_terminal_wealth_pp"],
+            "overlay_max_drawdown_pct":
+                result["stock_replacement_plus_spy_core"]["max_drawdown_pct"],
+            "change_from_all_issuers_cagr_pp": round(
+                result["replacement_minus_passive_cagr_pp"] -
+                baseline["replacement_minus_passive_cagr_pp"], 6),
+        }
+    excess = [row["replacement_minus_passive_cagr_pp"]
+              for row in deletions.values()]
+    return {
+        "method": "FIXED_ADMISSIONS_WHOLE_ISSUER_DELETION_SPY_FUNDED_15BPS",
+        "cost_per_traded_side_bps": cost_bps,
+        "all_issuers_admitted_events": len(admissions),
+        "all_issuers_baseline_cagr_advantage_pp":
+            baseline["replacement_minus_passive_cagr_pp"],
+        "distinct_admitted_issuers": len(issuers),
+        "per_excluded_issuer": deletions,
+        "exclusion_advantage_range_pp":
+            [min(excess), max(excess)] if excess else None,
+        "exclusions_with_positive_cagr_advantage":
+            sum(x > 0 for x in excess),
+        "exclusions_with_nonpositive_cagr_advantage":
+            sum(x <= 0 for x in excess),
+        "removed_positions_remain_in_spy_no_replacement_signals": True,
+        "identical_passive_spy_benchmark_and_transaction_costs": True,
+        "retrospective_deletion_not_investable_issuer_selection": True,
+        "survivor_universe_and_revisable_prices_preclude_alpha": True,
+        "not_a_confidence_interval_or_independent_holdout": True,
+        "research_only_no_broker_or_live_authority": True,
+    }
+
+
 def analyze(annual: dict, prices: pd.DataFrame, *,
             acquired_at_utc: str, source_sha256: str,
             cash_rates: pd.DataFrame | None = None) -> dict:
@@ -827,6 +894,10 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
         "event_returns": rows,
         "costed_six_slot_overlap_replay": zero_replays,
         "costed_six_slot_spy_idle_capital_overlay": spy_overlay,
+        "spy_overlay_fixed_admission_issuer_deletion_15bps":
+            _overlay_fixed_admission_issuer_deletion(
+                zero_replays["15"]["admission_schedule"], data, 15,
+                spy_overlay["15"]),
         "costed_six_slot_cash_carry_sensitivity": cash_sensitivity,
         "cash_rate_source": ("YAHOO_IRX_13W_BILL_DISCOUNT_PROXY"
                              if cash_source_sha is not None else None),
