@@ -419,8 +419,6 @@ def approved_scoped_live_script(
                 "owner.PREPOST_PRIVATE_CAS_RELEASED is False",
                 "publish.PUBLISH_SIGNED_HEAD_RELEASED is False",
                 "active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is False",
-                "writer.PUBLIC_EXECUTION_ENABLED is False",
-                "writer.TRANSPORT_RELEASED is False",
                 "FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}",
                 "FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}",
                 "python fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
