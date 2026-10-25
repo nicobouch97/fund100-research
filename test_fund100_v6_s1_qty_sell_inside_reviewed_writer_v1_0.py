@@ -10,6 +10,8 @@ import pytest
 import fund100_alpaca_live_writer_candidate_v1_1 as writer
 import fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0 as pure
 import test_fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0 as fixture
+import fund100_v6_s1_immutable_release_anchor_v1_0 as anchor
+import test_fund100_v6_s1_immutable_release_anchor_v1_0 as immutable_fixture
 
 QTY=fixture.ORIGINAL_QTY
 ID=fixture.ORDER_ID
@@ -62,14 +64,21 @@ def fake_release(monkeypatch):
         monkeypatch.setattr(writer,key,True)
 
 
-def call(fake, signed=None, owner=None):
+def call(fake, signed=None, owner=None, *, release_change=None, release_asset=None):
     authentic_owner,authentic_signed=fixture.claimed_owner_and_original_signed_prepost()
+    exact_public=anchor.original_signed_anchor_asset(
+        signed_owner_sources=authentic_owner,
+        prepost_source=authentic_signed["prepost_source"])
+    mock_release=immutable_fixture.GitHubImmutable(
+        exact_public if release_asset is None else release_asset,
+        change=release_change)
     return writer.submit_v6_s1_original_acwi_fractional_sell(
         original_qty=QTY,
         signed_sources=authentic_signed if signed is None else signed,
         owner_sources=authentic_owner if owner is None else owner,
+        public_release_read_token=immutable_fixture.READ,
         key=TEST_KEY,secret=TEST_SECRET,
-        transport=fake)
+        transport=fake,release_transport=mock_release.transport)
 
 
 def test_real_original_reviewed_writer_stays_hard_locked_by_default():
@@ -215,6 +224,34 @@ def test_owner_hmac_valid_but_mismatched_signed_prepost_source_cannot_submit(mon
     assert fake.calls==0
 
 
+@pytest.mark.parametrize("release_change",[
+    "404","mutable","no_immutable_field","draft","wrong_tag",
+    "wrong_sha","wrong_actor","wrong_digest","wrong_size","extra_asset",
+    "asset_not_uploaded","wrong_download_url","oversized_metadata",
+    "bad_bytes","asset_403",
+])
+def test_final_reviewed_writer_rejects_untrusted_mutable_or_missing_release_before_broker(
+        release_change,monkeypatch):
+    fake_release(monkeypatch)
+    fake=FakeBrokerPost()
+    with pytest.raises(writer.LiveWriterCandidateLocked,match="immutable"):
+        call(fake,release_change=release_change)
+    assert fake.calls==0
+
+
+def test_final_writer_needs_actual_immutable_verification_not_fake_flags(monkeypatch):
+    fake_release(monkeypatch)
+    fake=FakeBrokerPost()
+    with pytest.raises(writer.LiveWriterCandidateLocked,match="immutable"):
+        writer.submit_v6_s1_original_acwi_fractional_sell(
+            original_qty=QTY,
+            signed_sources=fixture.claimed_owner_and_original_signed_prepost()[1],
+            owner_sources=fixture.claimed_owner_and_original_signed_prepost()[0],
+            public_release_read_token="invalid",
+            key=TEST_KEY,secret=TEST_SECRET,transport=fake)
+    assert fake.calls==0
+
+
 def test_original_v5_writer_entrypoint_and_hard_locks_preserved():
     source=Path(writer.__file__).read_text()
     assert "def submit_authorized_order_batch(" in source
@@ -225,7 +262,10 @@ def test_original_v5_writer_entrypoint_and_hard_locks_preserved():
     assert "V6_S1_ACWI_FRESH_ACCOUNT_RISK_SOURCE_RELEASED = False" in source
     assert "V6_S1_ACWI_EXTERNAL_WATERMARK_RELEASED = False" in source
     assert "owner_sources: dict" in source
+    assert "public_release_read_token: str" in source
     assert "v6.owner_fence.verify_claimed_owner(**owner_sources)" in source
+    assert "anchor.verify_published_immutable_anchor(" in source
+    assert "anchor.original_signed_anchor_asset(" in source
     assert "if __name__" not in source
     assert "def main(" not in source
     assert "ALPACA_LIVE_KEY" not in source
