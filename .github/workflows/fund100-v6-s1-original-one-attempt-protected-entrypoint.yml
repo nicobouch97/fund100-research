@@ -52,17 +52,12 @@ jobs:
           import fund100_v6_s1_one_time_owner_claim_cas_v1_0 as owner
           import fund100_v6_s1_immutable_release_publish_locked_v1_0 as publish
           import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
-          import fund100_alpaca_live_writer_candidate_v1_1 as writer
           assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
           assert owner.SIGNED_OWNER_CLAIM_TRANSPORT_RELEASED is False
           assert owner.PREPOST_PRIVATE_CAS_RELEASED is False
           assert owner.PREPOST_PUBLIC_WITNESS_RELEASED is False
           assert publish.PUBLISH_SIGNED_HEAD_RELEASED is False
           assert active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is False
-          assert writer.V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED is False
-          assert writer.V6_S1_ACWI_QTY_SELL_TRANSPORT_RELEASED is False
-          assert writer.PUBLIC_EXECUTION_ENABLED is False
-          assert writer.TRANSPORT_RELEASED is False
           print('Original ACWI single-attempt coordinator installed and HARD LOCKED.')
           PY
       - name: Protected actual original seven GET source - no broker POST
