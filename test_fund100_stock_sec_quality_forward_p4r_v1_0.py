@@ -442,7 +442,7 @@ def test_replay_censor_guard_ignores_future_source_changes_and_liquidates_open_p
     b = p4r._capacity_constrained_replay([row], altered, 15)
     assert a == b
     # A later event is excluded rather than accepted only if its outcome matured.
-    late = _synthetic_replay_event("CAT", cutoff + 1, p, "late")
+    late = _synthetic_replay_event("CAT", cutoff, p, "late")
     assert p4r._capacity_constrained_replay([late], p, 15)["admitted_events"] == 0
 
 
