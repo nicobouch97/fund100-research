@@ -6,6 +6,7 @@ on:
       - "fund100_v6_crossasset_stress_diagnostic_v1_0.py"
       - "test_fund100_v6_crossasset_stress_diagnostic_v1_0.py"
       - "research_lab/V6_C13_CROSSASSET_STRESS_COMPARISON_PRE_REG_2026_10_24.md"
+      - "research_lab/V6_C13_GOLD_RETURN_CONCENTRATION_DESIGN_2026_10_25.md"
       - ".github/workflows/fund100-v6-c13-crossasset-stress.yml"
   push:
     branches: [main]
@@ -54,8 +55,16 @@ jobs:
           assert set(r['interest_bearing_cash_sensitivity']['15']) == {
               'ZERO', 'IRX_MINUS_50BP', 'IRX_GROSS'}
           assert r['cash_rate_sha256'] and r['cash_rate_lag_weekdays'] == 3
-          assert r['schema'].endswith('_V4')
+          assert r['schema'].endswith('_V5')
           assert r['post_result_sleeve_ablation_not_independent_holdout']
+          assert r['calendar_year_concentration_is_post_result_not_holdout']
+          assert r['calendar_year_log_wealth_not_cagr_or_executable_leave_year_out']
+          concentration = r['year_concentration_15bp_irx_gross']
+          assert len(concentration) == 3
+          for row in concentration.values():
+              assert row['calendar_year_log_relative_wealth_pct']
+              assert abs(sum(row['calendar_year_log_relative_wealth_pct'].values())
+                         - row['terminal_relative_log_wealth_pct']) < 0.00001
           for scenario in r['interest_bearing_cash_sensitivity']['15'].values():
               assert 'equal_equity_sleeve_attribution' in scenario
               assert len(scenario['by_basket']) == 5
