@@ -433,3 +433,48 @@ def test_failed_primary_fallback_abstains_and_preserves_submission_reason(tmp_pa
     assert all(r["original_submission_failure_reason"] == "OVER_12MB_SOURCE_LIMIT"
                for r in report["observations"])
     assert all(r["cover_state"] == "NOT_EVALUATED" for r in report["observations"])
+
+
+def test_12b_debt_exchange_and_different_common_row_are_not_a_joint_pair():
+    # Both keywords occur in Section 12(b), but the NYSE entry belongs to
+    # a debt security, not the separately registered common share class.
+    raw = original_10k(
+        "<p>Securities registered pursuant to Section 12(b) of the Act:</p>"
+        "<table><tr><td>Senior Notes due 2028</td><td>NYSE</td></tr>"
+        "<tr><td>Common Stock</td><td>None</td></tr></table>"
+        "<p>Securities registered pursuant to Section 12(g): None</p>")
+    result = p4u.inspect_original_10k(raw)
+    assert result["cover_state"] == (
+        "AMBIGUOUS_12B_CROSS_ROW_COMMON_EXCHANGE_REVIEW_REQUIRED")
+    assert "Common Stock" in result["section_12b_excerpt"]
+    assert not result["section12g_common_class_review_required"]
+
+
+def test_12b_common_exchange_in_same_row_remains_preliminary_review_only():
+    raw = original_10k(
+        "<p>Securities registered pursuant to Section 12(b) of the Act:</p>"
+        "<table><tr><td>Senior Notes due 2028</td><td>NYSE</td></tr>"
+        "<tr><td>Common Stock</td><td>Nasdaq Global Select Market</td></tr></table>"
+        "<p>Securities registered pursuant to Section 12(g): None</p>")
+    result = p4u.inspect_original_10k(raw)
+    assert result["cover_state"] == (
+        "POSSIBLE_12B_COMMON_EQUITY_EXCHANGE_REVIEW_REQUIRED")
+
+
+def test_ambiguous_cross_row_not_counted_as_possible_common_equity_listing(tmp_path):
+    make_sources(tmp_path)
+    raw = original_10k(
+        "<p>Securities registered pursuant to Section 12(b):</p>"
+        "<table><tr><td>Debt Notes</td><td>New York Stock Exchange</td></tr>"
+        "<tr><td>Common Stock</td><td>None</td></tr></table>"
+        "<p>Securities registered pursuant to Section 12(g): None</p>")
+    report = p4u.capture(tmp_path, tmp_path / "row-check",
+                         "Research contact@example.com", per_stratum=1,
+                         getter=lambda path, agent: raw)
+    assert report["original_filing_sources_captured"] == 2
+    assert report["possible_section12b_common_equity_exchange_covers"] == 0
+    assert all(r["cover_state"] ==
+               "AMBIGUOUS_12B_CROSS_ROW_COMMON_EXCHANGE_REVIEW_REQUIRED"
+               for r in report["observations"])
+    assert report["broker_requests"] == report["broker_orders"] == 0
+    assert not report["trading_authorized"] and not report["live_authorized"]
