@@ -198,7 +198,10 @@ def inspect_active_original_acwi_sell(*,original_qty:str,key:str,secret:str)->di
     _scope()  # Current main operator and kill switch checked AGAIN after GET.
     boots,_=original.original(four.BOOT)
     old_policy,_=original.original(four.POLICY)
-    now=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Preserve subsecond precision: Alpaca's clock.timestamp may include
+    # fractional seconds. Rounding our later observation DOWN can
+    # misclassify a valid earlier broker timestamp as future-dated.
+    now=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
     return evaluate_original_sell_only(
         account=docs[0],positions=docs[1],orders=docs[2],clock=docs[3],
         history=docs[4],activities=docs[5],native_none_history=docs[6],
