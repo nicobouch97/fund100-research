@@ -303,7 +303,6 @@ def test_hydrate_exact_original_chain_context_from_signed_read_sources(monkeypat
     assert result["owner_attempt"]==1
     assert len(result["owner_nonce"])==64
     assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
-    return result
 
 
 @pytest.mark.parametrize("tamper",["second_run","wrong_main","no_risk","wrong_reservation","claimed_owner"])
@@ -337,7 +336,7 @@ def test_context_hydration_fails_closed_without_any_order(monkeypatch,tamper):
     monkeypatch.setattr(rec,"_public_original_intent_run",lambda **kwargs:{})
     monkeypatch.setattr(rec,"_verify_public_original_intent_run",lambda **kwargs:None)
     if tamper=="second_run":monkeypatch.setenv("GITHUB_RUN_ATTEMPT","2")
-    if tamper=="wrong_main":monkeypatch.setenv("GITHUB_SHA","b"*40)
+    if tamper=="wrong_main":monkeypatch.setenv("GITHUB_REF","refs/heads/unreviewed")
     if tamper=="no_risk":monkeypatch.setenv("FUND100_RISK_LEVEL","LOW")
     with pytest.raises(chain.ChainStop,match="hydration STOP"):
         chain.prepare_original_acwi_context_getonly(
