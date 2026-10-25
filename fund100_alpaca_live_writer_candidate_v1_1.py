@@ -987,16 +987,20 @@ def submit_v6_s1_original_acwi_fractional_sell(*,
                                                original_qty: str,
                                                signed_sources: dict,
                                                owner_sources: dict,
+                                               public_release_read_token: str,
                                                key: str,
                                                secret: str,
-                                               transport=None) -> dict:
+                                               transport=None,
+                                               release_transport=None) -> dict:
     """One reviewed-shape Alpaca POST, completely LOCKED in production.
 
     Verify a signed unique-claim owner before the signed possible-POST
-    boundary, but neither signed input grants order authority. Authentication
-    of a fresh LIVE risk run and independently anchored latest HEAD remain
-    separate unreleased prerequisites. Dummy fake transports are used
-    ONLY in credentialless offline tests.
+    boundary, but neither signed input grants order authority. An independently
+    authenticated, provider-immutable release with the exact PUBLIC commitment
+    to that HMAC-signed owner and seq2 must also be checked here, at the LAST
+    POST boundary. Fresh actual order-time broker risk and independently
+    authenticated current private HEAD remain separate unreleased prerequisites.
+    Dummy fake transports are used ONLY in credentialless offline tests.
     """
     require_v6_s1_acwi_live_release()  # MUST remain the FIRST action.
     # Avoid trusting a user-supplied approved flag/receipt status.
@@ -1053,6 +1057,33 @@ def submit_v6_s1_original_acwi_fractional_sell(*,
         or review.get("live_order_authorized") is not False):
         raise LiveWriterCandidateLocked(
             "V6 signed seq2/ACWI original order proof inconsistent")
+    # An independently verified provider-immutable public HEAD is mandatory
+    # INSIDE the last reviewed broker writer, not a caller-supplied boolean.
+    # This makes a future accidental enablement of V6 external watermark
+    # flags insufficient to send an order. It does NOT itself establish fresh
+    # LIVE risk, a non-rollbackable HMAC HEAD read, or any order permission.
+    try:
+        import fund100_v6_s1_immutable_release_anchor_v1_0 as anchor
+        expected_asset=anchor.original_signed_anchor_asset(
+            signed_owner_sources=owner_sources,
+            prepost_source=signed_sources["prepost_source"])
+        anchored=anchor.verify_published_immutable_anchor(
+            expected_asset=expected_asset,
+            public_read_token=public_release_read_token,
+            transport=release_transport)
+    except Exception:
+        raise LiveWriterCandidateLocked(
+            "Original ACWI immutable HMAC owner/seq2 anchor not authenticated") from None
+    if (anchored.get("status")!=
+            "GITHUB_PROVIDER_IMMUTABLE_ACWI_HEAD_MATCHES_ORIGINAL_SIGNED_SEQ2"
+        or anchored.get("provider_immutable_release_and_exact_asset_verified") is not True
+        or anchored.get("anchor_outside_github_proven") is not False
+        or anchored.get("first_live_broker_order_authorized") is not False
+        or anchored.get("public_release_creations")!=0
+        or anchored.get("private_git_puts")!=0
+        or anchored.get("live_broker_posts")!=0):
+        raise LiveWriterCandidateLocked(
+            "Original ACWI independently checked immutable release HEAD invalid")
     validate_credentials(key,secret)
     url=LIVE_BASE_URL+LIVE_ORDER_PATH
     validate_live_url(url)
