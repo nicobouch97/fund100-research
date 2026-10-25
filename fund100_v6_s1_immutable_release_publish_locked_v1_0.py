@@ -91,7 +91,7 @@ def _distinct_tokens(*tokens):
     if len(set(tokens))!=len(tokens):
         raise PublicationStop("Public admin/read, release WRITE, private read/write must be distinct")
 
-def _verify_current_private(*owner_sources,prepost_source,read_token,write_token,
+def _verify_current_private(*,owner_sources,prepost_source,read_token,write_token,
                             transport=None):
     # Two independently credentialed actual GETs of BOTH signed original HEADs.
     # A forged passed-in current_fence_source cannot simply claim a valid owner.
