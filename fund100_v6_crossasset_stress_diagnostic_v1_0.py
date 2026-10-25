@@ -84,7 +84,7 @@ def validate_cash_rates(raw: pd.DataFrame, price_dates: pd.DatetimeIndex) -> pd.
     if (ix.tz is not None or ix.has_duplicates or not ix.is_monotonic_increasing
         or any(x != x.normalize() for x in ix) or len(ix) < 1000
         or ix[0] > pd.Timestamp("2013-12-20")
-        or ix[-1] < price_dates[-1] - pd.Timedelta(days=10)):
+        or ix[-1] < pd.Timestamp(price_dates[-1]) - pd.Timedelta(days=10)):
         raise CrossAssetStop("Incomplete, stale or unordered cash-rate source")
     if not pd.api.types.is_numeric_dtype(raw["DFF"]):
         raise CrossAssetStop("Non-numeric cash-rate source")
