@@ -49,3 +49,13 @@ zero observations with **null** descriptive returns, never zero profits.
 
 This extension changes coverage only, not the frozen original event
 threshold, trade timing, cost assumptions, risk limits or brokerage permissions.
+
+## 25 October 2026 — prevent multi-filing pseudo-replication
+
+Two distinct SEC Item 2.02 accessions for one ticker may lead to the **same**
+hypothetical stock entry close. They are two filing observations, but not two
+independent economic positions or return outcomes. Preserve the separate
+filing/entry count for source audit, and collapse identical ticker/entry
+positions before calculating the descriptive mean, median and hit fraction.
+Disagreeing exit dates or costed returns for one ticker/entry must fail closed.
+This does not expand the source universe, validate fills or establish alpha.
