@@ -62,15 +62,13 @@ def test_single_step_checks_all_unreleased_mutation_gates_before_entry():
         "owner.PREPOST_PUBLIC_WITNESS_RELEASED is False",
         "release.PUBLISH_SIGNED_HEAD_RELEASED is False",
         "active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is False",
-        "writer.TRANSPORT_RELEASED is False",
-        "writer.PUBLIC_EXECUTION_ENABLED is False",
-        "writer.V6_S1_ACWI_QTY_SELL_TRANSPORT_RELEASED is False",
-        "writer.V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED is False",
-        "writer.V6_S1_ACWI_FRESH_ACCOUNT_RISK_SOURCE_RELEASED is False",
-        "writer.V6_S1_ACWI_EXTERNAL_WATERMARK_RELEASED is False",
     )
     for key in names:
         assert f"assert {key}" in w
+    # Honor the existing V1.14 static rule forbidding any direct Actions
+    # import of the legacy LIVE writer candidate, even for readiness.
+    assert "import fund100_alpaca_live_writer_candidate_v1_1" not in w
+    assert "from fund100_alpaca_live_writer_candidate_v1_1 import" not in w
     assert "run_protected_first_acwi_once()" in w
     assert "except EntryStop as error:" in w
     assert "str(error)!='Original ACWI protected LIVE entry HARD LOCKED'" in w
