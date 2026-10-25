@@ -104,7 +104,7 @@ jobs:
           assert first['real_private_Git_PUTs']==first['broker_orders']==0
           print('Same job: signed reserved original ACWI seq1 + unclaimed owner HMAC verified; no state mutation.')
           PY
-      - name: Provider immutable setting preflight (optional read-only admin principal)
+      - name: Provider immutable setting MUST pass (Administration READ; NO WRITES)
         env:
           FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}
         run: |
@@ -114,16 +114,14 @@ jobs:
           import fund100_v6_s1_immutable_release_publish_locked_v1_0 as p
           token=os.environ.get('FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN','')
           if not token:
-              print('RELEASE_SETTING_NOT_VERIFIED_NO_ADMIN_READ_TOKEN: STOP.')
-          else:
-              try:
-                  d=p._request(method='GET',url=p.IMMUTABLE_SETTING_URL,token=token)
-                  if d.get('enabled') is True and type(d.get('enforced_by_owner')) is bool:
-                      print('IMMUTABLE_RELEASE_SETTING_ENABLED_PROVIDER_VERIFIED; STILL STOP.')
-                  else:
-                      print('IMMUTABLE_RELEASE_SETTING_DISABLED_OR_UNKNOWN: STOP.')
-              except Exception:
-                  print('IMMUTABLE_RELEASE_ADMIN_READ_DENIED_OR_UNAVAILABLE: STOP.')
+              raise SystemExit('IMMUTABLE_RELEASE_ADMIN_READ_TOKEN_MISSING: STOP.')
+          try:
+              d=p._request(method='GET',url=p.IMMUTABLE_SETTING_URL,token=token)
+          except Exception:
+              raise SystemExit('IMMUTABLE_RELEASE_ADMIN_READ_DENIED_OR_UNAVAILABLE: STOP.') from None
+          if d.get('enabled') is not True or type(d.get('enforced_by_owner')) is not bool:
+              raise SystemExit('IMMUTABLE_RELEASE_SETTING_DISABLED_OR_UNKNOWN: STOP.')
+          print('IMMUTABLE_RELEASE_SETTING_ENABLED_PROVIDER_VERIFIED; STILL STOP.')
           PY
       - name: Non-executable readiness only - no owner CAS, release, or Alpaca POST
         run: |
