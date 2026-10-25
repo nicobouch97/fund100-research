@@ -231,10 +231,25 @@ def aggregate_reports(reports:list[dict])->dict:
             else:
                 unique[key]=row
     rows=list(unique.values())
+    # Distinct SEC accessions can describe the SAME economic stock position
+    # on the same model entry close. They remain distinct filing observations,
+    # but must not inflate the sample size of investment-return outcomes.
+    economic={}
+    for row in rows:
+        key=(row["ticker"],row["hypothetical_entry_close"])
+        if key in economic:
+            prior=economic[key]
+            if (prior["hypothetical_exit_close"]!=row["hypothetical_exit_close"]
+                or prior["one_completed_session_net_stock_minus_gross_SPY"]!=
+                    row["one_completed_session_net_stock_minus_gross_SPY"]):
+                raise ForwardStop("Conflicting marks for one economic stock entry")
+        else:
+            economic[key]=row
+    positions=list(economic.values())
     costed={}
     for b in COSTS_BPS:
         values=[float(r["one_completed_session_net_stock_minus_gross_SPY"][str(b)])
-                for r in rows]
+                for r in positions]
         costed[str(b)]={
             "observations":len(values),
             "descriptive_mean_excess_pct":round(100*mean(values),5) if values else None,
@@ -248,11 +263,14 @@ def aggregate_reports(reports:list[dict])->dict:
             if rows else "NO_SOURCE_QUALIFIED_FORWARD_EVENTS",
         "original_captures_evaluated":len(reports),
         "unique_original_filing_entry_events":len(rows),
+        "unique_economic_stock_entry_positions":len(positions),
+        "same_position_distinct_filing_events_collapsed":len(rows)-len(positions),
         "duplicate_event_rows_removed":sum(len(r["hypothetical_marks"]) for r in reports)-len(rows),
         "captures_with_vendor_prefix_revisions":revised,
         "one_common_later_price_vintage":later_source is not None,
         "modelled_one_session_stock_minus_untraded_SPY_by_one_way_cost_bps":costed,
         "no_cross_event_independence_or_multiple_testing_claim":True,
+        "one_stock_entry_counted_once_even_with_multiple_sec_filings":True,
         "not_a_survivorship_safe_universe":True,
         "statistically_significant_alpha_proven":False,
         "strategy_promoted_for_live":False,
