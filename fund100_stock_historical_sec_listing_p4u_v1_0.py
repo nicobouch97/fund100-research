@@ -23,7 +23,7 @@ from urllib.request import Request, urlopen
 
 from fund100_stock_historical_sec_population_p4t_v1_0 import parse_current_registry
 
-SCHEMA = "FUND100_P4U_2017_ORIGINAL_10K_COVER_SOURCE_AUDIT_V3"
+SCHEMA = "FUND100_P4U_2017_ORIGINAL_10K_COVER_SOURCE_AUDIT_V4"
 MAX_FILING_BYTES = 12_000_000  # full submission remains tightly bounded
 # A separately verified primary 10-K can exceed 12 MB without its exhibits.
 # This independent ceiling never applies to full submissions or index pages.
@@ -290,6 +290,53 @@ def _inspect_cover_text(cover: str) -> dict:
 
 
 
+def _original_submission_xbrl_symbol(raw: bytes) -> dict:
+    """Extract an issuer-reported 2017 ticker ONLY from original EX-101.INS.
+
+    This is a filing-vintage *issuer-level* hint, not a share-class mapping,
+    exchange listing, investability test or verified historical security ID.
+    Never substitute a present-day ticker, and abstain on conflicting/invalid
+    original tags. Full-submission source SHA is retained by capture().
+    """
+    instances = []
+    for match in re.finditer(rb"<DOCUMENT>(.*?)</DOCUMENT>", raw, re.I | re.S):
+        doc = match.group(1)
+        if not re.search(rb"(?im)<TYPE>\\s*EX-101\\.INS\\s*(?:\\r?\\n|<)", doc):
+            continue
+        body = re.search(rb"<TEXT>(.*?)</TEXT>", doc, re.I | re.S)
+        if body is not None:
+            instances.append(body.group(1))
+    result = {
+        "original_xbrl_instance_count": len(instances),
+        "original_xbrl_trading_symbol": None,
+        "original_xbrl_ticker_not_security_class_or_listing_proof": True,
+    }
+    if not instances:
+        result["original_xbrl_ticker_state"] = "NO_ORIGINAL_EX101_INS"
+        return result
+    # An original EX-101.INS may use a namespace prefix other than 'dei'.
+    # Require a matching XML closing tag and a conservative ticker alphabet.
+    tag = re.compile(rb"<([A-Za-z][A-Za-z0-9_.-]*):TradingSymbol\\b[^>]*>", re.I)
+    valid = re.compile(
+        rb"<([A-Za-z][A-Za-z0-9_.-]*):TradingSymbol\\b[^>]*>\\s*"
+        rb"([A-Za-z][A-Za-z0-9.\\-]{0,9})\\s*</\\1:TradingSymbol\\s*>", re.I)
+    tags = sum(len(tag.findall(xml)) for xml in instances)
+    matches = [m.group(2).decode("ascii").upper()
+               for xml in instances for m in valid.finditer(xml)]
+    unique = set(matches)
+    if tags == 0:
+        state = "NO_ORIGINAL_XBRL_TRADING_SYMBOL_TAG"
+    elif tags > 32 or len(matches) != tags:
+        state = "INVALID_OR_AMBIGUOUS_ORIGINAL_XBRL_SYMBOL"
+    elif len(unique) != 1:
+        state = "CONFLICTING_ORIGINAL_XBRL_SYMBOLS"
+    else:
+        state = "ONE_ORIGINAL_XBRL_TICKER_REVIEW_ONLY"
+        result["original_xbrl_trading_symbol"] = unique.pop()
+    result["original_xbrl_ticker_state"] = state
+    return result
+
+
 def inspect_original_10k(raw: bytes) -> dict:
     """Inspect a 10-K document explicitly identified inside an original submission."""
     if type(raw) is not bytes or not 0 < len(raw) <= MAX_FILING_BYTES:
@@ -307,7 +354,9 @@ def inspect_original_10k(raw: bytes) -> dict:
     if match is None:
         return {"cover_state": "NO_VERIFIED_10K_TEXT",
                 "section_12b_excerpt": ""}
-    return _inspect_cover_text(match.group(1).decode("latin-1", errors="replace"))
+    result = _inspect_cover_text(match.group(1).decode("latin-1", errors="replace"))
+    result.update(_original_submission_xbrl_symbol(raw))
+    return result
 
 
 def inspect_primary_10k(raw: bytes) -> dict:
@@ -316,7 +365,16 @@ def inspect_primary_10k(raw: bytes) -> dict:
         raise ListingEvidenceStop("Primary 10-K missing or oversized")
     if not re.search(rb"(?i)<(?:html|body)\b", raw[:50_000]):
         return {"cover_state": "NO_VERIFIED_10K_TEXT", "section_12b_excerpt": ""}
-    return _inspect_cover_text(raw[:250_000].decode("latin-1", errors="replace"))
+    result = _inspect_cover_text(raw[:250_000].decode("latin-1", errors="replace"))
+    # A verified primary 10-K is not a complete SEC submission. Its missing
+    # EX-101.INS cannot be interpreted as an issuer with no historical ticker.
+    result.update({
+        "original_xbrl_instance_count": 0,
+        "original_xbrl_trading_symbol": None,
+        "original_xbrl_ticker_state": "NOT_EVALUATED_PRIMARY_10K_ONLY",
+        "original_xbrl_ticker_not_security_class_or_listing_proof": True,
+    })
+    return result
 
 
 def _official_filing_get(path: str, agent: str) -> bytes:
@@ -595,6 +653,13 @@ def capture(source_dir: Path, output_dir: Path, agent: str,
         "filings_with_structured_12b_rows": sum(
             bool(r.get("possible_12b_security_class_rows")) for r in observations),
         "structured_rows_not_historical_investable_security_master": True,
+        "original_xbrl_ticker_review_candidates": sum(
+            r.get("original_xbrl_ticker_state") ==
+            "ONE_ORIGINAL_XBRL_TICKER_REVIEW_ONLY" for r in observations),
+        "original_xbrl_ticker_not_historical_security_master": True,
+        "original_xbrl_not_evaluated_primary_only": sum(
+            r.get("original_xbrl_ticker_state") ==
+            "NOT_EVALUATED_PRIMARY_10K_ONLY" for r in observations),
         "section12g_common_class_covers": sum(
             r.get("section12g_common_class_review_required") is True
             for r in observations),
