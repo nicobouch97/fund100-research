@@ -376,3 +376,128 @@ def test_context_hydration_fails_closed_without_any_order(monkeypatch,tamper):
             public_read_token="synthetic-public-read",
             hmac_hex=source["key"].hex())
     assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
+
+
+def test_active_original_hydration_without_source_release_has_no_private_reads(
+        monkeypatch):
+    import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+    current=fx.setup()
+    for k,v in (
+        ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
+        ("GITHUB_REF","refs/heads/main"),
+        ("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_RUN_ATTEMPT","1"),
+        ("GITHUB_RUN_ID",current["owner_run_id"]),
+        ("GITHUB_SHA",current["current_main_sha"]),
+        ("GITHUB_ACTIONS","true"),
+        ("FUND100_RISK_LEVEL","HIGH"),
+        ("FUND100_BROKER_KILL_SWITCH","DISENGAGED"),
+        ("FUND100_ENABLE_LIVE_READONLY","YES_READ_ONLY_LIVE"),
+    ):monkeypatch.setenv(k,str(v))
+    requested=[]
+    monkeypatch.setattr(chain.ownership,"_get_bounded_json",
+                        lambda **kw:requested.append("PRIVATE_READ"))
+    assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
+    assert active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is False
+    with pytest.raises(chain.ChainStop,match="hydration STOP"):
+        chain.prepare_original_acwi_context_getonly(
+            private_read_token="synthetic-read-only",
+            public_read_token="synthetic-public-only",
+            hmac_hex=current["key"].hex(),active_execution=True)
+    assert requested==[]
+
+
+@pytest.mark.parametrize("bad",["ENGAGED","NOT_SET"])
+def test_active_original_hydration_cannot_reuse_stopped_admission(
+        monkeypatch,bad):
+    source=fx.setup()
+    for k,v in (
+        ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
+        ("GITHUB_REF","refs/heads/main"),
+        ("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_RUN_ATTEMPT","1"),
+        ("GITHUB_RUN_ID",source["owner_run_id"]),
+        ("GITHUB_SHA",source["current_main_sha"]),
+        ("GITHUB_ACTIONS","true"),
+        ("FUND100_RISK_LEVEL","HIGH"),
+        ("FUND100_ENABLE_LIVE_READONLY","YES_READ_ONLY_LIVE"),
+    ):monkeypatch.setenv(k,str(v))
+    if bad=="ENGAGED":
+        monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH",bad)
+    else:
+        monkeypatch.delenv("FUND100_BROKER_KILL_SWITCH",raising=False)
+    with pytest.raises(chain.ChainStop,match="hydration STOP"):
+        chain.prepare_original_acwi_context_getonly(
+            private_read_token="private-read-dummy",
+            public_read_token="public-read-dummy",
+            hmac_hex=source["key"].hex(),active_execution=True)
+
+
+def test_active_original_source_hydration_reaches_same_context_only_with_real_go(
+        monkeypatch):
+    import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+    import fund100_v6_s1_operator_control_v2_0 as op
+    import fund100_v6_s1_independent_signed_genesis_recovery_getonly_v1_0 as rec
+    import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent
+    source=fx.setup()
+    for name,value in (
+        ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
+        ("GITHUB_REF","refs/heads/main"),
+        ("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_RUN_ATTEMPT","1"),
+        ("GITHUB_RUN_ID",source["owner_run_id"]),
+        ("GITHUB_SHA",source["current_main_sha"]),
+        ("GITHUB_ACTIONS","true"),
+        ("FUND100_BROKER_KILL_SWITCH","DISENGAGED"),
+        ("FUND100_ENABLE_LIVE_READONLY","YES_READ_ONLY_LIVE"),
+        ("FUND100_RISK_LEVEL","HIGH"),
+    ):monkeypatch.setenv(name,str(value))
+    for mod,field in (
+        (chain,"ONE_ATTEMPT_EXECUTION_RELEASED"),
+        (chain.ownership,"SIGNED_OWNER_CLAIM_TRANSPORT_RELEASED"),
+        (chain.ownership,"PREPOST_PRIVATE_CAS_RELEASED"),
+        (chain.ownership,"PREPOST_PUBLIC_WITNESS_RELEASED"),
+        (chain.publisher,"PUBLISH_SIGNED_HEAD_RELEASED"),
+        (active,"ACTIVE_HIGH_SELL_SOURCE_RELEASED"),
+        (chain.writer,"V6_S1_ACWI_QTY_SELL_TRANSPORT_RELEASED"),
+        (chain.writer,"V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED"),
+        (chain.writer,"V6_S1_ACWI_FRESH_ACCOUNT_RISK_SOURCE_RELEASED"),
+        (chain.writer,"V6_S1_ACWI_EXTERNAL_WATERMARK_RELEASED"),
+    ):monkeypatch.setattr(mod,field,True)
+    calls=[]
+    def running():
+        calls.append("GO")
+        return len(calls)<=2
+    monkeypatch.setattr(op,"require_s1_running",running)
+    monkeypatch.setattr(intent,"original_acwi_qty",lambda:source["original_qty"])
+    monkeypatch.setattr(rec,"recover_current_original_signed_head_readonly",
+        lambda **kw:{
+            "status":"ORIGINAL_ACWI_SIGNED_SEQ1_AND_PUBLIC_HEAD_RECONFIRMED_READONLY",
+            "private_ledger_sequence":1,
+            "original_ACWI_qty_commitment_verified":True,
+            "production_trade_order_submission_authorized":False,
+        })
+    monkeypatch.setattr(chain.ownership,"_get_bounded_json",
+        lambda **kw:deepcopy(source["reserved_source"]))
+    monkeypatch.setattr(chain.ownership,"_get_signed_source",
+        lambda **kw:deepcopy(source["fence_source"]))
+    monkeypatch.setattr(rec,"_get",
+        lambda **kw:deepcopy(source["genesis_comment"]))
+    monkeypatch.setattr(rec,"_complete_original_comment_pages",
+        lambda **kw:[deepcopy(source["first_comment"])])
+    monkeypatch.setattr(rec,"_public_original_intent_run",lambda **kw:{})
+    monkeypatch.setattr(rec,"_verify_public_original_intent_run",lambda **kw:None)
+    ctx=chain.prepare_original_acwi_context_getonly(
+        private_read_token="read-only-test-not-real",
+        public_read_token="public-only-test-not-real",
+        hmac_hex=source["key"].hex(),active_execution=True)
+    assert set(ctx)==chain.EXPECTED_CONTEXT
+    assert ctx["reserved_source"]["sha"]==source["reserved_source"]["sha"]
+    assert ctx["owner_attempt"]==1
+    assert calls==["GO","GO"]
+    # A third invocation must fail; source hydration is no claim/write.
+    with pytest.raises(chain.ChainStop,match="hydration STOP"):
+        chain.prepare_original_acwi_context_getonly(
+            private_read_token="read-only-test-not-real",
+            public_read_token="public-only-test-not-real",
+            hmac_hex=source["key"].hex(),active_execution=True)
