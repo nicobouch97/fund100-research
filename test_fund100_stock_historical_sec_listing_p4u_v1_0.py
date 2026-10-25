@@ -622,3 +622,24 @@ def test_structured_12b_aggregates_only_captured_source_backed_rows(tmp_path):
     assert all(len(r["possible_12b_security_class_rows"]) == 1
                for r in report["observations"])
     assert report["broker_orders"] == 0 and not report["live_authorized"]
+
+
+@pytest.mark.parametrize("non_share_title", [
+    "Common Stock Purchase Rights",
+    "Common Stock Warrants",
+    "Common Stock Units",
+    "Common Stock Depositary Interests",
+    "Common Stock and Preferred Stock Purchase Rights",
+])
+def test_structured_12b_excludes_non_share_common_stock_instruments(non_share_title):
+    # Actual 2017 AAR CORP source includes a separate Common Stock Purchase
+    # Rights exchange row; it must not count as a plain common-share class.
+    raw = original_10k(
+        "<p>Securities registered pursuant to Section 12(b):</p>"
+        "<table><tr><td>Common Stock, $1 par value</td><td>NYSE</td></tr>"
+        f"<tr><td>{non_share_title}</td><td>NYSE</td></tr></table>"
+        "<p>Securities registered pursuant to Section 12(g): None</p>")
+    rows = p4u.inspect_original_10k(raw)["possible_12b_security_class_rows"]
+    assert len(rows) == 1
+    assert rows[0]["security_class_text"] == "Common Stock, $1 par value"
+    assert rows[0]["trading_symbol_in_original_10k"] is None
