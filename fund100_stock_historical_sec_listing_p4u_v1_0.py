@@ -45,6 +45,14 @@ EXCHANGE = re.compile(
     re.IGNORECASE)
 
 
+# 12(b) registration of a common-stock purchase right, warrant, unit or
+# depositary/preferred interest is not registration of plain common shares.
+# Abstain even when the row names a recognised stock exchange.
+NON_PLAIN_COMMON_CLASS = re.compile(
+    r"\\b(?:rights?|warrants?|units?|preferred|depositary|options?)\\b",
+    re.IGNORECASE)
+
+
 class ListingEvidenceStop(ValueError):
     pass
 
@@ -192,6 +200,7 @@ def _structured_12b_common_rows(cover: str) -> list[dict]:
         class_text, exchange_text = cells[0], cells[-1]
         if (not COMMON.search(class_text) or not EXCHANGE.search(exchange_text)
             or EXCHANGE.search(class_text) or COMMON.search(exchange_text)
+            or NON_PLAIN_COMMON_CLASS.search(class_text)
             or len(class_text) > 180 or len(exchange_text) > 180):
             continue
         symbol = None
