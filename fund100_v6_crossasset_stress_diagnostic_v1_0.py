@@ -17,7 +17,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-SCHEMA = "FUND100_V6_CROSSASSET_FIXED_BASKET_STRESS_DIAGNOSTIC_V2"
+SCHEMA = "FUND100_V6_CROSSASSET_FIXED_BASKET_STRESS_DIAGNOSTIC_V3"
+CASH_SCENARIOS = ("ZERO", "DFF_MINUS_50BP", "DFF_GROSS")
+CASH_RATE_LAG_WEEKDAYS = 3  # conservative proxy, NOT verified historical release vintages
 SYMBOLS = ("XLK", "XLE", "IWM", "GLD", "SHY", "SPY")
 ASSETS = ("XLK", "XLE", "IWM", "GLD", "SHY", "CASH")
 STUDY_START = "2014-01-02"
@@ -68,12 +70,49 @@ def canonical_prices(data: pd.DataFrame) -> str:
                                         float_format="%.10f")
 
 
-def simulate(prices: pd.DataFrame, weights: tuple[float, ...], cost_bps: int) -> dict:
+def validate_cash_rates(raw: pd.DataFrame, price_dates: pd.DatetimeIndex) -> pd.Series:
+    """FRED DFF observations lagged three weekdays before each market close.
+
+    DFF is an overnight interbank rate, NOT an achievable retail cash yield.
+    This weekday proxy is conservative but does not prove original release
+    timestamps or account-specific deposit eligibility.
+    """
+    if (not isinstance(raw, pd.DataFrame) or list(raw.columns) != ["DFF"]
+        or not isinstance(raw.index, pd.DatetimeIndex)):
+        raise CrossAssetStop("Exact dated FRED DFF rate series required")
+    ix = raw.index
+    if (ix.tz is not None or ix.has_duplicates or not ix.is_monotonic_increasing
+        or any(x != x.normalize() for x in ix) or len(ix) < 1000
+        or ix[0] > pd.Timestamp("2013-12-20")
+        or ix[-1] < price_dates[-1] - pd.Timedelta(days=10)):
+        raise CrossAssetStop("Incomplete, stale or unordered cash-rate source")
+    if not pd.api.types.is_numeric_dtype(raw["DFF"]):
+        raise CrossAssetStop("Non-numeric cash-rate source")
+    vals = raw["DFF"].to_numpy(dtype=float)
+    if not np.isfinite(vals).all() or (vals < 0).any() or (vals > 25).any():
+        raise CrossAssetStop("Invalid FRED DFF percentage rate")
+    asof = price_dates - pd.offsets.BDay(CASH_RATE_LAG_WEEKDAYS)
+    observed = pd.Series(ix, index=ix).reindex(asof, method="ffill")
+    lagged = raw["DFF"].reindex(asof, method="ffill")
+    ages = (asof - pd.DatetimeIndex(observed)).days
+    if lagged.isna().any() or (ages > 10).any() or (ages < 0).any():
+        raise CrossAssetStop("Missing or stale pre-decision cash-rate observations")
+    return pd.Series(lagged.to_numpy(dtype=float), index=price_dates,
+                     name="lagged_DFF_percent")
+
+
+def canonical_cash_rates(raw: pd.DataFrame) -> str:
+    return raw.to_csv(index_label="Date", date_format="%Y-%m-%d",
+                      float_format="%.8f")
+
+
+def simulate(prices: pd.DataFrame, weights: tuple[float, ...], cost_bps: int,
+             *, cash_annual_rate: pd.Series | None = None) -> dict:
     """Monthly close rebalance after today's move, effective NEXT session.
 
     Buy-side costs charged at inception; all later buys AND sells are
-    charged on ETF traded notional only. CASH is not a traded security,
-    has zero nominal return; SHY is a risky traded ETF.
+    charged on ETF traded notional only. CASH is not a traded security;
+    optional lagged annual cash rates accrue over actual calendar days.
     """
     if cost_bps not in COSTS_BPS or type(cost_bps) is not int:
         raise CrossAssetStop("Only fixed 5/15/35bp per-side costs supported")
@@ -84,12 +123,26 @@ def simulate(prices: pd.DataFrame, weights: tuple[float, ...], cost_bps: int) ->
     data = validate_prices(prices)
     # Fail closed on undocumented symbols, including any futures/leverage.
     risky = data.loc[:, list(ASSETS[:-1])].to_numpy(dtype=float)
+    if cash_annual_rate is None:
+        cash_rates = np.zeros(len(data), dtype=float)
+    else:
+        if (not isinstance(cash_annual_rate, pd.Series)
+            or not cash_annual_rate.index.equals(data.index)
+            or not pd.api.types.is_numeric_dtype(cash_annual_rate)):
+            raise CrossAssetStop("Cash rates must align exactly with ETF sessions")
+        cash_rates = cash_annual_rate.to_numpy(dtype=float)
+        if (not np.isfinite(cash_rates).all() or (cash_rates < 0).any()
+            or (cash_rates > 25).any()):
+            raise CrossAssetStop("Invalid annual cash rates")
     value = 1.0 - cost_bps / 10000 * float(target[:-1].sum())
     held = target.copy()
     nav = [value]
     turnover = [float(target[:-1].sum())]
     for i in range(1, len(data)):
-        moves = np.r_[risky[i] / risky[i-1], 1.0]
+        elapsed_days = (data.index[i] - data.index[i-1]).days
+        # The prior session's already-lagged rate is used for this interval.
+        cash_growth = float(np.exp(cash_rates[i-1] / 100 * elapsed_days / 365.25))
+        moves = np.r_[risky[i] / risky[i-1], cash_growth]
         drifted = held * moves
         growth = float(drifted.sum())
         if not np.isfinite(growth) or growth <= 0:
@@ -141,7 +194,8 @@ def _risk_report(nav: pd.Series, spy: pd.Series, stress: pd.Series) -> dict:
     }
 
 
-def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str) -> dict:
+def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
+             cash_rates: pd.DataFrame) -> dict:
     data = validate_prices(prices)
     try:
         stamp = datetime.strptime(acquired_at_utc, "%Y-%m-%dT%H:%M:%SZ").replace(
@@ -155,10 +209,19 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str) -> dict:
     for start, end in STRESS_WINDOWS.values():
         if start not in data.index or end not in data.index:
             raise CrossAssetStop("Original stress dates not in common trading sessions")
+    # Freeze exactly the rates available through the last completed price day.
+    rates_source = cash_rates.loc["2013-12-01":data.index[-1]].copy()
+    lagged_dff = validate_cash_rates(rates_source, data.index)
+    cash_yields = {
+        "ZERO": pd.Series(0., index=data.index),
+        "DFF_MINUS_50BP": (lagged_dff - .5).clip(lower=0),
+        "DFF_GROSS": lagged_dff,
+    }
     reference = data["SPY"] / float(data["SPY"].iloc[0])
     ref_returns = reference.pct_change(fill_method=None).iloc[1:]
     stress = ref_returns <= STRESS_SPY_DAILY_THRESHOLD
     results = {}
+    carry_results = {}
     for bps in COSTS_BPS:
         rows = {}
         for name, weights in WEIGHTS.items():
@@ -181,11 +244,41 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str) -> dict:
                 if stress.any() else None,
         }
         results[str(bps)] = rows
+        scenario_rows = {}
+        for label in CASH_SCENARIOS:
+            by_basket = {}
+            for name, weights in WEIGHTS.items():
+                trial = simulate(data, weights, bps,
+                                 cash_annual_rate=cash_yields[label])
+                by_basket[name] = _risk_report(trial["nav"], reference, stress)
+            baseline = by_basket["MATCHED_75_EQUITY_25_CASH"]
+            diverse = by_basket["MATCHED_75_EQUITY_10_GOLD_10_SHY_5_CASH"]
+            scenario_rows[label] = {
+                "by_basket": by_basket,
+                "diversified_minus_cash_control_cagr_pp": round(
+                    diverse["net_cagr_pct"] - baseline["net_cagr_pct"], 4),
+                "diversified_minus_cash_control_max_drawdown_pp": round(
+                    diverse["max_drawdown_pct"] - baseline["max_drawdown_pct"], 4),
+            }
+        # Strict parity: the new zero-rate model must reproduce the
+        # previously reported zero-carry model, not silently reprice it.
+        for name in WEIGHTS:
+            if scenario_rows["ZERO"]["by_basket"][name] != {
+                k: rows[name][k] for k in scenario_rows["ZERO"]["by_basket"][name]
+            }:
+                raise CrossAssetStop("Original zero-carry result changed")
+        carry_results[str(bps)] = scenario_rows
     return {
         "schema": SCHEMA, "status": "DESCRIPTIVE_HISTORICAL_CROSSASSET_NOT_ALPHA",
         "source": "YAHOO_YFINANCE_AUTO_ADJUSTED_REVISABLE_CLOSES",
         "acquired_at_utc": acquired_at_utc,
         "price_sha256": sha256(canonical_prices(data).encode()).hexdigest(),
+        "cash_rate_source": "FRED_DFF_REVISABLE_OVERNIGHT_INTERBANK_PROXY",
+        "cash_rate_sha256": sha256(canonical_cash_rates(rates_source).encode()).hexdigest(),
+        "cash_rate_lag_weekdays": CASH_RATE_LAG_WEEKDAYS,
+        "cash_rate_scenarios": list(CASH_SCENARIOS),
+        "cash_rate_50bp_haircut_is_assumption_not_observed_deposit_spread": True,
+        "cash_rate_not_achievable_account_yield_or_original_release_vintage": True,
         "first_session": data.index[0].date().isoformat(),
         "last_completed_session": data.index[-1].date().isoformat(),
         "common_sessions": len(data), "fixed_baskets": dict(zip(WEIGHTS, [
@@ -195,7 +288,7 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str) -> dict:
         "inception_buys_charged": True,
         "rebalance_turnover_definition": "SUM_ABS_ETF_WEIGHT_CHANGES_EXCLUDING_CASH",
         "prior_c13_v1_cash_leg_cost_overstatement_corrected": True,
-        "cash_nominal_return_assumed_zero": True,
+        "original_zero_cash_baseline_preserved": True,
         "shy_is_risky_bond_etf_not_cash": True,
         "no_current_broker_asset_eligibility_inferred": True,
         "original_s1_controller_not_modified_or_replayed": True,
@@ -205,6 +298,7 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str) -> dict:
         "broker_requests": 0, "paper_orders": 0, "live_orders": 0,
         "private_state_writes": 0,
         "costed_historical_diagnostics": results,
+        "interest_bearing_cash_sensitivity": carry_results,
     }
 
 
@@ -213,6 +307,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--prices-output", type=Path, required=True)
+    parser.add_argument("--rates-output", type=Path, required=True)
     args = parser.parse_args()
     end = datetime.now(timezone.utc).date().isoformat()
     raw = yf.download(tickers=list(SYMBOLS), start="2013-12-01", end=end,
@@ -233,16 +328,38 @@ def main() -> None:
         data.index = data.index.normalize()
     if data.isna().any().any():
         raise CrossAssetStop("Unexplained interior or inception source gaps")
+    # Public FRED CSV, no API token or broker/private credentials.
+    from io import StringIO
+    import requests
+    response = requests.get("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFF",
+                            timeout=40, headers={"User-Agent": "Fund100Research/1.0"})
+    response.raise_for_status()
+    raw_rates = pd.read_csv(StringIO(response.text))
+    if (list(raw_rates.columns) not in (["DATE", "DFF"],
+                                        ["observation_date", "DFF"])):
+        raise CrossAssetStop("Unexpected FRED rate CSV schema")
+    rate_dates = pd.to_datetime(raw_rates.iloc[:, 0], format="%Y-%m-%d",
+                                errors="raise")
+    rate_data = pd.DataFrame(
+        {"DFF": pd.to_numeric(raw_rates["DFF"], errors="raise").to_numpy()},
+        index=pd.DatetimeIndex(rate_dates))
+    rate_data = rate_data.loc["2013-12-01":data.index[-1]]
     captured = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    result = evaluate(data, acquired_at_utc=captured)
+    result = evaluate(data, acquired_at_utc=captured, cash_rates=rate_data)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.prices_output.parent.mkdir(parents=True, exist_ok=True)
+    args.rates_output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     args.prices_output.write_text(canonical_prices(data))
+    args.rates_output.write_text(canonical_cash_rates(rate_data))
     print("Historical cross-asset stress diagnostic; source hash:", result["price_sha256"])
     print("Sessions:", result["common_sessions"], "last:", result["last_completed_session"])
     print("15bp equal-equity comparison:", result["costed_historical_diagnostics"]["15"]
           ["equal_equity_exposure_diversification_vs_cash_control"])
+    print("15bp cash-carry sensitivity:", {
+        name: row["diversified_minus_cash_control_cagr_pp"]
+        for name, row in result["interest_bearing_cash_sensitivity"]["15"].items()
+    })
     print("No alpha or trading authority")
 
 
