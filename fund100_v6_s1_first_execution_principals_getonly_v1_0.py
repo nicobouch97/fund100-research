@@ -33,6 +33,7 @@ REQUIRED=(
     "FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX",
 )
 ISSUE_URL="https://api.github.com/repos/nicobouch97/fund100-research/issues/8"
+SELF_URL="https://api.github.com/user"
 
 class PrincipalStop(RuntimeError):pass
 
@@ -64,6 +65,29 @@ def _public_issue_get(*,token,transport=None):
         or obj["repository_url"]!="https://api.github.com/repos/nicobouch97/fund100-research"):
         raise PrincipalStop("Public witness issue binding invalid")
     return True
+
+
+def _release_token_authenticated(*,token,transport=None):
+    """GET /user is auth-required; a public release 404 alone proves nothing."""
+    req=Request(SELF_URL,method="GET",headers={
+        "Accept":"application/vnd.github+json",
+        "Authorization":"Bearer "+token,
+        "X-GitHub-Api-Version":"2022-11-28",
+        "User-Agent":"fund100-first-acwi-release-token-auth-getonly"})
+    sender=build_opener(NoRedirect()).open if transport is None else transport
+    try:
+        with sender(req,timeout=12) as response:
+            if getattr(response,"status",None)!=200:
+                raise PrincipalStop("Release-token authentication status invalid")
+            raw=response.read(4000)
+        import json
+        user=json.loads(raw)
+        if type(user) is not dict or type(user.get("login")) is not str or not user["login"]:
+            raise PrincipalStop("Release-token identity missing")
+        return True
+    except PrincipalStop:raise
+    except (HTTPError,URLError,TimeoutError,OSError,ValueError,UnicodeError):
+        raise PrincipalStop("RELEASE_WRITE_TOKEN_AUTHENTICATED_GET_FAILED") from None
 
 def inspect(*,environ=None,transport=None)->dict:
     """Deterministic source-HMAC and public-principal GETs only; no orders."""
@@ -140,6 +164,11 @@ def inspect(*,environ=None,transport=None)->dict:
     except PrincipalStop:raise
     except Exception:
         raise PrincipalStop("IMMUTABLE_RELEASE_ADMIN_GET_DENIED") from None
+    # Public tag GET 404 is NOT proof the supplied bearer token is valid.
+    # Authenticate the candidate Release WRITE token via private /user GET.
+    _release_token_authenticated(
+        token=values["FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN"],
+        transport=transport)
     try:
         previous=publication._request(method="GET",
             url=publication.anchor.RELEASE_URL,
@@ -156,7 +185,7 @@ def inspect(*,environ=None,transport=None)->dict:
         raise PrincipalStop("PUBLIC_ISSUE_GET_DENIED") from None
     return {
         "schema":SCHEMA,
-        "status":"FIVE_DISTINCT_GITHUB_PRINCIPALS_GET_REACHABLE_NO_WRITE_PERMISSION_PROOF",
+        "status":"FIVE_DISTINCT_GITHUB_PRINCIPALS_AUTHENTICATED_READ_ONLY_NO_WRITE_PROOF",
         "original_private_signed_seq1_and_owner_seq0_verified":True,
         "github_provider_immutable_releases_enabled":True,
         "private_write_permission_confirmed":False,
