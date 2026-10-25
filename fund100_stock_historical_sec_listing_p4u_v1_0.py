@@ -150,7 +150,7 @@ def inspect_original_10k(raw: bytes) -> dict:
     section_g = SECTION_G.search(clean)
     g_block = (clean[section_g.end():section_g.end() + 350]
                if section_g is not None else "")
-    g_block = re.split(r"(?i)indicate\\s+by\\s+check\\s+mark", g_block)[0]
+    g_block = re.split(r"(?i)indicate\s+by\s+check\s+mark", g_block)[0]
     g_common = bool(COMMON.search(g_block))
     heading = SECTION_B.search(clean)
     if heading is None:
