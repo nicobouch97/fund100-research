@@ -190,6 +190,19 @@ jobs:
           assert d["cash_rate_is_revisable_vendor_quote_not_archived_historical_vintage"]
           assert d["cash_rate_not_actual_broker_interest_or_executable_rolled_bill"]
           assert d["zero_cash_baseline_preserved"]
+          assert d["schema"].endswith("_V4")
+          assert set(d["costed_six_slot_spy_idle_capital_overlay"])=={"5","15","35"}
+          for cost,overlay in d["costed_six_slot_spy_idle_capital_overlay"].items():
+              original=d["costed_six_slot_overlap_replay"][cost]
+              assert overlay["admitted_events"]==original["admitted_events"]
+              assert overlay["peak_concurrent_positions"]==original["peak_concurrent_positions"]
+              assert overlay["all_spy_to_stock_and_stock_to_spy_switches_costed"]
+              assert overlay["original_admissions_reused_without_refitting_thresholds"]
+              assert overlay["not_a_validated_point_in_time_survivorship_free_strategy"]
+              assert overlay["not_risk_matched_to_low_equity_cash_portfolio"]
+              assert overlay["research_only_no_broker_or_live_authority"]
+          print("15bp SPY-funded stock replacement vs fully invested passive SPY:",
+                d["costed_six_slot_spy_idle_capital_overlay"]["15"])
           assert set(d["costed_six_slot_cash_carry_sensitivity"])=={"5","15","35"}
           for cost in ("5","15","35"):
               original=d["costed_six_slot_overlap_replay"][cost]

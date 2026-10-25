@@ -367,7 +367,7 @@ def test_beta_unidentifiable_for_constant_market_or_missing_lookback():
 
 def test_six_slot_overlap_replay_is_costed_paired_and_stays_research_only():
     baseline = run()
-    assert baseline["schema"].endswith("_V3")
+    assert baseline["schema"].endswith("_V4")
     assert baseline["capacity_replay_is_hindsight_survivor_stress_not_alpha"]
     assert set(baseline["costed_six_slot_overlap_replay"]) == {"5", "15", "35"}
     assert baseline["costed_six_slot_overlap_replay"]["15"]["admitted_events"] == 0
@@ -547,3 +547,85 @@ def test_cash_rate_original_vendor_source_fails_closed_on_missing_or_stale_quote
         run(rates=broken)
     with pytest.raises(p4r.EventStudyStop, match="Cash-rate"):
         run(rates=pd.Series(4., index=rates.index))
+
+
+def test_spy_funded_overlay_no_events_equals_passive_after_two_sided_costs():
+    p = prices()
+    for bps in p4r.SIDE_COSTS_BPS:
+        out = p4r._spy_idle_capital_overlay([], p, bps)
+        assert out["admitted_events"] == 0
+        assert out["no_signals_equals_identical_passive_spy"]
+        assert out["stock_replacement_plus_spy_core"] == out["passive_buy_and_hold_spy"]
+        assert out["replacement_minus_passive_cagr_pp"] == 0
+        assert out["overlay_stock_traded_notional_per_initial_nav"] == 0
+        assert out["average_stock_exposure_fraction"] == 0
+        assert out["research_only_no_broker_or_live_authority"]
+
+
+def test_spy_funded_overlay_reuses_existing_causal_admissions_and_costs_churn():
+    p = prices()
+    p.loc["2025-02-17", "CAT"] = 110.
+    out = run(p=p)
+    for bps in p4r.SIDE_COSTS_BPS:
+        key = str(bps)
+        baseline = out["costed_six_slot_overlap_replay"][key]
+        overlay = out["costed_six_slot_spy_idle_capital_overlay"][key]
+        assert overlay["admitted_events"] == baseline["admitted_events"] == 1
+        assert overlay["peak_concurrent_positions"] == baseline["peak_concurrent_positions"]
+        assert overlay["average_stock_exposure_fraction"] > 0
+        assert overlay["average_stock_exposure_fraction"] < 1
+        assert overlay["stock_replacement_plus_spy_core"]["terminal_nav"] > 0
+        assert overlay["passive_buy_and_hold_spy"]["terminal_nav"] > 0
+        assert overlay["overlay_spy_traded_notional_per_initial_nav"] > 0
+        assert overlay["overlay_stock_traded_notional_per_initial_nav"] > 0
+        assert overlay["all_spy_to_stock_and_stock_to_spy_switches_costed"]
+        assert overlay["original_admissions_reused_without_refitting_thresholds"]
+        assert overlay["not_a_validated_point_in_time_survivorship_free_strategy"]
+        assert overlay["not_risk_matched_to_low_equity_cash_portfolio"]
+    assert not out["live_authorized"] and out["broker_orders"] == 0
+
+
+def test_spy_funded_overlay_identical_stock_and_spy_loses_only_extra_switch_cost():
+    p = prices()
+    p["CAT"] = p["SPY"]
+    i = int(p.index.get_loc(pd.Timestamp("2025-02-19")))
+    row = _synthetic_replay_event("CAT", i, p, "same-spy")
+    baseline = p4r._capacity_constrained_replay([row], p, 15)
+    overlay = p4r._spy_idle_capital_overlay(baseline["admission_schedule"], p, 15)
+    assert overlay["admitted_events"] == 1
+    assert overlay["replacement_minus_passive_cagr_pp"] < 0
+    assert overlay["replacement_minus_passive_terminal_wealth_pp"] < 0
+    assert overlay["passive_and_overlay_pay_same_initial_and_final_spy_fees"]
+
+
+def test_spy_funded_overlay_stock_excess_return_can_offset_switching_costs():
+    p = prices()
+    i = int(p.index.get_loc(pd.Timestamp("2025-02-19")))
+    for j in range(i + 1, len(p)):
+        p.iloc[j, p.columns.get_loc("CAT")] = 100 * 1.002 ** (j - i)
+    row = _synthetic_replay_event("CAT", i, p, "outperform")
+    admissions = p4r._capacity_constrained_replay([row], p, 15)["admission_schedule"]
+    result = p4r._spy_idle_capital_overlay(admissions, p, 15)
+    assert result["replacement_minus_passive_cagr_pp"] > 0
+    assert result["average_stock_exposure_fraction"] > 0
+
+
+def test_spy_funded_overlay_censoring_and_rejects_invalid_admissions():
+    p = prices()
+    cutoff = len(p) - p4r.HORIZON - 1
+    i = cutoff - 10
+    row = _synthetic_replay_event("CAT", i, p, "terminal")
+    schedule = p4r._capacity_constrained_replay([row], p, 15)["admission_schedule"]
+    before = p4r._spy_idle_capital_overlay(schedule, p, 15)
+    assert before["forced_terminal_stock_exits"] == 1
+    changed = p.copy()
+    changed.loc[p.index[cutoff + 1]:, "CAT"] *= 1.5
+    changed.loc[p.index[cutoff + 1]:, "SPY"] *= 1.2
+    assert before == p4r._spy_idle_capital_overlay(schedule, changed, 15)
+    with pytest.raises(p4r.EventStudyStop, match="chronology"):
+        p4r._spy_idle_capital_overlay(
+            [dict(schedule[0], exit_close=p.index[i + 125].date().isoformat())], p, 15)
+    with pytest.raises(p4r.EventStudyStop, match="chronology"):
+        p4r._spy_idle_capital_overlay(schedule + schedule, p, 15)
+    with pytest.raises(p4r.EventStudyStop, match="cost"):
+        p4r._spy_idle_capital_overlay(schedule, p, 0)
