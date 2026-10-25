@@ -177,7 +177,7 @@ def inspect_original_10k(raw: bytes) -> dict:
     tenk = None
     for match in re.finditer(rb"<DOCUMENT>(.*?)</DOCUMENT>", raw, re.IGNORECASE | re.DOTALL):
         doc = match.group(1)
-        if re.search(rb"(?im)<TYPE>\\s*10-K\\s*(?:\\r?\\n|<)", doc):
+        if re.search(rb"(?im)<TYPE>\s*10-K\s*(?:\r?\n|<)", doc):
             tenk = doc
             break
     if tenk is None:
@@ -194,7 +194,7 @@ def inspect_primary_10k(raw: bytes) -> dict:
     """Only call after a canonical SEC filing-detail row identifies this as 10-K."""
     if type(raw) is not bytes or not 0 < len(raw) <= MAX_FILING_BYTES:
         raise ListingEvidenceStop("Primary 10-K missing or oversized")
-    if not re.search(rb"(?i)<(?:html|body)\\b", raw[:50_000]):
+    if not re.search(rb"(?i)<(?:html|body)\b", raw[:50_000]):
         return {"cover_state": "NO_VERIFIED_10K_TEXT", "section_12b_excerpt": ""}
     return _inspect_cover_text(raw[:250_000].decode("latin-1", errors="replace"))
 
@@ -281,7 +281,7 @@ def _primary_urls(path: str, filename: str = "") -> tuple[str, str]:
     if not filename:
         return index_url, ""
     if (type(filename) is not str
-        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,159}\\.(?:htm|html|txt)", filename,
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,159}\.(?:htm|html|txt)", filename,
                         re.IGNORECASE) is None):
         raise ListingEvidenceStop("Unsafe SEC primary document filename")
     return index_url, SEC_PREFIX + directory + filename
