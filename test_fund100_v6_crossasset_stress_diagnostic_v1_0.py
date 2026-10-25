@@ -305,3 +305,47 @@ def test_original_source_report_includes_concentration_diagnostics():
         assert len(row["calendar_year_log_relative_wealth_pct"]) == 11
         assert sum(row["calendar_year_log_relative_wealth_pct"].values()) == pytest.approx(
             row["terminal_relative_log_wealth_pct"], abs=1e-5)
+
+
+def test_original_xnys_source_calendar_accepts_complete_holiday_week():
+    import exchange_calendars as xcals
+    sessions = xcals.get_calendar("XNYS").sessions_in_range(
+        pd.Timestamp("2024-11-25"), pd.Timestamp("2024-12-02")
+    ).tz_localize(None).normalize()
+    # Thanksgiving is not an ETF close. The half-session on Friday is.
+    assert pd.Timestamp("2024-11-28") not in sessions
+    assert pd.Timestamp("2024-11-29") in sessions
+    assert mod.verify_original_exchange_sessions(sessions) == len(sessions)
+
+
+@pytest.mark.parametrize("kind", ["all_etfs_missing_day", "extra_holiday",
+                                   "extra_weekend", "duplicate", "unsorted"])
+def test_original_xnys_source_calendar_rejects_missing_or_extra_days(kind):
+    import exchange_calendars as xcals
+    complete = xcals.get_calendar("XNYS").sessions_in_range(
+        pd.Timestamp("2024-11-25"), pd.Timestamp("2024-12-02")
+    ).tz_localize(None).normalize()
+    if kind == "all_etfs_missing_day":
+        bad = complete.delete(2)  # A missing row has NO NaN in the remaining prices.
+    elif kind == "extra_holiday":
+        bad = complete.append(pd.DatetimeIndex(["2024-11-28"])).sort_values()
+    elif kind == "extra_weekend":
+        bad = complete.append(pd.DatetimeIndex(["2024-11-30"])).sort_values()
+    elif kind == "duplicate":
+        bad = complete.append(complete[[-1]])
+    else:
+        bad = complete[::-1]
+    with pytest.raises(mod.CrossAssetStop, match="XNYS"):
+        mod.verify_original_exchange_sessions(bad)
+
+
+def test_original_calendar_guard_is_wired_before_source_evaluation():
+    import inspect
+    source = inspect.getsource(mod.main)
+    assert source.index("verify_original_exchange_sessions(data.index)") < source.index(
+        "result = evaluate(data, acquired_at_utc=captured, cash_rates=rate_data)")
+    assert 'result["original_price_calendar_full_coverage"] = True' in source
+    # Pure synthetic/offline evaluate() cannot assert real vendor completeness.
+    report = mod.evaluate(prices(), acquired_at_utc="2025-01-02T12:00:00Z",
+                          cash_rates=cash_rates())
+    assert "original_price_calendar_full_coverage" not in report

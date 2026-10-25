@@ -72,6 +72,32 @@ def validate_prices(raw: pd.DataFrame) -> pd.DataFrame:
     return data.loc[STUDY_START:]
 
 
+def verify_original_exchange_sessions(index: pd.DatetimeIndex) -> int:
+    """Verify EVERY actual XNYS session before accepting original ETF prices.
+
+    A common-vendor gap affecting all six ETFs would survive dropna(how="all")
+    and the ordinary numeric validator. Check the independent exchange
+    calendar at the original acquisition boundary, not synthetic test data.
+    This proves date coverage, NOT independently authenticated prices,
+    corporate actions, cash-yield vintages or executable market returns.
+    """
+    if (not isinstance(index, pd.DatetimeIndex) or len(index) < 2
+        or index.tz is not None or index.has_duplicates
+        or not index.is_monotonic_increasing
+        or any(day != day.normalize() for day in index)):
+        raise CrossAssetStop("Invalid original XNYS source date index")
+    try:
+        import exchange_calendars as xcals
+        expected = xcals.get_calendar("XNYS").sessions_in_range(
+            index[0], index[-1]).tz_localize(None).normalize()
+    except Exception as exc:
+        raise CrossAssetStop("Independent XNYS calendar unavailable") from exc
+    if not index.equals(expected):
+        raise CrossAssetStop(
+            "Original ETF source has missing or extra XNYS sessions")
+    return len(expected)
+
+
 def canonical_prices(data: pd.DataFrame) -> str:
     return validate_prices(data).to_csv(index_label="Date", date_format="%Y-%m-%d",
                                         float_format="%.10f")
@@ -447,6 +473,9 @@ def main() -> None:
         data.index = data.index.normalize()
     if data.isna().any().any():
         raise CrossAssetStop("Unexplained interior or inception source gaps")
+    # An all-six-ETF missing date was removed above and cannot be detected
+    # by a per-row NaN check. Independently require EVERY exchange session.
+    verified_sessions = verify_original_exchange_sessions(data.index)
     # Same public vendor download; ^IRX is a quoted discount-yield index,
     # not a total-return security or an achievable cash account rate.
     if ("Close", "^IRX") not in raw.columns:
@@ -462,6 +491,11 @@ def main() -> None:
     rate_data = rate_data.loc["2013-12-01":data.index[-1]]
     captured = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     result = evaluate(data, acquired_at_utc=captured, cash_rates=rate_data)
+    # Set these only after the real original-vendor calendar check. Pure
+    # offline evaluate() deliberately makes no original-source claim.
+    result["original_price_calendar"] = "XNYS"
+    result["original_price_calendar_sessions_verified"] = verified_sessions
+    result["original_price_calendar_full_coverage"] = True
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.prices_output.parent.mkdir(parents=True, exist_ok=True)
     args.rates_output.parent.mkdir(parents=True, exist_ok=True)
