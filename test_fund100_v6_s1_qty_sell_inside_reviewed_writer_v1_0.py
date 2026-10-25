@@ -12,6 +12,26 @@ import fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0 as pure
 import test_fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0 as fixture
 import fund100_v6_s1_immutable_release_anchor_v1_0 as anchor
 import test_fund100_v6_s1_immutable_release_anchor_v1_0 as immutable_fixture
+import fund100_v6_s1_fresh_acwi_order_time_risk_getonly_v1_0 as risk
+import pytest
+
+@pytest.fixture(autouse=True)
+def fake_FUTURE_risk_V2_release_only_in_credentialless_test(monkeypatch):
+    # This report DOES NOT EXIST in production. Real V1 always returns STOP;
+    # unit-test monkeypatching tests the post-gate reviewed HTTP payload only.
+    def fake_approved(*,original_qty,key,secret):
+        assert original_qty==QTY
+        assert key==TEST_KEY and secret==TEST_SECRET
+        return {
+            "status":"ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2",
+            "same_process_real_broker_gets":7,
+            "original_acwi_exact_fractional_holdings_verified":True,
+            "original_open_market_and_no_pending_order_verified":True,
+            "original_strict_postfunding_6_20_35_risk_pass":True,
+            "broker_order_authorized":True,
+            "broker_post_attempts":0,
+        }
+    monkeypatch.setattr(risk,"inspect_actual_original_seven_get",fake_approved)
 
 QTY=fixture.ORIGINAL_QTY
 ID=fixture.ORDER_ID
@@ -252,6 +272,63 @@ def test_final_writer_needs_actual_immutable_verification_not_fake_flags(monkeyp
     assert fake.calls==0
 
 
+def test_real_current_v1_broker_risk_STOP_is_not_bypassable_even_after_mock_release_flags(monkeypatch):
+    fake_release(monkeypatch)
+    fake=FakeBrokerPost()
+    monkeypatch.setattr(risk,"inspect_actual_original_seven_get",
+        lambda **kw:{
+            "status":"ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_PASSED_STILL_STOPPED",
+            "same_process_real_broker_gets":7,
+            "original_acwi_exact_fractional_holdings_verified":True,
+            "original_open_market_and_no_pending_order_verified":True,
+            "original_strict_postfunding_6_20_35_risk_pass":True,
+            "broker_order_authorized":False,
+            "broker_post_attempts":0,
+        })
+    with pytest.raises(writer.LiveWriterCandidateLocked,match="risk remains STOPPED"):
+        call(fake)
+    assert fake.calls==0
+
+
+def test_final_writer_broker_risk_source_unavailable_blocks_any_post(monkeypatch):
+    fake_release(monkeypatch)
+    fake=FakeBrokerPost()
+    def unavailable(**kwargs):raise TimeoutError("no actual risk GET")
+    monkeypatch.setattr(risk,"inspect_actual_original_seven_get",unavailable)
+    with pytest.raises(writer.LiveWriterCandidateLocked,match="seven-GET risk unavailable"):
+        call(fake)
+    assert fake.calls==0
+
+
+@pytest.mark.parametrize("tamper",[
+    ("status","FORGED_GO"),("same_process_real_broker_gets",6),
+    ("original_acwi_exact_fractional_holdings_verified",False),
+    ("original_open_market_and_no_pending_order_verified",False),
+    ("original_strict_postfunding_6_20_35_risk_pass",False),
+    ("broker_order_authorized",False),("broker_post_attempts",1),
+])
+def test_final_writer_rejects_incomplete_or_stale_same_process_broker_risk(
+        monkeypatch,tamper):
+    fake_release(monkeypatch)
+    fake=FakeBrokerPost()
+    def report(**kwargs):
+        r={
+            "status":"ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2",
+            "same_process_real_broker_gets":7,
+            "original_acwi_exact_fractional_holdings_verified":True,
+            "original_open_market_and_no_pending_order_verified":True,
+            "original_strict_postfunding_6_20_35_risk_pass":True,
+            "broker_order_authorized":True,
+            "broker_post_attempts":0,
+        }
+        r[tamper[0]]=tamper[1]
+        return r
+    monkeypatch.setattr(risk,"inspect_actual_original_seven_get",report)
+    with pytest.raises(writer.LiveWriterCandidateLocked,match="risk remains STOPPED"):
+        call(fake)
+    assert fake.calls==0
+
+
 def test_original_v5_writer_entrypoint_and_hard_locks_preserved():
     source=Path(writer.__file__).read_text()
     assert "def submit_authorized_order_batch(" in source
@@ -266,6 +343,8 @@ def test_original_v5_writer_entrypoint_and_hard_locks_preserved():
     assert "v6.owner_fence.verify_claimed_owner(**owner_sources)" in source
     assert "anchor.verify_published_immutable_anchor(" in source
     assert "anchor.original_signed_anchor_asset(" in source
+    assert "risk.inspect_actual_original_seven_get(" in source
+    assert "ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2" in source
     assert "if __name__" not in source
     assert "def main(" not in source
     assert "ALPACA_LIVE_KEY" not in source
