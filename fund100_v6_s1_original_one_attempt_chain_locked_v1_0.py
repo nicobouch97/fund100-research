@@ -123,7 +123,7 @@ def prepare_original_acwi_context_getonly(*,private_read_token:str,
             if not comment["body"].startswith(first.COMMENT_DOMAIN):
                 continue
             match=re.search(
-                r"(?m)^Source: https://github\\.com/nicobouch97/"
+                r"(?m)^Source: https://github\.com/nicobouch97/"
                 r"fund100-research/actions/runs/([1-9][0-9]{0,18})$",
                 comment["body"])
             if match is None:
