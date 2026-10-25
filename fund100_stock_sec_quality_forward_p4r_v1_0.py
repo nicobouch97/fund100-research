@@ -24,7 +24,7 @@ import fund100_stock_broad_sec_coverage_p4n_v1_0 as p4n
 import fund100_stock_quality_momentum_p4g_v1_0 as p4g
 import fund100_v6_crossasset_stress_diagnostic_v1_0 as c13
 
-SCHEMA = "FUND100_P4R_ORIGINAL_SEC_QUALITY_126_SESSION_EVENT_STUDY_V5"
+SCHEMA = "FUND100_P4R_ORIGINAL_SEC_QUALITY_126_SESSION_EVENT_STUDY_V6"
 HORIZON = 126
 # Fixed, predeclared relative-momentum window; no grid search or fitted threshold.
 MOMENTUM_LOOKBACK = 126
