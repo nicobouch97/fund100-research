@@ -1,6 +1,6 @@
 """P4U: source-backed 2017 10-K cover-page listing evidence, research only.
 
-A historical SEC filer CIK is not a listed share. This deliberately small,
+A historical SEC filer CIK is not a listed share. This bounded,
 predeclared, reproducible source audit samples original 2017 10-K submissions
 from BOTH contemporary-registry strata. It is NOT a historical security
 master, a population estimate, a delisting census, or a trading backtest.
@@ -26,7 +26,7 @@ from fund100_stock_historical_sec_population_p4t_v1_0 import parse_current_regis
 SCHEMA = "FUND100_P4U_2017_ORIGINAL_10K_COVER_SOURCE_AUDIT_V1"
 MAX_FILING_BYTES = 12_000_000
 MAX_FILING_INDEX_BYTES = 2_000_000
-MAX_SAMPLES_PER_STRATUM = 8
+MAX_SAMPLES_PER_STRATUM = 16
 ARCHIVE_PATH = re.compile(r"edgar/data/([0-9]+)/([0-9-]+)\.txt\Z")
 SEC_PREFIX = "https://www.sec.gov/Archives/"
 SECTION_B = re.compile(
@@ -60,7 +60,7 @@ def _read(path: Path) -> bytes:
     return path.read_bytes()
 
 
-def select_sample(source_dir: Path, *, per_stratum: int = 6) -> tuple[list[dict], dict]:
+def select_sample(source_dir: Path, *, per_stratum: int = 16) -> tuple[list[dict], dict]:
     """Predeclare a CIK-deduplicated, SHA-ranked stratified diagnostic sample.
 
     Present-day registry membership is used ONLY to stratify the audit, not
@@ -361,7 +361,7 @@ def _official_primary_10k_get(path: str, agent: str) -> tuple[bytes, bytes, str,
 
 
 def capture(source_dir: Path, output_dir: Path, agent: str,
-            *, per_stratum: int = 6, getter=None, primary_getter=None) -> dict:
+            *, per_stratum: int = 16, getter=None, primary_getter=None) -> dict:
     selected, annual = select_sample(source_dir, per_stratum=per_stratum)
     if getter is None:
         getter = _official_filing_get
@@ -444,6 +444,15 @@ def capture(source_dir: Path, output_dir: Path, agent: str,
         "historical_issuer_population": annual["annual_distinct_10k_ciks"],
         "sample_per_current_registry_stratum": per_stratum,
         "predeclared_filing_samples": len(selected),
+        "sample_by_current_registry_stratum": dict(sorted(Counter(
+            r["current_registry_stratum"] for r in selected).items())),
+        "sample_by_filing_quarter": dict(sorted(Counter(
+            r["quarter"] for r in selected).items())),
+        "captured_by_current_registry_stratum": dict(sorted(Counter(
+            r["current_registry_stratum"] for r in observations
+            if r["source_state"] in {
+                "ORIGINAL_10K_BYTES_CAPTURED", "ORIGINAL_PRIMARY_10K_BYTES_CAPTURED"}
+        ).items())),
         "original_filing_sources_captured": count,
         "index_verified_primary_10k_sources_captured": sum(
             r["source_state"] == "ORIGINAL_PRIMARY_10K_BYTES_CAPTURED"
@@ -485,7 +494,7 @@ if __name__ == "__main__":
     cli = argparse.ArgumentParser()
     cli.add_argument("--source-dir", type=Path, required=True)
     cli.add_argument("--output-dir", type=Path, required=True)
-    cli.add_argument("--per-stratum", type=int, default=6)
+    cli.add_argument("--per-stratum", type=int, default=16)
     args = cli.parse_args()
     result = capture(args.source_dir, args.output_dir,
                      os.environ.get("SEC_USER_AGENT", ""),

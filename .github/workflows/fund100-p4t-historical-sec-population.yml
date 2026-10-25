@@ -28,7 +28,7 @@ concurrency:
 jobs:
   historical-sec-filing-census:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -120,16 +120,21 @@ jobs:
           python fund100_stock_historical_sec_listing_p4u_v1_0.py \
             --source-dir /tmp/fund100-p4t-original-sec \
             --output-dir /tmp/fund100-p4u-original-covers \
-            --per-stratum 6
+            --per-stratum 16
           python - <<'PY'
           import hashlib, json
           from pathlib import Path
           root = Path("/tmp/fund100-p4u-original-covers")
           report = json.loads((root / "historical-2017-original-cover-evidence.json").read_text())
-          assert report["predeclared_filing_samples"] == 12
-          assert report["sample_per_current_registry_stratum"] == 6
+          assert report["predeclared_filing_samples"] == 32
+          assert report["sample_per_current_registry_stratum"] == 16
+          assert report["sample_by_current_registry_stratum"] == {
+              "absent_from_current_registry": 16, "in_current_registry": 16}
+          assert sum(report["sample_by_filing_quarter"].values()) == 32
+          assert sum(report["captured_by_current_registry_stratum"].values()) == report[
+              "original_filing_sources_captured"]
           assert report["original_filing_sources_captured"] + report[
-              "unavailable_or_unverifiable_sources"] == 12
+              "unavailable_or_unverifiable_sources"] == 32
           assert sum(report["source_failure_reason_counts"].values()) == report[
               "unavailable_or_unverifiable_sources"]
           assert report["section12g_common_class_covers"] >= 0
@@ -160,7 +165,7 @@ jobs:
                   assert row["cover_state"] == "NOT_EVALUATED"
                   assert row["source_failure_reason"] in report["source_failure_reason_counts"]
           print("Original SEC 10-K source captures:",
-                report["original_filing_sources_captured"], "/ 12;",
+                report["original_filing_sources_captured"], "/ 32;",
                 report["possible_section12b_common_equity_exchange_covers"],
                 "possible Section 12(b) matches requiring independent review; ",
                 report["index_verified_primary_10k_sources_captured"],
