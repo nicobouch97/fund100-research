@@ -308,13 +308,11 @@ def test_primary_filing_detail_rejects_untrusted_or_ambiguous_docs(mode, reason)
     if mode == "cross_accession":
         raw = sec_filing_detail(path, href="/Archives/edgar/data/9999/other/primary10k.htm")
     elif mode == "path_traversal":
-        raw = sec_filing_detail(path, name="../secret.htm")
+        raw = sec_filing_detail(path).replace(b"primary10k.htm", b"../secret.htm")
     elif mode == "not_10k":
         raw = sec_filing_detail(path, form="10-K/A")
     else:
         raw = sec_filing_detail(path)
-        raw = raw.replace(b"</table>", raw.split(b"<tr><td>1</td>")[1].split(
-            b"</tr>")[0].join([b"<tr><td>1</td>", b"</tr></table>"]), 1)
         # Explicit duplicate 10-K row, not a duplicate exhibit.
         raw = sec_filing_detail(path).replace(
             b"<tr><td>2</td>", b'<tr><td>2</td><td>Annual</td><td>'
