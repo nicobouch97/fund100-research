@@ -491,6 +491,7 @@ def commit_signed_acwi_prepost_and_witness_same_attempt_only(
         "retry_after_any_uncertain_write":False,
         "real_private_git_put_attempts":1,
         "real_public_issue_post_attempts":1,
+        "public_witness_comment_id_for_same_attempt":str(cid),
         "real_broker_post_attempts":0,
         "client_order_id":None,"original_qty":None,
         "account_identifier":None,"private_hmac_key":None,
