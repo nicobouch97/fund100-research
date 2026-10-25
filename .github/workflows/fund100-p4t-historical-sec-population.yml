@@ -5,6 +5,8 @@ on:
     paths:
       - "fund100_stock_historical_sec_population_p4t_v1_0.py"
       - "test_fund100_stock_historical_sec_population_p4t_v1_0.py"
+      - "fund100_stock_historical_sec_listing_p4u_v1_0.py"
+      - "test_fund100_stock_historical_sec_listing_p4u_v1_0.py"
       - ".github/workflows/fund100-p4t-historical-sec-population.yml"
   push:
     branches: [main]
@@ -24,7 +26,7 @@ concurrency:
 jobs:
   historical-sec-filing-census:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,7 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install pytest
-          python -m pytest -q test_fund100_stock_historical_sec_population_p4t_v1_0.py
+          python -m pytest -q test_fund100_stock_historical_sec_population_p4t_v1_0.py test_fund100_stock_historical_sec_listing_p4u_v1_0.py
       - name: Capture real historical SEC master index and current ticker registry (main only)
         id: source
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -107,6 +109,50 @@ jobs:
                 "not in CURRENT registry (NOT a delisting count)")
           PY
           echo "captured=true" >> "$GITHUB_OUTPUT"
+      - name: Audit predeclared original 2017 10-K cover sample (source only; no broker)
+        if: steps.source.outputs.captured == 'true'
+        env:
+          SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+        run: |
+          set -euo pipefail
+          python fund100_stock_historical_sec_listing_p4u_v1_0.py \
+            --source-dir /tmp/fund100-p4t-original-sec \
+            --output-dir /tmp/fund100-p4u-original-covers \
+            --per-stratum 6
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root = Path("/tmp/fund100-p4u-original-covers")
+          report = json.loads((root / "historical-2017-original-cover-evidence.json").read_text())
+          assert report["predeclared_filing_samples"] == 12
+          assert report["sample_per_current_registry_stratum"] == 6
+          assert report["original_filing_sources_captured"] + report[
+              "unavailable_or_unverifiable_sources"] == 12
+          assert report["sample_not_universe_or_delisting_estimate"]
+          assert report["cover_text_not_independent_listing_or_security_master"]
+          assert report["no_verified_historical_total_returns_or_investable_backtest"]
+          assert not report["live_authorized"] and not report["paper_authorized"]
+          assert report["broker_requests"] == report["broker_orders"] == 0
+          for row in report["observations"]:
+              if row["source_state"] == "ORIGINAL_10K_BYTES_CAPTURED":
+                  raw = (root / row["local_original_file"]).read_bytes()
+                  assert hashlib.sha256(raw).hexdigest() == row["original_sha256"]
+                  assert len(raw) == row["original_bytes"]
+              else:
+                  assert row["cover_state"] == "NOT_EVALUATED"
+          print("Original SEC 10-K source captures:",
+                report["original_filing_sources_captured"], "/ 12;",
+                report["possible_section12b_common_equity_exchange_covers"],
+                "possible Section 12(b) matches requiring independent review.")
+          PY
+      - name: Preserve original filing bytes and cover evidence (90 days)
+        if: steps.source.outputs.captured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-p4u-original-sec-covers-${{ github.run_id }}
+          path: /tmp/fund100-p4u-original-covers/
+          retention-days: 90
+          if-no-files-found: error
       - name: Preserve official source bytes and reproducible census (90 days)
         if: steps.source.outputs.captured == 'true'
         uses: actions/upload-artifact@v4
