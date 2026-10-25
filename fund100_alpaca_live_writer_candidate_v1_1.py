@@ -1084,6 +1084,31 @@ def submit_v6_s1_original_acwi_fractional_sell(*,
         or anchored.get("live_broker_posts")!=0):
         raise LiveWriterCandidateLocked(
             "Original ACWI independently checked immutable release HEAD invalid")
+    # Last-mile risk MUST be obtained by the broker-keyed same-process
+    # seven-GET reader, never from a caller-supplied boolean or prior job
+    # report. The existing original reader still requires an operator STOP
+    # and hence CANNOT authorize a funded order. A separately reviewed risk
+    # policy will have to implement and release a new active-order contract.
+    try:
+        import fund100_v6_s1_fresh_acwi_order_time_risk_getonly_v1_0 as risk
+        order_time=risk.inspect_actual_original_seven_get(
+            original_qty=original_qty,key=key,secret=secret)
+    except Exception:
+        raise LiveWriterCandidateLocked(
+            "Original ACWI actual broker order-time seven-GET risk unavailable") from None
+    if (order_time.get("status")!=
+            "ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2"
+        or order_time.get("same_process_real_broker_gets")!=7
+        or order_time.get("original_acwi_exact_fractional_holdings_verified") is not True
+        or order_time.get("original_open_market_and_no_pending_order_verified") is not True
+        or order_time.get("original_strict_postfunding_6_20_35_risk_pass") is not True
+        or order_time.get("broker_order_authorized") is not True
+        or order_time.get("broker_post_attempts")!=0):
+        raise LiveWriterCandidateLocked(
+            "Original order-time broker risk remains STOPPED; no LIVE POST")
+    # IMPORTANT: the original V1 reader only returns STILL_STOPPED and
+    # broker_order_authorized=False. Live POST is therefore impossible until
+    # a separately reviewed, source-authenticated active risk V2 exists.
     validate_credentials(key,secret)
     url=LIVE_BASE_URL+LIVE_ORDER_PATH
     validate_live_url(url)
