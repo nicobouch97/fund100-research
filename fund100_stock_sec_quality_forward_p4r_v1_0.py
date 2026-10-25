@@ -24,7 +24,7 @@ import fund100_stock_broad_sec_coverage_p4n_v1_0 as p4n
 import fund100_stock_quality_momentum_p4g_v1_0 as p4g
 import fund100_v6_crossasset_stress_diagnostic_v1_0 as c13
 
-SCHEMA = "FUND100_P4R_ORIGINAL_SEC_QUALITY_126_SESSION_EVENT_STUDY_V3"
+SCHEMA = "FUND100_P4R_ORIGINAL_SEC_QUALITY_126_SESSION_EVENT_STUDY_V4"
 HORIZON = 126
 # Fixed, predeclared relative-momentum window; no grid search or fitted threshold.
 MOMENTUM_LOOKBACK = 126
@@ -292,6 +292,7 @@ def _capacity_constrained_replay(rows: list[dict], data: pd.DataFrame,
     # ticker -> (scheduled exit index, stock shares, SPY shares)
     positions: dict[str, tuple[int, float, float]] = {}
     admitted = blocked_capacity = blocked_same_issuer = terminal_exits = 0
+    admission_schedule = []
     traded_stock = traded_spy = 0.0
     peak_concurrent = active_sessions = 0
     gross_exposure_sum = 0.0
@@ -346,6 +347,11 @@ def _capacity_constrained_replay(rows: list[dict], data: pd.DataFrame,
             traded_spy += notional
             positions[ticker] = (exit_i, notional / stock[ticker][t],
                                  notional / spy[t])
+            admission_schedule.append({
+                "ticker": ticker,
+                "entry_close": data.index[t].date().isoformat(),
+                "exit_close": data.index[exit_i].date().isoformat(),
+            })
             admitted += 1
 
         held_stock = sum(
@@ -384,6 +390,7 @@ def _capacity_constrained_replay(rows: list[dict], data: pd.DataFrame,
         "maturity_buffer_sessions": HORIZON,
         "eligible_high_quality_positive_prior_momentum_events": len(candidates),
         "admitted_events": admitted,
+        "admission_schedule": admission_schedule,
         "blocked_by_six_slot_capacity": blocked_capacity,
         "blocked_by_same_issuer_overlap": blocked_same_issuer,
         "forced_terminal_liquidations": terminal_exits,
@@ -411,7 +418,163 @@ def _capacity_constrained_replay(rows: list[dict], data: pd.DataFrame,
     }
 
 
-def analyze(annual: dict, prices: pd.DataFrame, *,
+
+def _spy_idle_capital_overlay(admissions: list[dict], data: pd.DataFrame,
+                              cost_bps: int) -> dict:
+    """Research-only self-financing stock replacement of a passive SPY core.
+
+    Reuse EXACT admissions from the existing six-slot SEC replay. When a
+    signal arrives, sell enough SPY at the signal's next-close entry to buy
+    up to one-sixth of NAV in the stock. Reinvest exits in SPY. Charge both
+    sides of every actual ETF/stock trade. Passive comparator buys SPY once
+    and sells at the same 126-session maturity cutoff. No cash carry,
+    borrowing, shorts, intraday price claims or live order capability.
+    """
+    if type(cost_bps) is not int or cost_bps not in SIDE_COSTS_BPS:
+        raise EventStudyStop("Unregistered SPY-overlay transaction cost")
+    cutoff = len(data) - HORIZON - 1
+    if cutoff <= 0 or "SPY" not in data:
+        raise EventStudyStop("Incomplete SPY-overlay price history")
+    fee = cost_bps / 10000
+    spy = data["SPY"].to_numpy(dtype=float)
+    if not np.isfinite(spy).all() or (spy <= 0).any():
+        raise EventStudyStop("Invalid SPY-overlay benchmark prices")
+    entries: dict[int, list[tuple[str, int]]] = {}
+    seen = set()
+    for event in admissions:
+        try:
+            ticker = event["ticker"]
+            entry_i = int(data.index.get_loc(_date(event["entry_close"])))
+            exit_i = int(data.index.get_loc(_date(event["exit_close"])))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise EventStudyStop("Malformed SPY-overlay admission") from exc
+        if (ticker not in p4n.SOURCE_MATCHED_TAGS or ticker not in data
+            or entry_i >= cutoff or exit_i - entry_i != HORIZON
+            or (ticker, entry_i) in seen):
+            raise EventStudyStop("Invalid SPY-overlay admission chronology")
+        seen.add((ticker, entry_i))
+        entries.setdefault(entry_i, []).append((ticker, exit_i))
+    for day in entries:
+        entries[day].sort()
+
+    # The passive and stock-replacement portfolios pay identical initial
+    # SPY entry and terminal exit costs. Only replacement incurs churn.
+    passive_units = 1.0 / (spy[0] * (1 + fee))
+    spy_units = passive_units
+    cash = 0.0
+    stocks: dict[str, tuple[int, float]] = {}
+    nav_overlay, nav_passive = [], []
+    traded_spy = 1.0 / (1 + fee)
+    traded_stocks = 0.0
+    peak_slots = filled = forced_exits = 0
+    stock_fraction_sum = 0.0
+
+    for t in range(cutoff + 1):
+        for ticker, (exit_i, units) in sorted(list(stocks.items())):
+            if exit_i <= t or t == cutoff:
+                proceeds = units * float(data[ticker].iloc[t])
+                traded_stocks += proceeds
+                cash += proceeds * (1 - fee)
+                forced_exits += int(t == cutoff and exit_i > t)
+                del stocks[ticker]
+
+        if t < cutoff:
+            for ticker, exit_i in entries.get(t, []):
+                if ticker in stocks or len(stocks) >= 6:
+                    raise EventStudyStop("SPY-overlay admission diverged from paired replay")
+                held = sum(units * float(data[name].iloc[t])
+                           for name, (_, units) in stocks.items())
+                nav = cash + spy_units * spy[t] + held
+                # Fund the purchase by SPY sales, never leverage. For six
+                # simultaneous entries, the last allocation absorbs fees.
+                spendable = cash + spy_units * spy[t] * (1 - fee)
+                notional = min(nav / 6, spendable / (1 + fee))
+                if not np.isfinite(notional) or notional <= 1e-12:
+                    raise EventStudyStop("Unfunded SPY-overlay admission")
+                need = max(0.0, notional * (1 + fee) - cash)
+                if need:
+                    gross_sale = need / (1 - fee)
+                    if gross_sale > spy_units * spy[t] + 1e-10:
+                        raise EventStudyStop("SPY-overlay sale exceeds holdings")
+                    spy_units -= gross_sale / spy[t]
+                    traded_spy += gross_sale
+                    cash += gross_sale * (1 - fee)
+                cash -= notional * (1 + fee)
+                if cash < -1e-10:
+                    raise EventStudyStop("Negative cash in SPY-overlay entry")
+                cash = max(0.0, cash)
+                stocks[ticker] = (exit_i, notional / float(data[ticker].iloc[t]))
+                traded_stocks += notional
+                filled += 1
+            # Reinvest released capital in SPY, not an unmodelled free cash
+            # balance. A closing trade earns its first return next session.
+            if cash > 1e-12:
+                buy = cash / (1 + fee)
+                spy_units += buy / spy[t]
+                traded_spy += buy
+                cash = 0.0
+        else:
+            # Identical terminal horizon and two-sided friction on passive
+            # SPY and on every remaining overlay asset.
+            cash += spy_units * spy[t] * (1 - fee)
+            traded_spy += spy_units * spy[t]
+            spy_units = 0.0
+
+        held_stock = sum(units * float(data[name].iloc[t])
+                         for name, (_, units) in stocks.items())
+        nav = cash + spy_units * spy[t] + held_stock
+        passive = passive_units * spy[t] * (1 - fee if t == cutoff else 1)
+        if (not np.isfinite([nav, passive, cash, spy_units]).all()
+            or min(nav, passive) <= 0 or cash < -1e-10
+            or spy_units < -1e-10 or held_stock > nav * (1 + 1e-10)):
+            raise EventStudyStop("Non-self-financing SPY-overlay research")
+        stock_fraction_sum += held_stock / nav
+        peak_slots = max(peak_slots, len(stocks))
+        nav_overlay.append(nav)
+        nav_passive.append(passive)
+    if filled != len(admissions) or stocks or spy_units != 0:
+        raise EventStudyStop("Unreconciled SPY-overlay admissions or terminal assets")
+
+    def metrics(path: list[float]) -> dict:
+        values = np.asarray(path, dtype=float)
+        years = (data.index[cutoff] - data.index[0]).days / 365.25
+        return {
+            "terminal_nav": round(float(values[-1]), 6),
+            "net_cagr_pct": round(100 * (float(values[-1]) ** (1 / years) - 1), 6),
+            "max_drawdown_pct": round(
+                100 * float(np.min(values / np.maximum.accumulate(values) - 1)), 6),
+        }
+
+    selected, passive = metrics(nav_overlay), metrics(nav_passive)
+    return {
+        "method": "EXACT_SIX_SLOT_ADMISSIONS_SPY_FUNDED_STOCK_REPLACEMENT",
+        "cost_per_traded_side_bps": cost_bps,
+        "first_session": data.index[0].date().isoformat(),
+        "last_session_maturity_cutoff": data.index[cutoff].date().isoformat(),
+        "admitted_events": filled,
+        "peak_concurrent_positions": peak_slots,
+        "forced_terminal_stock_exits": forced_exits,
+        "average_stock_exposure_fraction": round(
+            stock_fraction_sum / (cutoff + 1), 6),
+        "stock_replacement_plus_spy_core": selected,
+        "passive_buy_and_hold_spy": passive,
+        "replacement_minus_passive_cagr_pp": round(
+            selected["net_cagr_pct"] - passive["net_cagr_pct"], 6),
+        "replacement_minus_passive_terminal_wealth_pp": round(
+            100 * (nav_overlay[-1] - nav_passive[-1]), 6),
+        "overlay_spy_traded_notional_per_initial_nav": round(traded_spy, 6),
+        "overlay_stock_traded_notional_per_initial_nav": round(traded_stocks, 6),
+        "no_signals_equals_identical_passive_spy": filled == 0,
+        "passive_and_overlay_pay_same_initial_and_final_spy_fees": True,
+        "all_spy_to_stock_and_stock_to_spy_switches_costed": True,
+        "original_admissions_reused_without_refitting_thresholds": True,
+        "not_a_validated_point_in_time_survivorship_free_strategy": True,
+        "not_risk_matched_to_low_equity_cash_portfolio": True,
+        "research_only_no_broker_or_live_authority": True,
+    }
+
+
+def analyze(annual: dict, prices: pd.DataFrame, *
             acquired_at_utc: str, source_sha256: str,
             cash_rates: pd.DataFrame | None = None) -> dict:
     """Pure deterministic event-return study; caller authenticates SEC archive."""
@@ -585,6 +748,11 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
         str(bps): _capacity_constrained_replay(rows, data, bps)
         for bps in SIDE_COSTS_BPS
     }
+    spy_overlay = {
+        str(bps): _spy_idle_capital_overlay(
+            zero_replays[str(bps)]["admission_schedule"], data, bps)
+        for bps in SIDE_COSTS_BPS
+    }
     cash_sensitivity: dict[str, dict] = {}
     cash_source_sha = None
     if cash_rates is not None:
@@ -658,6 +826,7 @@ def analyze(annual: dict, prices: pd.DataFrame, *,
             r["pre_filing_relative_momentum_positive"] is None for r in rows),
         "event_returns": rows,
         "costed_six_slot_overlap_replay": zero_replays,
+        "costed_six_slot_spy_idle_capital_overlay": spy_overlay,
         "costed_six_slot_cash_carry_sensitivity": cash_sensitivity,
         "cash_rate_source": ("YAHOO_IRX_13W_BILL_DISCOUNT_PROXY"
                              if cash_source_sha is not None else None),
@@ -742,6 +911,8 @@ def main() -> None:
     print("15bp score <2:", report["summary"]["15"]["score_0_or_1"])
     print("15bp pre-filing quality x relative momentum:",
           report["quality_by_pre_filing_relative_momentum"]["15"])
+    print("15bp fully invested SPY-funded stock replacement:",
+          report["costed_six_slot_spy_idle_capital_overlay"]["15"])
     print("15bp interest-bearing cash comparison:", {
         label: {"stock_cagr": round(row["stock"]["net_cagr_pct"], 4),
                 "paired_spy_cagr": round(
