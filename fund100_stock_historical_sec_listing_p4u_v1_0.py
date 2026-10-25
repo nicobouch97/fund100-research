@@ -49,7 +49,7 @@ EXCHANGE = re.compile(
 # depositary/preferred interest is not registration of plain common shares.
 # Abstain even when the row names a recognised stock exchange.
 NON_PLAIN_COMMON_CLASS = re.compile(
-    r"\\b(?:rights?|warrants?|units?|preferred|depositary|options?)\\b",
+    r"\b(?:rights?|warrants?|units?|preferred|depositary|options?)\b",
     re.IGNORECASE)
 
 
