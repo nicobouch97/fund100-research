@@ -13,6 +13,8 @@ on:
     paths:
       - "fund100_stock_historical_sec_population_p4t_v1_0.py"
       - "test_fund100_stock_historical_sec_population_p4t_v1_0.py"
+      - "fund100_stock_historical_sec_listing_p4u_v1_0.py"
+      - "test_fund100_stock_historical_sec_listing_p4u_v1_0.py"
       - ".github/workflows/fund100-p4t-historical-sec-population.yml"
   workflow_dispatch:
 
@@ -128,6 +130,9 @@ jobs:
           assert report["sample_per_current_registry_stratum"] == 6
           assert report["original_filing_sources_captured"] + report[
               "unavailable_or_unverifiable_sources"] == 12
+          assert sum(report["source_failure_reason_counts"].values()) == report[
+              "unavailable_or_unverifiable_sources"]
+          assert report["section12g_common_class_covers"] >= 0
           assert report["sample_not_universe_or_delisting_estimate"]
           assert report["cover_text_not_independent_listing_or_security_master"]
           assert report["no_verified_historical_total_returns_or_investable_backtest"]
@@ -140,10 +145,14 @@ jobs:
                   assert len(raw) == row["original_bytes"]
               else:
                   assert row["cover_state"] == "NOT_EVALUATED"
+                  assert row["source_failure_reason"] in report["source_failure_reason_counts"]
           print("Original SEC 10-K source captures:",
                 report["original_filing_sources_captured"], "/ 12;",
                 report["possible_section12b_common_equity_exchange_covers"],
-                "possible Section 12(b) matches requiring independent review.")
+                "possible Section 12(b) matches requiring independent review; ",
+                report["section12g_common_class_covers"], "12(g) common-class covers.")
+          print("Unverifiable original SEC source reasons (NOT listing status):",
+                json.dumps(report["source_failure_reason_counts"], sort_keys=True))
           PY
       - name: Preserve original filing bytes and cover evidence (90 days)
         if: steps.source.outputs.captured == 'true'
