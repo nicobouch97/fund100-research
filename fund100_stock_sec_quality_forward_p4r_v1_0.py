@@ -419,6 +419,45 @@ def _capacity_constrained_replay(rows: list[dict], data: pd.DataFrame,
 
 
 
+def _paired_active_return_block_sensitivity(active: np.ndarray) -> dict:
+    """Fixed 126-session moving-block resampling of paired DAILY active returns.
+
+    This is a dependence-aware, conditional historical sensitivity diagnostic.
+    It resamples observed daily return differences, NOT security selection,
+    SEC vintage, delistings, portfolio admissions or an independent holdout.
+    Quantiles are deliberately NOT labelled confidence intervals or alpha.
+    """
+    x = np.asarray(active, dtype=float)
+    if (x.ndim != 1 or len(x) < 2 or len(x) > 10000
+        or not np.isfinite(x).all()):
+        raise EventStudyStop("Invalid paired active returns for block sensitivity")
+    block = min(HORIZON, len(x))
+    draws = 2000
+    # Draw contiguous, NON-wrapping blocks from the same paired history;
+    # preserve within-block daily serial dependence and benchmark pairing.
+    rng = np.random.default_rng(100)
+    count = (len(x) + block - 1) // block
+    starts = rng.integers(0, len(x) - block + 1, size=(draws, count))
+    positions = (starts[:, :, None] + np.arange(block)).reshape(draws, -1)
+    annual_pp = x[positions[:, :len(x)]].mean(axis=1) * 252 * 100
+    lo, mid, hi = np.quantile(annual_pp, [.025, .5, .975])
+    return {
+        "method": "FIXED_126_SESSION_PAIRED_MOVING_BLOCK_ACTIVE_RETURN_SENSITIVITY",
+        "block_sessions": block,
+        "resamples": draws,
+        "fixed_seed": 100,
+        "annualized_arithmetic_active_return_pp_resample_p025": round(float(lo), 6),
+        "annualized_arithmetic_active_return_pp_resample_median": round(float(mid), 6),
+        "annualized_arithmetic_active_return_pp_resample_p975": round(float(hi), 6),
+        "resample_fraction_nonpositive": round(float(np.mean(annual_pp <= 0)), 6),
+        "same_day_stock_and_spy_returns_kept_paired": True,
+        "nonwrapping_contiguous_blocks": True,
+        "historical_conditional_range_not_confidence_interval": True,
+        "survivor_selected_issuer_universe_not_resampled": True,
+        "no_predictive_alpha_or_statistical_significance_claim": True,
+    }
+
+
 def _paired_active_risk_diagnostic(overlay_nav: list[float],
                                    passive_nav: list[float]) -> dict:
     """Realized paired daily risk, not a survivorship-safe alpha estimate.
@@ -463,6 +502,8 @@ def _paired_active_risk_diagnostic(overlay_nav: list[float],
         "maximum_relative_wealth_drawdown_pct": round(100 * relative_drawdown, 6),
         "benchmark_variance_unidentifiable": beta is None,
         "zero_active_variation_has_no_information_ratio": active_std <= 1e-12,
+        "paired_block_active_return_sensitivity":
+            _paired_active_return_block_sensitivity(active),
         "fees_included_in_both_nav_paths": True,
         "in_sample_survivor_selected_no_significance_or_alpha_claim": True,
     }
