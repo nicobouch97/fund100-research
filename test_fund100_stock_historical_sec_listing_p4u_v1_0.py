@@ -271,3 +271,134 @@ def test_no_arbitrary_sec_url_or_unconfigured_agent():
         p4u._official_filing_get("https://evil.invalid/x", "Contact contact@example.com")
     with pytest.raises(p4u.ListingEvidenceStop):
         p4u._official_filing_get("edgar/data/1001/0001001-17-000001.txt", "")
+
+
+def sec_filing_detail(path, *, name="primary10k.htm", href=None, form="10-K"):
+    _, primary_url = p4u._primary_urls(path, name)
+    if href is None:
+        href = primary_url.removeprefix("https://www.sec.gov")
+    return (
+        '<html><table class="tableFile" summary="Document Format Files">'
+        '<tr><th>Seq</th><th>Description</th><th>Document</th>'
+        '<th>Type</th><th>Size</th></tr>'
+        f'<tr><td>1</td><td>Annual report</td><td><a href="{href}">'
+        f'{name}</a></td><td>{form}</td><td>100000</td></tr>'
+        '<tr><td>2</td><td>Exhibit</td><td><a href="exhibit.htm">'
+        'exhibit.htm</a></td><td>EX-99</td><td>500</td></tr>'
+        '</table></html>').encode()
+
+
+def test_primary_filing_detail_identifies_only_same_accession_original_10k():
+    path = "edgar/data/1001/0001001-17-000001.txt"
+    name, index_url, primary_url = p4u._primary_10k_from_index(
+        path, sec_filing_detail(path))
+    assert name == "primary10k.htm"
+    assert index_url.endswith("/0001001-17-000001-index.htm")
+    assert primary_url.endswith("/000100117000001/primary10k.htm")
+
+
+@pytest.mark.parametrize("mode,reason", [
+    ("cross_accession", "PRIMARY_INDEX_UNSAFE_LINK"),
+    ("path_traversal", "PRIMARY_INDEX_UNSAFE_DOCUMENT"),
+    ("not_10k", "PRIMARY_INDEX_10K_NOT_UNIQUE"),
+    ("duplicate", "PRIMARY_INDEX_10K_NOT_UNIQUE"),
+])
+def test_primary_filing_detail_rejects_untrusted_or_ambiguous_docs(mode, reason):
+    path = "edgar/data/1001/0001001-17-000001.txt"
+    if mode == "cross_accession":
+        raw = sec_filing_detail(path, href="/Archives/edgar/data/9999/other/primary10k.htm")
+    elif mode == "path_traversal":
+        raw = sec_filing_detail(path, name="../secret.htm")
+    elif mode == "not_10k":
+        raw = sec_filing_detail(path, form="10-K/A")
+    else:
+        raw = sec_filing_detail(path)
+        raw = raw.replace(b"</table>", raw.split(b"<tr><td>1</td>")[1].split(
+            b"</tr>")[0].join([b"<tr><td>1</td>", b"</tr></table>"]), 1)
+        # Explicit duplicate 10-K row, not a duplicate exhibit.
+        raw = sec_filing_detail(path).replace(
+            b"<tr><td>2</td>", b'<tr><td>2</td><td>Annual</td><td>'
+            b'<a href="primary10k.htm">primary10k.htm</a></td>'
+            b'<td>10-K</td><td>100</td></tr><tr><td>2</td>')
+    with pytest.raises(p4u.FilingSourceFailure) as exc:
+        p4u._primary_10k_from_index(path, raw)
+    assert exc.value.reason_code == reason
+
+
+def test_primary_10k_cover_requires_html_and_never_claims_listing():
+    raw = (b"<html><body>Securities registered pursuant to Section 12(b): "
+           b"Common Stock - Nasdaq. Securities registered pursuant to Section 12(g): "
+           b"None</body></html>")
+    result = p4u.inspect_primary_10k(raw)
+    assert result["cover_state"] == "POSSIBLE_12B_COMMON_EQUITY_EXCHANGE_REVIEW_REQUIRED"
+    assert p4u.inspect_primary_10k(b"random data")["cover_state"] == "NO_VERIFIED_10K_TEXT"
+
+
+def test_official_primary_get_fetches_only_canonical_index_and_10k(monkeypatch):
+    path = "edgar/data/1001/0001001-17-000001.txt"
+    index_url, primary_url = p4u._primary_urls(path, "primary10k.htm")
+    index = sec_filing_detail(path)
+    primary = b"<html><body>Annual 10-K cover</body></html>"
+    called = []
+    class Response:
+        status = 200
+        def __init__(self, url): self.url = url
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def geturl(self): return self.url
+        def read(self, limit):
+            called.append((self.url, limit))
+            return {index_url: index, primary_url: primary}[self.url]
+    def fake_urlopen(request, timeout):
+        assert request.full_url in (index_url, primary_url)
+        return Response(request.full_url)
+    monkeypatch.setattr(p4u, "urlopen", fake_urlopen)
+    out = p4u._official_primary_10k_get(path, "Research contact@example.com")
+    assert out == (primary, index, "primary10k.htm", primary_url, index_url)
+    assert called == [(index_url, p4u.MAX_FILING_INDEX_BYTES + 1),
+                      (primary_url, p4u.MAX_FILING_BYTES + 1)]
+
+
+def test_oversized_submission_uses_verified_primary_with_provenance(tmp_path):
+    make_sources(tmp_path)
+    out = tmp_path / "out"
+    primary = original_10k("<p>Annual</p>").replace(
+        b"<SEC-DOCUMENT><DOCUMENT>\n<TYPE>10-K\n<TEXT>", b"").replace(
+        b"</TEXT></DOCUMENT></SEC-DOCUMENT>", b"")
+    primary = b"<html><body>" + primary + b"</body></html>"
+    def oversized(path, agent):
+        raise p4u.FilingSourceFailure("OVER_12MB_SOURCE_LIMIT")
+    def primary_get(path, agent):
+        name = "primary10k.htm"
+        index_url, primary_url = p4u._primary_urls(path, name)
+        return primary, sec_filing_detail(path), name, primary_url, index_url
+    report = p4u.capture(tmp_path, out, "Research contact@example.com",
+                         per_stratum=1, getter=oversized, primary_getter=primary_get)
+    assert report["original_filing_sources_captured"] == 2
+    assert report["index_verified_primary_10k_sources_captured"] == 2
+    assert report["full_submission_sources_captured"] == 0
+    assert report["index_verified_primary_is_not_complete_submission"]
+    assert not report["trading_authorized"] and not report["live_authorized"]
+    for row in report["observations"]:
+        assert row["source_state"] == "ORIGINAL_PRIMARY_10K_BYTES_CAPTURED"
+        assert row["source_kind"] == "INDEX_VERIFIED_PRIMARY_10K"
+        assert row["original_submission_failure_reason"] == "OVER_12MB_SOURCE_LIMIT"
+        assert (out / row["local_original_file"]).read_bytes() == primary
+        index_raw = (out / row["primary_index_file"]).read_bytes()
+        assert sha256(index_raw).hexdigest() == row["primary_index_sha256"]
+        assert row["captured_source_url"] != row["original_filing_url"]
+
+
+def test_failed_primary_fallback_abstains_and_preserves_submission_reason(tmp_path):
+    make_sources(tmp_path)
+    def oversized(path, agent):
+        raise p4u.FilingSourceFailure("OVER_12MB_SOURCE_LIMIT")
+    def primary_fails(path, agent):
+        raise p4u.FilingSourceFailure("PRIMARY_INDEX_10K_NOT_UNIQUE")
+    report = p4u.capture(tmp_path, tmp_path / "out", "Research contact@example.com",
+                         per_stratum=1, getter=oversized, primary_getter=primary_fails)
+    assert report["original_filing_sources_captured"] == 0
+    assert report["source_failure_reason_counts"] == {"PRIMARY_INDEX_10K_NOT_UNIQUE": 2}
+    assert all(r["original_submission_failure_reason"] == "OVER_12MB_SOURCE_LIMIT"
+               for r in report["observations"])
+    assert all(r["cover_state"] == "NOT_EVALUATED" for r in report["observations"])
