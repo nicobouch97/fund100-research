@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 SCHEMA = "FUND100_V6_CROSSASSET_FIXED_BASKET_STRESS_DIAGNOSTIC_V3"
-CASH_SCENARIOS = ("ZERO", "DFF_MINUS_50BP", "DFF_GROSS")
+CASH_SCENARIOS = ("ZERO", "IRX_MINUS_50BP", "IRX_GROSS")
 CASH_RATE_LAG_WEEKDAYS = 3  # conservative proxy, NOT verified historical release vintages
 SYMBOLS = ("XLK", "XLE", "IWM", "GLD", "SHY", "SPY")
 ASSETS = ("XLK", "XLE", "IWM", "GLD", "SHY", "CASH")
@@ -71,34 +71,33 @@ def canonical_prices(data: pd.DataFrame) -> str:
 
 
 def validate_cash_rates(raw: pd.DataFrame, price_dates: pd.DatetimeIndex) -> pd.Series:
-    """FRED DFF observations lagged three weekdays before each market close.
+    """Yahoo ^IRX 13-week T-bill discount quotes, lagged three weekdays.
 
-    DFF is an overnight interbank rate, NOT an achievable retail cash yield.
-    This weekday proxy is conservative but does not prove original release
-    timestamps or account-specific deposit eligibility.
+    IRX is a bill discount yield, NOT a cash deposit or directly earned return.
+    The weekday lag is not a verified historical data-release vintage.
     """
-    if (not isinstance(raw, pd.DataFrame) or list(raw.columns) != ["DFF"]
+    if (not isinstance(raw, pd.DataFrame) or list(raw.columns) != ["IRX"]
         or not isinstance(raw.index, pd.DatetimeIndex)):
-        raise CrossAssetStop("Exact dated FRED DFF rate series required")
+        raise CrossAssetStop("Exact dated YAHOO IRX rate series required")
     ix = raw.index
     if (ix.tz is not None or ix.has_duplicates or not ix.is_monotonic_increasing
         or any(x != x.normalize() for x in ix) or len(ix) < 1000
         or ix[0] > pd.Timestamp("2013-12-20")
         or ix[-1] < pd.Timestamp(price_dates[-1]) - pd.Timedelta(days=10)):
         raise CrossAssetStop("Incomplete, stale or unordered cash-rate source")
-    if not pd.api.types.is_numeric_dtype(raw["DFF"]):
+    if not pd.api.types.is_numeric_dtype(raw["IRX"]):
         raise CrossAssetStop("Non-numeric cash-rate source")
-    vals = raw["DFF"].to_numpy(dtype=float)
-    if not np.isfinite(vals).all() or (vals < 0).any() or (vals > 25).any():
-        raise CrossAssetStop("Invalid FRED DFF percentage rate")
+    vals = raw["IRX"].to_numpy(dtype=float)
+    if not np.isfinite(vals).all() or (vals < -2).any() or (vals > 25).any():
+        raise CrossAssetStop("Invalid YAHOO IRX percentage rate")
     asof = price_dates - pd.offsets.BDay(CASH_RATE_LAG_WEEKDAYS)
     observed = pd.Series(ix, index=ix).reindex(asof, method="ffill")
-    lagged = raw["DFF"].reindex(asof, method="ffill")
+    lagged = raw["IRX"].reindex(asof, method="ffill")
     ages = (asof - pd.DatetimeIndex(observed)).days
     if lagged.isna().any() or (ages > 10).any() or (ages < 0).any():
         raise CrossAssetStop("Missing or stale pre-decision cash-rate observations")
     return pd.Series(lagged.to_numpy(dtype=float), index=price_dates,
-                     name="lagged_DFF_percent")
+                     name="lagged_IRX_percent")
 
 
 def canonical_cash_rates(raw: pd.DataFrame) -> str:
@@ -214,8 +213,8 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
     lagged_dff = validate_cash_rates(rates_source, data.index)
     cash_yields = {
         "ZERO": pd.Series(0., index=data.index),
-        "DFF_MINUS_50BP": (lagged_dff - .5).clip(lower=0),
-        "DFF_GROSS": lagged_dff,
+        "IRX_MINUS_50BP": (lagged_dff - .5).clip(lower=0),
+        "IRX_GROSS": lagged_dff,
     }
     reference = data["SPY"] / float(data["SPY"].iloc[0])
     ref_returns = reference.pct_change(fill_method=None).iloc[1:]
@@ -273,12 +272,13 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
         "source": "YAHOO_YFINANCE_AUTO_ADJUSTED_REVISABLE_CLOSES",
         "acquired_at_utc": acquired_at_utc,
         "price_sha256": sha256(canonical_prices(data).encode()).hexdigest(),
-        "cash_rate_source": "FRED_DFF_REVISABLE_OVERNIGHT_INTERBANK_PROXY",
+        "cash_rate_source": "YAHOO_IRX_13W_BILL_DISCOUNT_YIELD_PROXY",
         "cash_rate_sha256": sha256(canonical_cash_rates(rates_source).encode()).hexdigest(),
         "cash_rate_lag_weekdays": CASH_RATE_LAG_WEEKDAYS,
         "cash_rate_scenarios": list(CASH_SCENARIOS),
         "cash_rate_50bp_haircut_is_assumption_not_observed_deposit_spread": True,
         "cash_rate_not_achievable_account_yield_or_original_release_vintage": True,
+        "irx_discount_to_investment_yield_91day_conversion": True,
         "first_session": data.index[0].date().isoformat(),
         "last_completed_session": data.index[-1].date().isoformat(),
         "common_sessions": len(data), "fixed_baskets": dict(zip(WEIGHTS, [
@@ -310,7 +310,7 @@ def main() -> None:
     parser.add_argument("--rates-output", type=Path, required=True)
     args = parser.parse_args()
     end = datetime.now(timezone.utc).date().isoformat()
-    raw = yf.download(tickers=list(SYMBOLS), start="2013-12-01", end=end,
+    raw = yf.download(tickers=list(SYMBOLS) + ["^IRX"], start="2013-12-01", end=end,
                       auto_adjust=True, interval="1d", actions=False,
                       progress=False, threads=False)
     if not isinstance(raw, pd.DataFrame) or raw.empty:
@@ -328,22 +328,18 @@ def main() -> None:
         data.index = data.index.normalize()
     if data.isna().any().any():
         raise CrossAssetStop("Unexplained interior or inception source gaps")
-    # Public FRED CSV, no API token or broker/private credentials.
-    from io import StringIO
-    import requests
-    response = requests.get("https://fred.stlouisfed.org/graph/fredgraph.csv",
-                            params={"id": "DFF", "cosd": "2013-12-01"},
-                            timeout=60, headers={"User-Agent": "Mozilla/5.0 (research)"})
-    response.raise_for_status()
-    raw_rates = pd.read_csv(StringIO(response.text))
-    if (list(raw_rates.columns) not in (["DATE", "DFF"],
-                                        ["observation_date", "DFF"])):
-        raise CrossAssetStop("Unexpected FRED rate CSV schema")
-    rate_dates = pd.to_datetime(raw_rates.iloc[:, 0], format="%Y-%m-%d",
-                                errors="raise")
-    rate_data = pd.DataFrame(
-        {"DFF": pd.to_numeric(raw_rates["DFF"], errors="raise").to_numpy()},
-        index=pd.DatetimeIndex(rate_dates))
+    # Same public vendor download; ^IRX is a quoted discount-yield index,
+    # not a total-return security or an achievable cash account rate.
+    if ("Close", "^IRX") not in raw.columns:
+        raise CrossAssetStop("Missing historical 13-week T-bill quote ^IRX")
+    irx = raw[("Close", "^IRX")].dropna()
+    if irx.empty:
+        raise CrossAssetStop("No observed historical bill discount yields")
+    rate_data = pd.DataFrame({"IRX": irx.to_numpy(dtype=float)}, index=irx.index)
+    if rate_data.index.tz is not None:
+        rate_data.index = rate_data.index.tz_convert("UTC").tz_localize(None).normalize()
+    else:
+        rate_data.index = rate_data.index.normalize()
     rate_data = rate_data.loc["2013-12-01":data.index[-1]]
     captured = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     result = evaluate(data, acquired_at_utc=captured, cash_rates=rate_data)
