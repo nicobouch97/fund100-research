@@ -148,16 +148,35 @@ def _inspect_cover_text(cover: str) -> dict:
     end = SECTION_G.search(block)
     if end is not None:
         block = block[:end.start()]
+    # A flattened 12(b) table can falsely pair a debt security's NYSE
+    # cell with common stock on a DIFFERENT row. Keep original HTML row
+    # boundaries while normalising source whitespace; a joint mention must
+    # occur within one row, not merely within the same 6,000-character block.
+    # For unstructured prose, the result is still only a review flag.
+    row_markup = re.sub(r"\s+", " ", cover)
+    row_markup = re.sub(r"(?i)</tr\s*>", "\n", row_markup)
+    row_text = unescape(re.sub(r"(?s)<[^>]+>", " ", row_markup))
+    row_text = re.sub(r"[^\S\n]+", " ", row_text)
+    row_heading = SECTION_B.search(row_text)
+    row_block = (row_text[row_heading.end():row_heading.end() + 6000]
+                 if row_heading is not None else "")
+    row_end = SECTION_G.search(row_block)
+    if row_end is not None:
+        row_block = row_block[:row_end.start()]
+    direct = any(COMMON.search(row) and EXCHANGE.search(row)
+                 for row in row_block.splitlines())
+    cross_row = bool(COMMON.search(block) and EXCHANGE.search(block) and not direct)
     # The 2017 Multi-Color 10-K puts "NASDAQ Global Select Market"
     # immediately BEFORE the 12(b) heading and "Common Stock" after it.
     # Preserve this as a distinct, weaker cover-layout review flag.
-    direct = bool(COMMON.search(block) and EXCHANGE.search(block))
     preceding = bool(COMMON.search(block) and not direct and
                      EXCHANGE.search(clean[max(0, heading.start() - 300):heading.start()]))
     if direct:
         state = "POSSIBLE_12B_COMMON_EQUITY_EXCHANGE_REVIEW_REQUIRED"
     elif preceding:
         state = "POSSIBLE_12B_COMMON_PRECEDING_EXCHANGE_REVIEW_REQUIRED"
+    elif cross_row:
+        state = "AMBIGUOUS_12B_CROSS_ROW_COMMON_EXCHANGE_REVIEW_REQUIRED"
     else:
         state = "NO_JOINT_12B_COMMON_EXCHANGE_TEXT_EVIDENCE"
     # Neither flag proves a share-class/exchange mapping or an investable
