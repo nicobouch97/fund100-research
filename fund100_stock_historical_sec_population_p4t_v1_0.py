@@ -312,7 +312,7 @@ def capture_annual(output_dir: Path, agent: str) -> dict:
         original, registry, captured_utc=first["capture_timestamp_utc"])
     manifest = _manifest_bytes(annual_filing_manifest(original))
     if (sha256(manifest).hexdigest() != report["historical_filing_manifest_sha256"]
-        or manifest.count(b"\\n") != report["historical_filing_manifest_rows"]):
+        or manifest.count(b"\n") != report["historical_filing_manifest_rows"]):
         raise PopulationStop("Original SEC accession manifest reconciliation failed")
     for quarter in (2, 3, 4):
         (output_dir / f"original-sec-2017q{quarter}-master.idx").write_bytes(
