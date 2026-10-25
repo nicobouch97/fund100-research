@@ -408,7 +408,8 @@ def approved_scoped_live_script(
         # principal even while credential-scoped seven-GETs are available.
         if workflow == single_job:
             for evidence in (
-                "permissions:\\n  contents: read",
+                "permissions:",
+                "  contents: read",
                 "environment: fund100-live-broker",
                 "if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'",
                 "GITHUB_RUN_ATTEMPT",
@@ -427,7 +428,7 @@ def approved_scoped_live_script(
                 "read_current_original_acwi_owner_fence_getonly(",
                 "No LIVE orders.",
             ):
-                if evidence.replace("\\\\n","\\n") not in source:
+                if evidence not in source:
                     return False
             for forbidden in (
                 "contents: write",
