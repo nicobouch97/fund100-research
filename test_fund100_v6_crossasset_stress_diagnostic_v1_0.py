@@ -21,8 +21,14 @@ def prices():
     return pd.DataFrame(arr, index=dates)
 
 
+def cash_rates():
+    dates = pd.date_range("2013-11-01", "2025-01-01", freq="D")
+    return pd.DataFrame({"IRX": np.full(len(dates), 5.)}, index=dates)
+
+
 def test_complete_costed_stress_report_no_broker():
-    result = mod.evaluate(prices(), acquired_at_utc="2025-01-02T12:00:00Z")
+    result = mod.evaluate(prices(), acquired_at_utc="2025-01-02T12:00:00Z",
+                          cash_rates=cash_rates())
     assert result["common_sessions"] > 2000
     assert result["costed_historical_diagnostics"]["15"]["S1_95_EQUITY_5_CASH"]["spy_down_2pct_sessions"] == 2
     assert result["broker_requests"] == result["live_orders"] == result["private_state_writes"] == 0
@@ -89,11 +95,71 @@ def test_month_end_etf_to_etf_switch_charges_both_real_security_legs():
 
 
 def test_cost_accounting_version_and_no_trading_authority():
-    report = mod.evaluate(prices(), acquired_at_utc="2025-01-02T12:00:00Z")
-    assert report["schema"].endswith("_V2")
+    report = mod.evaluate(prices(), acquired_at_utc="2025-01-02T12:00:00Z",
+                          cash_rates=cash_rates())
+    assert report["schema"].endswith("_V3")
+    assert report["original_zero_cash_baseline_preserved"]
+    assert report["cash_rate_source"] == "YAHOO_IRX_13W_BILL_DISCOUNT_YIELD_PROXY"
     assert report["rebalance_turnover_definition"] == "SUM_ABS_ETF_WEIGHT_CHANGES_EXCLUDING_CASH"
     assert report["prior_c13_v1_cash_leg_cost_overstatement_corrected"]
     assert not report["funded_trading_or_rebalance_authorized"]
+
+
+def test_cash_carry_raises_cash_control_and_reduces_apparent_diversification_advantage():
+    report = mod.evaluate(prices(), acquired_at_utc="2025-01-02T12:00:00Z",
+                          cash_rates=cash_rates())
+    variants = report["interest_bearing_cash_sensitivity"]["15"]
+    control = "MATCHED_75_EQUITY_25_CASH"
+    assert (variants["IRX_GROSS"]["by_basket"][control]["net_cagr_pct"]
+            > variants["IRX_MINUS_50BP"]["by_basket"][control]["net_cagr_pct"]
+            > variants["ZERO"]["by_basket"][control]["net_cagr_pct"])
+    assert (variants["IRX_GROSS"]["diversified_minus_cash_control_cagr_pp"]
+            < variants["ZERO"]["diversified_minus_cash_control_cagr_pp"])
+    assert variants["ZERO"]["by_basket"][control]["net_cagr_pct"] == (
+        report["costed_historical_diagnostics"]["15"][control]["net_cagr_pct"])
+
+
+def test_cash_accrues_weekends_at_prior_lagged_rate_without_lookahead():
+    frame = prices()
+    rate = pd.Series(5., index=mod.validate_prices(frame).index)
+    weights = (0., 0., 0., 0., 0., 1.)
+    result = mod.simulate(frame, weights, 15, cash_annual_rate=rate)["nav"]
+    assert result.iloc[0] == 1.
+    assert result.iloc[1] == pytest.approx(np.exp(.05 / 365.25))
+    friday = pd.Timestamp("2014-01-03")
+    monday = pd.Timestamp("2014-01-06")
+    assert result.loc[monday] / result.loc[friday] == pytest.approx(
+        np.exp(.05 * 3 / 365.25))
+
+
+def test_cash_rate_last_observation_cannot_affect_earlier_results():
+    frame = prices()
+    original = cash_rates()
+    a = mod.evaluate(frame, acquired_at_utc="2025-01-02T12:00:00Z",
+                     cash_rates=original)
+    changed = original.copy()
+    changed.loc["2024-12-31", "IRX"] = 20.
+    b = mod.evaluate(frame, acquired_at_utc="2025-01-02T12:00:00Z",
+                     cash_rates=changed)
+    assert a["interest_bearing_cash_sensitivity"] == b["interest_bearing_cash_sensitivity"]
+    assert a["cash_rate_sha256"] != b["cash_rate_sha256"]
+
+
+@pytest.mark.parametrize("kind", ["duplicate", "missing", "stale", "nonnumeric", "negative"])
+def test_reject_bad_cash_rate_source(kind):
+    raw = cash_rates()
+    if kind == "duplicate":
+        raw = pd.concat([raw, raw.iloc[[-1]]])
+    elif kind == "missing":
+        raw.loc["2024-06-01", "IRX"] = np.nan
+    elif kind == "stale":
+        raw = raw.loc[:"2024-11-01"]
+    elif kind == "nonnumeric":
+        raw["IRX"] = "invalid"
+    else:
+        raw.loc["2024-06-01", "IRX"] = -5.
+    with pytest.raises(mod.CrossAssetStop):
+        mod.validate_cash_rates(raw, mod.validate_prices(prices()).index)
 
 
 @pytest.mark.parametrize("corruption", ["duplicate", "missing", "gap", "future", "nonnumeric"])
@@ -107,7 +173,8 @@ def test_reject_invalid_source(corruption):
         frame.iloc[200, 1] *= 2
     elif corruption == "future":
         with pytest.raises(mod.CrossAssetStop, match="incomplete"):
-            mod.evaluate(frame, acquired_at_utc="2024-01-01T00:00:00Z")
+            mod.evaluate(frame, acquired_at_utc="2024-01-01T00:00:00Z",
+                         cash_rates=cash_rates())
         return
     else:
         frame["SHY"] = "oops"
