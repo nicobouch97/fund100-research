@@ -12,6 +12,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from hashlib import sha256
 from html import unescape
+from http.client import IncompleteRead
 import json
 import os
 from pathlib import Path
@@ -203,6 +204,8 @@ def _official_filing_get(path: str, agent: str) -> bytes:
         else:
             reason = "HTTP_OTHER"
         raise FilingSourceFailure(reason) from None
+    except IncompleteRead:
+        raise FilingSourceFailure("INCOMPLETE_SOURCE") from None
     except TimeoutError:
         raise FilingSourceFailure("TIMEOUT") from None
     except URLError:
