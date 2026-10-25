@@ -59,7 +59,6 @@ jobs:
           import fund100_v6_s1_one_time_owner_claim_cas_v1_0 as owner
           import fund100_v6_s1_immutable_release_publish_locked_v1_0 as release
           import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
-          import fund100_alpaca_live_writer_candidate_v1_1 as writer
           assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
           assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
           assert entry.RETRY_AFTER_UNCERTAIN_OUTCOME is False
@@ -68,12 +67,9 @@ jobs:
           assert owner.PREPOST_PUBLIC_WITNESS_RELEASED is False
           assert release.PUBLISH_SIGNED_HEAD_RELEASED is False
           assert active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is False
-          assert writer.TRANSPORT_RELEASED is False
-          assert writer.PUBLIC_EXECUTION_ENABLED is False
-          assert writer.V6_S1_ACWI_QTY_SELL_TRANSPORT_RELEASED is False
-          assert writer.V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED is False
-          assert writer.V6_S1_ACWI_FRESH_ACCOUNT_RISK_SOURCE_RELEASED is False
-          assert writer.V6_S1_ACWI_EXTERNAL_WATERMARK_RELEASED is False
+          # The separately run V1.14+ LIVE audit enforces both frozen V5
+          # writer globals and the V6 release switches without allowing an
+          # unapproved direct writer import in any LIVE Actions workflow.
           print('Original V6 one-shot entry and every order mutation gate remain hard-locked.')
           PY
       - name: Invoke EXACT original one-attempt entry; REQUIRE fail before any network
