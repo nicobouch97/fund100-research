@@ -387,7 +387,7 @@ def test_official_primary_get_fetches_only_canonical_index_and_10k(monkeypatch):
     out = p4u._official_primary_10k_get(path, "Research contact@example.com")
     assert out == (primary, index, "primary10k.htm", primary_url, index_url)
     assert called == [(index_url, p4u.MAX_FILING_INDEX_BYTES + 1),
-                      (primary_url, p4u.MAX_FILING_BYTES + 1)]
+                      (primary_url, p4u.MAX_PRIMARY_10K_BYTES + 1)]
 
 
 def test_oversized_submission_uses_verified_primary_with_provenance(tmp_path):
@@ -478,3 +478,73 @@ def test_ambiguous_cross_row_not_counted_as_possible_common_equity_listing(tmp_p
                for r in report["observations"])
     assert report["broker_requests"] == report["broker_orders"] == 0
     assert not report["trading_authorized"] and not report["live_authorized"]
+
+
+def test_primary_10k_has_separate_bounded_limit_and_retains_full_hash(tmp_path, monkeypatch):
+    # Simulate a document larger than the submission limit without allocating
+    # tens of megabytes. All source-identity and SHA checks remain active.
+    assert p4u.MAX_FILING_BYTES == 12_000_000
+    assert p4u.MAX_PRIMARY_10K_BYTES == 32_000_000
+    monkeypatch.setattr(p4u, "MAX_FILING_BYTES", 64)
+    monkeypatch.setattr(p4u, "MAX_PRIMARY_10K_BYTES", 256)
+    make_sources(tmp_path)
+    primary = (b"<html><body>Securities registered pursuant to Section 12(b): "
+               b"Common Stock Nasdaq. Securities registered pursuant to "
+               b"Section 12(g): None</body></html>")
+    assert 64 < len(primary) < 256
+    assert p4u.inspect_primary_10k(primary)["cover_state"] == (
+        "POSSIBLE_12B_COMMON_EQUITY_EXCHANGE_REVIEW_REQUIRED")
+    with pytest.raises(p4u.ListingEvidenceStop):
+        p4u.inspect_original_10k(primary)
+
+    def oversized_submission(path, agent):
+        raise p4u.FilingSourceFailure("OVER_12MB_SOURCE_LIMIT")
+
+    def verified_primary(path, agent):
+        name = "primary10k.htm"
+        index_url, primary_url = p4u._primary_urls(path, name)
+        return primary, sec_filing_detail(path), name, primary_url, index_url
+
+    out = tmp_path / "expanded-primary"
+    report = p4u.capture(tmp_path, out, "Research contact@example.com",
+                         per_stratum=1, getter=oversized_submission,
+                         primary_getter=verified_primary)
+    assert report["original_filing_sources_captured"] == 2
+    assert report["full_submission_sources_captured"] == 0
+    assert report["index_verified_primary_10k_sources_captured"] == 2
+    assert report["possible_section12b_common_equity_exchange_covers"] == 2
+    for row in report["observations"]:
+        assert row["original_sha256"] == sha256(primary).hexdigest()
+        assert row["original_bytes"] == len(primary)
+        assert (out / row["local_original_file"]).read_bytes() == primary
+    assert report["broker_orders"] == 0 and not report["live_authorized"]
+
+
+def test_primary_10k_over_new_limit_fails_closed(monkeypatch):
+    path = "edgar/data/1001/0001001-17-000001.txt"
+    index_url, primary_url = p4u._primary_urls(path, "primary10k.htm")
+    monkeypatch.setattr(p4u, "MAX_PRIMARY_10K_BYTES", 128)
+
+    class Response:
+        status = 200
+        def __init__(self, url):
+            self.url = url
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def geturl(self):
+            return self.url
+        def read(self, limit):
+            if self.url == index_url:
+                assert limit == p4u.MAX_FILING_INDEX_BYTES + 1
+                return sec_filing_detail(path)
+            assert self.url == primary_url
+            assert limit == p4u.MAX_PRIMARY_10K_BYTES + 1
+            return b"x" * limit
+
+    monkeypatch.setattr(p4u, "urlopen",
+                        lambda request, timeout: Response(request.full_url))
+    with pytest.raises(p4u.FilingSourceFailure) as exc:
+        p4u._official_primary_10k_get(path, "Research contact@example.com")
+    assert exc.value.reason_code == "PRIMARY_10K_OVERSIZED"

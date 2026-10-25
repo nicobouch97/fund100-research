@@ -24,7 +24,10 @@ from urllib.request import Request, urlopen
 from fund100_stock_historical_sec_population_p4t_v1_0 import parse_current_registry
 
 SCHEMA = "FUND100_P4U_2017_ORIGINAL_10K_COVER_SOURCE_AUDIT_V2"
-MAX_FILING_BYTES = 12_000_000
+MAX_FILING_BYTES = 12_000_000  # full submission remains tightly bounded
+# A separately verified primary 10-K can exceed 12 MB without its exhibits.
+# This independent ceiling never applies to full submissions or index pages.
+MAX_PRIMARY_10K_BYTES = 32_000_000
 MAX_FILING_INDEX_BYTES = 2_000_000
 MAX_SAMPLES_PER_STRATUM = 16
 ARCHIVE_PATH = re.compile(r"edgar/data/([0-9]+)/([0-9-]+)\.txt\Z")
@@ -211,7 +214,7 @@ def inspect_original_10k(raw: bytes) -> dict:
 
 def inspect_primary_10k(raw: bytes) -> dict:
     """Only call after a canonical SEC filing-detail row identifies this as 10-K."""
-    if type(raw) is not bytes or not 0 < len(raw) <= MAX_FILING_BYTES:
+    if type(raw) is not bytes or not 0 < len(raw) <= MAX_PRIMARY_10K_BYTES:
         raise ListingEvidenceStop("Primary 10-K missing or oversized")
     if not re.search(rb"(?i)<(?:html|body)\b", raw[:50_000]):
         return {"cover_state": "NO_VERIFIED_10K_TEXT", "section_12b_excerpt": ""}
@@ -375,7 +378,7 @@ def _official_primary_10k_get(path: str, agent: str) -> tuple[bytes, bytes, str,
     filename, verified_index_url, primary_url = _primary_10k_from_index(path, index_raw)
     if verified_index_url != index_url:
         raise FilingSourceFailure("PRIMARY_INDEX_IDENTITY_MISMATCH")
-    return (fetch_exact(primary_url, MAX_FILING_BYTES), index_raw, filename,
+    return (fetch_exact(primary_url, MAX_PRIMARY_10K_BYTES), index_raw, filename,
             primary_url, index_url)
 
 
@@ -410,7 +413,7 @@ def capture(source_dir: Path, output_dir: Path, agent: str,
                 expected_index, expected_primary = _primary_urls(
                     row["sec_archive_path"], primary_name)
                 if (captured_url != expected_primary or index_url != expected_index
-                    or type(raw) is not bytes or not 0 < len(raw) <= MAX_FILING_BYTES
+                    or type(raw) is not bytes or not 0 < len(raw) <= MAX_PRIMARY_10K_BYTES
                     or type(index_raw) is not bytes
                     or not 0 < len(index_raw) <= MAX_FILING_INDEX_BYTES):
                     raise ListingEvidenceStop("Unverified primary SEC source identity")
