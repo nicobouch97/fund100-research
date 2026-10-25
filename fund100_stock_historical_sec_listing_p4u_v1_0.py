@@ -139,7 +139,7 @@ class _Section12bRowParser(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.fragments = []
-        self.offset = 0
+        self.text_offset = 0
         self.row_start = None
         self.cells = []
         self.cell_parts = None
@@ -147,7 +147,7 @@ class _Section12bRowParser(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         if tag == "tr":
-            self.row_start = self.offset
+            self.row_start = self.text_offset
             self.cells = []
             self.cell_parts = None
         elif tag in ("td", "th") and self.row_start is not None:
@@ -155,7 +155,7 @@ class _Section12bRowParser(HTMLParser):
 
     def handle_data(self, data):
         self.fragments.append(data + " ")
-        self.offset += len(data) + 1
+        self.text_offset += len(data) + 1
         if self.cell_parts is not None:
             self.cell_parts.append(data)
 
@@ -164,7 +164,7 @@ class _Section12bRowParser(HTMLParser):
             self.cells.append(re.sub(r"\s+", " ", " ".join(self.cell_parts)).strip())
             self.cell_parts = None
         elif tag == "tr" and self.row_start is not None:
-            self.rows.append((self.row_start, self.offset, tuple(self.cells)))
+            self.rows.append((self.row_start, self.text_offset, tuple(self.cells)))
             self.row_start = None
             self.cells = []
             self.cell_parts = None
