@@ -1,0 +1,116 @@
+name: Fund-100 V7 E8 Rolling Original SEC Earnings Cohort (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_e8_24issuer_sec_event_cohort_v1_0.py'
+      - 'test_fund100_v7_e8_24issuer_sec_event_cohort_v1_0.py'
+      - '.github/workflows/fund100-v7-e8-24issuer-earnings-cohort.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_e8_24issuer_sec_event_cohort_v1_0.py'
+      - 'test_fund100_v7_e8_24issuer_sec_event_cohort_v1_0.py'
+      - '.github/workflows/fund100-v7-e8-24issuer-earnings-cohort.yml'
+  schedule:
+    - cron: '15 13 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: fund100-v7-e8-real-original-sec-earliest-observation-cohort
+  cancel-in-progress: false
+
+jobs:
+  original-filing-cohort-research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install existing original research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Regression-test independent SEC lineage, chronology, count and no brokerage
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_v7_e8_24issuer_sec_event_cohort_v1_0.py \
+            test_fund100_v7_e7_24issuer_earnings_forward_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Fetch all available successful main E6 original SEC source bundles
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fund100-v7-e8-all-original-e6
+          gh run list --workflow fund100-v7-e6-24issuer-sec-earnings.yml \
+            --branch main --limit 40 \
+            --json databaseId,status,conclusion > /tmp/fund100-v7-e8-source-runs.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          source=json.loads(Path('/tmp/fund100-v7-e8-source-runs.json').read_text())
+          good={int(row['databaseId']) for row in source if (
+              row['status']=='completed' and row['conclusion']=='success')}
+          # Always retain the first original 24-issuer observed SEC source.
+          good.add(40365882558)
+          assert len(good)<=41
+          assert all(x>0 for x in good)
+          Path('/tmp/fund100-v7-e8-run-ids.txt').write_text(
+              ''.join(str(x)+'\n' for x in sorted(good)))
+          print('Original main-branch SEC sources to independently replay:',len(good))
+          PY
+          while IFS= read -r run_id; do
+            [[ "$run_id" =~ ^[0-9]+$ ]] || exit 1
+            mkdir -p "/tmp/fund100-v7-e8-all-original-e6/$run_id"
+            gh run download "$run_id" \
+              -n "fund100-v7-e6-original-24-issuer-sec-event-$run_id" \
+              -D "/tmp/fund100-v7-e8-all-original-e6/$run_id"
+          done < /tmp/fund100-v7-e8-run-ids.txt
+          python - <<'PY'
+          from pathlib import Path
+          import fund100_v7_e8_24issuer_sec_event_cohort_v1_0 as e8
+          sources=e8.verified_source_dirs(Path('/tmp/fund100-v7-e8-all-original-e6'))
+          assert len(sources)>=1
+          assert any(x['run_id']==40365882558 for x in sources)
+          print('Replayed original bytes and issuer accession lists for',len(sources),'main SEC captures.')
+          PY
+      - name: Pair earliest original SEC observations with ONE later full market close vintage
+        run: |
+          set -euo pipefail
+          python fund100_v7_e8_24issuer_sec_event_cohort_v1_0.py \
+            --source-root /tmp/fund100-v7-e8-all-original-e6 \
+            --output-dir /tmp/fund100-v7-e8-verified-cohort
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          import fund100_v7_e8_24issuer_sec_event_cohort_v1_0 as e8
+          root=Path('/tmp/fund100-v7-e8-verified-cohort')
+          doc=json.loads((root/'source-dedup-24issuer-cohort.json').read_text())
+          price=json.loads((root/'original-price-source-manifest.json').read_text())
+          assert doc['schema']==e8.SCHEMA
+          assert doc['unique_eligible_filing_accessions']>=1
+          assert doc['source_eligible_exposures_with_completed_returns']<=doc['distinct_ticker_entry_exposures']
+          assert doc['foundational_original_SEC_manifest_sha256'] == (
+              '878ce40b44c7b574e5161f98b72979514ccf2ee3eceb88dd58664b644c9deb0a')
+          assert doc['later_single_price_vendor_source_sha256']==price['canonical_price_csv_sha256']
+          assert doc['paper_authorized'] is False
+          assert doc['live_authorized'] is False and doc['trading_authorized'] is False
+          assert doc['broker_gets']==doc['broker_posts']==doc['broker_orders']==0
+          assert doc['alpha_not_established'] is True
+          print('Research only:',doc['unique_eligible_filing_accessions'],'first observed events',
+                doc['source_eligible_exposures_with_completed_returns'],'post-observation marks')
+          PY
+      - name: Archive original price bytes, issuer source lineage, and cohort diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-e8-replayed-24issuer-earnings-cohort-${{ github.run_id }}
+          path: /tmp/fund100-v7-e8-verified-cohort/
+          retention-days: 90
+          if-no-files-found: error
