@@ -5,14 +5,14 @@ import copy
 import pytest
 import fund100_v7_x5_capacity_aware_portfolio_router_v1_0 as x5
 
-TARGET={"XLK":".375","XLE":".225","IWM":".15","GLD":".05","BTC/USD":".05"}
+TARGET={"XLK":"0.375","XLE":"0.225","IWM":"0.15","GLD":"0.05","BTC/USD":"0.05"}
 
 def plan(capital="1000.00",spec=None,target=None,gbp="1000",cash=None,
          positions=None,prospective_cap=None):
     n=Decimal(capital)
     if positions is None:
         positions={s:x5.nstr(n*w) for s,w in (
-            ("XLK",Decimal(".40")),("XLE",Decimal(".30")),
+            ("XLK",Decimal("0.40")),("XLE",Decimal("0.30")),
             ("IWM",Decimal(".24")))}
     if cash is None:cash=x5.nstr(n-sum(map(Decimal,positions.values())))
     return x5.route(
@@ -44,8 +44,8 @@ def test_same_weights_and_number_of_positions_at_thousand_to_million():
     for tier,r in sample["scenarios"].items():
         assert r["target_asset_count"]==5
         assert r["target_non_cash_weight_sum"]==".85"
-        assert r["target_cash_reserve_weight"]==".15"
-        assert r["crypto_allocation_weight"]==".05"
+        assert r["target_cash_reserve_weight"]=="0.15"
+        assert r["crypto_allocation_weight"]=="0.05"
         assert r["funding_status"]=="SELL_OR_DEPOSIT_FIRST_THEN_REVERIFY_SETTLEMENT"
         assert r["proceeds_of_unsettled_sales_used_for_buys"] is False
         assert r["current_LIVE_authorized_principal_USD"]=="130.30"
@@ -80,7 +80,7 @@ def test_sales_do_not_increase_current_buy_cash_until_settled():
 
 def test_per_order_round_up_is_conservative_for_ticket_splitting():
     fee=x5.fee_upper_by_ticket(Decimal("25.00"),Decimal("10"),Decimal("15"))
-    assert fee==Decimal(".05") # each $10 order 2 cents, final $5 1 cent
+    assert fee==Decimal("0.05") # each $10 order 2 cents, final $5 1 cent
     assert x5.count_to_fit(Decimal("25"),Decimal("10"))==3
     assert x5.fee_upper_by_ticket(Decimal("0"),Decimal("10"),Decimal("15"))==0
     with pytest.raises(x5.CapacityStop):
@@ -90,10 +90,10 @@ def test_strategy_independent_authorized_future_universe_remains_untrusted():
     spec=x5.sample_spec()
     spec["AGG"]={**spec["IWM"],"asset_class":"BOND_ETF"}
     spec["SPY"]={**spec["XLK"],"asset_class":"EQUITY_ETF"}
-    result=plan(spec=spec,target={"SPY":".40","AGG":".30","GLD":".05","BTC/USD":".05"},
+    result=plan(spec=spec,target={"SPY":"0.40","AGG":"0.30","GLD":"0.05","BTC/USD":"0.05"},
                 positions={},cash="1000.00")
     assert result["target_asset_count"]==4
-    assert result["target_cash_reserve_weight"]==".20"
+    assert result["target_cash_reserve_weight"]=="0.20"
     assert result["forecast_strategy_alpha_not_authenticated"]
     assert result["crypto_and_GLD_live_whitelist_unmodified"]
     assert not result["no_live_capital_deployment_permission"] is False
@@ -114,10 +114,10 @@ def test_actual_market_volume_or_crypto_client_permission_cannot_be_claimed():
             plan(spec=spec)
 
 @pytest.mark.parametrize("change",[
-    {"target":{"XLK":".51","XLE":".20"}},
-    {"target":{"BTC/USD":".11","XLK":".30"}},
-    {"target":{"XLK":".50","XLE":".46"}},
-    {"target":{"XLK":"-0.2","GLD":".01"}},
+    {"target":{"XLK":"0.51","XLE":"0.20"}},
+    {"target":{"BTC/USD":"0.11","XLK":"0.30"}},
+    {"target":{"XLK":"0.50","XLE":"0.46"}},
+    {"target":{"XLK":"-0.2","GLD":"0.01"}},
     {"target":{"XLK":"NaN"}},
     {"cash":"1000.01"},
     {"prospective_cap":"100.00"},
