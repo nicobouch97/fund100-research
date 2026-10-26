@@ -306,6 +306,102 @@ def test_cost_and_hysteresis_must_be_explicit_and_conservative(name,value):
     with pytest.raises(m.OpportunityStop):
         run(c)
 
+
+def multi(**overrides):
+    c=case()
+    c["snapshot"]["settled_cash_usd"]="10.00"
+    args={
+        "snapshot":c["snapshot"],
+        "candidate_targets":{
+            "RESEARCH_KEEP":{"ACWI":"0.50"},
+            "RESEARCH_TECH":{"XLK":"0.49"},
+            "RESEARCH_ENERGY":{"XLE":"0.49"},
+        },
+        "expected_returns":{"ACWI":"0.02","XLK":"0.15","XLE":"0.07"},
+        "round_trip_side_cost_bps":"15",
+        "forecast_uncertainty_bps":"50",
+        "minimum_net_advantage_usd":"0.50",
+    }
+    args.update(overrides)
+    return m.select_research_alternative(**args)
+
+
+def test_multi_option_selects_best_net_upside_not_first_candidate():
+    z=multi()
+    assert z["status"]=="RESEARCH_PREFERRED_COSTED_SWITCH_NOT_AUTHORIZED"
+    assert z["candidate_count"]==3
+    assert z["research_preferred_candidate_id"]=="RESEARCH_TECH"
+    assert z["candidate_outcomes"]["RESEARCH_KEEP"]["state"]=="HOLD_NO_MATERIAL_DIFFERENCE"
+    assert z["candidate_outcomes"]["RESEARCH_ENERGY"]["state"].startswith("HYPOTHETICAL_")
+    assert z["preferred_hypothetical_economics"]["state"]=="HYPOTHETICAL_SWITCH_SELL_SETTLEMENT_REQUIRED"
+    assert z["live_order_submission_authorized"] is False
+    assert z["real_broker_posts"]==z["real_broker_gets"]==0
+    assert z["all_portfolio_forecasts_unqualified_and_unauthenticated"]
+
+
+def test_multi_options_holds_all_when_costs_and_uncertainty_erase_advantage():
+    z=multi(expected_returns={"ACWI":"0.06","XLK":"0.07","XLE":"0.05"})
+    assert z["status"]=="HOLD_NO_COSTED_RISK_ELIGIBLE_ALTERNATIVE"
+    assert z["eligible_costed_switch_count"]==0
+    assert z["research_preferred_candidate_id"] is None
+    assert z["preferred_hypothetical_economics"] is None
+
+
+def test_multi_options_risk_rejected_cannot_win_even_with_high_forecast():
+    z=multi(
+        candidate_targets={"RESEARCH_RISKY":{"XLK":"0.50"},
+                           "RESEARCH_PRUDENT":{"XLE":"0.49"}},
+        expected_returns={"ACWI":"0.02","XLK":"1.20","XLE":"0.10"},
+        round_trip_side_cost_bps="35",
+    )
+    assert z["candidate_outcomes"]["RESEARCH_RISKY"]["state"]=="HOLD_POST_TRADE_RISK_LIMIT_BREACH"
+    assert z["research_preferred_candidate_id"]=="RESEARCH_PRUDENT"
+
+
+def test_multi_option_keeps_settlement_required_preferred_when_best():
+    z=multi()
+    assert z["research_preferred_candidate_id"]=="RESEARCH_TECH"
+    assert z["current_broker_holdings_and_settled_cash_authenticated"] is False
+    assert z["preferred_hypothetical_economics"]["future_sell_proceeds_assumed_spendable"] is False
+
+
+def test_multi_option_ties_deterministically_by_research_id():
+    z=multi(
+        candidate_targets={"RESEARCH_ZULU":{"XLK":"0.49"},
+                           "RESEARCH_ALPHA":{"XLE":"0.49"}},
+        expected_returns={"ACWI":"0.02","XLK":"0.15","XLE":"0.15"},
+    )
+    assert z["eligible_costed_switch_count"]==2
+    assert z["research_preferred_candidate_id"]=="RESEARCH_ALPHA"
+
+
+@pytest.mark.parametrize("changes",[
+    {"candidate_targets":{}},
+    {"candidate_targets":{"LIVE_GO":{"XLK":"0.49"}}},
+    {"candidate_targets":{"RESEARCH_ONE":{"XLK":"0.49"},
+                          "RESEARCH_TWO":{"XLK":"0.490"}}},
+    {"candidate_targets":{"RESEARCH_UNKNOWN":{"BTC":"0.49"}}},
+    {"candidate_targets":{"RESEARCH_ONE":{"XLK":"0.51"}}},
+    {"expected_returns":{"ACWI":"0.02","XLK":"0.15"}},
+    {"expected_returns":{"ACWI":"0.02","XLK":"0.15","XLE":"0.04","IWM":"0.01"}},
+    {"expected_returns":{"ACWI":"0.02","XLK":"NaN","XLE":"0.04"}},
+])
+def test_multi_option_rejects_malformed_or_inconsistent_universe(changes):
+    with pytest.raises(m.OpportunityStop):
+        multi(**changes)
+
+
+def test_multi_option_cannot_authenticate_source_by_overriding_snapshot():
+    c=case()
+    c["snapshot"]["mode"]="LIVE_AUTHENTICATED"
+    with pytest.raises(m.OpportunityStop):
+        multi(snapshot=c["snapshot"])
+    c=case()
+    c["snapshot"]["signal_status"]="DEPLOYED_STRATEGY"
+    with pytest.raises(m.OpportunityStop):
+        multi(snapshot=c["snapshot"])
+
+
 def test_research_only_never_connects_broker_or_secret_or_sends():
     s=Path(m.__file__).read_text()
     assert m.EXECUTION_RELEASED is False

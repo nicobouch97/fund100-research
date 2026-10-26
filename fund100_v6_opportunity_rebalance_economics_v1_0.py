@@ -174,6 +174,7 @@ def evaluate(*,snapshot:dict,target_weights:dict,expected_returns:dict,
         "both_sides_transaction_cost_usd":cashfmt(cost),
         "additional_forecast_uncertainty_reserve_usd":cashfmt(penalty),
         "estimated_net_opportunity_advantage_usd":cashfmt(net),
+        "research_unrounded_model_net_usd":format(net,"f"),
         "required_hysteresis_advantage_usd":cashfmt(required),
         "gross_turnover_usd":cashfmt(turnover),
         "hypothetical_post_trade_gross_usd":cashfmt(post_gross),
@@ -189,4 +190,108 @@ def evaluate(*,snapshot:dict,target_weights:dict,expected_returns:dict,
         "real_broker_posts":0,
         "source_strategy_promoted":False,
         "next_action":"QUALIFY_INDEPENDENT_POINT_IN_TIME_SIGNALS_AND_LIVE_MANDATE_BEFORE_ANY_ORDER",
+    }
+
+
+MAX_RESEARCH_ALTERNATIVES=12
+COMPARISON_SCHEMA="FUND100_V6_MULTI_OPPORTUNITY_COMPARISON_RESEARCH_ONLY_V1"
+NONEXECUTABLE_SWITCH_STATES=frozenset({
+    "HYPOTHETICAL_SWITCH_SELL_SETTLEMENT_REQUIRED",
+    "HYPOTHETICAL_SWITCH_WITH_SETTLED_CASH",
+})
+
+def select_research_alternative(*,snapshot:dict,candidate_targets:dict,
+                                expected_returns:dict,
+                                round_trip_side_cost_bps:str,
+                                forecast_uncertainty_bps:str,
+                                minimum_net_advantage_usd:str)->dict:
+    """Compare candidate portfolio allocations against the SAME existing HOLD.
+
+    No proposed target is a strategy signal: all observations, expected
+    returns and candidate weights are unverified research hypotheses. This
+    is a deterministic costed decision *simulator*, not an order planner or
+    a maximizer validated on out-of-sample real investment returns.
+    Never treat the hypothetical 'settled cash' stage as real broker proof.
+    """
+    if (type(snapshot) is not dict
+        or snapshot.get("mode")!=MODE
+        or snapshot.get("signal_status")!="UNQUALIFIED_RESEARCH_HYPOTHESIS"
+        or type(snapshot.get("positions_usd")) is not dict
+        or type(candidate_targets) is not dict
+        or not 1<=len(candidate_targets)<=MAX_RESEARCH_ALTERNATIVES
+        or type(expected_returns) is not dict):
+        raise OpportunityStop("No bounded, consistent in-memory research proposal set")
+    held=set(snapshot["positions_usd"])
+    proposal_symbols=set()
+    fingerprints=set()
+    for name,weights in candidate_targets.items():
+        if (type(name) is not str
+            or re.fullmatch(r"RESEARCH_[A-Z][A-Z0-9_]{2,35}",name) is None
+            or type(weights) is not dict or not weights):
+            raise OpportunityStop("Unknown synthetic proposal identity or target")
+        if any(type(symbol) is not str or symbol not in UNIVERSE
+               for symbol in weights):
+            raise OpportunityStop("Unknown alternative portfolio asset")
+        # Avoid counting numerically identical allocations as distinct
+        # opportunities, including alternate decimal string formats.
+        fingerprint=tuple(sorted((symbol,format(
+            amount(weight,"target "+symbol).normalize(),"f"))
+                                 for symbol,weight in weights.items()))
+        if fingerprint in fingerprints:
+            raise OpportunityStop("Duplicate hypothetical portfolio disguised as alternative")
+        fingerprints.add(fingerprint)
+        proposal_symbols.update(weights)
+    if (not (held|proposal_symbols)<=UNIVERSE
+        or set(expected_returns)!=(held|proposal_symbols)):
+        raise OpportunityStop("Every candidate and existing holding needs one common-horizon forecast")
+    for symbol,predicted in expected_returns.items():
+        v=amount(predicted,"common forecast "+symbol,signed=True)
+        if not Decimal("-1")<=v<=Decimal("2"):
+            raise OpportunityStop("Unsupported alternative forecast")
+    alternatives={}
+    eligible=[]
+    # Fail atomically on any structurally invalid proposal rather than
+    # selecting among a corrupted/incompletely evaluated universe.
+    for name in sorted(candidate_targets):
+        weights=candidate_targets[name]
+        scoped={symbol:expected_returns[symbol]
+                for symbol in held|set(weights)}
+        result=evaluate(
+            snapshot=snapshot,target_weights=weights,
+            expected_returns=scoped,
+            round_trip_side_cost_bps=round_trip_side_cost_bps,
+            forecast_uncertainty_bps=forecast_uncertainty_bps,
+            minimum_net_advantage_usd=minimum_net_advantage_usd)
+        alternatives[name]=result
+        if result["state"] in NONEXECUTABLE_SWITCH_STATES:
+            eligible.append(name)
+    # Use the true, unrounded model result, not an already-truncated
+    # cents display; if economic edges tie prefer less turnover, then
+    # stable research candidate name. None of these provide live authority.
+    eligible.sort(key=lambda name:(
+        -Decimal(alternatives[name]["research_unrounded_model_net_usd"]),
+        Decimal(alternatives[name]["gross_turnover_usd"]),name))
+    selected=eligible[0] if eligible else None
+    return {
+        "schema":COMPARISON_SCHEMA,
+        "status":("RESEARCH_PREFERRED_COSTED_SWITCH_NOT_AUTHORIZED" if selected
+                  else "HOLD_NO_COSTED_RISK_ELIGIBLE_ALTERNATIVE"),
+        "research_preferred_candidate_id":selected,
+        "candidate_count":len(alternatives),
+        "eligible_costed_switch_count":len(eligible),
+        "candidate_outcomes":alternatives,
+        "preferred_hypothetical_economics":(
+            alternatives[selected] if selected else None),
+        "shared_forecast_horizon_sessions":snapshot.get("forecast_horizon_sessions"),
+        "all_portfolio_forecasts_unqualified_and_unauthenticated":True,
+        "candidate_generation_has_no_backtest_or_live_alpha_validation":True,
+        "historic_survivorship_free_model_skill_proven":False,
+        "original_live_pilot_cap_usd":cashfmt(CAP),
+        "standing_mandate_authenticated":False,
+        "current_broker_holdings_and_settled_cash_authenticated":False,
+        "live_order_submission_authorized":False,
+        "manual_per_trade_approval_required":False,
+        "real_broker_gets":0,
+        "real_broker_posts":0,
+        "next_action":"VALIDATE_SIGNAL_PROVENANCE_AND_EXECUTION_JOURNAL_BEFORE_LIVE_SWITCH",
     }
