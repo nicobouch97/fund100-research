@@ -202,6 +202,13 @@ ALLOWED_LIVE_CREDENTIAL_SCRIPTS = {
 # Git-blob digest pins each reviewed implementation; any code change
 # removes credential eligibility until independently re-reviewed.
 PINNED_LIVE_CREDENTIAL_JOBS = {
+    # V7-X3 BTC/USD + GLD feasibility: SIX bounded GET only,
+    # mandatory original four holdings/account reconciliation, HIGH STOP.
+    # Source and transport dependencies pinned; NO account order authority.
+    (
+        ".github/workflows/fund100-v7-x3-real-btc-gold-six-getonly.yml",
+        "fund100_v7_x3_actual_live_crypto_gold_getonly_v1_0.py",
+    ): "08f1850e20c69a3072d397d8fb9e166e403374c9",
     # V6 source-reviewed CURRENT-account inspector: only 4 GET
     # requests; code is Git-blob pinned and workflow main-only.
     (
@@ -331,6 +338,47 @@ def approved_scoped_live_script(
     path = ROOT / script
     if not path.is_file() or git_blob_digest(path) != expected:
         return False
+
+    if script == "fund100_v7_x3_actual_live_crypto_gold_getonly_v1_0.py":
+        # Only reviewed original-account six-GET source, never a general
+        # scope for arbitrary scripts or new brokerage routes.
+        if workflow != ".github/workflows/fund100-v7-x3-real-btc-gold-six-getonly.yml":
+            return False
+        for required in (
+            "permissions:\n  contents: read",
+            "if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'",
+            "FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE",
+            "FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}",
+            "FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}",
+            "FUND100_LIVE_WRITE_MODE: DISABLED",
+            "ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}",
+            "ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}",
+            "python fund100_v7_x3_actual_live_crypto_gold_getonly_v1_0.py",
+            "test \"${FUND100_BROKER_KILL_SWITCH}\" = ENGAGED",
+        ):
+            if required not in source:
+                return False
+        for forbidden in (
+            "schedule:", "contents: write", "FUND100_LIVE_WRITE_MODE: ENABLED",
+            "python fund100_alpaca_live_writer_", "submit_order(", "place_order(",
+            "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN",
+        ):
+            if forbidden in source:
+                return False
+        read_only_dependencies = {
+            "fund100_alpaca_live_readonly_smoke.py":
+                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+            "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
+                "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
+            "fund100_v6_brokerless_transition_preview_v1_0.py":
+                "a0b4efc660f30395b6cdda104f0eddf63b8a6dd9",
+            "fund100_live_operator_control_v1_0.py":
+                PINNED_PRODUCTION_OPERATOR_MODULE,
+        }
+        for filename,source_sha in read_only_dependencies.items():
+            dependency=ROOT / filename
+            if not dependency.is_file() or git_blob_digest(dependency)!=source_sha:
+                return False
 
     if script == "fund100_v6_s1_live_risk_history_getonly_v1_0.py":
         # THIS SCRIPT ONLY: signed-for-review 5 GET, main branch, STOP
