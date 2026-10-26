@@ -120,7 +120,24 @@ def evaluate(*,snapshot:dict,target_weights:dict,expected_returns:dict,
     penalty=turnover*uncertainty/Decimal(10000)
     net=gain-cost-penalty
     required=max(min_edge,deployable*Decimal("0.005"))
-    if not sells and not buys:
+    # Dust is deliberately retained, so target-weight caps alone do not
+    # prove that the ACTUAL proposed post-trade portfolio respects risk.
+    # Transaction costs are real cash outflows, unlike the separate
+    # forecast-uncertainty reserve (which is only an economic hurdle).
+    post_positions={s:observed.get(s,Decimal(0))+effective[s] for s in symbols}
+    post_gross=sum(post_positions.values(),Decimal(0))
+    post_equity=equity-cost
+    post_cash=post_equity-post_gross
+    post_deployable=min(post_equity,CAP)
+    post_risk_ok=(
+        post_equity>0
+        and post_gross<=post_deployable*MAX_GROSS
+        and post_cash>=post_equity-post_deployable*MAX_GROSS
+        and all(v<=post_deployable*MAX_SYMBOL for v in post_positions.values())
+    )
+    if not post_risk_ok:
+        state="HOLD_POST_TRADE_RISK_LIMIT_BREACH"
+    elif not sells and not buys:
         state="HOLD_NO_MATERIAL_DIFFERENCE"
     elif net<=required:
         state="HOLD_INSUFFICIENT_COSTED_NET_ADVANTAGE"
@@ -148,6 +165,9 @@ def evaluate(*,snapshot:dict,target_weights:dict,expected_returns:dict,
         "estimated_net_opportunity_advantage_usd":cashfmt(net),
         "required_hysteresis_advantage_usd":cashfmt(required),
         "gross_turnover_usd":cashfmt(turnover),
+        "hypothetical_post_trade_gross_usd":cashfmt(post_gross),
+        "hypothetical_post_trade_cash_after_costs_usd":cashfmt(post_cash),
+        "hypothetical_post_trade_risk_within_limits":post_risk_ok,
         "buy_cash_currently_settled_usd":cashfmt(settled),
         "deployable_pilot_capital_usd":cashfmt(deployable),
         "future_sell_proceeds_assumed_spendable":False,
