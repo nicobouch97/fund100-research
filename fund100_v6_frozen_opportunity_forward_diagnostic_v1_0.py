@@ -73,7 +73,11 @@ def _summarize(rows):
             "all_candidate_windows_mean_realized_edge_after_cost_bps":None,
             "all_candidate_windows_mean_excess_vs_95pct_acwi_after_cost_bps":None,
             "candidate_selection_win_rate_vs_95pct_acwi_pct":None,
+            "all_candidate_windows_mean_excess_vs_same_gross_acwi_after_cost_bps":None,
+            "candidate_selection_win_rate_vs_same_gross_acwi_pct":None,
+            "hypothetical_trade_candidates_below_95pct_gross":0,
             "hurdle_pass_mean_excess_vs_95pct_acwi_after_cost_bps":None,
+            "hurdle_pass_mean_excess_vs_same_gross_acwi_after_cost_bps":None,
             "actual_forward_returns_are_out_of_sample":False,
         }
     selected=[r for r in rows if r["hypothetical_hurdle_pass"]]
@@ -85,6 +89,8 @@ def _summarize(rows):
     cand=[r["realized_edge_after_two_side_cost_bps"] for r in candidate]
     liquid=[r["selection_excess_vs_95pct_acwi_after_cost_bps"] for r in candidate]
     liquid_selected=[r["selection_excess_vs_95pct_acwi_after_cost_bps"] for r in selected]
+    same_gross=[r["selection_excess_vs_same_gross_acwi_after_cost_bps"] for r in candidate]
+    same_gross_selected=[r["selection_excess_vs_same_gross_acwi_after_cost_bps"] for r in selected]
     return {
         "evaluated_decision_windows":len(rows),
         "hypothetical_trade_candidate_windows":len(candidate),
@@ -103,7 +109,14 @@ def _summarize(rows):
         "candidate_selection_win_rate_vs_95pct_acwi_pct":(
             round(100*sum(v>0 for v in liquid)/len(liquid),4)
             if liquid else None),
+        "all_candidate_windows_mean_excess_vs_same_gross_acwi_after_cost_bps":mean(same_gross),
+        "candidate_selection_win_rate_vs_same_gross_acwi_pct":(
+            round(100*sum(v>0 for v in same_gross)/len(same_gross),4)
+            if same_gross else None),
+        "hypothetical_trade_candidates_below_95pct_gross":sum(
+            r["hypothetical_target_gross_weight"]<.949999 for r in candidate),
         "hurdle_pass_mean_excess_vs_95pct_acwi_after_cost_bps":mean(liquid_selected),
+        "hurdle_pass_mean_excess_vs_same_gross_acwi_after_cost_bps":mean(same_gross_selected),
         "actual_forward_returns_are_out_of_sample":False,
     }
 
@@ -111,8 +124,8 @@ def _retrospective_disposition(summary:dict)->str:
     """Reject unqualified economics; NEVER promote from reused historical data."""
     if summary["hypothetical_hurdle_pass_windows"]==0:
         return "REJECT_NO_SWITCH_CLEARED_COST_AND_UNCERTAINTY_HURDLE"
-    if (summary["hurdle_pass_mean_excess_vs_95pct_acwi_after_cost_bps"] is None
-        or summary["hurdle_pass_mean_excess_vs_95pct_acwi_after_cost_bps"]<=0):
+    if (summary["hurdle_pass_mean_excess_vs_same_gross_acwi_after_cost_bps"] is None
+        or summary["hurdle_pass_mean_excess_vs_same_gross_acwi_after_cost_bps"]<=0):
         return "REJECT_NO_POSITIVE_RISK_MATCHED_SELECTION_ADVANTAGE"
     if (summary["forecast_mae_improvement_vs_zero_naive_bps"] is None
         or summary["forecast_mae_improvement_vs_zero_naive_bps"]<=0):
@@ -196,6 +209,15 @@ def evaluate(*,history:pd.DataFrame,source_sha256:str,
         selection_turnover=sum(abs(v) for v in target_vs_acwi.values())
         selection_excess=(sum(float(weight)*actual[s] for s,weight in selected_weights.items())
                           -.95*actual["ACWI"]-.0035*selection_turnover)
+        # When fewer than three ETFs qualify, target gross can be 47.5%
+        # or 76%, not 95%. Compare against ACWI at EXACTLY the SAME gross
+        # exposure to isolate selection from cash/beta differences.
+        target_gross=sum(selected_weights.values())
+        target_vs_same_gross=selected_weights.copy()
+        target_vs_same_gross["ACWI"]=target_vs_same_gross.get("ACWI",0.)-target_gross
+        same_gross_turnover=sum(abs(v) for v in target_vs_same_gross.values())
+        same_gross_excess=(sum(float(w)*actual[s] for s,w in selected_weights.items())
+                           -target_gross*actual["ACWI"]-.0035*same_gross_turnover)
         windows.append({
             "decision_session":decision_day,
             "outcome_last_session":data.index[t+HORIZON].date().isoformat(),
@@ -211,6 +233,9 @@ def evaluate(*,history:pd.DataFrame,source_sha256:str,
                 realised_edge/100.*10000,6),
             "selection_excess_vs_95pct_acwi_after_cost_bps":(
                 round(selection_excess*10000,6) if considered else None),
+            "hypothetical_target_gross_weight":round(target_gross,6),
+            "selection_excess_vs_same_gross_acwi_after_cost_bps":(
+                round(same_gross_excess*10000,6) if considered else None),
         })
     if not windows:
         raise CalibrationStop("No fully realized, causal historical windows")
@@ -226,6 +251,8 @@ def evaluate(*,history:pd.DataFrame,source_sha256:str,
         "source_frozen_price_history_previously_studied":True,
         "independent_future_holdout_validated":False,
         "hypothetical_portfolio":"EACH_NONOVERLAPPING_EPISODE_STARTS_ACWI_50_CASH_50_USD_100",
+        "fixed_95pct_acwi_comparison_not_always_gross_matched":True,
+        "same_gross_acwi_comparison_matches_each_candidate_invested_weight":True,
         "price_signal_last_bar": "SESSION_BEFORE_DECISION",
         "realized_outcome_prices": "DECISION_DAY_CLOSE_TO_21_SESSIONS_LATER",
         "horizon_sessions":HORIZON,
