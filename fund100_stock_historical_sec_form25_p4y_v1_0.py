@@ -10,6 +10,7 @@ from collections import Counter
 from datetime import date
 from hashlib import sha256
 from html import unescape
+from html.parser import HTMLParser
 import json
 from pathlib import Path
 import re
@@ -32,10 +33,10 @@ CLASS_TAG = re.compile(
     r"<(?:[A-Za-z_][\w.-]*:)?descriptionClassSecurity(?:\s+[^>]*)?>"
     r"(.*?)</(?:[A-Za-z_][\w.-]*:)?descriptionClassSecurity\s*>",
     re.IGNORECASE | re.DOTALL)
-PLAIN_COMMON = re.compile(r"\bcommon\s+(?:stock|shares)\b", re.IGNORECASE)
+PLAIN_COMMON = re.compile(r"\b(?:common\s+(?:stock|shares)|ordinary\s+shares)\b", re.IGNORECASE)
 NONPLAIN = re.compile(
     r"\b(?:warrants?|rights?|units?|options?|preferred|depositary|notes?|bonds?|"
-    r"convertible|exchangeable)\b", re.IGNORECASE)
+    r"convertible|exchangeable|beneficial\s+interest|etfs?|fund)\b", re.IGNORECASE)
 
 
 class Form25SourceStop(ValueError):
@@ -85,11 +86,67 @@ def select_original_sample(events: list[dict]) -> list[dict]:
         row["form_type"], row["filing_date"], row["sec_archive_path"]))
 
 
-def parse_original_submission(raw: bytes, *, accession: str, form_type: str) -> dict:
-    """Validate original SGML identity and read only explicit XML class tags.
 
-    Absence/ambiguity of a structured description is an abstention, not
-    evidence of no common shares. A candidate is never a verified delisting.
+class _Form25CoverText(HTMLParser):
+    """Text from the primary original HTML/plain-text cover, not exhibits."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts = []
+        self.skip = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in {"script", "style"}:
+            self.skip += 1
+        if tag in {"br", "div", "p", "tr", "td", "hr"}:
+            self.parts.append(" ")
+
+    def handle_endtag(self, tag):
+        if tag in {"script", "style"}:
+            self.skip = max(0, self.skip - 1)
+        if tag in {"div", "p", "tr", "td"}:
+            self.parts.append(" ")
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.parts.append(data)
+
+
+def _issuer_cover_class(primary: str) -> str | None:
+    """Use both original Form 25 cover captions; never infer from free text.
+
+    HTML and plain-text issuer-filed Form 25 often lack XML class tags.
+    Requiring one exact address caption followed by one class caption
+    prevents matching stray 'common stock' in narrative or exhibits.
+    """
+    parser = _Form25CoverText()
+    parser.feed(primary)
+    parser.close()
+    text = re.sub(r"\s+", " ", unescape(" ".join(parser.parts))).strip()
+    labels = list(re.finditer(
+        r"\(\s*Description\s+of\s+class\s+of\s+securities\s*\)",
+        text, re.IGNORECASE))
+    if len(labels) != 1:
+        return None
+    prefix = text[:labels[0].start()]
+    addresses = list(re.finditer(
+        r"\(\s*Address\s*,?.{0,220}?principal\s+executive\s+offices\s*\)",
+        prefix, re.IGNORECASE))
+    if len(addresses) != 1:
+        return None
+    candidate = prefix[addresses[0].end():].strip(" -:;_")
+    if (not candidate or len(candidate) > 300 or
+        "<" in candidate or ">" in candidate or
+        "Description of class" in candidate):
+        return None
+    return candidate
+
+
+def parse_original_submission(raw: bytes, *, accession: str, form_type: str) -> dict:
+    """Validate SGML identity; prefer XML class, then issuer cover captions.
+
+    Missing/ambiguous class evidence abstains. A candidate is not a
+    verified listing, common-share delisting, or effective delisting date.
     """
     if (type(raw) is not bytes or not 0 < len(raw) <= MAX_ORIGINAL_BYTES
         or form_type not in ROLES
@@ -111,12 +168,22 @@ def parse_original_submission(raw: bytes, *, accession: str, form_type: str) -> 
     descriptions = [
         re.sub(r"\s+", " ", unescape(value)).strip()
         for body in primary for value in CLASS_TAG.findall(body)]
-    if (len(primary) != 1 or len(descriptions) != 1
-        or not descriptions[0] or len(descriptions[0]) > 300
-        or "<" in descriptions[0] or ">" in descriptions[0]):
+    if len(primary) != 1 or len(descriptions) > 1:
         return {"security_class_state": "NO_UNAMBIGUOUS_STRUCTURED_CLASS",
                 "security_class_description": None}
-    description = descriptions[0]
+    if descriptions:
+        description = descriptions[0]
+        source = "ORIGINAL_XML_CLASS"
+    elif form_type == "25":
+        description = _issuer_cover_class(primary[0])
+        source = "ORIGINAL_ISSUER_COVER_CAPTIONS"
+    else:
+        description = None
+        source = None
+    if (not description or len(description) > 300
+        or "<" in description or ">" in description):
+        return {"security_class_state": "NO_UNAMBIGUOUS_STRUCTURED_CLASS",
+                "security_class_description": None}
     if PLAIN_COMMON.search(description) and not NONPLAIN.search(description):
         state = "POSSIBLE_COMMON_EQUITY_REVIEW_ONLY"
     elif NONPLAIN.search(description) or not PLAIN_COMMON.search(description):
@@ -124,7 +191,8 @@ def parse_original_submission(raw: bytes, *, accession: str, form_type: str) -> 
     else:
         state = "NO_UNAMBIGUOUS_STRUCTURED_CLASS"
     return {"security_class_state": state,
-            "security_class_description": description}
+            "security_class_description": description,
+            "security_class_source": source}
 
 
 def _official_form25_get(url: str, agent: str) -> bytes:
