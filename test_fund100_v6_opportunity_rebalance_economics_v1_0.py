@@ -17,7 +17,7 @@ def case():
             "settled_cash_usd":"10.00",
             "positions_usd":{"ACWI":"50.00"},
         },
-        "target_weights":{"XLK":"0.50"},
+        "target_weights":{"XLK":"0.49"},
         "expected_returns":{"ACWI":"0.02","XLK":"0.15"},
         "round_trip_side_cost_bps":"15",
         "forecast_uncertainty_bps":"50",
@@ -31,12 +31,12 @@ def test_strong_alternative_recognised_after_two_sided_costs_but_settlement_stop
     z=run()
     assert z["state"]=="HYPOTHETICAL_SWITCH_SELL_SETTLEMENT_REQUIRED"
     assert z["hypothetical_sell_usd_by_symbol"]=={"ACWI":"50.00"}
-    assert z["hypothetical_buy_usd_by_symbol"]=={"XLK":"50.00"}
-    assert z["gross_turnover_usd"]=="100.00"
-    assert z["expected_gross_opportunity_advantage_usd"]=="6.50"
-    assert z["both_sides_transaction_cost_usd"]=="0.15"
-    assert z["additional_forecast_uncertainty_reserve_usd"]=="0.50"
-    assert z["estimated_net_opportunity_advantage_usd"]=="5.85"
+    assert z["hypothetical_buy_usd_by_symbol"]=={"XLK":"49.00"}
+    assert z["gross_turnover_usd"]=="99.00"
+    assert z["expected_gross_opportunity_advantage_usd"]=="6.35"
+    assert z["both_sides_transaction_cost_usd"]=="0.14"
+    assert z["additional_forecast_uncertainty_reserve_usd"]=="0.49"
+    assert z["estimated_net_opportunity_advantage_usd"]=="5.70"
     assert z["required_hysteresis_advantage_usd"]=="0.50"
     assert z["buy_cash_currently_settled_usd"]=="10.00"
     assert z["deployable_pilot_capital_usd"]=="100.00"
@@ -61,7 +61,7 @@ def test_small_unreliable_edge_holds_existing_holdings():
     c["expected_returns"]={"ACWI":"0.06","XLK":"0.07"}
     z=run(c)
     assert z["state"]=="HOLD_INSUFFICIENT_COSTED_NET_ADVANTAGE"
-    assert z["estimated_net_opportunity_advantage_usd"]=="-0.15"
+    assert z["estimated_net_opportunity_advantage_usd"]=="-0.21"
 
 def test_no_meaningful_difference_never_fabricates_trade():
     c=case()
@@ -94,7 +94,7 @@ def test_single_order_above_65_is_not_silently_authorized():
     c["snapshot"].update({
         "equity_usd":"125.00","cash_usd":"45.00",
         "settled_cash_usd":"45.00","positions_usd":{"ACWI":"80.00"}})
-    c["target_weights"]={"XLK":"0.50"}
+    c["target_weights"]={"XLK":"0.49"}
     c["expected_returns"]={"ACWI":"0.00","XLK":"0.40"}
     z=run(c)
     assert z["state"]=="HOLD_SWITCH_EXCEEDS_SINGLE_ORDER_CAP"
@@ -174,6 +174,31 @@ def test_transaction_costs_reduce_actual_cash_reserve_before_switch():
     assert z["hypothetical_post_trade_risk_within_limits"] is False
     assert z["state"]=="HOLD_POST_TRADE_RISK_LIMIT_BREACH"
     assert z["live_order_submission_authorized"] is False
+
+
+def test_costed_half_weight_cannot_exceed_actual_post_fee_equity():
+    # A 50% target of $100 becomes >50% of post-fee $99.65 NAV.
+    # The 95% gross/cash reserve test still passes: this is a
+    # separate single-name concentration breach.
+    c=case()
+    c["target_weights"]={"XLK":"0.50"}
+    c["round_trip_side_cost_bps"]="35"
+    c["forecast_uncertainty_bps"]="0"
+    z=run(c)
+    assert z["hypothetical_post_trade_gross_usd"]=="50.00"
+    assert z["hypothetical_post_trade_cash_after_costs_usd"]=="49.65"
+    assert z["hypothetical_post_trade_risk_within_limits"] is False
+    assert z["state"]=="HOLD_POST_TRADE_RISK_LIMIT_BREACH"
+    assert not z["live_order_submission_authorized"]
+
+def test_costed_49pct_name_remains_eligible_under_post_fee_cap():
+    c=case()
+    c["round_trip_side_cost_bps"]="35"
+    c["forecast_uncertainty_bps"]="0"
+    z=run(c)
+    assert z["hypothetical_post_trade_risk_within_limits"] is True
+    assert z["state"]=="HYPOTHETICAL_SWITCH_SELL_SETTLEMENT_REQUIRED"
+    assert not z["live_order_submission_authorized"]
 
 
 @pytest.mark.parametrize("bad",[

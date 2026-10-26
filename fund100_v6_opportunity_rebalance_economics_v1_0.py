@@ -128,12 +128,14 @@ def evaluate(*,snapshot:dict,target_weights:dict,expected_returns:dict,
     post_gross=sum(post_positions.values(),Decimal(0))
     post_equity=equity-cost
     post_cash=post_equity-post_gross
+    # Fees shrink post-trade NAV; a 50% pre-cost target can become
+    # >50% of actual deployable equity after execution friction.
     post_deployable=min(post_equity,CAP)
     post_risk_ok=(
         post_equity>0
         and post_gross<=post_deployable*MAX_GROSS
         and post_cash>=post_equity-post_deployable*MAX_GROSS
-        and all(v<=deployable*MAX_SYMBOL for v in post_positions.values())
+        and all(v<=post_deployable*MAX_SYMBOL for v in post_positions.values())
     )
     if not post_risk_ok:
         state="HOLD_POST_TRADE_RISK_LIMIT_BREACH"
