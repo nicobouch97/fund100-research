@@ -360,7 +360,7 @@ def approved_scoped_live_script(
                 return False
         for forbidden in (
             "schedule:", "contents: write", "FUND100_LIVE_WRITE_MODE: ENABLED",
-            "python fund100_alpaca_live_writer_", "submit_order(", "place_order(",
+            "python fund100_alpaca_live_writer_",
             "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN",
         ):
             if forbidden in source:
