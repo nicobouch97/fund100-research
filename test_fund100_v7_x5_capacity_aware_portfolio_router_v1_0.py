@@ -44,8 +44,8 @@ def test_same_weights_and_number_of_positions_at_thousand_to_million():
     for tier,r in sample["scenarios"].items():
         assert r["target_asset_count"]==5
         assert Decimal(r["target_non_cash_weight_sum"])==Decimal("0.85")
-        assert r["target_cash_reserve_weight"]=="0.15"
-        assert r["crypto_allocation_weight"]=="0.05"
+        assert Decimal(r["target_cash_reserve_weight"])==Decimal("0.15")
+        assert Decimal(r["crypto_allocation_weight"])==Decimal("0.05")
         assert r["funding_status"]=="SELL_OR_DEPOSIT_FIRST_THEN_REVERIFY_SETTLEMENT"
         assert r["proceeds_of_unsettled_sales_used_for_buys"] is False
         assert r["current_LIVE_authorized_principal_USD"]=="130.30"
