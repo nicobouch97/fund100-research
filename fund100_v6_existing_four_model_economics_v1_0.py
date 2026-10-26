@@ -315,6 +315,131 @@ def _fixed_blend_factor_proxy_attribution(prices:pd.DataFrame, paths:dict,
             100*float(np.std(residual,ddof=1)*np.sqrt(252)),4))
 
 
+
+# Transparent, buy-and-hold ETF controls: an economic alternative to four
+# overlapping, internally trading model sleeves. The allocation is fixed
+# before observing historical outcomes, with no fitted weights or timing.
+SIMPLE_ETF_CONTROLS={
+    "ACWI_ONLY":{"ACWI_BENCHMARK":1.0},
+    "FOUR_ETF_EQUAL_BUY_HOLD":{"ACWI_BENCHMARK":.25,"XLK":.25,"XLE":.25,"IWM":.25},
+}
+
+
+def _costed_etf_buy_hold_nav(prices:pd.DataFrame, first:int,
+                             weights:dict, cost_bps:int)->np.ndarray:
+    """Buy the specified ETFs at first eligible close, never rebalance.
+
+    A one-time entry side is charged at the identical rate as the model
+    sleeve comparator. Prices are frozen adjusted-close *proxies*, not
+    verified executable trade prints or ETF constituent histories.
+    """
+    if type(cost_bps) is not int or cost_bps not in COSTS:
+        raise EconomicsStop("Unregistered ETF control transaction cost")
+    if (not isinstance(prices,pd.DataFrame)
+        or not isinstance(prices.index,pd.DatetimeIndex)
+        or prices.index.has_duplicates or not prices.index.is_monotonic_increasing
+        or prices.index.tz is not None or type(first) is not int
+        or not 0<=first<len(prices)):
+        raise EconomicsStop("Invalid ETF control sessions or entry")
+    if (type(weights) is not dict or not weights
+        or not set(weights)<=set(FACTOR_PROXY_PRICE_COLUMNS)
+        or any(type(w) not in (float,int) or not np.isfinite(w) or w<0
+               for w in weights.values())
+        or not np.isclose(sum(weights.values()),1.,atol=1e-12,rtol=0)):
+        raise EconomicsStop("Invalid unlevered ETF control weights")
+    if any(s not in prices.columns for s in weights):
+        raise EconomicsStop("Missing ETF control price")
+    px=prices.loc[:,list(weights)].to_numpy(dtype=float)
+    if not np.isfinite(px).all() or (px<=0).any():
+        raise EconomicsStop("Invalid ETF control price")
+    relative=px[first:]/px[first]
+    growth=relative@np.array(list(weights.values()),dtype=float)
+    nav=np.full(len(prices),100.,dtype=float)
+    nav[first:]=100*(1-cost_bps/10000)*growth
+    if not np.isfinite(nav).all() or (nav<=0).any():
+        raise EconomicsStop("Invalid costed ETF control NAV")
+    return nav
+
+
+def _simple_etf_comparator(prices:pd.DataFrame, paths:dict,
+                           begin:str, cost_bps:int)->dict:
+    """Same-entry, same-session four-model vs two simple ETF controls.
+
+    Unlike contemporaneous factor regression, these are fixed, long-only
+    ETF portfolios one could conceptually hold without forecasting. Their
+    adjusted-price backtests still lack trade-print/slippage verification.
+    """
+    if type(cost_bps) is not int or cost_bps not in COSTS:
+        raise EconomicsStop("Unregistered ETF comparator cost")
+    try:
+        dates,benchmark,navs=adaptive._verified_paths(paths)
+    except adaptive.WalkforwardStop as exc:
+        raise EconomicsStop("Invalid original model paths for ETF control") from exc
+    if (not isinstance(prices,pd.DataFrame) or not dates.equals(prices.index)
+        or any(s not in prices.columns for s in FACTOR_PROXY_PRICE_COLUMNS)):
+        raise EconomicsStop("ETF control prices and model dates disagree")
+    px=prices.loc[:,FACTOR_PROXY_PRICE_COLUMNS].to_numpy(dtype=float)
+    if not np.isfinite(px).all() or (px<=0).any():
+        raise EconomicsStop("Invalid ETF control frozen prices")
+    if not np.allclose(px[:,0]/px[0,0],benchmark/benchmark[0],
+                       rtol=1e-9,atol=1e-9):
+        raise EconomicsStop("ETF control ACWI benchmark differs from models")
+    first=next((t for t in range(adaptive.TRAINING_RETURNS+1,len(dates))
+                if dates[t].to_period("Q")!=dates[t-1].to_period("Q")),None)
+    if first is None or type(begin) is not str or begin not in WINDOWS.values():
+        raise EconomicsStop("Missing common eligible ETF control entry/window")
+    start=max(first,int(dates.searchsorted(pd.Timestamp(begin))))
+    if len(dates)-start<260:
+        raise EconomicsStop("Insufficient matched ETF control sessions")
+    blend=adaptive._fixed_equal_model_blend(dates,navs,cost_bps)
+    controls={name:_costed_etf_buy_hold_nav(prices,first,weights,cost_bps)
+              for name,weights in SIMPLE_ETF_CONTROLS.items()}
+    def stats(nav):
+        view=nav[start:]
+        ret=view[1:]/view[:-1]-1
+        years=(dates[-1]-dates[start]).days/365.25
+        cagr=(view[-1]/view[0])**(1/years)-1
+        drawdown=float((view/np.maximum.accumulate(view)-1).min())
+        vol=float(np.std(ret,ddof=1)*np.sqrt(252))
+        if (not np.isfinite([cagr,drawdown,vol]).all() or years<=0
+            or (ret<=-1).any()):
+            raise EconomicsStop("Invalid ETF control risk/return")
+        return {
+            "historical_cagr_pct":round(100*float(cagr),4),
+            "historical_max_drawdown_pct":round(100*drawdown,4),
+            "historical_annual_volatility_pct":round(100*vol,4),
+            "historical_worst_session_pct":round(100*float(ret.min()),4),
+        }
+    blend_metrics=stats(blend)
+    control_metrics={name:stats(nav) for name,nav in controls.items()}
+    return {
+        "status":"ALREADY_INSPECTED_COSTED_SIMPLE_ETF_COMPARATORS_NO_PROMOTION",
+        "first_eligible_entry_session":dates[first].date().isoformat(),
+        "first_comparison_session":dates[start].date().isoformat(),
+        "last_session":dates[-1].date().isoformat(),
+        "sessions":len(dates)-start,
+        "one_way_entry_cost_bps":cost_bps,
+        "single_entry_trade_only_no_rebalancing":True,
+        "entry_fee_cancels_from_post_entry_window_cagr":True,
+        "control_weights":SIMPLE_ETF_CONTROLS,
+        "fixed_four_model_blend":blend_metrics,
+        "costed_simple_etf_controls":control_metrics,
+        "fixed_blend_minus_ACWI_only_CAGR_pp":round(
+            blend_metrics["historical_cagr_pct"]-
+            control_metrics["ACWI_ONLY"]["historical_cagr_pct"],4),
+        "fixed_blend_minus_four_ETF_buy_hold_CAGR_pp":round(
+            blend_metrics["historical_cagr_pct"]-
+            control_metrics["FOUR_ETF_EQUAL_BUY_HOLD"]["historical_cagr_pct"],4),
+        "four_model_blend_costs_include_original_internal_turnover":True,
+        "simple_controls_have_no_internal_turnover_after_entry":True,
+        "ETF_prices_are_adjusted_history_not_verified_executable_fills":True,
+        "all_windows_already_examined_no_independent_holdout":True,
+        "not_underlying_stock_lookthrough_or_risk_matched":True,
+        "strategy_promoted_for_live":None,
+        "broker_orders":0,
+    }
+
+
 def _beta_attribution(path:pd.DataFrame)->dict:
     """Descriptive same-session OLS, not a forward alpha estimate or strategy.
 
@@ -439,6 +564,7 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
     causal_switching={}
     lookthrough={}
     factor_proxy_attribution={}
+    simple_etf_comparators={}
     for cost in COSTS:
         frames=_all_paths(data,cost)
         causal_switching[str(cost)] = adaptive.evaluate(
@@ -447,6 +573,7 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
         uncertainty_windows={}
         lookthrough_windows={}
         factor_windows={}
+        simple_windows={}
         for label,start in WINDOWS.items():
             windows[label]={
                 name:_metrics(frame,start,drawdown_guard=.20,vol_guard=.35)
@@ -458,10 +585,12 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
             lookthrough_windows[label]=_fixed_blend_etf_lookthrough(frames,start)
             factor_windows[label]=_fixed_blend_factor_proxy_attribution(
                 data,frames,start,cost)
+            simple_windows[label]=_simple_etf_comparator(data,frames,start,cost)
         output[str(cost)]=windows
         uncertainty[str(cost)]=uncertainty_windows
         lookthrough[str(cost)]=lookthrough_windows
         factor_proxy_attribution[str(cost)]=factor_windows
+        simple_etf_comparators[str(cost)]=simple_windows
     return {
         "schema":SCHEMA,
         "status":"ORIGINAL_MODELS_COMPARABLE_HISTORICAL_NOT_INDEPENDENT_NOT_LIVE",
@@ -485,6 +614,8 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
         "causal_quarterly_model_switching_exploratory":causal_switching,
         "fixed_four_model_ETF_lookthrough_by_window":lookthrough,
         "fixed_four_model_factor_proxy_attribution_by_window":factor_proxy_attribution,
+        "costed_simple_ETF_buy_hold_comparators_by_window":simple_etf_comparators,
+        "simple_ETF_comparators_not_risk_matched_or_independent_holdout":True,
         "factor_proxy_regression_is_descriptive_not_stock_lookthrough":True,
         "lookthrough_is_ETF_ticker_level_not_underlying_stock_constituents":True,
         "meta_selection_rule_predeclared_not_parameter_optimized":True,
@@ -516,6 +647,11 @@ def main():
                     "maxDD",val["historical_max_drawdown_pct"],
                     "vol",val["historical_realised_vol_pct"],
                     "turnover",val["historical_one_way_turnover_NAV_per_year"])
+    for label,comparison in res["costed_simple_ETF_buy_hold_comparators_by_window"]["15"].items():
+        print("15bp simple ETF control",label,
+              "blend minus ACWI CAGR pp",comparison["fixed_blend_minus_ACWI_only_CAGR_pp"],
+              "blend minus four-ETF buy-hold CAGR pp",
+              comparison["fixed_blend_minus_four_ETF_buy_hold_CAGR_pp"])
     print("Four existing strategies, no new parameters, no LIVE trading permission.")
 
 if __name__=="__main__":

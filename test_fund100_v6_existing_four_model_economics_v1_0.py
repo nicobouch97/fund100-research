@@ -41,6 +41,21 @@ def test_source_exact_original_prices_full_four_models_three_costs():
     assert report["meta_selector_not_independent_holdout_or_live_strategy"]
     assert set(report["fixed_four_model_ETF_lookthrough_by_window"])=={"5","15","35"}
     assert report["lookthrough_is_ETF_ticker_level_not_underlying_stock_constituents"]
+    assert report["simple_ETF_comparators_not_risk_matched_or_independent_holdout"]
+    assert set(report["costed_simple_ETF_buy_hold_comparators_by_window"])=={"5","15","35"}
+    for cost,windows in report["costed_simple_ETF_buy_hold_comparators_by_window"].items():
+        assert set(windows)==set(e.WINDOWS)
+        for label,comparison in windows.items():
+            assert comparison["status"]=="ALREADY_INSPECTED_COSTED_SIMPLE_ETF_COMPARATORS_NO_PROMOTION"
+            assert comparison["one_way_entry_cost_bps"]==int(cost)
+            assert comparison["sessions"]>=260
+            assert comparison["single_entry_trade_only_no_rebalancing"]
+            assert comparison["four_model_blend_costs_include_original_internal_turnover"]
+            assert comparison["ETF_prices_are_adjusted_history_not_verified_executable_fills"]
+            assert comparison["all_windows_already_examined_no_independent_holdout"]
+            assert comparison["broker_orders"]==0
+            assert comparison["strategy_promoted_for_live"] is None
+            assert set(comparison["costed_simple_etf_controls"])==set(e.SIMPLE_ETF_CONTROLS)
     for cost,windows in report["fixed_four_model_ETF_lookthrough_by_window"].items():
         assert set(windows)==set(e.WINDOWS)
         for window,metrics in windows.items():
@@ -326,3 +341,58 @@ def test_frozen_four_model_factor_proxy_attribution_is_research_only():
                         result["historical_ACWI_only_R2_pct"])
     assert report["strategy_promoted_for_funded_trading"] is None
     assert report["real_broker_orders"]==0
+
+
+
+def test_simple_etf_controls_charge_one_entry_side_and_never_rebalance():
+    prices,paths=_synthetic_factor_proxy_inputs()
+    dates=prices.index
+    first=next(t for t in range(e.adaptive.TRAINING_RETURNS+1,len(dates))
+               if dates[t].to_period("Q")!=dates[t-1].to_period("Q"))
+    weights=e.SIMPLE_ETF_CONTROLS["FOUR_ETF_EQUAL_BUY_HOLD"]
+    nav=e._costed_etf_buy_hold_nav(prices,first,weights,15)
+    assert nav[first-1]==pytest.approx(100.)
+    assert nav[first]==pytest.approx(99.85)
+    expected=99.85*sum(.25*prices[s].iloc[first+1]/prices[s].iloc[first]
+                       for s in weights)
+    assert nav[first+1]==pytest.approx(expected)
+    high_cost=e._costed_etf_buy_hold_nav(prices,first,weights,35)
+    assert high_cost[first]==pytest.approx(99.65)
+    assert high_cost[-1]/nav[-1]==pytest.approx(99.65/99.85)
+    # Altering tomorrow's price cannot change any already-observed NAV.
+    later=prices.copy()
+    later.loc[later.index[-1],"XLK"]*=2
+    altered=e._costed_etf_buy_hold_nav(later,first,weights,15)
+    np.testing.assert_allclose(altered[:-1],nav[:-1],rtol=0,atol=1e-10)
+    assert altered[-1]>nav[-1]
+    comparison=e._simple_etf_comparator(prices,paths,"2014-01-01",15)
+    assert comparison["first_eligible_entry_session"]==str(dates[first].date())
+    assert comparison["first_comparison_session"]==str(dates[first].date())
+    assert comparison["fixed_four_model_blend"]["historical_max_drawdown_pct"]<=0
+    assert comparison["costed_simple_etf_controls"]["ACWI_ONLY"]["historical_annual_volatility_pct"]>=0
+    assert comparison["entry_fee_cancels_from_post_entry_window_cagr"]
+    assert comparison["not_underlying_stock_lookthrough_or_risk_matched"]
+
+
+def test_simple_etf_controls_fail_closed_on_source_mismatch_or_invalid_costs():
+    prices,paths=_synthetic_factor_proxy_inputs()
+    with pytest.raises(e.EconomicsStop,match="cost"):
+        e._simple_etf_comparator(prices,paths,"2014-01-01",20)
+    with pytest.raises(e.EconomicsStop,match="dates disagree"):
+        e._simple_etf_comparator(prices.iloc[1:],paths,"2014-01-01",15)
+    bad=prices.copy()
+    bad.loc[bad.index[100],"ACWI_BENCHMARK"]*=1.01
+    with pytest.raises(e.EconomicsStop,match="benchmark differs"):
+        e._simple_etf_comparator(bad,paths,"2014-01-01",15)
+    bad=prices.copy()
+    bad.loc[bad.index[100],"XLK"]=float("nan")
+    with pytest.raises(e.EconomicsStop,match="frozen prices"):
+        e._simple_etf_comparator(bad,paths,"2014-01-01",15)
+    with pytest.raises(e.EconomicsStop,match="window"):
+        e._simple_etf_comparator(prices,paths,"2025-01-01",15)
+    with pytest.raises(e.EconomicsStop,match="weights"):
+        e._costed_etf_buy_hold_nav(prices,300,{"XLK":.5,"XLE":.6},15)
+    with pytest.raises(e.EconomicsStop,match="weights"):
+        e._costed_etf_buy_hold_nav(prices,300,{"XLK":-1.,"XLE":2.},15)
+    with pytest.raises(e.EconomicsStop,match="cost"):
+        e._costed_etf_buy_hold_nav(prices,300,{"XLK":1.},True)
