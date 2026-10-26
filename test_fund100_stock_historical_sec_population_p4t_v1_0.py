@@ -477,3 +477,12 @@ def test_form25_original_capture_rejects_tampered_original_index_manifest(
     manifest.write_bytes(manifest.read_bytes() + b"\n")
     with pytest.raises(p4y.Form25SourceStop, match="provenance"):
         p4y.capture_original_sample(tmp_path, "Research contact@example.org")
+
+
+def test_form25_original_rejects_embedded_markup_in_security_class_title():
+    raw = _form25_submission(
+        "0001001001-17-000101", "25-NSE", "<b>Common Stock</b>")
+    out = p4y.parse_original_submission(
+        raw, accession="0001001001-17-000101", form_type="25-NSE")
+    assert out["security_class_state"] == "NO_UNAMBIGUOUS_STRUCTURED_CLASS"
+    assert out["security_class_description"] is None
