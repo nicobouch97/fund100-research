@@ -33,8 +33,8 @@ jobs:
           set -euo pipefail
           python -m pytest -q test_fund100_v7_french_momentum_population_v1_0.py
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
-      - name: Acquire two original official French academic ZIP sources (main only)
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      - name: Acquire two original official French academic ZIP sources (public; no secrets)
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           python fund100_v7_french_momentum_population_v1_0.py \
@@ -60,7 +60,7 @@ jobs:
                 r['predeclared_35bps_era_screen'])
           PY
       - name: Archive original public university bytes and diagnostic
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: fund100-v7-original-french-momentum-population-${{ github.run_id }}
