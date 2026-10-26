@@ -62,15 +62,22 @@ def _summarize(rows):
     if not rows:
         return {
             "evaluated_decision_windows":0,
+            "hypothetical_trade_candidate_windows":0,
             "hypothetical_hurdle_pass_windows":0,
             "hurdle_pass_win_rate_pct":None,
             "hurdle_pass_mean_realized_edge_after_two_side_cost_bps":None,
             "hurdle_pass_total_realized_edge_after_two_side_cost_bps":None,
             "all_windows_mean_absolute_forecast_error_bps":None,
             "all_windows_zero_return_naive_mae_bps":None,
+            "forecast_mae_improvement_vs_zero_naive_bps":None,
             "all_candidate_windows_mean_realized_edge_after_cost_bps":None,
             "all_candidate_windows_mean_excess_vs_95pct_acwi_after_cost_bps":None,
+            "candidate_selection_win_rate_vs_95pct_acwi_pct":None,
+            "all_candidate_windows_mean_excess_vs_same_gross_acwi_after_cost_bps":None,
+            "candidate_selection_win_rate_vs_same_gross_acwi_pct":None,
+            "hypothetical_trade_candidates_below_95pct_gross":0,
             "hurdle_pass_mean_excess_vs_95pct_acwi_after_cost_bps":None,
+            "hurdle_pass_mean_excess_vs_same_gross_acwi_after_cost_bps":None,
             "actual_forward_returns_are_out_of_sample":False,
         }
     selected=[r for r in rows if r["hypothetical_hurdle_pass"]]
@@ -82,8 +89,11 @@ def _summarize(rows):
     cand=[r["realized_edge_after_two_side_cost_bps"] for r in candidate]
     liquid=[r["selection_excess_vs_95pct_acwi_after_cost_bps"] for r in candidate]
     liquid_selected=[r["selection_excess_vs_95pct_acwi_after_cost_bps"] for r in selected]
+    same_gross=[r["selection_excess_vs_same_gross_acwi_after_cost_bps"] for r in candidate]
+    same_gross_selected=[r["selection_excess_vs_same_gross_acwi_after_cost_bps"] for r in selected]
     return {
         "evaluated_decision_windows":len(rows),
+        "hypothetical_trade_candidate_windows":len(candidate),
         "hypothetical_hurdle_pass_windows":len(selected),
         "hurdle_pass_win_rate_pct":(
             round(100*sum(v>0 for v in realised)/len(realised),4)
@@ -93,11 +103,42 @@ def _summarize(rows):
             round(sum(realised),4) if realised else None),
         "all_windows_mean_absolute_forecast_error_bps":mean(errors),
         "all_windows_zero_return_naive_mae_bps":mean(zero),
+        "forecast_mae_improvement_vs_zero_naive_bps":round(mean(zero)-mean(errors),4),
         "all_candidate_windows_mean_realized_edge_after_cost_bps":mean(cand),
         "all_candidate_windows_mean_excess_vs_95pct_acwi_after_cost_bps":mean(liquid),
+        "candidate_selection_win_rate_vs_95pct_acwi_pct":(
+            round(100*sum(v>0 for v in liquid)/len(liquid),4)
+            if liquid else None),
+        "all_candidate_windows_mean_excess_vs_same_gross_acwi_after_cost_bps":mean(same_gross),
+        "candidate_selection_win_rate_vs_same_gross_acwi_pct":(
+            round(100*sum(v>0 for v in same_gross)/len(same_gross),4)
+            if same_gross else None),
+        "hypothetical_trade_candidates_below_95pct_gross":sum(
+            r["hypothetical_target_gross_weight"]<.949999 for r in candidate),
         "hurdle_pass_mean_excess_vs_95pct_acwi_after_cost_bps":mean(liquid_selected),
+        "hurdle_pass_mean_excess_vs_same_gross_acwi_after_cost_bps":mean(same_gross_selected),
         "actual_forward_returns_are_out_of_sample":False,
     }
+
+def _selection_excess_vs_acwi(*,weights:dict,actual:dict,benchmark_gross:float)->float:
+    """Costed one-episode ETF selection edge vs ACWI at stated gross weight."""
+    delta=weights.copy()
+    delta["ACWI"]=delta.get("ACWI",0.)-benchmark_gross
+    return (sum(float(w)*actual[s] for s,w in weights.items())
+            -benchmark_gross*actual["ACWI"]
+            -.0035*sum(abs(v) for v in delta.values()))
+
+def _retrospective_disposition(summary:dict)->str:
+    """Reject unqualified economics; NEVER promote from reused historical data."""
+    if summary["hypothetical_hurdle_pass_windows"]==0:
+        return "REJECT_NO_SWITCH_CLEARED_COST_AND_UNCERTAINTY_HURDLE"
+    if (summary["hurdle_pass_mean_excess_vs_same_gross_acwi_after_cost_bps"] is None
+        or summary["hurdle_pass_mean_excess_vs_same_gross_acwi_after_cost_bps"]<=0):
+        return "REJECT_NO_POSITIVE_RISK_MATCHED_SELECTION_ADVANTAGE"
+    if (summary["forecast_mae_improvement_vs_zero_naive_bps"] is None
+        or summary["forecast_mae_improvement_vs_zero_naive_bps"]<=0):
+        return "REJECT_NO_NAIVE_FORECAST_ERROR_IMPROVEMENT"
+    return "UNPROVEN_HISTORICAL_SCREEN_ONLY_REQUIRES_INDEPENDENT_VALIDATION"
 
 def evaluate(*,history:pd.DataFrame,source_sha256:str,
              start_index:int|None=None)->dict:
@@ -171,11 +212,14 @@ def evaluate(*,history:pd.DataFrame,source_sha256:str,
         # Benchmark starts ACWI 95/cash 5 in EACH independent episode.
         # Charge sell+buy costs on genuinely changed ETF exposures.
         selected_weights={s:float(v) for s,v in out["hypothetical_target_weights"].items()}
-        target_vs_acwi=selected_weights.copy()
-        target_vs_acwi["ACWI"]=target_vs_acwi.get("ACWI",0.)-.95
-        selection_turnover=sum(abs(v) for v in target_vs_acwi.values())
-        selection_excess=(sum(float(weight)*actual[s] for s,weight in selected_weights.items())
-                          -.95*actual["ACWI"]-.0035*selection_turnover)
+        target_gross=sum(selected_weights.values())
+        # Fixed 95% ACWI is NOT gross-matched when fewer than three ETFs
+        # qualify. Preserve that legacy comparison for continuity, but use
+        # a same-gross ACWI benchmark to isolate stock/sector selection.
+        selection_excess=_selection_excess_vs_acwi(
+            weights=selected_weights,actual=actual,benchmark_gross=.95)
+        same_gross_excess=_selection_excess_vs_acwi(
+            weights=selected_weights,actual=actual,benchmark_gross=target_gross)
         windows.append({
             "decision_session":decision_day,
             "outcome_last_session":data.index[t+HORIZON].date().isoformat(),
@@ -191,12 +235,16 @@ def evaluate(*,history:pd.DataFrame,source_sha256:str,
                 realised_edge/100.*10000,6),
             "selection_excess_vs_95pct_acwi_after_cost_bps":(
                 round(selection_excess*10000,6) if considered else None),
+            "hypothetical_target_gross_weight":round(target_gross,6),
+            "selection_excess_vs_same_gross_acwi_after_cost_bps":(
+                round(same_gross_excess*10000,6) if considered else None),
         })
     if not windows:
         raise CalibrationStop("No fully realized, causal historical windows")
     # Predeclared calendar splits. Empty windows remain null, not invented.
     sections={c:_summarize([x for x in windows if x["cohort"]==c])
               for c in SCENARIOS}
+    overall=_summarize(windows)
     return {
         "schema":SCHEMA,
         "status":"RESEARCH_ONLY_ALREADY_INSPECTED_HISTORICAL_DATA_NOT_PROSPECTIVE",
@@ -205,6 +253,8 @@ def evaluate(*,history:pd.DataFrame,source_sha256:str,
         "source_frozen_price_history_previously_studied":True,
         "independent_future_holdout_validated":False,
         "hypothetical_portfolio":"EACH_NONOVERLAPPING_EPISODE_STARTS_ACWI_50_CASH_50_USD_100",
+        "fixed_95pct_acwi_comparison_not_always_gross_matched":True,
+        "same_gross_acwi_comparison_matches_each_candidate_invested_weight":True,
         "price_signal_last_bar": "SESSION_BEFORE_DECISION",
         "realized_outcome_prices": "DECISION_DAY_CLOSE_TO_21_SESSIONS_LATER",
         "horizon_sessions":HORIZON,
@@ -214,8 +264,10 @@ def evaluate(*,history:pd.DataFrame,source_sha256:str,
         "uncertainty_buffer_not_an_actual_trading_cost":True,
         "never_assume_sale_settlement_or_live_execution":True,
         "one_time_source_migration_does_not_infer_order_permission":True,
-        "overall":_summarize(windows),
+        "overall":overall,
         "calendar_windows":sections,
+        "retrospective_evidence_disposition":_retrospective_disposition(overall),
+        "retrospective_disposition_never_promotes_or_unlocks_live":True,
         # Full dated per-episode trace is preserved for audit and lag tests.
         "nonoverlapping_episodes":windows,
         "first_evaluated_decision":windows[0]["decision_session"],

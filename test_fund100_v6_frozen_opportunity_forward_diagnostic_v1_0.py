@@ -43,6 +43,21 @@ def test_disjoint_forward_windows_and_clear_calibration_limitation():
     assert result["overall"]["all_windows_zero_return_naive_mae_bps"] is not None
     assert "all_candidate_windows_mean_excess_vs_95pct_acwi_after_cost_bps" in result["overall"]
     assert "hurdle_pass_mean_excess_vs_95pct_acwi_after_cost_bps" in result["overall"]
+    assert result["overall"]["hypothetical_trade_candidate_windows"]==sum(
+        row["proposed_switch_has_trade"] for row in rows)
+    assert result["overall"]["forecast_mae_improvement_vs_zero_naive_bps"]==pytest.approx(
+        round(result["overall"]["all_windows_zero_return_naive_mae_bps"]
+              -result["overall"]["all_windows_mean_absolute_forecast_error_bps"],4))
+    assert result["retrospective_disposition_never_promotes_or_unlocks_live"] is True
+    assert result["fixed_95pct_acwi_comparison_not_always_gross_matched"] is True
+    assert result["same_gross_acwi_comparison_matches_each_candidate_invested_weight"] is True
+    assert result["overall"]["hypothetical_trade_candidates_below_95pct_gross"]==sum(
+        row["hypothetical_target_gross_weight"]<.949999
+        for row in rows if row["proposed_switch_has_trade"])
+    assert all(0<=row["hypothetical_target_gross_weight"]<=.95+1e-9
+               for row in rows)
+    assert all(row["selection_excess_vs_same_gross_acwi_after_cost_bps"] is not None
+               for row in rows if row["proposed_switch_has_trade"])
     assert all(row["selection_excess_vs_95pct_acwi_after_cost_bps"] is not None
                for row in rows if row["proposed_switch_has_trade"])
 
@@ -55,6 +70,11 @@ def test_frozen_original_file_is_actually_hash_verified_not_caller_asserted():
         result["overall"]["hurdle_pass_total_realized_edge_after_two_side_cost_bps"],float)
     assert result["broker_orders"]==0
     assert result["source_frozen_price_history_previously_studied"] is True
+    assert result["overall"]["evaluated_decision_windows"]==151
+    assert result["overall"]["hypothetical_hurdle_pass_windows"]==0
+    assert result["retrospective_evidence_disposition"]==(
+        "REJECT_NO_SWITCH_CLEARED_COST_AND_UNCERTAINTY_HURDLE")
+    assert result["overall"]["all_candidate_windows_mean_excess_vs_95pct_acwi_after_cost_bps"]<0
 
 def test_signal_uses_past_bars_outcome_uses_next_tradable_close():
     f=fake_prices()
@@ -126,3 +146,35 @@ def test_diagnostic_never_changes_execution_path_or_original_acwi_first_fence():
                    "FUND100_PRIVATE_STATE_READ_TOKEN",
                    "method=\"POST\"","git push","import os"):
         assert banned not in src
+
+
+def test_retrospective_disposition_rejects_weak_evidence_and_never_promotes():
+    base={
+        "hypothetical_hurdle_pass_windows":0,
+        "hurdle_pass_mean_excess_vs_same_gross_acwi_after_cost_bps":None,
+        "forecast_mae_improvement_vs_zero_naive_bps":None,
+    }
+    assert study._retrospective_disposition(base).startswith("REJECT_NO_SWITCH")
+    base["hypothetical_hurdle_pass_windows"]=3
+    base["hurdle_pass_mean_excess_vs_same_gross_acwi_after_cost_bps"]=-1.0
+    assert study._retrospective_disposition(base).startswith("REJECT_NO_POSITIVE")
+    base["hurdle_pass_mean_excess_vs_same_gross_acwi_after_cost_bps"]=5.0
+    base["forecast_mae_improvement_vs_zero_naive_bps"]=-0.1
+    assert study._retrospective_disposition(base).startswith("REJECT_NO_NAIVE")
+    base["forecast_mae_improvement_vs_zero_naive_bps"]=0.1
+    assert study._retrospective_disposition(base)==(
+        "UNPROVEN_HISTORICAL_SCREEN_ONLY_REQUIRES_INDEPENDENT_VALIDATION")
+
+
+def test_same_gross_acwi_comparator_does_not_confuse_cash_beta_with_selection():
+    actual={"ACWI":.02,"XLK":.04}
+    weights={"XLK":.475}
+    matched=study._selection_excess_vs_acwi(
+        weights=weights,actual=actual,benchmark_gross=.475)
+    fixed95=study._selection_excess_vs_acwi(
+        weights=weights,actual=actual,benchmark_gross=.95)
+    assert matched==pytest.approx(.475*(.04-.02)-.0035*(.475+.475))
+    assert fixed95==pytest.approx(.475*.04-.95*.02-.0035*(.475+.95))
+    assert matched>0>fixed95
+    assert study._selection_excess_vs_acwi(
+        weights={"ACWI":.475},actual=actual,benchmark_gross=.475)==0
