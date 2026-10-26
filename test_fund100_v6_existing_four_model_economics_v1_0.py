@@ -39,6 +39,20 @@ def test_source_exact_original_prices_full_four_models_three_costs():
     assert report["real_broker_orders"]==0
     assert set(report["causal_quarterly_model_switching_exploratory"]) == {"5","15","35"}
     assert report["meta_selector_not_independent_holdout_or_live_strategy"]
+    assert set(report["fixed_four_model_ETF_lookthrough_by_window"])=={"5","15","35"}
+    assert report["lookthrough_is_ETF_ticker_level_not_underlying_stock_constituents"]
+    for cost,windows in report["fixed_four_model_ETF_lookthrough_by_window"].items():
+        assert set(windows)==set(e.WINDOWS)
+        for window,metrics in windows.items():
+            assert metrics["sessions"]>=260
+            assert metrics["ETF_constituent_stock_overlap_NOT_measured"]
+            assert metrics["not_independent_out_of_sample_or_live_authority"]
+            assert metrics["model_sleeves_rebalanced_after_entry"] is False
+            assert metrics["average_gross_ETF_exposure_pct"]+metrics["average_cash_pct"]==pytest.approx(100,abs=.0002)
+            assert 0<=metrics["maximum_single_ETF_pct"]<=100
+            assert 0<=metrics["maximum_top_three_ETFs_pct"]<=100
+            assert metrics["maximum_top_three_ETFs_pct"]>=metrics["maximum_single_ETF_pct"]-1e-4
+            assert metrics["symbol_at_maximum_single_ETF"] in e.ALL_ETFS
     for cost,windows in report["evaluated_models"].items():
         assert windows.keys()==e.WINDOWS.keys()
         for name,values in windows.items():
@@ -159,3 +173,65 @@ def test_four_existing_models_report_beta_with_explicit_no_promotion():
                 assert r["tracking_error_annual_pct"]>=0
                 assert r["alpha_significance_not_a_promotion_rule"]
     assert result["real_broker_orders"]==0
+
+
+def _synthetic_lookthrough_paths(*,r2_growth=False):
+    dates=pd.bdate_range("2014-01-02",periods=700)
+    first=next(t for t in range(e.adaptive.TRAINING_RETURNS+1,len(dates))
+               if dates[t].to_period("Q")!=dates[t-1].to_period("Q"))
+    allocation={
+        e.MODELS[0]:{"XLK":.5,"XLE":.4},
+        e.MODELS[1]:{"XLK":.4},
+        e.MODELS[2]:{"XLK":.2,"IWM":.8},
+        e.MODELS[3]:{"XLE":.6},
+    }
+    paths={}
+    for model in e.MODELS:
+        nav=np.full(len(dates),100.)
+        if model==e.MODELS[3] and r2_growth:
+            nav[first:]=100.*np.exp(np.linspace(0,np.log(8),len(dates)-first))
+        data={"nav":nav,"gross":sum(allocation[model].values())}
+        data.update({"weight_"+s:allocation[model].get(s,0.)
+                     for s in e.WEIGHT_SYMBOLS[model]})
+        paths[model]=pd.DataFrame(data,index=dates)
+    return paths
+
+
+def test_fixed_four_model_lookthrough_aggregates_actual_common_ETF_notional():
+    paths=_synthetic_lookthrough_paths()
+    result=e._fixed_blend_etf_lookthrough(paths,"2014-01-01")
+    # Four fixed 25% model sleeves: XLK=(.5+.4+.2)/4,
+    # XLE=(.4+.6)/4, IWM=.8/4, with 27.5% cash.
+    assert result["average_gross_ETF_exposure_pct"]==pytest.approx(72.5)
+    assert result["average_cash_pct"]==pytest.approx(27.5)
+    assert result["maximum_single_ETF_pct"]==pytest.approx(27.5)
+    assert result["symbol_at_maximum_single_ETF"]=="XLK"
+    assert result["maximum_top_three_ETFs_pct"]==pytest.approx(72.5)
+    assert result["average_ETF_notional_shared_by_two_or_more_models_pct"]==pytest.approx(52.5)
+    assert result["distinct_ETF_tickers_held_during_window"]==3
+    assert result["sessions_single_ETF_over_35pct_descriptive"]==0
+
+
+def test_fixed_four_model_lookthrough_sleeves_drift_without_rebalancing():
+    static=e._fixed_blend_etf_lookthrough(_synthetic_lookthrough_paths(),"2014-01-01")
+    growing=e._fixed_blend_etf_lookthrough(
+        _synthetic_lookthrough_paths(r2_growth=True),"2014-01-01")
+    assert growing["maximum_single_ETF_pct"]>static["maximum_single_ETF_pct"]
+    assert growing["sessions_single_ETF_over_35pct_descriptive"]>0
+    assert growing["symbol_at_maximum_single_ETF"]=="XLE"
+    assert growing["model_sleeves_rebalanced_after_entry"] is False
+
+
+def test_fixed_four_model_lookthrough_fails_closed_on_missing_or_fake_weights():
+    paths=_synthetic_lookthrough_paths()
+    paths[e.MODELS[0]]=paths[e.MODELS[0]].drop(columns=["weight_XLK"])
+    with pytest.raises(e.EconomicsStop,match="Missing original ETF"):
+        e._fixed_blend_etf_lookthrough(paths,"2014-01-01")
+    paths=_synthetic_lookthrough_paths()
+    paths[e.MODELS[2]].loc[:,"gross"]=.5
+    with pytest.raises(e.EconomicsStop,match="Inconsistent original"):
+        e._fixed_blend_etf_lookthrough(paths,"2014-01-01")
+    paths=_synthetic_lookthrough_paths()
+    paths[e.MODELS[1]].loc[:,"weight_XLK"]=float("nan")
+    with pytest.raises(e.EconomicsStop,match="Inconsistent original"):
+        e._fixed_blend_etf_lookthrough(paths,"2014-01-01")

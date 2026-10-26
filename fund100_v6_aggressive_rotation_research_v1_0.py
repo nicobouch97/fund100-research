@@ -157,6 +157,7 @@ def backtest(raw: pd.DataFrame, *, cost_bps: int) -> pd.DataFrame:
             "signal_day": signaled,
             "risk_on_at_decision": risk_on,
             "held_names": ",".join(sorted(s for s,x in active.items() if x > 1e-6)),
+            **{"weight_"+s: active[s] for s in UNIVERSE},
         })
     result=pd.DataFrame(rows).set_index("date")
     return result
