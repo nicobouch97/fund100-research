@@ -154,6 +154,39 @@ def test_vol_target_matches_fixed_blend_when_synthetic_volatility_is_low():
     assert turnover.sum() == pytest.approx(1)
 
 
+def test_vol_target_charges_daily_drift_rebalance_even_when_target_unchanged():
+    """Constant target is NOT zero turnover after a nonzero market move."""
+    p = paths()
+    dates = next(iter(p.values())).index
+    # Identical, alternating high-volatility sleeves yield a stable 63-day
+    # volatility target below 100%, but the risky/cash mix drifts each day.
+    moves = np.where(np.arange(len(dates)) % 2 == 0, .01, -.01)
+    nav = 100 * np.cumprod(1 + moves)
+    for frame in p.values():
+        frame["nav"] = nav
+    dates, _, navs = w._verified_paths(p)
+    wealth, exposure, turnover = w._vol_target_fixed_blend(dates, navs, 15)
+    first = next(i for i in range(w.TRAINING_RETURNS + 1, len(dates))
+                 if dates[i].to_period("Q") != dates[i - 1].to_period("Q"))
+    t = first + 2
+    prior = exposure[t - 1]
+    daily = float(navs[w.MODELS[0]][t] / navs[w.MODELS[0]][t - 1] - 1)
+    gross = 1 + prior * daily
+    drifted = prior * (1 + daily) / gross
+    assert 0 < prior < 1
+    assert exposure[t] == pytest.approx(prior)
+    assert turnover[t] == pytest.approx(abs(exposure[t] - drifted))
+    assert turnover[t] > 1e-4
+    assert wealth[t] == pytest.approx(
+        wealth[t - 1] * gross * (1 - turnover[t] * 15 / 10000))
+    # Changing future prices cannot affect earlier exposure or turnover.
+    changed = {m: values.copy() for m, values in navs.items()}
+    changed[w.MODELS[0]][t + 5:] *= 1.5
+    _, exp2, traded2 = w._vol_target_fixed_blend(dates, changed, 15)
+    np.testing.assert_array_equal(exposure[:t + 5], exp2[:t + 5])
+    np.testing.assert_array_equal(turnover[:t + 5], traded2[:t + 5])
+
+
 def test_vol_target_reacts_only_after_shock_close_and_never_leverages():
     baseline = paths()
     dates, _, navs = w._verified_paths(baseline)
@@ -185,6 +218,7 @@ def test_vol_target_costs_reduce_wealth_and_report_downside():
     assert report["vol_target_blend_annual_volatility_target_pct"] == 10
     assert report["vol_target_blend_lookback_completed_sessions"] == 63
     assert report["vol_target_blend_decision_after_close_applies_next_session"]
+    assert report["vol_target_blend_turnover_accounts_for_return_drift"]
     assert report["vol_target_blend_no_leverage_or_shorting"]
     assert report["strategy_promoted_for_funded_trading"] is None
     assert report["paper_or_live_orders"] == 0
