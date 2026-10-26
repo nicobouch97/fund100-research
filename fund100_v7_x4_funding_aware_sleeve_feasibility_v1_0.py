@@ -202,7 +202,7 @@ def analyze()->dict:
         "no_capital_increase_or_future_deposit_authorized":True,
         "BTC_minimum_order_Broker_API_example_may_not_apply_to_Trading_API":True,
         "BTC_USD_min_notional_scenarios":[x[1] for x in SCENARIOS],
-        "ETF_GL D_min_notional_1_USD_scenario".replace(" ",""):str(GOLD_MIN_USD_SCENARIO),
+        "ETF_GLD_min_notional_1_USD_scenario":str(GOLD_MIN_USD_SCENARIO),
         "future_account_and_capital_values_all_synthetic":True,
         "no_customer_balance_or_private_positions_persisted":True,
         "all_cash_buyability_assumes_independently_settled_cash":True,
