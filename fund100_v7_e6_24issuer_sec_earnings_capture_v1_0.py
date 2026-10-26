@@ -68,12 +68,51 @@ def _utc(stamp:str)->datetime:
     except (e4.FeedStop,ValueError,TypeError) as exc:
         raise ExpandedFeedStop("Noncanonical original SEC capture time") from exc
 
+def _bounded_recent_window(source:dict)->dict:
+    """Inspect the full original SEC array alignment, then bound to the frozen event window.
+
+    SEC submissions may contain more than E1's historical 5,000-row limit.
+    Reducing only by *filing date* before the existing strict Item 2.02 parser
+    preserves all potentially relevant rows and their original index pairing.
+    The original unmodified source bytes are archived separately.
+    """
+    recent=source.get("filings",{}).get("recent")
+    keys=("form","accessionNumber","filingDate","items")
+    if not isinstance(recent,dict) or any(type(recent.get(k)) is not list for k in keys):
+        raise ExpandedFeedStop("SEC original recent filing fields missing")
+    lengths={len(recent[k]) for k in keys}
+    if len(lengths)!=1:
+        raise ExpandedFeedStop("SEC original recent filing arrays misaligned")
+    total=len(recent["form"])
+    if total>30_000:
+        raise ExpandedFeedStop("SEC original recent filing array exceeds bounded census")
+    selected=[]
+    for i,stamp in enumerate(recent["filingDate"]):
+        if type(stamp) is not str or len(stamp)!=10:
+            raise ExpandedFeedStop("Invalid SEC original filing date in recent array")
+        try:
+            if datetime.fromisoformat(stamp).date().isoformat()!=stamp:
+                raise ValueError("Noncanonical date")
+        except ValueError as exc:
+            raise ExpandedFeedStop("Invalid SEC original filing date in recent array") from exc
+        if stamp>=REFERENCE_LOOKBACK_START:
+            selected.append(i)
+    if len(selected)>5_000:
+        raise ExpandedFeedStop("Recent registered SEC event window exceeds bounded E1 parser")
+    return {"filings":{"recent":{
+        k:[recent[k][i] for i in selected] for k in keys
+    }}}
+
+
 def _events(source:dict,ticker:str,cik:str,registered:str,
             observed_utc:str)->tuple[list[dict],list[dict]]:
     captured=_utc(observed_utc)
     if captured.date().isoformat()<registered:
         raise ExpandedFeedStop("SEC cohort captured before its original registration")
-    candidates=e1.filing_candidates(source,ticker,captured)
+    try:
+        candidates=e1.filing_candidates(_bounded_recent_window(source),ticker,captured)
+    except e1.SourceStop as exc:
+        raise ExpandedFeedStop(f"SEC Item 2.02 source parser rejected {ticker}: {exc}") from exc
     event_rows=[]
     older=[]
     for entry in candidates:

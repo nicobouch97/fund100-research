@@ -148,3 +148,32 @@ def test_contact_identity_legal_and_zero_broker_or_live_state():
     for forbidden in ("ALPACA_LIVE_KEY","TradingClient","create_order",
                       "api.alpaca.markets","alpaca-py","FUND100_BROKER_KILL_SWITCH"):
         assert forbidden not in script
+
+
+def test_original_sec_large_history_is_date_bounded_without_dropping_earnings():
+    """5,001 older entries must not hide one current original earnings filing."""
+    cik="0000320193"
+    recent={
+        "form":["10-K"]*5001+["8-K"],
+        "accessionNumber":[f"0000000000-20-{i:06d}" for i in range(5001)]
+                          +["0000000000-26-999999"],
+        "filingDate":["2020-01-01"]*5001+["2026-10-26"],
+        "items":[""]*5001+["2.02,9.01"],
+    }
+    source={"filings":{"recent":recent}}
+    after,prior=e6._events(source,"AAPL",cik,"2026-10-15",
+                           "2026-10-27T16:10:21Z")
+    assert len(after)==1 and prior==[]
+    assert after[0]["original_sec_accession"]=="0000000000-26-999999"
+    assert len(recent["form"])==5002  # original source remains unmodified
+    assert len(e6._bounded_recent_window(source)["filings"]["recent"]["form"])==1
+
+
+def test_large_history_misaligned_fields_fail_closed():
+    source={"filings":{"recent":{
+        "form":["8-K","8-K"],"accessionNumber":["0000000000-26-000001"],
+        "filingDate":["2026-10-26","2026-10-26"],"items":["2.02","2.02"],
+    }}}
+    with pytest.raises(e6.ExpandedFeedStop,match="misaligned"):
+        e6._events(source,"AAPL","0000320193","2026-10-15",
+                   "2026-10-27T16:10:21Z")
