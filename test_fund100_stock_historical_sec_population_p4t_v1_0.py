@@ -486,3 +486,93 @@ def test_form25_original_rejects_embedded_markup_in_security_class_title():
         raw, accession="0001001001-17-000101", form_type="25-NSE")
     assert out["security_class_state"] == "NO_UNAMBIGUOUS_STRUCTURED_CLASS"
     assert out["security_class_description"] is None
+
+
+@pytest.mark.parametrize("title,state", [
+    ("Common Stock, $0.01 par value", "POSSIBLE_COMMON_EQUITY_REVIEW_ONLY"),
+    ("Ordinary Shares, par value EUR 0.05", "POSSIBLE_COMMON_EQUITY_REVIEW_ONLY"),
+    ("2.000% Senior Notes due 2022", "OTHER_OR_MIXED_SECURITY_REVIEW_ONLY"),
+    ("Common Shares of Beneficial Interest in Example Fund",
+     "OTHER_OR_MIXED_SECURITY_REVIEW_ONLY"),
+    ("Example Internet ETF, shares of beneficial interest",
+     "OTHER_OR_MIXED_SECURITY_REVIEW_ONLY"),
+])
+def test_form25_issuer_html_cover_recovers_original_class_without_xml(title, state):
+    accession = "0001001001-17-000101"
+    body = (f"<html><body>Issuer: Example Corp<br>"
+            f"(Address, including zip code, and telephone number, "
+            f"including area code, of Issuer's principal executive offices)"
+            f"<div>{title}</div><div>(Description of class of securities)</div>"
+            f"</body></html>")
+    raw = _form25_submission(accession, "25", None).replace(
+        b"<other>Not a security title</other>", body.encode())
+    result = p4y.parse_original_submission(
+        raw, accession=accession, form_type="25")
+    assert result["security_class_state"] == state
+    assert result["security_class_description"] == title
+    assert result["security_class_source"] == "ORIGINAL_ISSUER_COVER_CAPTIONS"
+
+
+def test_form25_issuer_plain_text_cover_and_unrelated_exhibit():
+    accession = "0001001001-17-000101"
+    body = ("Issuer Example Corp\n"
+            "(Address, including zip code, and telephone number, including "
+            "area code, of Issuer's principal executive offices)\n"
+            "Common Stock\n(Description of class of securities)")
+    raw = _form25_submission(accession, "25", None).replace(
+        b"<other>Not a security title</other>", body.encode())
+    raw = raw.replace(b"</SEC-DOCUMENT>",
+        b"<DOCUMENT><TYPE>EX-99\n<TEXT>"
+        b"<descriptionClassSecurity>Senior Notes</descriptionClassSecurity>"
+        b"</TEXT></DOCUMENT>\n</SEC-DOCUMENT>")
+    result = p4y.parse_original_submission(
+        raw, accession=accession, form_type="25")
+    assert result["security_class_description"] == "Common Stock"
+    assert result["security_class_state"] == "POSSIBLE_COMMON_EQUITY_REVIEW_ONLY"
+
+
+@pytest.mark.parametrize("cover", [
+    "Common Stock (Description of class of securities)",
+    "(Address, including zip code, and telephone number, including area code, "
+    "of Issuer's principal executive offices) Common Stock",
+    "(Address, including zip code, and telephone number, including area code, "
+    "of Issuer's principal executive offices) Common Stock "
+    "(Description of class of securities) Senior Notes "
+    "(Description of class of securities)",
+])
+def test_form25_issuer_cover_abstains_without_unique_caption_pair(cover):
+    accession = "0001001001-17-000101"
+    raw = _form25_submission(accession, "25", None).replace(
+        b"<other>Not a security title</other>", cover.encode())
+    out = p4y.parse_original_submission(
+        raw, accession=accession, form_type="25")
+    assert out["security_class_state"] == "NO_UNAMBIGUOUS_STRUCTURED_CLASS"
+    assert out["security_class_description"] is None
+
+
+def test_form25_exchange_filed_html_does_not_gain_issuer_fallback():
+    accession = "0001001001-17-000101"
+    body = ("(Address, including zip code, and telephone number, including "
+            "area code, of Issuer's principal executive offices) Common Stock "
+            "(Description of class of securities)")
+    raw = _form25_submission(accession, "25-NSE", None).replace(
+        b"<other>Not a security title</other>", body.encode())
+    out = p4y.parse_original_submission(
+        raw, accession=accession, form_type="25-NSE")
+    assert out["security_class_state"] == "NO_UNAMBIGUOUS_STRUCTURED_CLASS"
+    assert out["security_class_description"] is None
+
+
+def test_form25_structured_xml_class_has_precedence_over_cover_text():
+    accession = "0001001001-17-000101"
+    body = ("<descriptionClassSecurity>Senior Notes</descriptionClassSecurity>"
+            "(Address, including zip code, and telephone number, including "
+            "area code, of Issuer's principal executive offices) Common Stock "
+            "(Description of class of securities)")
+    raw = _form25_submission(accession, "25", None).replace(
+        b"<other>Not a security title</other>", body.encode())
+    out = p4y.parse_original_submission(
+        raw, accession=accession, form_type="25")
+    assert out["security_class_state"] == "OTHER_OR_MIXED_SECURITY_REVIEW_ONLY"
+    assert out["security_class_description"] == "Senior Notes"
+    assert out["security_class_source"] == "ORIGINAL_XML_CLASS"
