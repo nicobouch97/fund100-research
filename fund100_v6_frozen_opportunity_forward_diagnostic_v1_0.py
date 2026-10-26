@@ -62,14 +62,17 @@ def _summarize(rows):
     if not rows:
         return {
             "evaluated_decision_windows":0,
+            "hypothetical_trade_candidate_windows":0,
             "hypothetical_hurdle_pass_windows":0,
             "hurdle_pass_win_rate_pct":None,
             "hurdle_pass_mean_realized_edge_after_two_side_cost_bps":None,
             "hurdle_pass_total_realized_edge_after_two_side_cost_bps":None,
             "all_windows_mean_absolute_forecast_error_bps":None,
             "all_windows_zero_return_naive_mae_bps":None,
+            "forecast_mae_improvement_vs_zero_naive_bps":None,
             "all_candidate_windows_mean_realized_edge_after_cost_bps":None,
             "all_candidate_windows_mean_excess_vs_95pct_acwi_after_cost_bps":None,
+            "candidate_selection_win_rate_vs_95pct_acwi_pct":None,
             "hurdle_pass_mean_excess_vs_95pct_acwi_after_cost_bps":None,
             "actual_forward_returns_are_out_of_sample":False,
         }
@@ -84,6 +87,7 @@ def _summarize(rows):
     liquid_selected=[r["selection_excess_vs_95pct_acwi_after_cost_bps"] for r in selected]
     return {
         "evaluated_decision_windows":len(rows),
+        "hypothetical_trade_candidate_windows":len(candidate),
         "hypothetical_hurdle_pass_windows":len(selected),
         "hurdle_pass_win_rate_pct":(
             round(100*sum(v>0 for v in realised)/len(realised),4)
@@ -93,11 +97,27 @@ def _summarize(rows):
             round(sum(realised),4) if realised else None),
         "all_windows_mean_absolute_forecast_error_bps":mean(errors),
         "all_windows_zero_return_naive_mae_bps":mean(zero),
+        "forecast_mae_improvement_vs_zero_naive_bps":round(mean(zero)-mean(errors),4),
         "all_candidate_windows_mean_realized_edge_after_cost_bps":mean(cand),
         "all_candidate_windows_mean_excess_vs_95pct_acwi_after_cost_bps":mean(liquid),
+        "candidate_selection_win_rate_vs_95pct_acwi_pct":(
+            round(100*sum(v>0 for v in liquid)/len(liquid),4)
+            if liquid else None),
         "hurdle_pass_mean_excess_vs_95pct_acwi_after_cost_bps":mean(liquid_selected),
         "actual_forward_returns_are_out_of_sample":False,
     }
+
+def _retrospective_disposition(summary:dict)->str:
+    """Reject unqualified economics; NEVER promote from reused historical data."""
+    if summary["hypothetical_hurdle_pass_windows"]==0:
+        return "REJECT_NO_SWITCH_CLEARED_COST_AND_UNCERTAINTY_HURDLE"
+    if (summary["hurdle_pass_mean_excess_vs_95pct_acwi_after_cost_bps"] is None
+        or summary["hurdle_pass_mean_excess_vs_95pct_acwi_after_cost_bps"]<=0):
+        return "REJECT_NO_POSITIVE_RISK_MATCHED_SELECTION_ADVANTAGE"
+    if (summary["forecast_mae_improvement_vs_zero_naive_bps"] is None
+        or summary["forecast_mae_improvement_vs_zero_naive_bps"]<=0):
+        return "REJECT_NO_NAIVE_FORECAST_ERROR_IMPROVEMENT"
+    return "UNPROVEN_HISTORICAL_SCREEN_ONLY_REQUIRES_INDEPENDENT_VALIDATION"
 
 def evaluate(*,history:pd.DataFrame,source_sha256:str,
              start_index:int|None=None)->dict:
@@ -197,6 +217,7 @@ def evaluate(*,history:pd.DataFrame,source_sha256:str,
     # Predeclared calendar splits. Empty windows remain null, not invented.
     sections={c:_summarize([x for x in windows if x["cohort"]==c])
               for c in SCENARIOS}
+    overall=_summarize(windows)
     return {
         "schema":SCHEMA,
         "status":"RESEARCH_ONLY_ALREADY_INSPECTED_HISTORICAL_DATA_NOT_PROSPECTIVE",
@@ -214,8 +235,10 @@ def evaluate(*,history:pd.DataFrame,source_sha256:str,
         "uncertainty_buffer_not_an_actual_trading_cost":True,
         "never_assume_sale_settlement_or_live_execution":True,
         "one_time_source_migration_does_not_infer_order_permission":True,
-        "overall":_summarize(windows),
+        "overall":overall,
         "calendar_windows":sections,
+        "retrospective_evidence_disposition":_retrospective_disposition(overall),
+        "retrospective_disposition_never_promotes_or_unlocks_live":True,
         # Full dated per-episode trace is preserved for audit and lag tests.
         "nonoverlapping_episodes":windows,
         "first_evaluated_decision":windows[0]["decision_session"],
