@@ -44,6 +44,14 @@ def test_same_source_full_historical_report_no_orders():
             assert row["monthly_decisions"] == len(row["decision_log"])
             assert row["gold_cash_switches"] <= row["monthly_decisions"]
             assert row["dynamic_turnover_per_initial_nav"] >= .75
+            assert result["year_concentration_is_post_result_not_an_independent_test"]
+            concentration = row["post_result_calendar_year_relative_log_wealth"]
+            assert set(concentration) == {
+                "DYNAMIC_MINUS_CASH", "DYNAMIC_MINUS_STATIC_GOLD"}
+            for item in concentration.values():
+                assert item["ex_largest_year_is_arithmetic_not_executable_or_out_of_sample"]
+                assert abs(sum(item["calendar_year_log_relative_wealth_pct"].values())
+                           - item["terminal_relative_log_wealth_pct"]) < 0.00002
             assert set(row["chronological_periods_already_inspected_not_holdout"]) == {
                 "2014_TO_2019", "2020_ONWARD"}
 
@@ -149,3 +157,40 @@ def test_no_execution_paths_or_broker_credentials():
         assert forbidden not in src
     assert mod.NO_BROKER_OR_PRIVATE_STATE_ACCESS
     assert mod.NO_LIVE_OR_PAPER_AUTHORITY
+
+
+def test_dynamic_year_attribution_reconciles_inception_cost_and_single_winning_year():
+    dates = pd.DatetimeIndex(["2024-12-30", "2024-12-31",
+                              "2025-01-02", "2025-12-31"])
+    base = pd.Series([100., 100., 100., 100.], index=dates)
+    active = pd.Series([99., 98., 100., 120.], index=dates)
+    out = mod._relative_year_concentration(active, base)
+    assert out["inception_cost_relative_log_wealth_pct"] == pytest.approx(
+        100 * np.log(.99), abs=1e-5)
+    assert out["terminal_relative_log_wealth_pct"] == pytest.approx(
+        100 * np.log(1.2), abs=1e-5)
+    assert out["largest_positive_year"] == 2025
+    assert out["positive_years"] == out["negative_years"] == 1
+    assert out["total_ex_largest_positive_year_log_relative_wealth_pct"] == pytest.approx(
+        100 * np.log(.98), abs=1e-5)
+    assert sum(out["calendar_year_log_relative_wealth_pct"].values()) == pytest.approx(
+        out["terminal_relative_log_wealth_pct"], abs=2e-6)
+    changed = active.copy()
+    changed.iloc[-1] = 150.
+    later = mod._relative_year_concentration(changed, base)
+    assert (out["calendar_year_log_relative_wealth_pct"]["2024"]
+            == later["calendar_year_log_relative_wealth_pct"]["2024"])
+
+
+def test_dynamic_year_attribution_rejects_unmatched_or_invalid_nav():
+    dates = pd.bdate_range("2024-01-02", periods=10)
+    good = pd.Series(np.linspace(100., 110., 10), index=dates)
+    with pytest.raises(mod.TrendStudyStop, match="sessions"):
+        mod._relative_year_concentration(good, good.iloc[1:])
+    bad = good.copy()
+    bad.iloc[3] = float("nan")
+    with pytest.raises(mod.TrendStudyStop, match="relative NAV"):
+        mod._relative_year_concentration(bad, good)
+    bad.iloc[3] = 0.
+    with pytest.raises(mod.TrendStudyStop, match="relative NAV"):
+        mod._relative_year_concentration(good, bad)
