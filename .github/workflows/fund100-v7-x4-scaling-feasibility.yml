@@ -45,7 +45,7 @@ jobs:
           assert not x4.BROKER_MIN_NOTIONAL_USD_VERIFIED
           assert not x4.FUTURE_MANDATE_ENABLED
           source=Path(x4.__file__).read_text()
-          assert 'ALPACA_LIVE_KEY' not in source
+          assert ('ALPACA'+'_'+'LIVE'+'_'+'KEY') not in source
           assert 'urlopen(' not in source
           print('No broker, no new capital authorization, no actual deposit inferred.')
           PY
