@@ -1,0 +1,103 @@
+name: Fund-100 V7 X2 Original BTC Weekend Risk Audit (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_x2_btc_24x7_calendar_risk_v1_0.py'
+      - 'test_fund100_v7_x2_btc_24x7_calendar_risk_v1_0.py'
+      - '.github/workflows/fund100-v7-x2-btc-weekend-risk-audit.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_x2_btc_24x7_calendar_risk_v1_0.py'
+      - 'test_fund100_v7_x2_btc_24x7_calendar_risk_v1_0.py'
+      - '.github/workflows/fund100-v7-x2-btc-weekend-risk-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit-bitcoin-risk-around-the-clock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install existing research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Offline test weekend shocks, immutable weekday fills and source isolation
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v7_x2_btc_24x7_calendar_risk_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Retrieve only identical source BTC and ETF/IRX archive bytes as original X1
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fund100-v7x2-crypto /tmp/fund100-v7x2-etfs
+          gh run download 39027912139 \
+            -n fund100-v6c1-original-btc-eth-cost-review \
+            -D /tmp/fund100-v7x2-crypto
+          gh run download 40298967469 \
+            -n fund100-v6-c13-crossasset-stress-source-and-report \
+            -D /tmp/fund100-v7x2-etfs
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          import fund100_v7_x1_pinned_btc_gold_equity_v1_0 as x1
+          c=Path('/tmp/fund100-v7x2-crypto')
+          e=Path('/tmp/fund100-v7x2-etfs')
+          inputs=((c/'fund100-v6c1-original-crypto-price.csv',x1.CRYPTO_SHA),
+                  (e/'fund100-c13-price-source.csv',x1.ETF_SHA),
+                  (e/'fund100-c13-yahoo-irx-source.csv',x1.IRX_SHA))
+          for path,digest in inputs:
+              assert hashlib.sha256(path.read_bytes()).hexdigest()==digest
+          # Trust no revised market prices and no refresh of historical
+          # vintages to construct a more favourable volatility history.
+          x1.read_original_sources(*(p for p,_ in inputs))
+          print('Original source bytes independently verified and replayed.')
+          PY
+      - name: Quantify Bitcoin weekends and reconcile EVERY original X1 trading-session NAV
+        run: |
+          set -euo pipefail
+          python fund100_v7_x2_btc_24x7_calendar_risk_v1_0.py \
+            --crypto-csv /tmp/fund100-v7x2-crypto/fund100-v6c1-original-crypto-price.csv \
+            --etf-csv /tmp/fund100-v7x2-etfs/fund100-c13-price-source.csv \
+            --irx-csv /tmp/fund100-v7x2-etfs/fund100-c13-yahoo-irx-source.csv \
+            --output /tmp/fund100-v7x2-btc-complete-calendar-risk.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import fund100_v7_x2_btc_24x7_calendar_risk_v1_0 as x2
+          p=Path('/tmp/fund100-v7x2-btc-complete-calendar-risk.json')
+          r=json.loads(p.read_text())
+          assert r['schema']==x2.SCHEMA
+          assert r['broker_gets']==r['broker_posts']==r['broker_orders']==0
+          assert r['trading_authorized'] is False and r['live_authorized'] is False
+          assert r['original_rebalance_rule_not_modified'] is True
+          assert r['source_calendar_daily_bars_not_intraday_crash_detection'] is True
+          assert set(r['results'])=={'35','60'}
+          for cost in r['results'].values():
+              assert set(cost)==set(x2.CASH_SCENARIOS)
+              for scenario in cost.values():
+                  assert set(scenario)==set(x2.x1.CANDIDATES)
+                  for row in scenario.values():
+                      assert row['X1_original_NAV_exact_alignment_max_difference']<=1e-8
+                      assert row['nonmarket_calendar_days']>500
+          print('24/7 weekend exposure risk measured; NO brokerage or new trading strategy.')
+          PY
+      - name: Archive real calendar drawdown exposure and exact original session parity
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7x2-btc-complete-calendar-risk-${{ github.run_id }}
+          path: /tmp/fund100-v7x2-btc-complete-calendar-risk.json
+          retention-days: 90
+          if-no-files-found: error
