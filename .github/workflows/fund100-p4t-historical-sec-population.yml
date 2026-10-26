@@ -138,13 +138,32 @@ jobs:
           assert sum(report["source_failure_reason_counts"].values()) == report[
               "unavailable_or_unverifiable_sources"]
           assert report["section12g_common_class_covers"] >= 0
-          assert report["schema"].endswith("_V4")
+          assert report["schema"].endswith("_V5")
           assert report["original_xbrl_ticker_not_historical_security_master"]
           assert report["original_xbrl_ticker_review_candidates"] == sum(
               row.get("original_xbrl_ticker_state") ==
               "ONE_ORIGINAL_XBRL_TICKER_REVIEW_ONLY" for row in report["observations"])
           assert report["original_xbrl_not_evaluated_primary_only"] == report[
               "index_verified_primary_10k_sources_captured"]
+          assert report["same_filing_ticker_not_independent_listing_or_security_id"]
+          assert report["same_filing_ticker_class_review_candidates"] == sum(
+              len(row.get("same_filing_ticker_class_review_candidates", []))
+              for row in report["observations"])
+          assert sum(report["same_filing_ticker_class_crosscheck_states"].values()) == 32
+          for row in report["observations"]:
+              for candidate in row.get("same_filing_ticker_class_review_candidates", []):
+                  assert row["source_kind"] == "FULL_SUBMISSION"
+                  assert row["original_xbrl_ticker_state"] == (
+                      "ONE_ORIGINAL_XBRL_TICKER_REVIEW_ONLY")
+                  assert len(row["possible_12b_security_class_rows"]) == 1
+                  assert candidate["issuer_xbrl_ticker"] == row[
+                      "original_xbrl_trading_symbol"]
+                  assert candidate["evidence_level"] == (
+                      "SAME_ORIGINAL_2017_10K_SUBMISSION_REVIEW_ONLY")
+                  assert candidate["explicit_12b_symbol_concordant"] is (
+                      row["possible_12b_security_class_rows"][0][
+                          "trading_symbol_in_original_10k"] is not None)
+
           assert report["structured_rows_not_historical_investable_security_master"]
           assert report["possible_structured_12b_security_class_rows"] == sum(
               len(row.get("possible_12b_security_class_rows", []))
@@ -194,6 +213,9 @@ jobs:
           print("Original EX-101.INS issuer-reported ticker hints (NOT verified",
                 "security IDs, share classes or exchange listings):",
                 report["original_xbrl_ticker_review_candidates"])
+          print("Same-filing issuer ticker / single common-share class",
+                "review associations (NOT independently verified listings):",
+                report["same_filing_ticker_class_review_candidates"])
           print("Unverifiable original SEC source reasons (NOT listing status):",
                 json.dumps(report["source_failure_reason_counts"], sort_keys=True))
           PY
