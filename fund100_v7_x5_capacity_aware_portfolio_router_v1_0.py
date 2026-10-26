@@ -74,14 +74,34 @@ def verify_spec(symbol,spec):
     return {"min":venue_min,"max_ticket":maximum,"volume":volume,
             "side":side,"class":spec["asset_class"]}
 
-def fee_upper_by_ticket(amount,cap,bps):
-    if amount<0 or cap<=0:raise CapacityStop("Invalid fee model")
+def fee_upper_by_ticket(amount,cap,bps,minimum=Decimal(0)):
+    if amount<0 or cap<=0 or minimum<0 or minimum>cap:
+        raise CapacityStop("Invalid fee model")
     per=bps/Decimal(10000)
-    full=int((amount/cap).to_integral_value(rounding=ROUND_DOWN))
-    extra=amount-Decimal(full)*cap
+    if minimum==0:
+        # Backward-compatible unconstrained synthetic ticket estimate.
+        full=int((amount/cap).to_integral_value(rounding=ROUND_DOWN))
+        extra=amount-Decimal(full)*cap
+        fee=Decimal(full)*up(cap*per)
+        if extra>0:fee+=up(extra*per)
+        return fee
+    if amount==0:return Decimal(0)
+    count=count_to_fit(amount,cap)
+    if amount<Decimal(count)*minimum:
+        raise CapacityStop("No valid min/max ticket partition for fee estimate")
+    # Build a VALID partition without enumerating up to 100,000 tickets:
+    # each ticket starts at the minimum, with excess assigned to earlier
+    # tickets up to the maximum. Per-ticket fees round UP to cents.
+    if minimum==cap:return Decimal(count)*up(cap*per)
+    excess=amount-Decimal(count)*minimum
+    full=int((excess/(cap-minimum)).to_integral_value(rounding=ROUND_DOWN))
+    partial=excess-Decimal(full)*(cap-minimum)
     fee=Decimal(full)*up(cap*per)
-    if extra>0:fee+=up(extra*per)
-    return fee
+    if partial>0:
+        fee+=up((minimum+partial)*per)
+        remaining=count-full-1
+    else:remaining=count-full
+    return fee+Decimal(remaining)*up(minimum*per)
 
 def route(*,capital_nav_usd,prospective_cap_usd,settled_cash_usd,
           current_holdings_usd,target_weights,asset_spec,
@@ -163,7 +183,7 @@ def route(*,capital_nav_usd,prospective_cap_usd,settled_cash_usd,
             ticket_days=int(ceil(tickets/MAX_TICKETS_PER_MODELED_DAY))
             days=max(volume_days,ticket_days)
             max_capacity_days=max(max_capacity_days,days)
-            cost=fee_upper_by_ticket(amount,data["max_ticket"],data["side"])
+            cost=fee_upper_by_ticket(amount,data["max_ticket"],data["side"],data["min"])
             estimates[symbol+"_"+side]={
                 "symbol":symbol,"direction":side,
                 "hypothetical_notional_usd":nstr(amount),
