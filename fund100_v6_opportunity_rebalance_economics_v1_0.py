@@ -229,8 +229,13 @@ def select_research_alternative(*,snapshot:dict,candidate_targets:dict,
             or re.fullmatch(r"RESEARCH_[A-Z][A-Z0-9_]{2,35}",name) is None
             or type(weights) is not dict or not weights):
             raise OpportunityStop("Unknown synthetic proposal identity or target")
-        # Avoid counting duplicate allocations as independent opportunities.
-        fingerprint=tuple(sorted((symbol,str(amount(weight,"target "+symbol)))
+        if any(type(symbol) is not str or symbol not in UNIVERSE
+               for symbol in weights):
+            raise OpportunityStop("Unknown alternative portfolio asset")
+        # Avoid counting numerically identical allocations as distinct
+        # opportunities, including alternate decimal string formats.
+        fingerprint=tuple(sorted((symbol,format(
+            amount(weight,"target "+symbol).normalize(),"f"))
                                  for symbol,weight in weights.items()))
         if fingerprint in fingerprints:
             raise OpportunityStop("Duplicate hypothetical portfolio disguised as alternative")
