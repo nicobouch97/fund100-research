@@ -901,6 +901,8 @@ def test_primary_only_recovers_independently_indexed_xbrl_with_sha_and_no_listin
     assert report["original_xbrl_ticker_review_candidates"] == 0
     assert report["original_xbrl_not_evaluated_primary_only"] == 2
     assert report["same_filing_ticker_class_review_candidates"] == 0
+    assert report["indexed_primary_ticker_class_review_candidates"] == 2
+    assert report["indexed_primary_ticker_not_independent_listing_or_security_id"]
     assert report["index_verified_primary_xbrl_not_historical_security_master"]
     for row in report["observations"]:
         assert row["primary_xbrl_source_state"] == "INDEX_VERIFIED_XBRL_BYTES_CAPTURED"
@@ -909,8 +911,93 @@ def test_primary_only_recovers_independently_indexed_xbrl_with_sha_and_no_listin
         assert (out / row["primary_xbrl_local_file"]).read_bytes() == xml
         assert row["original_xbrl_trading_symbol"] is None
         assert row["same_filing_ticker_class_review_candidates"] == []
+        assert row["indexed_primary_ticker_class_crosscheck_state"] == (
+            "SINGLE_CLASS_ISSUER_TICKER_ASSOCIATION_REVIEW_ONLY")
+        candidates = row["indexed_primary_ticker_class_review_candidates"]
+        assert len(candidates) == 1
+        assert candidates[0]["issuer_xbrl_ticker"] == "HIST"
+        assert candidates[0]["explicit_12b_symbol_concordant"] is False
+        assert candidates[0]["evidence_level"] == (
+            "SAME_INDEX_VERIFIED_2017_ACCESSION_PRIMARY_XBRL_REVIEW_ONLY")
+        assert candidates[0]["primary_10k_sha256"] == row["original_sha256"]
+        assert candidates[0]["filing_index_sha256"] == row["primary_index_sha256"]
+        assert candidates[0]["indexed_xbrl_sha256"] == row["primary_xbrl_original_sha256"]
     assert report["broker_requests"] == report["broker_orders"] == 0
     assert not report["trading_authorized"] and not report["live_authorized"]
+
+
+
+def _indexed_primary_class_observation(*, symbol="HIST", class_symbol=None):
+    return {
+        "source_kind": "INDEX_VERIFIED_PRIMARY_10K",
+        "original_sha256": "a" * 64,
+        "primary_index_sha256": "b" * 64,
+        "primary_xbrl_original_sha256": "c" * 64,
+        "primary_xbrl_source_state": "INDEX_VERIFIED_XBRL_BYTES_CAPTURED",
+        "primary_xbrl_ticker_state": "ONE_ORIGINAL_XBRL_TICKER_REVIEW_ONLY",
+        "primary_xbrl_trading_symbol": symbol,
+        "possible_12b_security_class_rows": [{
+            "security_class_text": "Common Stock",
+            "exchange_text": "NYSE",
+            "trading_symbol_in_original_10k": class_symbol,
+            "evidence_level": "ORIGINAL_10K_12B_ROW_REVIEW_ONLY",
+        }],
+    }
+
+
+def test_indexed_primary_explicit_class_symbol_concordance_is_only_review_evidence():
+    obs = _indexed_primary_class_observation(class_symbol="HIST")
+    result = p4u._crosscheck_indexed_primary_ticker_and_common_class(obs)
+    assert result["indexed_primary_ticker_class_crosscheck_state"] == (
+        "EXPLICIT_CLASS_SYMBOL_CONCORDANT_REVIEW_ONLY")
+    candidate, = result["indexed_primary_ticker_class_review_candidates"]
+    assert candidate["explicit_12b_symbol_concordant"] is True
+    assert candidate["issuer_xbrl_ticker"] == "HIST"
+    assert candidate["indexed_xbrl_sha256"] == "c" * 64
+    assert result["indexed_primary_ticker_not_independent_listing_or_security_id"]
+
+
+@pytest.mark.parametrize("mutation,expected", [
+    ({"primary_xbrl_source_state": "SOURCE_UNAVAILABLE_OR_UNVERIFIABLE"},
+     "INDEXED_XBRL_NOT_CAPTURED"),
+    ({"primary_xbrl_ticker_state": "CONFLICTING_ORIGINAL_XBRL_SYMBOLS",
+      "primary_xbrl_trading_symbol": None}, "NO_UNAMBIGUOUS_ORIGINAL_XBRL_TICKER"),
+    ({"primary_xbrl_original_sha256": ""}, "MISSING_SOURCE_PROVENANCE"),
+    ({"primary_xbrl_original_sha256": "g" * 64}, "MISSING_SOURCE_PROVENANCE"),
+    ({"primary_xbrl_trading_symbol": "OTHER"}, "CONFLICTING_ORIGINAL_SYMBOLS_ABSTAIN"),
+])
+def test_indexed_primary_abstains_on_missing_conflicting_or_unproven_xbrl(mutation, expected):
+    obs = _indexed_primary_class_observation(class_symbol="HIST")
+    obs.update(mutation)
+    result = p4u._crosscheck_indexed_primary_ticker_and_common_class(obs)
+    assert result["indexed_primary_ticker_class_crosscheck_state"] == expected
+    assert result["indexed_primary_ticker_class_review_candidates"] == []
+
+
+def test_indexed_primary_multiple_common_classes_and_no_class_abstain():
+    obs = _indexed_primary_class_observation()
+    obs["possible_12b_security_class_rows"].append({
+        **obs["possible_12b_security_class_rows"][0],
+        "security_class_text": "Class B Common Stock",
+    })
+    result = p4u._crosscheck_indexed_primary_ticker_and_common_class(obs)
+    assert result["indexed_primary_ticker_class_crosscheck_state"] == (
+        "MULTIPLE_COMMON_CLASSES_ABSTAIN")
+    assert result["indexed_primary_ticker_class_review_candidates"] == []
+    obs["possible_12b_security_class_rows"] = []
+    result = p4u._crosscheck_indexed_primary_ticker_and_common_class(obs)
+    assert result["indexed_primary_ticker_class_crosscheck_state"] == (
+        "NO_STRUCTURED_12B_COMMON_CLASS")
+    assert result["indexed_primary_ticker_class_review_candidates"] == []
+
+
+def test_indexed_primary_crosscheck_never_relabels_full_submission_evidence():
+    obs = _indexed_primary_class_observation()
+    obs["source_kind"] = "FULL_SUBMISSION"
+    result = p4u._crosscheck_indexed_primary_ticker_and_common_class(obs)
+    assert result["indexed_primary_ticker_class_crosscheck_state"] == "NOT_APPLICABLE"
+    assert result["indexed_primary_ticker_class_review_candidates"] == []
+
 
 
 def test_indexed_xbrl_unavailable_keeps_verified_primary_and_abstains(tmp_path):
@@ -930,5 +1017,8 @@ def test_indexed_xbrl_unavailable_keeps_verified_primary_and_abstains(tmp_path):
     assert report["original_filing_sources_captured"] == 2
     assert report["index_verified_primary_xbrl_sources_captured"] == 0
     assert report["index_verified_primary_xbrl_source_failure_reasons"] == {"HTTP_404": 2}
+    assert report["indexed_primary_ticker_class_review_candidates"] == 0
+    assert report["indexed_primary_ticker_class_crosscheck_states"] == {
+        "INDEXED_XBRL_NOT_CAPTURED": 2}
     assert all(row["primary_xbrl_trading_symbol"] is None for row in report["observations"])
     assert report["broker_orders"] == 0 and not report["live_authorized"]

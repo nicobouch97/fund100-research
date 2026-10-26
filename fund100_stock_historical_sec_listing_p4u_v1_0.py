@@ -384,6 +384,55 @@ def _crosscheck_same_filing_ticker_and_common_class(evidence: dict) -> dict:
     return result
 
 
+
+def _crosscheck_indexed_primary_ticker_and_common_class(observation: dict) -> dict:
+    """Review a 2017 primary 10-K class against separately indexed XBRL.
+
+    This is deliberately a DIFFERENT evidence category from an intact
+    original submission: both original documents were separately captured
+    under the same verified accession index. No listing, share-class ticker,
+    historical security ID, or return is inferred. Missing or ambiguous
+    source evidence always abstains.
+    """
+    result = {
+        "indexed_primary_ticker_class_crosscheck_state": "NOT_APPLICABLE",
+        "indexed_primary_ticker_class_review_candidates": [],
+        "indexed_primary_ticker_not_independent_listing_or_security_id": True,
+    }
+    if observation.get("source_kind") != "INDEX_VERIFIED_PRIMARY_10K":
+        return result
+    if observation.get("primary_xbrl_source_state") != "INDEX_VERIFIED_XBRL_BYTES_CAPTURED":
+        result["indexed_primary_ticker_class_crosscheck_state"] = "INDEXED_XBRL_NOT_CAPTURED"
+        return result
+    # The capture path has already verified both canonical same-accession
+    # URLs, original bytes and hashes. Refuse to issue even a review hint if
+    # the provenance fields were not retained in the observation.
+    hashes = ("original_sha256", "primary_index_sha256", "primary_xbrl_original_sha256")
+    if any(not isinstance(observation.get(k), str)
+           or re.fullmatch(r"[0-9a-f]{64}", observation[k]) is None for k in hashes):
+        result["indexed_primary_ticker_class_crosscheck_state"] = "MISSING_SOURCE_PROVENANCE"
+        return result
+    crosscheck = _crosscheck_same_filing_ticker_and_common_class({
+        "possible_12b_security_class_rows": observation.get(
+            "possible_12b_security_class_rows", []),
+        "original_xbrl_ticker_state": observation.get("primary_xbrl_ticker_state"),
+        "original_xbrl_trading_symbol": observation.get("primary_xbrl_trading_symbol"),
+    })
+    result["indexed_primary_ticker_class_crosscheck_state"] = crosscheck[
+        "same_filing_ticker_class_crosscheck_state"]
+    result["indexed_primary_ticker_class_review_candidates"] = [
+        {
+            **candidate,
+            "evidence_level": "SAME_INDEX_VERIFIED_2017_ACCESSION_PRIMARY_XBRL_REVIEW_ONLY",
+            "primary_10k_sha256": observation["original_sha256"],
+            "filing_index_sha256": observation["primary_index_sha256"],
+            "indexed_xbrl_sha256": observation["primary_xbrl_original_sha256"],
+        }
+        for candidate in crosscheck["same_filing_ticker_class_review_candidates"]
+    ]
+    return result
+
+
 def inspect_original_10k(raw: bytes) -> dict:
     """Inspect a 10-K document explicitly identified inside an original submission."""
     if type(raw) is not bytes or not 0 < len(raw) <= MAX_FILING_BYTES:
@@ -758,6 +807,7 @@ def capture(source_dir: Path, output_dir: Path, agent: str,
                 **provenance,
                 **evidence,
             })
+            result.update(_crosscheck_indexed_primary_ticker_and_common_class(result))
         except ListingEvidenceStop as exc:
             result.update({
                 "source_state": "SOURCE_UNAVAILABLE_OR_UNVERIFIABLE",
@@ -818,6 +868,13 @@ def capture(source_dir: Path, output_dir: Path, agent: str,
             if r.get("primary_xbrl_source_state") == "SOURCE_UNAVAILABLE_OR_UNVERIFIABLE"
         ).items())),
         "index_verified_primary_xbrl_not_historical_security_master": True,
+        "indexed_primary_ticker_class_review_candidates": sum(
+            len(r.get("indexed_primary_ticker_class_review_candidates", []))
+            for r in observations),
+        "indexed_primary_ticker_class_crosscheck_states": dict(sorted(Counter(
+            r.get("indexed_primary_ticker_class_crosscheck_state", "NOT_EVALUATED")
+            for r in observations).items())),
+        "indexed_primary_ticker_not_independent_listing_or_security_id": True,
         "original_xbrl_ticker_review_candidates": sum(
             r.get("original_xbrl_ticker_state") ==
             "ONE_ORIGINAL_XBRL_TICKER_REVIEW_ONLY" for r in observations),
