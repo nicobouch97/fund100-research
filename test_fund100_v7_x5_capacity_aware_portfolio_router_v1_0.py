@@ -122,7 +122,7 @@ def test_actual_market_volume_or_crypto_client_permission_cannot_be_claimed():
     {"cash":"1000.01"},
     {"prospective_cap":"100.00"},
     {"gbp":"£1000"},
-    {"positions":{"XLK":"200.00"}},
+    {"positions":{"XLK":"1000.01"}},
 ])
 def test_invalid_allocation_funding_fx_or_risk_does_not_create_trade(change):
     kw={k:v for k,v in change.items()}
