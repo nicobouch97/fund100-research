@@ -56,3 +56,18 @@ def test_invalid_or_incomplete_signal_is_rejected_not_live_promoted():
         query(forecasts={"XLK":"NaN","XLE":"0.01"})
     assert x6.BROKER_GETS==x6.BROKER_POSTS==x6.BROKER_ORDERS==0
     assert x6.TRADING_AUTHORIZED is False
+
+
+def test_unfillable_ticket_split_cannot_be_ranked_as_profitable_switch():
+    spec=x5.sample_spec()
+    spec["XLK"]["minimum_notional_usd"]="10"
+    spec["XLK"]["maximum_ticket_usd"]="10"
+    result=query(spec=spec,targets={"RESEARCH_SPLIT":{"XLK":"0.015","XLE":"0.20"}},
+                 forecasts={"XLK":"1.0","XLE":"0.20"})
+    candidate=result["candidate_outcomes"]["RESEARCH_SPLIT"]
+    assert Decimal(candidate["hypothetical_net_advantage_usd"])>Decimal("0")
+    assert candidate["state"]=="HOLD_MODEL_CAPACITY_OR_POST_COST_RISK"
+    assert any(w["reason"]=="MODELED_TICKET_SPLIT_VIOLATES_MINIMUM"
+               for w in candidate["capacity_and_risk_warnings"])
+    assert result["preferred_research_candidate"] is None
+    assert result["broker_orders"]==0 and not result["trading_authorized"]
