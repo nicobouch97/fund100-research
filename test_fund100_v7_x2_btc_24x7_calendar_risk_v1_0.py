@@ -102,3 +102,57 @@ def test_offline_no_broker_no_new_strategy_promotion():
     for banned in ("TradingClient","ALPACA_LIVE_SECRET","api.alpaca.markets",
                    "place_order","submit_order","market_order"):
         assert banned not in source
+
+
+def test_exact_component_dollar_pnl_reconciles_each_day_and_peak_to_trough():
+    crypto,etf,rate=fixture(btc_daily=-.0004,equity_daily=-.0002,
+                            gold_daily=.0001,rate=0)
+    market,_,dates,daily,annual=x2.calendar_sources(crypto,etf,rate)
+    study=x2.mark_every_calendar_day(
+        market,dates,daily,annual["ZERO"],x1.CANDIDATES["BTC_5_GOLD_5"],35)
+    pnl=study["pnl_components"]
+    assert tuple(pnl.columns)==(*x1.SLEEVE_ASSETS,"CASH","TRADE_FEES")
+    assert (1+pnl.sum(axis=1).cumsum()-study["path"]).abs().max()<1e-8
+    assert pnl.loc[dates[0],"TRADE_FEES"]<0
+    assert (pnl["TRADE_FEES"]<=0).all()
+    d=x2.describe(study["path"],study["btc_fraction"],pnl)
+    assert d["component_pnl_reconciled_to_every_calendar_nav"]
+    assert sum(d["max_drawdown_component_contribution_pp"].values()
+               )==pytest.approx(d["calendar_close_mark_max_drawdown_pct"],abs=1e-5)
+    assert d["max_drawdown_component_contribution_pp"]["BTC"]<0
+    assert sum(d["full_history_component_pnl_pct_initial_capital"].values()
+               )==pytest.approx(d["terminal_net_profit_pct_initial_capital"],abs=1e-5)
+
+
+def test_btc_weekend_reversal_is_visible_in_exact_dollar_attribution():
+    crypto,etf,rate=fixture(btc_daily=0,equity_daily=0,gold_daily=0,rate=0)
+    crypto.loc["2021-07-10","BTC-USD"]*=1.5
+    market,_,dates,daily,annual=x2.calendar_sources(crypto,etf,rate)
+    study=x2.mark_every_calendar_day(
+        market,dates,daily,annual["ZERO"],x1.CANDIDATES["BTC_10"],35)
+    pnl=study["pnl_components"]
+    assert pnl.loc["2021-07-11","BTC"]>0
+    assert pnl.loc["2021-07-12","BTC"]<0
+    assert pnl.loc["2021-07-11","XLK"]==pytest.approx(0)
+    assert pnl.loc["2021-07-11","TRADE_FEES"]==pytest.approx(0)
+    assert (1+pnl.sum(axis=1).cumsum()-study["path"]).abs().max()<1e-8
+
+
+def test_incremental_pnl_reconciles_against_matched_cash_control():
+    crypto,etf,rate=fixture(btc_daily=.0008,equity_daily=.0003,
+                            gold_daily=.0001,rate=3)
+    report=x2.assess(crypto,etf,rate)
+    for cost in ("35","60"):
+        for scenario in x1.CASH_SCENARIOS:
+            control=report["results"][cost][scenario]["CASH_CONTROL_75"]
+            assert control["component_pnl_reconciled_to_every_calendar_nav"]
+            for name in x1.CANDIDATES:
+                if name=="CASH_CONTROL_75":
+                    continue
+                item=report["results"][cost][scenario][name]
+                assert item["incremental_pnl_reconciled_to_cash_control"]
+                assert sum(item["incremental_component_pnl_pp_initial_capital"].values()
+                           )==pytest.approx(
+                    item["incremental_terminal_wealth_pp_initial_capital"],abs=1e-5)
+    assert report["trading_authorized"] is False
+    assert report["broker_orders"]==0
