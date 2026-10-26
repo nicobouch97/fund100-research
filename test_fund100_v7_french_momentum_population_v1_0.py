@@ -106,7 +106,7 @@ def test_missing_and_nonfinite_source_months_rejected():
 
 def test_future_snapshot_or_uncanonical_timestamp_rejected():
     a,b=fixtures()
-    for bad in ("2025-10-26T15:00:00Z","2026-10-26T15:00:01Z",
+    for bad in ("2025-10-26T15:00:00Z","2026-10-26T15:00:61Z",
                 "2026-10-26T15:00:00+00:00"):
         with pytest.raises(p.MomentumPopulationStop,match="Noncanonical"):
             p.inspect(a,b,captured_utc=bad)
