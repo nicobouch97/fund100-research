@@ -13,6 +13,7 @@ from html import unescape
 import json
 from pathlib import Path
 import re
+from time import sleep
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -111,7 +112,8 @@ def parse_original_submission(raw: bytes, *, accession: str, form_type: str) -> 
         re.sub(r"\s+", " ", unescape(value)).strip()
         for body in primary for value in CLASS_TAG.findall(body)]
     if (len(primary) != 1 or len(descriptions) != 1
-        or not descriptions[0] or len(descriptions[0]) > 300):
+        or not descriptions[0] or len(descriptions[0]) > 300
+        or "<" in descriptions[0] or ">" in descriptions[0]):
         return {"security_class_state": "NO_UNAMBIGUOUS_STRUCTURED_CLASS",
                 "security_class_description": None}
     description = descriptions[0]
@@ -133,6 +135,8 @@ def _official_form25_get(url: str, agent: str) -> bytes:
         raise Form25SourceStop("Unapproved SEC Form 25 source request")
     req = Request(url, headers={"User-Agent": agent, "Accept": "text/plain"})
     try:
+        # Remain below SEC fair-access request-rate guidance.
+        sleep(0.15)
         with urlopen(req, timeout=35) as response:
             if response.status != 200 or response.geturl() != url:
                 raise Form25SourceStop("SEC Form 25 redirect or status rejected")
