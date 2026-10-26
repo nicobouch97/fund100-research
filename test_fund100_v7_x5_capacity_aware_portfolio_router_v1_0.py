@@ -43,7 +43,7 @@ def test_same_weights_and_number_of_positions_at_thousand_to_million():
     assert len(x5.GBP_INTENTION_TIERS)>=4
     for tier,r in sample["scenarios"].items():
         assert r["target_asset_count"]==5
-        assert r["target_non_cash_weight_sum"]==".85"
+        assert Decimal(r["target_non_cash_weight_sum"])==Decimal("0.85")
         assert r["target_cash_reserve_weight"]=="0.15"
         assert r["crypto_allocation_weight"]=="0.05"
         assert r["funding_status"]=="SELL_OR_DEPOSIT_FIRST_THEN_REVERIFY_SETTLEMENT"
