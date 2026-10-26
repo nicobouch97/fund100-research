@@ -29,6 +29,7 @@ MAX_FILING_BYTES = 12_000_000  # full submission remains tightly bounded
 # This independent ceiling never applies to full submissions or index pages.
 MAX_PRIMARY_10K_BYTES = 32_000_000
 MAX_FILING_INDEX_BYTES = 2_000_000
+MAX_PRIMARY_XBRL_BYTES = 12_000_000  # separately verified original exhibit
 MAX_SAMPLES_PER_STRATUM = 32
 ARCHIVE_PATH = re.compile(r"edgar/data/([0-9]+)/([0-9-]+)\.txt\Z")
 SEC_PREFIX = "https://www.sec.gov/Archives/"
@@ -586,13 +587,78 @@ def _official_primary_10k_get(path: str, agent: str) -> tuple[bytes, bytes, str,
             primary_url, index_url)
 
 
+
+def _primary_xbrl_from_index(path: str, index_raw: bytes) -> tuple[str, str]:
+    """Require one same-accession EX-101.INS XML in the original filing index.
+
+    Missing/ambiguous evidence never implies the issuer lacked a ticker.
+    """
+    if type(index_raw) is not bytes or not 0 < len(index_raw) <= MAX_FILING_INDEX_BYTES:
+        raise FilingSourceFailure("PRIMARY_XBRL_INDEX_INVALID")
+    index_url, _ = _primary_urls(path)
+    parser = _SecFilingDocumentTable()
+    parser.feed(index_raw.decode("utf-8", errors="replace"))
+    found = []
+    for row in parser.rows:
+        if len(row) < 4 or row[3][0].strip().upper() != "EX-101.INS":
+            continue
+        filename, href = row[2][0].strip(), row[2][1]
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,159}\.xml",
+                            filename, re.IGNORECASE):
+            raise FilingSourceFailure("PRIMARY_XBRL_UNSAFE_DOCUMENT")
+        document_url = index_url.rsplit("/", 1)[0] + "/" + filename
+        relative = document_url.removeprefix("https://www.sec.gov")
+        if href not in (filename, relative, document_url):
+            raise FilingSourceFailure("PRIMARY_XBRL_UNSAFE_LINK")
+        found.append((filename, document_url))
+    if len(found) != 1:
+        raise FilingSourceFailure("PRIMARY_XBRL_MISSING_OR_AMBIGUOUS")
+    return found[0]
+
+
+def _official_primary_xbrl_get(path: str, index_raw: bytes,
+                               agent: str) -> tuple[bytes, str, str]:
+    """Read only independently indexed 2017 XML with a strict byte cap."""
+    if (type(agent) is not str or len(agent) < 10 or "@" not in agent
+        or "\r" in agent or "\n" in agent):
+        raise ListingEvidenceStop("SEC contact user agent not configured")
+    filename, url = _primary_xbrl_from_index(path, index_raw)
+    try:
+        with urlopen(Request(url, headers={
+                "User-Agent": agent, "Accept": "application/xml"}), timeout=35) as response:
+            if response.status != 200 or response.geturl() != url:
+                raise FilingSourceFailure("PRIMARY_XBRL_NONCANONICAL_HTTP")
+            raw = response.read(MAX_PRIMARY_XBRL_BYTES + 1)
+    except HTTPError as exc:
+        code = exc.code
+        reason = (f"HTTP_{code}" if code in (403, 404, 429) else
+                  "HTTP_5XX" if 500 <= code <= 599 else "HTTP_OTHER")
+        raise FilingSourceFailure(reason) from None
+    except IncompleteRead:
+        raise FilingSourceFailure("INCOMPLETE_SOURCE") from None
+    except TimeoutError:
+        raise FilingSourceFailure("TIMEOUT") from None
+    except URLError:
+        raise FilingSourceFailure("NETWORK_UNAVAILABLE") from None
+    except OSError:
+        raise FilingSourceFailure("TRANSPORT_ERROR") from None
+    if not raw:
+        raise FilingSourceFailure("PRIMARY_XBRL_EMPTY_SOURCE")
+    if len(raw) > MAX_PRIMARY_XBRL_BYTES:
+        raise FilingSourceFailure("PRIMARY_XBRL_OVERSIZED")
+    return raw, filename, url
+
+
 def capture(source_dir: Path, output_dir: Path, agent: str,
-            *, per_stratum: int = 16, getter=None, primary_getter=None) -> dict:
+            *, per_stratum: int = 16, getter=None, primary_getter=None,
+            xbrl_getter=None) -> dict:
     selected, annual = select_sample(source_dir, per_stratum=per_stratum)
     if getter is None:
         getter = _official_filing_get
         if primary_getter is None:
             primary_getter = _official_primary_10k_get
+        if xbrl_getter is None:
+            xbrl_getter = _official_primary_xbrl_get
     output_dir.mkdir(parents=True, exist_ok=True)
     observations = []
     for row in selected:
@@ -638,7 +704,47 @@ def capture(source_dir: Path, output_dir: Path, agent: str,
                     "primary_index_bytes": len(index_raw),
                     "primary_index_url": index_url,
                     "primary_document_filename": primary_name,
+                    "primary_xbrl_source_state": "NOT_REQUESTED",
                 }
+                if xbrl_getter is not None:
+                    try:
+                        xml, xbrl_name, xbrl_url = xbrl_getter(
+                            row["sec_archive_path"], index_raw, agent)
+                        expected_name, expected_url = _primary_xbrl_from_index(
+                            row["sec_archive_path"], index_raw)
+                        if (type(xml) is not bytes
+                            or not 0 < len(xml) <= MAX_PRIMARY_XBRL_BYTES
+                            or xbrl_name != expected_name or xbrl_url != expected_url):
+                            raise ListingEvidenceStop("Unverified original SEC XBRL exhibit")
+                        xbrl_evidence = _original_submission_xbrl_symbol(
+                            b"<DOCUMENT>\n<TYPE>EX-101.INS\n<TEXT>" + xml +
+                            b"</TEXT></DOCUMENT>")
+                        xbrl_filename = ("original-indexed-xbrl-" + str(row["cik"])
+                                         + "-" + accession.replace("-", "") + "-"
+                                         + xbrl_name)
+                        (output_dir / xbrl_filename).write_bytes(xml)
+                        provenance.update({
+                            "primary_xbrl_source_state": "INDEX_VERIFIED_XBRL_BYTES_CAPTURED",
+                            "primary_xbrl_original_sha256": sha256(xml).hexdigest(),
+                            "primary_xbrl_original_bytes": len(xml),
+                            "primary_xbrl_local_file": xbrl_filename,
+                            "primary_xbrl_document_filename": xbrl_name,
+                            "primary_xbrl_source_url": xbrl_url,
+                            "primary_xbrl_ticker_state": xbrl_evidence[
+                                "original_xbrl_ticker_state"],
+                            "primary_xbrl_trading_symbol": xbrl_evidence[
+                                "original_xbrl_trading_symbol"],
+                        })
+                    except ListingEvidenceStop as exc:
+                        provenance.update({
+                            "primary_xbrl_source_state": "SOURCE_UNAVAILABLE_OR_UNVERIFIABLE",
+                            "primary_xbrl_failure_reason": (
+                                exc.reason_code if isinstance(exc, FilingSourceFailure)
+                                else "OTHER_UNVERIFIABLE"),
+                            "primary_xbrl_ticker_state": "NOT_EVALUATED_SOURCE_UNAVAILABLE",
+                            "primary_xbrl_trading_symbol": None,
+                        })
+                provenance["primary_xbrl_not_independent_listing_or_security_id"] = True
             (output_dir / filename).write_bytes(raw)
             result.update({
                 "source_state": ("ORIGINAL_10K_BYTES_CAPTURED" if
@@ -701,6 +807,17 @@ def capture(source_dir: Path, output_dir: Path, agent: str,
         "filings_with_structured_12b_rows": sum(
             bool(r.get("possible_12b_security_class_rows")) for r in observations),
         "structured_rows_not_historical_investable_security_master": True,
+        "index_verified_primary_xbrl_sources_captured": sum(
+            r.get("primary_xbrl_source_state") == "INDEX_VERIFIED_XBRL_BYTES_CAPTURED"
+            for r in observations),
+        "index_verified_primary_xbrl_ticker_review_candidates": sum(
+            r.get("primary_xbrl_ticker_state") ==
+            "ONE_ORIGINAL_XBRL_TICKER_REVIEW_ONLY" for r in observations),
+        "index_verified_primary_xbrl_source_failure_reasons": dict(sorted(Counter(
+            r["primary_xbrl_failure_reason"] for r in observations
+            if r.get("primary_xbrl_source_state") == "SOURCE_UNAVAILABLE_OR_UNVERIFIABLE"
+        ).items())),
+        "index_verified_primary_xbrl_not_historical_security_master": True,
         "original_xbrl_ticker_review_candidates": sum(
             r.get("original_xbrl_ticker_state") ==
             "ONE_ORIGINAL_XBRL_TICKER_REVIEW_ONLY" for r in observations),
