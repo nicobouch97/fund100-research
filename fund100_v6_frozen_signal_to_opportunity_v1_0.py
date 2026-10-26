@@ -103,6 +103,9 @@ def inspect(*,history:pd.DataFrame,source_sha256:str,
         "hypothetical_target_weights":target,
         "forecast_source":"PRIOR_252_SESSION_REALIZED_PRICE_EXTRAPOLATION_NOT_CONFIRMED_EXPECTED_RETURN",
         "estimated_uncertainty_bps":risk_bps,
+        # Retrospective validation reuses the EXACT lagged forecasts fed
+        # into the non-executable economic gate. Never label as live alpha.
+        "hypothetical_forecast_returns":forecasts,
         "source_price_last_session_never_live_freshness":True,
         "opportunity_order_authorized":False,
         "manual_per_trade_approval_required":False,
