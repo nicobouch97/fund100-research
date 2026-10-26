@@ -174,6 +174,8 @@ def test_verified_source_directories_requires_actual_source_replay(tmp_path):
     (fake/"manifest.json").write_text(json.dumps(manifest()))
     with pytest.raises(e8.CohortStop,match="independently replayed"):
         e8.verified_source_dirs(tmp_path)
+    (fake/"manifest.json").unlink()
+    fake.rmdir()
     invalid=tmp_path/"not-a-run"
     invalid.mkdir()
     with pytest.raises(e8.CohortStop,match="numeric GitHub run"):
