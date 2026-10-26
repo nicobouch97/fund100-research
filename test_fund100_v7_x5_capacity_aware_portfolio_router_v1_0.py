@@ -85,6 +85,13 @@ def test_per_order_round_up_is_conservative_for_ticket_splitting():
     assert x5.fee_upper_by_ticket(Decimal("0"),Decimal("10"),Decimal("15"))==0
     with pytest.raises(x5.CapacityStop):
         x5.fee_upper_by_ticket(Decimal("1"),Decimal("0"),Decimal("15"))
+    # Max-first would use $20+$5 (invalid $5 ticket) and understate
+    # 35bp fees at $0.09; valid $15+$10 costs $0.10 after rounding.
+    assert x5.fee_upper_by_ticket(
+        Decimal("25"),Decimal("20"),Decimal("35"),Decimal("10"))==Decimal("0.10")
+    with pytest.raises(x5.CapacityStop):
+        x5.fee_upper_by_ticket(
+            Decimal("11"),Decimal("10"),Decimal("15"),Decimal("10"))
 
 def test_strategy_independent_authorized_future_universe_remains_untrusted():
     spec=x5.sample_spec()
@@ -224,5 +231,19 @@ def test_exact_feasible_min_max_ticket_partition_remains_modeled():
     result=plan("1000.00",spec=spec,positions={},cash="1000.00",
                 target={"XLK":"0.02"})
     assert result["estimated_trade_side_details"]["XLK_BUY"]["modelled_ticket_count"]==2
+    assert not any(w["reason"]=="MODELED_TICKET_SPLIT_VIOLATES_MINIMUM"
+                   for w in result["too_small_or_infeasible_target_warnings"])
+
+
+def test_feasible_non_maximal_split_uses_actual_valid_ticket_fee():
+    spec=x5.sample_spec()
+    spec["XLK"]["minimum_notional_usd"]="10"
+    spec["XLK"]["maximum_ticket_usd"]="20"
+    spec["XLK"]["modeled_side_cost_bps"]="35"
+    result=plan("1000.00",spec=spec,positions={},cash="1000.00",
+                target={"XLK":"0.025"})
+    assert result["estimated_trade_side_details"]["XLK_BUY"]["modelled_ticket_count"]==2
+    assert result["modeled_all_sides_fees_usd"]=="0.10"
+    assert result["model_net_cash_reserve_after_all_rebalances_usd"]=="974.90"
     assert not any(w["reason"]=="MODELED_TICKET_SPLIT_VIOLATES_MINIMUM"
                    for w in result["too_small_or_infeasible_target_warnings"])
