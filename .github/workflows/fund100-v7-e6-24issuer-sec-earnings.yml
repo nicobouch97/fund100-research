@@ -1,0 +1,90 @@
+name: Fund-100 V7 E6 Expanded 24-Issuer SEC Earnings Capture (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_e6_24issuer_sec_earnings_capture_v1_0.py'
+      - 'test_fund100_v7_e6_24issuer_sec_earnings_capture_v1_0.py'
+      - '.github/workflows/fund100-v7-e6-24issuer-sec-earnings.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_e6_24issuer_sec_earnings_capture_v1_0.py'
+      - 'test_fund100_v7_e6_24issuer_sec_earnings_capture_v1_0.py'
+      - '.github/workflows/fund100-v7-e6-24issuer-sec-earnings.yml'
+  schedule:
+    - cron: '25 9 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v7-e6-original-sec-24-issuer-feed
+  cancel-in-progress: false
+
+jobs:
+  frozen-source-replay-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install project source verification dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test original CIK freeze, event-date filter and broker isolation
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_v7_e6_24issuer_sec_earnings_capture_v1_0.py \
+            test_fund100_v7_e4_sec_event_capture_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+
+  original-24-company-sec:
+    needs: frozen-source-replay-offline
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install project source dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Acquire 24 fixed original SEC submissions with registered requester identity
+        env:
+          SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+        run: |
+          set -euo pipefail
+          test -n "${SEC_USER_AGENT}" || { echo "No SEC requester identity; refuse anonymous source retrieval."; exit 1; }
+          python fund100_v7_e6_24issuer_sec_earnings_capture_v1_0.py \
+            --output-dir /tmp/fund100-e6-original-sec-24
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import fund100_v7_e6_24issuer_sec_earnings_capture_v1_0 as e6
+          root=Path('/tmp/fund100-e6-original-sec-24')
+          d=e6.verify(root)
+          assert d['source_count']==24
+          assert d['original_P4N_source_manifest_sha256']==e6.ORIGINAL_P4N_MANIFEST_SHA256
+          assert d['forward_return_observations']==0
+          assert d['broker_orders']==d['broker_http_requests']==0
+          assert d['trading_authorized'] is False and d['live_authorized'] is False
+          assert d['precohort_reference_event_count']>=0
+          assert d['new_event_first_discovered_in_this_capture_proven'] is False
+          print('24 original SEC filings authenticated; historic pre-cohort and eligible observations separated.')
+          print('OBSERVED NOT ACTUAL TRADES:')
+          print(' 8-K after issuer registration:',d['after_registration_event_count'])
+          print(' 8-K prior to 24-Oct additional issuer freeze:',d['precohort_reference_event_count'])
+          PY
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Archive SEC raw 24-issuer submissions and SHA-pinned report
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-e6-original-24-issuer-sec-event-${{ github.run_id }}
+          path: /tmp/fund100-e6-original-sec-24/
+          retention-days: 90
+          if-no-files-found: error
