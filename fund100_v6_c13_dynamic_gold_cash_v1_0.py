@@ -306,6 +306,14 @@ def main() -> None:
               "DYNAMIC_MINUS_STATIC_GOLD_CAGR_PP",
               row["dynamic_minus_static_gold_cagr_pp"],
               "SWITCHES", row["gold_cash_switches"])
+        if cost == 15:
+            for benchmark, item in row["post_result_calendar_year_relative_log_wealth"].items():
+                print("GOLD_TREND_YEAR_CONCENTRATION", benchmark,
+                      "BEST_YEAR", item["largest_positive_year"],
+                      "TERMINAL_RELATIVE_LOG_WEALTH_PCT",
+                      item["terminal_relative_log_wealth_pct"],
+                      "EX_BEST_YEAR_LOG_WEALTH_PCT",
+                      item["total_ex_largest_positive_year_log_relative_wealth_pct"])
     print("RESEARCH_ONLY", "BROKER_ORDERS", report["live_orders"])
 
 
