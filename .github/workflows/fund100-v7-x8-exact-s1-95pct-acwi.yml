@@ -1,0 +1,58 @@
+name: Fund-100 V7 X8 Exact 95 Percent S1 vs ACWI (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_x8_exact_s1_95pct_vs_acwi_v1_0.py'
+      - 'test_fund100_v7_x8_exact_s1_95pct_vs_acwi_v1_0.py'
+      - '.github/workflows/fund100-v7-x8-exact-s1-95pct-acwi.yml'
+      - 'research_lab/V7_X8_PREDECLARED_REAL_95PCT_S1_COSTED_BENCHMARK_2026_10_26.md'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_x8_exact_s1_95pct_vs_acwi_v1_0.py'
+      - 'test_fund100_v7_x8_exact_s1_95pct_vs_acwi_v1_0.py'
+      - '.github/workflows/fund100-v7-x8-exact-s1-95pct-acwi.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-hashed-risk-premia-economics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt
+      - name: Test source invariance, costed cash and original risk drift
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python -m pytest -q test_fund100_v7_x8_exact_s1_95pct_vs_acwi_v1_0.py
+          python fund100_v7_x8_exact_s1_95pct_vs_acwi_v1_0.py --output /tmp/fund100-v7-x8-result.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import fund100_v7_x8_exact_s1_95pct_vs_acwi_v1_0 as x8
+          result=json.loads(Path('/tmp/fund100-v7-x8-result.json').read_text())
+          assert result['schema']==x8.SCHEMA
+          assert set(result['fixed_eras_and_costs'])=={'5','15','35'}
+          assert all(set(p)==set(x8.WINDOWS)
+                     for p in result['fixed_eras_and_costs'].values())
+          assert not result['live_authorized']
+          assert result['original_live_pilot_USD_ceiling_unchanged']=='130.30'
+          assert result['broker_gets']==result['broker_posts']==result['broker_orders']==0
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-x8-original-exact95-s1-${{ github.run_id }}
+          path: /tmp/fund100-v7-x8-result.json
+          retention-days: 90
+          if-no-files-found: error
