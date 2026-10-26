@@ -72,7 +72,9 @@ def _result(reason,eligible=False,summary=None):
         "hypothetical_context":summary or {},
     }
 
-def assess(*,snapshot:dict,captures:list,economic_report:dict,
+def assess(*,snapshot:dict,captures:list,candidate_target_weights:dict,
+           expected_returns_fraction:dict,asset_spec:dict,
+           hypothetical_capital_limit_usd:str,forecast_horizon_sessions:int,
            now_utc:str):
     """Reject incomplete source chronology; synthetic PASS never means LIVE GO.
 
@@ -130,6 +132,8 @@ def assess(*,snapshot:dict,captures:list,economic_report:dict,
         if (captured.date()<=stamp or captured<=paused or captured>now or
             stamp<=paused.date() or (now-captured).days>20):
             raise RecoveryStop("Source future, stale or not post-pause")
+        if stamp.weekday()>4:
+            raise RecoveryStop("Weekend is not a completed US ETF trading session")
         if earlier is not None and (
             stamp<=earlier[0] or captured<=earlier[1]):
             raise RecoveryStop("Duplicate or reversed market vintages")
@@ -143,13 +147,6 @@ def assess(*,snapshot:dict,captures:list,economic_report:dict,
         return _result("HOLD_RECOVERY_SOURCE_TOO_OLD")
     if (now-paused).total_seconds()<SOFT_PAUSE_MIN_CALENDAR_DAYS*86400:
         return _result("HOLD_RESEARCH_PAUSE_COOLDOWN_NOT_MET")
-    if type(economic_report) is not dict or (
-        economic_report.get("schema")!=economics.SCHEMA
-        or economic_report.get("all_forecasts_synthetic_and_unqualified") is not True
-        or economic_report.get("trading_authorized") is not False
-        or economic_report.get("broker_gets")!=0 or economic_report.get("broker_posts")!=0
-        or economic_report.get("broker_orders")!=0):
-        raise RecoveryStop("Unverified costed opportunity report")
     # A hard account breach is NOT merely a soft signal pause. Neither
     # a later good price mark nor a favorable forecast can clear it.
     if snapshot["pause_kind"]=="ACCOUNT_HARD_STOP":
@@ -165,6 +162,22 @@ def assess(*,snapshot:dict,captures:list,economic_report:dict,
     if any(v>RESEARCH_RECOVERY_VOL_CEILING or r<=HIGH_DAILY_LIMIT
            for _,_,v,r in replay):
         return _result("HOLD_POST_PAUSE_MARKET_STRESS_NOT_CLEARED")
+    # Recompute X6 economics FROM THIS EXACT synthetic NAV and settled cash,
+    # never accept a favorable economic report for a different account.
+    if hypothetical_capital_limit_usd!=snapshot["equity_usd"]:
+        raise RecoveryStop("Reentry opportunity uses a different NAV ceiling")
+    try:
+        economic_report=economics.select(
+            capital_nav_usd=snapshot["equity_usd"],
+            prospective_cap_usd=hypothetical_capital_limit_usd,
+            settled_cash_usd=snapshot["settled_cash_usd"],
+            current_holdings_usd={},
+            candidate_target_weights=candidate_target_weights,
+            expected_returns_fraction=expected_returns_fraction,
+            asset_spec=asset_spec,
+            forecast_horizon_sessions=forecast_horizon_sessions)
+    except (economics.SelectionStop, economics.capacity.CapacityStop) as exc:
+        raise RecoveryStop("Unqualified or inconsistent synthetic X6 inputs") from exc
     winner=economic_report.get("preferred_research_candidate")
     outcomes=economic_report.get("candidate_outcomes")
     if (not isinstance(outcomes,dict) or winner not in outcomes):
