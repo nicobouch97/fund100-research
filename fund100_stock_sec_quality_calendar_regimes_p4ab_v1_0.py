@@ -70,6 +70,67 @@ def _summarize(rows):
         "per_issuer_mean_stock_minus_matched_spy_pp":per_issuer,
     }
 
+
+def _within_year_quality_discrimination(rows):
+    """Does the SEC quality label discriminate WITHIN a historical year?
+
+    Compare equal-weight issuer averages, not events dominated by repeat
+    filings. Only years with >=2 distinct nonoverlapping issuers on EACH side
+    contribute to the descriptive eligible-year mean. Common-year coverage
+    and all excluded sparse years remain visible, including negative years.
+    Different filing dates, overlapping returns, today's selected survivors,
+    and retrospectively revised prices still preclude an alpha claim.
+    """
+    by_year=defaultdict(list)
+    for row in rows:
+        by_year[row["year"]].append(row)
+    per_year={}
+    qualified=[]
+    for year,events in sorted(by_year.items()):
+        high=defaultdict(list)
+        low=defaultdict(list)
+        for event in events:
+            destination=high if event["quality_high"] else low
+            destination[event["ticker"]].append(event["active_pp"])
+        hi_means=[sum(v)/len(v) for v in high.values()]
+        lo_means=[sum(v)/len(v) for v in low.values()]
+        high_mean=_mean(hi_means)
+        low_mean=_mean(lo_means)
+        both=bool(high and low)
+        disjoint=set(high).isdisjoint(low)
+        qualifying=(both and disjoint and len(high)>=2 and len(low)>=2)
+        spread=(round(high_mean-low_mean,6) if both else None)
+        per_year[str(year)]={
+            "all_events":len(events),
+            "high_quality_events":sum(map(len,high.values())),
+            "low_quality_events":sum(map(len,low.values())),
+            "high_distinct_issuers":len(high),
+            "low_distinct_issuers":len(low),
+            "issuers_appearing_in_both_quality_groups":sorted(set(high)&set(low)),
+            "high_issuer_equal_stock_minus_spy_pp":high_mean,
+            "low_issuer_equal_stock_minus_spy_pp":low_mean,
+            "high_minus_low_issuer_equal_pp":spread,
+            "has_both_groups":both,
+            "eligible_for_descriptive_year_equal_mean":qualifying,
+        }
+        if qualifying:
+            qualified.append(spread)
+    comparable=[row for row in per_year.values() if row["has_both_groups"]]
+    return {
+        "method":"UNALTERED_15BPS_MATCHED_SPY_ISSUER_EQUAL_WITHIN_YEAR_HIGH_MINUS_LOW",
+        "per_entry_calendar_year":per_year,
+        "calendar_years_with_both_quality_groups":len(comparable),
+        "calendar_years_with_at_least_two_distinct_issuers_per_disjoint_group":len(qualified),
+        "qualifying_calendar_years_positive_gap":sum(x>0 for x in qualified),
+        "qualifying_calendar_years_nonpositive_gap":sum(x<=0 for x in qualified),
+        "qualifying_year_equal_quality_gap_pp":_mean(qualified),
+        "sparse_years_excluded_not_backfilled":True,
+        "high_low_filing_dates_within_year_not_exactly_contemporaneous":True,
+        "matched_spy_is_not_independently_beta_risk_matched":True,
+        "historical_2026_survivor_selected_not_independent_alpha":True,
+        "live_trading_authorized":False,
+    }
+
 def inspect(report:dict)->dict:
     if (type(report) is not dict
         or report.get("schema")!=p4r.SCHEMA
@@ -161,6 +222,7 @@ def inspect(report:dict)->dict:
         "all_event_panel":full,
         "high_quality_panel":group_high,
         "low_quality_panel":group_low,
+        "within_year_quality_discrimination":_within_year_quality_discrimination(rows),
         "calendar_year_mean_excess_pp":years,
         "calendar_years_with_positive_mean":sum(v>0 for v in years.values()),
         "calendar_years_with_nonpositive_mean":sum(v<=0 for v in years.values()),
