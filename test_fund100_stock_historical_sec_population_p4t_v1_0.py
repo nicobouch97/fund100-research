@@ -234,3 +234,102 @@ def test_capture_annual_writes_source_bound_filing_manifest(tmp_path, monkeypatc
     assert sha256(raw).hexdigest() == report["historical_filing_manifest_sha256"]
     assert raw == p4t._manifest_bytes(p4t.annual_filing_manifest(quarters))
     assert not report["trading_authorized"] and not report["live_authorized"]
+
+
+def quarters_with_form25_events():
+    quarters = annual_quarters()
+    quarters[1] = index(
+        ONE, TWO,
+        "1001|OLDCO INC|25-NSE|2017-01-20|edgar/data/1001/0001001-17-000101.txt")
+    quarters[2] = index(
+        "1001|OLDCO INC|10-K|2017-05-15|edgar/data/1001/0001001-17-000011.txt",
+        "1001|OLDCO INC|25|2017-05-21|edgar/data/1001/0001001-17-000102.txt",
+        "1001|OLDCO INC|25/A|2017-05-22|edgar/data/1001/0001001-17-000103.txt")
+    quarters[3] = index(
+        "3003|NEWCO INC|10-K|2017-08-15|edgar/data/3003/0003003-17-000012.txt",
+        "3003|NEWCO INC|25|2017-08-20|edgar/data/3003/0003003-17-000104.txt")
+    quarters[4] = index(
+        "4004|LATER INC|10-K|2017-11-15|edgar/data/4004/0004004-17-000013.txt",
+        "9009|UNRELATED|25-NSE|2017-10-05|edgar/data/9009/0009009-17-000105.txt",
+        "4004|LATER INC|25-NSE/A|2017-11-20|edgar/data/4004/0004004-17-000106.txt")
+    return quarters
+
+
+def test_form25_index_links_real_2017_filer_ciks_without_claiming_stock_delisting():
+    quarters = quarters_with_form25_events()
+    rows = p4t.form25_index_manifest(quarters)
+    out = p4t.evaluate_form25_index(quarters)
+    assert len(rows) == out["original_form25_index_entries"] == 6
+    assert out["form_type_index_entries"] == {
+        "25": 2, "25/A": 1, "25-NSE": 2, "25-NSE/A": 1}
+    assert out["original_form25_distinct_filer_ciks"] == 4
+    assert out["same_cik_2017_10k_filer_index_entries"] == 5
+    assert out["same_cik_2017_10k_filer_distinct_ciks"] == 3
+    assert out["same_cik_prior_or_same_day_10k_index_entries"] == 4
+    assert rows == sorted(rows, key=lambda row: (
+        row["filing_date"], row["filer_cik"], row["sec_archive_path"]))
+    assert sha256(p4t._manifest_bytes(rows)).hexdigest() == out[
+        "original_form25_manifest_sha256"]
+    assert out["current_ticker_registry_not_used"]
+    assert out["form25_index_does_not_identify_security_class_or_common_stock"]
+    assert out["form25_filing_date_not_effective_delisting_date"]
+    assert out["exchange_25_nse_and_amendments_not_deduplicated_as_exits"]
+    assert out["original_form25_documents_not_examined"]
+    assert out["no_delisting_adjusted_total_return_or_investable_alpha"]
+    assert out["broker_requests"] == out["broker_orders"] == 0
+    assert not out["paper_authorized"] and not out["live_authorized"]
+    before = next(row for row in rows if row["filing_date"] == "2017-01-20")
+    assert before["same_cik_in_full_2017_10k_filer_population"]
+    assert not before["same_cik_10k_filed_on_or_before_form25"]
+    unrelated = next(row for row in rows if row["filer_cik"] == 9009)
+    assert not unrelated["same_cik_in_full_2017_10k_filer_population"]
+
+
+@pytest.mark.parametrize("change", ["duplicate", "wrong_cik", "wrong_quarter",
+                                      "missing_name", "unsafe_path"])
+def test_form25_index_rejects_invalid_event_provenance(change):
+    quarters = quarters_with_form25_events()
+    old = "1001|OLDCO INC|25-NSE|2017-01-20|edgar/data/1001/0001001-17-000101.txt"
+    bad = {
+        "duplicate": old,
+        "wrong_cik": old.replace("edgar/data/1001/", "edgar/data/9009/"),
+        "wrong_quarter": old.replace("2017-01-20", "2017-04-20"),
+        "missing_name": old.replace("OLDCO INC", ""),
+        "unsafe_path": old.replace("0001001-17-000101.txt", "../bad.txt"),
+    }[change]
+    if change == "duplicate":
+        quarters[1] = index(ONE, TWO, old, bad)
+    else:
+        quarters[1] = index(ONE, TWO, bad)
+    with pytest.raises(p4t.PopulationStop, match="Form 25"):
+        p4t.form25_index_manifest(quarters)
+
+
+def test_form25_source_fingerprints_and_registry_independence():
+    quarters = quarters_with_form25_events()
+    a = p4t.evaluate_form25_index(quarters)
+    # Changing today's ticker list is irrelevant to an original 2017 event.
+    p4t.evaluate_annual(quarters, registry((1001, "OLD")),
+                        captured_utc="2026-10-25T12:00:00Z")
+    p4t.evaluate_annual(quarters, registry((9009, "UNRELATED")),
+                        captured_utc="2026-10-25T12:00:00Z")
+    b = p4t.evaluate_form25_index(quarters)
+    assert a == b
+    assert all(a["source_index_sha256"][f"2017_Q{q}"] ==
+               sha256(quarters[q]).hexdigest() for q in range(1, 5))
+
+
+def test_form25_source_capture_preserves_original_index_and_event_bytes(
+        tmp_path, monkeypatch):
+    quarters = quarters_with_form25_events()
+    sources = {p4t.INDEX_URLS[q]: raw for q, raw in quarters.items()}
+    sources[p4t.REGISTRY_URL] = registry((1001, "OLD"))
+    monkeypatch.setattr(p4t, "_official_get", lambda url, agent, limit: sources[url])
+    original = p4t.capture_annual(tmp_path, "Research research@example.org")
+    report = json.loads((tmp_path / "historical-2017-form25-index-census.json").read_text())
+    payload = (tmp_path / report["original_form25_manifest_file"]).read_bytes()
+    assert original["annual_10k_filing_count"] == 5
+    assert payload == p4t._manifest_bytes(p4t.form25_index_manifest(quarters))
+    assert payload.count(b"\n") == report["original_form25_index_entries"] == 6
+    assert sha256(payload).hexdigest() == report["original_form25_manifest_sha256"]
+    assert report["same_cik_prior_or_same_day_10k_index_entries"] == 4
