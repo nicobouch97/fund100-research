@@ -1,0 +1,98 @@
+name: Fund-100 V7 E7 24-Issuer Original SEC Forward Close Marks (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_e7_24issuer_earnings_forward_v1_0.py'
+      - 'test_fund100_v7_e7_24issuer_earnings_forward_v1_0.py'
+      - '.github/workflows/fund100-v7-e7-24issuer-source-forward.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_e7_24issuer_earnings_forward_v1_0.py'
+      - 'test_fund100_v7_e7_24issuer_earnings_forward_v1_0.py'
+      - '.github/workflows/fund100-v7-e7-24issuer-source-forward.yml'
+  schedule:
+    - cron: '45 10 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: fund100-v7-e7-original-sec-forward-research
+  cancel-in-progress: false
+
+jobs:
+  authentic-24-company-price-marks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install existing original public research packages
+        run: python -m pip install -r requirements.txt
+      - name: Verify offline event-registration, NYSE timestamp, cost, and zero-order contracts
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v7_e7_24issuer_earnings_forward_v1_0.py \
+            test_fund100_v7_e6_24issuer_sec_earnings_capture_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Obtain exact original 24-company SEC source only from green pinned main
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fund100-v7-e7-pinned-sec
+          gh run download 40365882558 \
+            -n fund100-v7-e6-original-24-issuer-sec-event-40365882558 \
+            -D /tmp/fund100-v7-e7-pinned-sec
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import fund100_v7_e7_24issuer_earnings_forward_v1_0 as e7
+          import fund100_v7_e6_24issuer_sec_earnings_capture_v1_0 as e6
+          root=Path('/tmp/fund100-v7-e7-pinned-sec')
+          assert hashlib.sha256((root/'manifest.json').read_bytes()).hexdigest()==e7.PINNED_E6_MANIFEST_SHA256
+          doc=e6.verify(root)
+          assert doc['source_count']==24
+          assert doc['after_registration_event_count']==1
+          assert doc['precohort_reference_event_count']==2
+          assert doc['broker_orders']==0
+          print('Replayed all 24 original SEC issuer response hashes from genuine Oct 26 source.')
+          PY
+      - name: Acquire independent 24-stock completed-close vendor vintage and measured horizon
+        run: |
+          set -euo pipefail
+          python fund100_v7_e7_24issuer_earnings_forward_v1_0.py \
+            --sec-dir /tmp/fund100-v7-e7-pinned-sec \
+            --output-dir /tmp/fund100-v7-e7-research-report
+          python - <<'PY'
+          from pathlib import Path
+          import json,hashlib
+          import fund100_v7_e7_24issuer_earnings_forward_v1_0 as e7
+          out=Path('/tmp/fund100-v7-e7-research-report')
+          r=json.loads((out/'source-pinned-24issuer-event-forward.json').read_text())
+          p=json.loads((out/'original-price-manifest.json').read_text())
+          assert r['schema']==e7.SCHEMA
+          assert r['pinned_original_SEC_manifest_sha256']==e7.PINNED_E6_MANIFEST_SHA256
+          assert r['source_issuer_count']==24
+          assert r['registered_source_events']==1
+          assert len(r['precohort_historical_exclusions'])==2
+          assert r['price_source_csv_sha256']==p['canonical_price_csv_sha256']
+          assert r['broker_gets']==r['broker_posts']==r['broker_orders']==0
+          assert r['trading_authorized'] is False and r['live_authorized'] is False
+          print('Actual forward measurements after SEC source date:',r['post_observation_two_close_marks'])
+          print('Research verdict:',r['status'])
+          PY
+      - name: Archive authenticated independently acquired 24-issuer prices and return report
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-e7-24issuer-independent-event-prices-${{ github.run_id }}
+          path: /tmp/fund100-v7-e7-research-report/
+          retention-days: 90
+          if-no-files-found: error
