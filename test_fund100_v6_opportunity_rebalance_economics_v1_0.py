@@ -56,6 +56,49 @@ def test_available_settled_cash_changes_hypothetical_only_not_live_permission():
     assert z["live_order_submission_authorized"] is False
     assert z["settled_sale_proceeds_proven"] is False
 
+
+def test_settled_cash_must_cover_buy_side_cost_not_only_notional():
+    c=case()
+    # Original $49 BUY plus 15bps buy-side costs = $49.0735.
+    # Conservatively round each leg's cash buffer up to $0.08.
+    c["snapshot"]["settled_cash_usd"]="49.00"
+    z=run(c)
+    assert z["hypothetical_buy_usd_by_symbol"]=={"XLK":"49.00"}
+    assert z["estimated_buy_side_cost_buffer_usd"]=="0.08"
+    assert z["settled_cash_required_for_buys_and_buy_side_costs_usd"]=="49.08"
+    assert z["buy_side_cost_buffer_rounded_up_per_order"] is True
+    assert z["state"]=="HYPOTHETICAL_SWITCH_SELL_SETTLEMENT_REQUIRED"
+    assert not z["live_order_submission_authorized"]
+
+    c["snapshot"]["settled_cash_usd"]="49.07"
+    assert run(c)["state"]=="HYPOTHETICAL_SWITCH_SELL_SETTLEMENT_REQUIRED"
+    c["snapshot"]["settled_cash_usd"]="49.08"
+    assert run(c)["state"]=="HYPOTHETICAL_SWITCH_WITH_SETTLED_CASH"
+
+def test_multiple_buys_each_require_rounded_up_cost_buffer():
+    c=case()
+    c["target_weights"]={"XLK":"0.25","XLE":"0.24"}
+    c["expected_returns"]={"ACWI":"0.00","XLK":"0.25","XLE":"0.30"}
+    c["round_trip_side_cost_bps"]="1"
+    c["forecast_uncertainty_bps"]="0"
+    c["snapshot"]["settled_cash_usd"]="49.00"
+    z=run(c)
+    assert z["hypothetical_buy_usd_by_symbol"]=={"XLE":"24.00","XLK":"25.00"}
+    assert z["estimated_buy_side_cost_buffer_usd"]=="0.02"
+    assert z["settled_cash_required_for_buys_and_buy_side_costs_usd"]=="49.02"
+    assert z["state"]=="HYPOTHETICAL_SWITCH_SELL_SETTLEMENT_REQUIRED"
+    c["snapshot"]["settled_cash_usd"]="49.02"
+    assert run(c)["state"]=="HYPOTHETICAL_SWITCH_WITH_SETTLED_CASH"
+
+def test_zero_cost_purchase_does_not_invent_fee_buffer():
+    c=case()
+    c["round_trip_side_cost_bps"]="0"
+    c["snapshot"]["settled_cash_usd"]="49.00"
+    z=run(c)
+    assert z["estimated_buy_side_cost_buffer_usd"]=="0.00"
+    assert z["settled_cash_required_for_buys_and_buy_side_costs_usd"]=="49.00"
+    assert z["state"]=="HYPOTHETICAL_SWITCH_WITH_SETTLED_CASH"
+
 def test_small_unreliable_edge_holds_existing_holdings():
     c=case()
     c["expected_returns"]={"ACWI":"0.06","XLK":"0.07"}
