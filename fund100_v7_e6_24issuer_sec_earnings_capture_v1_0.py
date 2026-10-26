@@ -37,6 +37,8 @@ EXTRA_SIXTEEN={
     "WMT":"0000104169",
 }
 MAX_OBSERVATIONS_PER_ISSUER=20
+MAX_OFFICIAL_RECENT_ROWS=50000
+MAX_SELECTED_COHORT_ROWS=5000
 BROKER_ORDERS=0
 
 class ExpandedFeedStop(ValueError):
@@ -73,7 +75,32 @@ def _events(source:dict,ticker:str,cik:str,registered:str,
     captured=_utc(observed_utc)
     if captured.date().isoformat()<registered:
         raise ExpandedFeedStop("SEC cohort captured before its original registration")
-    candidates=e1.filing_candidates(source,ticker,captured)
+    # SEC "recent" can be far larger than E1's original eight-issuer
+    # 5,000-row ceiling (JPM had 26,430 REAL aligned rows on 26 Oct).
+    # Validate original FULL cardinality before creating a bounded copy of
+    # just dates in this frozen registered observation window. All source
+    # bytes remain independently SHA-pinned and archived unchanged.
+    recent=source.get("filings",{}).get("recent")
+    required=("form","accessionNumber","filingDate","items")
+    if not isinstance(recent,dict) or any(
+        not isinstance(recent.get(k),list) for k in required
+    ):
+        raise ExpandedFeedStop("Original full SEC submissions arrays incomplete")
+    total=len(recent["form"])
+    if total>MAX_OFFICIAL_RECENT_ROWS or any(
+        len(recent[k])!=total for k in required
+    ):
+        raise ExpandedFeedStop("Original SEC submissions rows inconsistent or unbounded")
+    selected_indices=[
+        i for i,date in enumerate(recent["filingDate"])
+        if isinstance(date,str) and date>=REFERENCE_LOOKBACK_START
+    ]
+    if len(selected_indices)>MAX_SELECTED_COHORT_ROWS:
+        raise ExpandedFeedStop("Recent registered SEC event window unexpectedly oversized")
+    trimmed={"filings":{"recent":{
+        k:[recent[k][i] for i in selected_indices] for k in required
+    }}}
+    candidates=e1.filing_candidates(trimmed,ticker,captured)
     event_rows=[]
     older=[]
     for entry in candidates:
