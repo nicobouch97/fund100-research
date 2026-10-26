@@ -55,33 +55,36 @@ def test_predeclared_sampling_is_deterministic_and_not_survivor_filtered(tmp_pat
 
 
 
-def test_expanded_predeclared_cohort_preserves_original_12_and_balances_strata(tmp_path):
-    # Precommit to 16 per stratum before looking at any additional SEC 10-K.
-    # The existing 6+6 observations must remain a subset, not be reranked.
-    make_sources(tmp_path, n_per_stratum=20)
+def test_expanded_predeclared_cohort_preserves_original_32_and_balances_strata(tmp_path):
+    # Fixed SHA ranking preserves both earlier 6+6 and 16+16 observations.
+    # Extending to 32+32 adds genuinely new original-source filing identities.
+    make_sources(tmp_path, n_per_stratum=40)
     original, _ = p4u.select_sample(tmp_path, per_stratum=6)
-    expanded, _ = p4u.select_sample(tmp_path, per_stratum=16)
+    previous, _ = p4u.select_sample(tmp_path, per_stratum=16)
+    expanded, _ = p4u.select_sample(tmp_path, per_stratum=32)
     assert len(original) == 12
-    assert len(expanded) == 32
-    assert {r["sec_archive_path"] for r in original} <= {
-        r["sec_archive_path"] for r in expanded}
-    assert p4u.select_sample(tmp_path, per_stratum=16)[0] == expanded
+    assert len(previous) == 32
+    assert len(expanded) == 64
+    paths = lambda rows: {r["sec_archive_path"] for r in rows}
+    assert paths(original) <= paths(previous) < paths(expanded)
+    assert len(paths(expanded) - paths(previous)) == 32
+    assert p4u.select_sample(tmp_path, per_stratum=32)[0] == expanded
     assert {s: sum(r["current_registry_stratum"] == s for r in expanded)
             for s in ("in_current_registry", "absent_from_current_registry")} == {
-                "in_current_registry": 16, "absent_from_current_registry": 16}
+                "in_current_registry": 32, "absent_from_current_registry": 32}
     raw = original_10k(
         "<p>Securities registered pursuant to Section 12(b):</p>"
         "<p>Common Stock Nasdaq</p>"
         "<p>Securities registered pursuant to Section 12(g): None</p>")
     report = p4u.capture(tmp_path, tmp_path / "expanded", "Research contact@example.com",
-                         per_stratum=16, getter=lambda path, agent: raw)
-    assert report["predeclared_filing_samples"] == 32
-    assert report["original_filing_sources_captured"] == 32
+                         per_stratum=32, getter=lambda path, agent: raw)
+    assert report["predeclared_filing_samples"] == 64
+    assert report["original_filing_sources_captured"] == 64
     assert report["sample_by_current_registry_stratum"] == {
-        "absent_from_current_registry": 16, "in_current_registry": 16}
+        "absent_from_current_registry": 32, "in_current_registry": 32}
     assert report["captured_by_current_registry_stratum"] == {
-        "absent_from_current_registry": 16, "in_current_registry": 16}
-    assert sum(report["sample_by_filing_quarter"].values()) == 32
+        "absent_from_current_registry": 32, "in_current_registry": 32}
+    assert sum(report["sample_by_filing_quarter"].values()) == 64
     assert report["sample_not_universe_or_delisting_estimate"]
     assert report["broker_requests"] == report["broker_orders"] == 0
     assert not report["trading_authorized"] and not report["live_authorized"]
@@ -292,7 +295,7 @@ def test_source_identity_or_provenance_tampering_fails_closed(tmp_path, tamper):
         p4u.select_sample(tmp_path, per_stratum=1)
 
 
-@pytest.mark.parametrize("bad", [0, -1, 17, True, "1"])
+@pytest.mark.parametrize("bad", [0, -1, 33, True, "1"])
 def test_bounded_sample_size_fails_closed(tmp_path, bad):
     make_sources(tmp_path)
     with pytest.raises(p4u.ListingEvidenceStop):

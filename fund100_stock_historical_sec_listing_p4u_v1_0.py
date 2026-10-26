@@ -29,7 +29,7 @@ MAX_FILING_BYTES = 12_000_000  # full submission remains tightly bounded
 # This independent ceiling never applies to full submissions or index pages.
 MAX_PRIMARY_10K_BYTES = 32_000_000
 MAX_FILING_INDEX_BYTES = 2_000_000
-MAX_SAMPLES_PER_STRATUM = 16
+MAX_SAMPLES_PER_STRATUM = 32
 ARCHIVE_PATH = re.compile(r"edgar/data/([0-9]+)/([0-9-]+)\.txt\Z")
 SEC_PREFIX = "https://www.sec.gov/Archives/"
 SECTION_B = re.compile(
