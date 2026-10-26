@@ -120,6 +120,14 @@ def _summarize(rows):
         "actual_forward_returns_are_out_of_sample":False,
     }
 
+def _selection_excess_vs_acwi(*,weights:dict,actual:dict,benchmark_gross:float)->float:
+    """Costed one-episode ETF selection edge vs ACWI at stated gross weight."""
+    delta=weights.copy()
+    delta["ACWI"]=delta.get("ACWI",0.)-benchmark_gross
+    return (sum(float(w)*actual[s] for s,w in weights.items())
+            -benchmark_gross*actual["ACWI"]
+            -.0035*sum(abs(v) for v in delta.values()))
+
 def _retrospective_disposition(summary:dict)->str:
     """Reject unqualified economics; NEVER promote from reused historical data."""
     if summary["hypothetical_hurdle_pass_windows"]==0:
@@ -204,20 +212,14 @@ def evaluate(*,history:pd.DataFrame,source_sha256:str,
         # Benchmark starts ACWI 95/cash 5 in EACH independent episode.
         # Charge sell+buy costs on genuinely changed ETF exposures.
         selected_weights={s:float(v) for s,v in out["hypothetical_target_weights"].items()}
-        target_vs_acwi=selected_weights.copy()
-        target_vs_acwi["ACWI"]=target_vs_acwi.get("ACWI",0.)-.95
-        selection_turnover=sum(abs(v) for v in target_vs_acwi.values())
-        selection_excess=(sum(float(weight)*actual[s] for s,weight in selected_weights.items())
-                          -.95*actual["ACWI"]-.0035*selection_turnover)
-        # When fewer than three ETFs qualify, target gross can be 47.5%
-        # or 76%, not 95%. Compare against ACWI at EXACTLY the SAME gross
-        # exposure to isolate selection from cash/beta differences.
         target_gross=sum(selected_weights.values())
-        target_vs_same_gross=selected_weights.copy()
-        target_vs_same_gross["ACWI"]=target_vs_same_gross.get("ACWI",0.)-target_gross
-        same_gross_turnover=sum(abs(v) for v in target_vs_same_gross.values())
-        same_gross_excess=(sum(float(w)*actual[s] for s,w in selected_weights.items())
-                           -target_gross*actual["ACWI"]-.0035*same_gross_turnover)
+        # Fixed 95% ACWI is NOT gross-matched when fewer than three ETFs
+        # qualify. Preserve that legacy comparison for continuity, but use
+        # a same-gross ACWI benchmark to isolate stock/sector selection.
+        selection_excess=_selection_excess_vs_acwi(
+            weights=selected_weights,actual=actual,benchmark_gross=.95)
+        same_gross_excess=_selection_excess_vs_acwi(
+            weights=selected_weights,actual=actual,benchmark_gross=target_gross)
         windows.append({
             "decision_session":decision_day,
             "outcome_last_session":data.index[t+HORIZON].date().isoformat(),
