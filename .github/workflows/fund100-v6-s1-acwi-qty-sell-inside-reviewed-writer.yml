@@ -22,6 +22,8 @@ on:
       - "test_fund100_v6_s1_original_first_funded_entry_to_chain_offline_v1_0.py"
       - "fund100_v6_autonomous_event_identity_v1_0.py"
       - "fund100_v6_opportunity_rebalance_economics_v1_0.py"
+      - "fund100_v6_frozen_signal_to_opportunity_v1_0.py"
+      - "test_fund100_v6_frozen_signal_to_opportunity_v1_0.py"
       - "test_fund100_v6_opportunity_rebalance_economics_v1_0.py"
       - "test_fund100_v6_autonomous_event_identity_v1_0.py"
       - "release_candidates/fund100-v6-s1-original-first-acwi-funded-once.REVIEW-ONLY.yml"
