@@ -47,6 +47,17 @@ jobs:
           assert str(x3.CAP) == '130.30'
           print('No order, no asset enablement, no personal financial payload persistence.')
           PY
+          python - <<'PY'
+          from pathlib import Path
+          import audit_fund100_live_boundary as audit
+          workflow='.github/workflows/fund100-v7-x3-real-btc-gold-six-getonly.yml'
+          script='fund100_v7_x3_actual_live_crypto_gold_getonly_v1_0.py'
+          content=Path(workflow).read_text()
+          assert audit.approved_scoped_live_script(workflow,script,content)
+          assert not audit.approved_scoped_live_script(workflow,script,content.replace('contents: read','contents: write'))
+          assert not audit.approved_scoped_live_script(workflow,script,content.replace('ENGAGED','DISENGAGED'))
+          print('Exact blob and protected GET-only credential scope verified; any policy change must re-review.')
+          PY
 
   real-stopped-account-six-get-only:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
