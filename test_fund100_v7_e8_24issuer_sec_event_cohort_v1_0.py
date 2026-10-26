@@ -163,7 +163,7 @@ def test_archive_gap_or_duplicate_run_or_bad_price_is_untrusted():
     with pytest.raises(e8.CohortStop,match="source run identity"):
         inspect(arr)
     df=prices().drop(pd.Timestamp("2026-10-27"))
-    with pytest.raises((e8.CohortStop,e7.EventForwardStop,ValueError),match="NYSE"):
+    with pytest.raises(e8.CohortStop,match="Later independent price vintage"):
         inspect(df=df)
 
 def test_verified_source_directories_requires_actual_source_replay(tmp_path):
