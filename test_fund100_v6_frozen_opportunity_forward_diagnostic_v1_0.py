@@ -20,7 +20,6 @@ def test_disjoint_forward_windows_and_clear_calibration_limitation():
     assert result["schema"]==study.SCHEMA
     assert len(rows)>=20
     assert result["overall"]["evaluated_decision_windows"]==len(rows)
-    assert result["historical_source_file_verified_by_this_function"] if False else True
     assert result["immutable_source_file_verified_by_this_function"] is False
     assert result["source_frozen_price_history_previously_studied"] is True
     assert result["independent_future_holdout_validated"] is False
@@ -42,6 +41,10 @@ def test_disjoint_forward_windows_and_clear_calibration_limitation():
     assert len(rows[0]["zero_return_baseline_errors_bps"])==len(signals.UNIVERSE)
     assert result["overall"]["all_windows_mean_absolute_forecast_error_bps"] is not None
     assert result["overall"]["all_windows_zero_return_naive_mae_bps"] is not None
+    assert "all_candidate_windows_mean_excess_vs_95pct_acwi_after_cost_bps" in result["overall"]
+    assert "hurdle_pass_mean_excess_vs_95pct_acwi_after_cost_bps" in result["overall"]
+    assert all(row["selection_excess_vs_95pct_acwi_after_cost_bps"] is not None
+               for row in rows if row["proposed_switch_has_trade"])
 
 def test_frozen_original_file_is_actually_hash_verified_not_caller_asserted():
     result=study.evaluate_original()
