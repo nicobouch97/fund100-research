@@ -136,11 +136,15 @@ def route(*,capital_nav_usd,prospective_cap_usd,settled_cash_usd,
     combined_buy=Decimal(0)
     combined_sell=Decimal(0)
     all_side_fees=Decimal(0)
+    total_modeled_tickets=0
     for side,group in (("BUY",buys),("SELL",sells)):
         for symbol,amount in sorted(group.items()):
             data=specs[symbol]
             tickets=count_to_fit(amount,data["max_ticket"])
             if tickets>MAX_TICKETS:raise CapacityStop("Beyond modeled order batching capacity")
+            total_modeled_tickets+=tickets
+            if total_modeled_tickets>MAX_TICKETS:
+                raise CapacityStop("Aggregate modeled tickets exceed bounded capacity")
             per_day=data["volume"]*PARTICIPATION
             if per_day<data["min"]:
                 raise CapacityStop("Modeled average daily liquidity below min ticket")
@@ -161,13 +165,34 @@ def route(*,capital_nav_usd,prospective_cap_usd,settled_cash_usd,
             all_side_fees+=cost
             if side=="BUY":combined_buy+=amount+cost
             else:combined_sell+=amount-cost
+    # Daily ticket capacity is SHARED across symbols and trade sides. The
+    # maximum of per-symbol day counts alone can understate execution time.
+    global_ticket_days=count_to_fit(Decimal(total_modeled_tickets),
+                                    Decimal(MAX_TICKETS_PER_MODELED_DAY))
+    max_capacity_days=max(max_capacity_days,global_ticket_days)
     if combined_buy>0 and (cash-combined_buy)<(nav*Decimal("0.05")):
         # Cash is NOT refillable from this candidate's unsettled sells.
         funding="SELL_OR_DEPOSIT_FIRST_THEN_REVERIFY_SETTLEMENT"
     else: funding="HYPOTHETICAL_SETTLED_CASH_SUFFICIENT_ONLY"
-    expected_cash_post=nav-sum(targets.values(),Decimal(0))-all_side_fees
-    if expected_cash_post<nav*Decimal("0.05"):
-        blocked.append({"symbol":"ALL","reason":"POST_COST_CAPITAL_RESERVE_WOULD_BE_BREACHED"})
+    # Do not pretend that below-minimum orders execute. Compute modeled
+    # holdings/cash from ONLY the trade sides that survived the minimums.
+    post_holdings={k:held.get(k,Decimal(0))+buys.get(k,Decimal(0))
+                   -sells.get(k,Decimal(0)) for k in targets}
+    post_cost_nav=nav-all_side_fees
+    expected_cash_post=cash+combined_sell-combined_buy
+    if post_cost_nav<=0 or expected_cash_post<0:
+        blocked.append({"symbol":"ALL","reason":"POST_COST_NEGATIVE_CAPITAL_OR_CASH"})
+    else:
+        cash_floor=post_cost_nav*Decimal("0.05")
+        if expected_cash_post<cash_floor:
+            blocked.append({"symbol":"ALL","reason":"POST_COST_CAPITAL_RESERVE_WOULD_BE_BREACHED"})
+        if sum(post_holdings.values(),Decimal(0))>post_cost_nav*MAX_GROSS:
+            blocked.append({"symbol":"ALL","reason":"POST_COST_GROSS_EXPOSURE_LIMIT_BREACH"})
+        if any(v>post_cost_nav*MAX_SINGLE_WEIGHT for v in post_holdings.values()):
+            blocked.append({"symbol":"ALL","reason":"POST_COST_SINGLE_POSITION_LIMIT_BREACH"})
+        if sum((v for k,v in post_holdings.items()
+                if specs[k]["class"]=="CRYPTO"),Decimal(0))>post_cost_nav*MAX_CRYPTO_TOTAL:
+            blocked.append({"symbol":"ALL","reason":"POST_COST_CRYPTO_EXPOSURE_LIMIT_BREACH"})
     if max_capacity_days>1:
         blocked.append({"symbol":"ALL","reason":"MULTI_SESSION_LIQUIDITY_CAPACITY_REQUIRES_REEVALUATION"})
     if any(x["reason"].startswith("MODELED_NOTIONAL_BELOW") for x in blocked):
@@ -195,12 +220,17 @@ def route(*,capital_nav_usd,prospective_cap_usd,settled_cash_usd,
         "estimated_trade_side_details":estimates,
         "too_small_or_infeasible_target_warnings":blocked,
         "maximum_modeled_capacity_days":max_capacity_days,
+        "aggregate_modelled_ticket_count":total_modeled_tickets,
+        "global_shared_ticket_capacity_minimum_days":global_ticket_days,
+        "post_cost_model_nav_usd":nstr(post_cost_nav),
+        "post_trade_holdings_include_untraded_dust":True,
         "max_daily_volume_participation_assumption":format(PARTICIPATION,"f"),
         "maximum_tickets_per_day_assumption":MAX_TICKETS_PER_MODELED_DAY,
         "combined_hypothetical_buys_and_rounded_costs_usd":nstr(combined_buy),
         "combined_hypothetical_sell_proceeds_after_costs_usd":nstr(combined_sell),
         "modeled_all_sides_fees_usd":nstr(all_side_fees),
         "model_net_cash_reserve_after_all_rebalances_usd":nstr(expected_cash_post),
+        "post_trade_cash_assumes_sells_settle_before_use":True,
         "funding_status":funding,
         "proceeds_of_unsettled_sales_used_for_buys":False,
         "model_liquidity_not_verified_with_market_data":True,
