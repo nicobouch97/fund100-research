@@ -92,7 +92,26 @@ jobs:
                   for row in scenario.values():
                       assert row['X1_original_NAV_exact_alignment_max_difference']<=1e-8
                       assert row['nonmarket_calendar_days']>500
-          print('24/7 weekend exposure risk measured; NO brokerage or new trading strategy.')
+                      assert row['component_pnl_reconciled_to_every_calendar_nav']
+                      assert abs(sum(row['max_drawdown_component_contribution_pp'].values())
+                                 -row['calendar_close_mark_max_drawdown_pct'])<0.00001
+                      assert abs(sum(row['full_history_component_pnl_pct_initial_capital'].values())
+                                 -row['terminal_net_profit_pct_initial_capital'])<0.00001
+                  for name, row in scenario.items():
+                      if name!='CASH_CONTROL_75':
+                          assert row['incremental_pnl_reconciled_to_cash_control']
+                          assert abs(sum(row['incremental_component_pnl_pp_initial_capital'].values())
+                                     -row['incremental_terminal_wealth_pp_initial_capital'])<0.00001
+          sample=r['results']['35']['IRX_MINUS_50BP']
+          for name in ('BTC_5_GOLD_5','BTC_10'):
+              row=sample[name]
+              print(name,'max DD',row['calendar_close_mark_max_drawdown_pct'],
+                    'drawdown components (pp)',row['max_drawdown_component_contribution_pp'],
+                    'net wealth vs matched cash (pp)',
+                    row['incremental_terminal_wealth_pp_initial_capital'],
+                    'incremental component P&L (pp)',
+                    row['incremental_component_pnl_pp_initial_capital'])
+          print('Exact daily/peak-to-trough/matched-cash attribution; NO brokerage or strategy promotion.')
           PY
       - name: Archive real calendar drawdown exposure and exact original session parity
         uses: actions/upload-artifact@v4

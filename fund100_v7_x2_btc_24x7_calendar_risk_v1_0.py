@@ -78,10 +78,14 @@ def mark_every_calendar_day(market:pd.DataFrame,dates:pd.DatetimeIndex,
     target=np.asarray(weights,dtype=float)
     fees=np.array([x1.ETF_SIDE_BPS/10000]*4+
                   [crypto_side_bps/10000],dtype=float)
-    nav=1.-float(np.dot(target[:-1],fees))
+    opening_fee=float(np.dot(target[:-1],fees))
+    nav=1.-opening_fee
     held=target.copy()
     rows=[nav]
     exposed=[held[4]]
+    # Each dollar P&L entry is measured against initial NAV=1. The initial
+    # entry fee is a real cost, not hidden in an unlabelled initial balance.
+    pnl_rows=[np.r_[np.zeros(len(target)), -opening_fee]]
     before_rebalance_cap_events=0
     nonmarket_cap_events=0
     count_trades=0
@@ -96,7 +100,10 @@ def mark_every_calendar_day(market:pd.DataFrame,dates:pd.DatetimeIndex,
         cash_growth=math.exp(float(cash_rates.iloc[t-1])/100*
                              elapsed/365.25)
         ratio=daily.iloc[t].to_numpy(dtype=float)/daily.iloc[t-1].to_numpy(dtype=float)
-        vector=held*np.r_[ratio,cash_growth]
+        growth=np.r_[ratio,cash_growth]
+        nav_before=nav
+        component_pnl=nav_before*held*(growth-1.)
+        vector=held*growth
         factor=float(vector.sum())
         if factor<=0 or not math.isfinite(factor):
             raise FullCalendarStop("Unqualified daily wealth accounting")
@@ -106,6 +113,7 @@ def mark_every_calendar_day(market:pd.DataFrame,dates:pd.DatetimeIndex,
             before_rebalance_cap_events+=1
             if day not in trading_days:
                 nonmarket_cap_events+=1
+        cost=0.
         # At the same completed last NYSE session closing price as X1, not
         # a weekend: monthly reset applies to NEXT session exposure.
         if (day in trading_days and day!=market.index[-1]
@@ -117,14 +125,22 @@ def mark_every_calendar_day(market:pd.DataFrame,dates:pd.DatetimeIndex,
             count_trades+=1
             traded_volume+=float(delta.sum())
             paid_fee+=cost
+        pnl_rows.append(np.r_[component_pnl,-nav_before*factor*cost])
         rows.append(nav)
         exposed.append(float(held[4]))
     path=pd.Series(rows,index=dates,name="marked_net_nav")
     exposure=pd.Series(exposed,index=dates,name="btc_held_fraction_after_close")
+    pnl=pd.DataFrame(pnl_rows,index=dates,
+                     columns=[*x1.SLEEVE_ASSETS,"CASH","TRADE_FEES"])
+    # Dollar P&L telescopes through EVERY calendar mark, including initial
+    # purchases and all month-end two-sided transaction fees. Do not infer
+    # additive P&L from geometric return averages.
     if (path.le(0).any() or not np.isfinite(path.to_numpy(dtype=float)).all()
-        or (exposure<0).any() or (exposure>1).any()):
-        raise FullCalendarStop("Nonpositive cash/portfolio or invalid crypto concentration")
-    return {"path":path,"btc_fraction":exposure,
+        or (exposure<0).any() or (exposure>1).any()
+        or not np.isfinite(pnl.to_numpy(dtype=float)).all()
+        or float((1.+pnl.sum(axis=1).cumsum()-path).abs().max())>1e-8):
+        raise FullCalendarStop("Non-reconciling P&L, cash or crypto concentration")
+    return {"path":path,"btc_fraction":exposure,"pnl_components":pnl,
             "source_NYSE_sessions":len(market),
             "nonmarket_calendar_days":len(dates)-len(market),
             "btc_cap_exceeded_mark_days_before_monthend_trade":before_rebalance_cap_events,
@@ -134,11 +150,31 @@ def mark_every_calendar_day(market:pd.DataFrame,dates:pd.DatetimeIndex,
             "total_abs_traded_weight":round(traded_volume,7),
             "total_fractional_cost_on_nav":round(paid_fee,7)}
 
-def describe(path:pd.Series,btc_weight:pd.Series)->dict:
+def describe(path:pd.Series,btc_weight:pd.Series,pnl:pd.DataFrame)->dict:
+    if (not pnl.index.equals(path.index) or
+        tuple(pnl.columns)!=(*x1.SLEEVE_ASSETS,"CASH","TRADE_FEES") or
+        not btc_weight.index.equals(path.index)):
+        raise FullCalendarStop("P&L attribution is not source-aligned")
     underwater=path/path.cummax()-1
     downside=underwater.idxmin()
+    peak=path.loc[:downside].idxmax()
     max_weight_date=btc_weight.idxmax()
+    # Exact peak-to-trough dollar changes / actual peak NAV. This is a
+    # realized historical drawdown decomposition, NOT a volatility forecast.
+    trough_pnl=pnl.loc[(pnl.index>peak)&(pnl.index<=downside)].sum()
+    contributions=100*trough_pnl/float(path.loc[peak])
+    if (abs(float(contributions.sum())-100*float(underwater.min()))>1e-7
+        or abs(float(pnl.to_numpy().sum())-(float(path.iloc[-1])-1.))>1e-8):
+        raise FullCalendarStop("Drawdown or terminal component P&L did not reconcile")
     return {
+        "max_drawdown_peak_date":peak.date().isoformat(),
+        "max_drawdown_component_contribution_pp":{
+            name:round(float(v),6) for name,v in contributions.items()},
+        "full_history_component_pnl_pct_initial_capital":{
+            name:round(100*float(v),6) for name,v in pnl.sum().items()},
+        "terminal_net_profit_pct_initial_capital":round(
+            100*(float(path.iloc[-1])-1.),6),
+        "component_pnl_reconciled_to_every_calendar_nav":True,
         "full_calendar_mark_days":len(path),
         "last_calendar_mark_date":path.index[-1].date().isoformat(),
         "terminal_marked_net_nav":round(float(path.iloc[-1]),10),
@@ -161,6 +197,7 @@ def assess(crypto:pd.DataFrame,etf:pd.DataFrame,rate:pd.DataFrame)->dict:
         scenarios={}
         for scenario in CASH_SCENARIOS:
             rows={}
+            outcomes={}
             for name,weights in x1.CANDIDATES.items():
                 old=x1.simulate(market,yields[scenario],weights,cost)
                 new=mark_every_calendar_day(
@@ -174,7 +211,7 @@ def assess(crypto:pd.DataFrame,etf:pd.DataFrame,rate:pd.DataFrame)->dict:
                 if largest>1e-8 or new["monthly_rebalances"]!=len(old["monthly_rebalances"]):
                     raise FullCalendarStop("Full-calendar mark changed X1 original NAV or trading rules")
                 old_dd=float((old["path"]/old["path"].cummax()-1).min())*100
-                detail=describe(new["path"],new["btc_fraction"])
+                detail=describe(new["path"],new["btc_fraction"],new["pnl_components"])
                 detail.update({
                     "XNYS_original_source_mark_max_drawdown_pct":round(old_dd,6),
                     "X1_original_NAV_exact_alignment_max_difference":round(largest,12),
@@ -195,6 +232,25 @@ def assess(crypto:pd.DataFrame,etf:pd.DataFrame,rate:pd.DataFrame)->dict:
                 if abs(new["total_abs_traded_weight"]-old["turnover_abs_weight_sum"])>1e-5:
                     raise FullCalendarStop("Original trading turnover changed")
                 rows[name]=detail
+                outcomes[name]=new
+            # Exact incremental terminal wealth against SAME-EQUITY cash
+            # control, decomposed into equity, gold, BTC, cash and fees.
+            # Equity P&L may differ due to path-dependent monthly rebalancing.
+            baseline=outcomes["CASH_CONTROL_75"]
+            for name in x1.CANDIDATES:
+                if name=="CASH_CONTROL_75":
+                    continue
+                other=outcomes[name]
+                differences=other["pnl_components"].sum()-baseline["pnl_components"].sum()
+                terminal=float(other["path"].iloc[-1]-baseline["path"].iloc[-1])
+                if abs(float(differences.sum())-terminal)>1e-8:
+                    raise FullCalendarStop("Incremental source-matched wealth failed reconciliation")
+                rows[name]["incremental_terminal_wealth_pp_initial_capital"]=round(
+                    100*terminal,6)
+                rows[name]["incremental_component_pnl_pp_initial_capital"]={
+                    key:round(100*float(value),6)
+                    for key,value in differences.items()}
+                rows[name]["incremental_pnl_reconciled_to_cash_control"]=True
             scenarios[scenario]=rows
         results[str(cost)]=scenarios
     return {
@@ -211,6 +267,8 @@ def assess(crypto:pd.DataFrame,etf:pd.DataFrame,rate:pd.DataFrame)->dict:
         "source_calendar_daily_bars_not_intraday_crash_detection":True,
         "same_stale_2026_vintage_not_forward_validated":True,
         "risk_limit_can_be_breached_between_executable_rebalances":True,
+        "drawdown_attribution_is_exact_historical_dollar_pnl_not_future_risk":True,
+        "incremental_wealth_vs_same_equity_cash_control_reconciled":True,
         "original_rebalance_rule_not_modified":True,
         "BTC_5_GOLD_5_not_live_qualified":True,
         "cost_scenarios_unchanged":list(COSTS),
