@@ -301,6 +301,106 @@ def evaluate_annual(index_by_quarter: dict[int, bytes], registry_raw: bytes,
     }
 
 
+
+# SEC master.idx identifies Form 25 filing *events*, not the security class,
+# exchange action, effective delisting date, or an investment return.
+FORM25_FORMS = ("25", "25/A", "25-NSE", "25-NSE/A")
+FORM25_INDEX_SCHEMA = "FUND100_P4X_ORIGINAL_2017_FORM25_INDEX_EVIDENCE_V1"
+
+
+def form25_index_manifest(index_by_quarter: dict[int, bytes]) -> list[dict]:
+    """Link original Form 25 index entries to the 2017 10-K filer CIK cohort.
+
+    Keep every original accession, including amendments and exchange-filed
+    25-NSE records. A matching issuer CIK is NOT evidence that its common
+    shares were delisted: a Form 25 may concern a bond or other security.
+    The dated 10-K crosscheck prevents later filings being represented as
+    information already available on the Form 25 filing date.
+    """
+    tenk = annual_filing_manifest(index_by_quarter)
+    tenk_dates: dict[int, list[str]] = {}
+    for row in tenk:
+        tenk_dates.setdefault(row["cik"], []).append(row["filing_date"])
+    events = []
+    seen = set()
+    for quarter in sorted(QUARTER_BOUNDS):
+        raw = index_by_quarter[quarter]
+        # Reuse the strict original quarter/header/10-K source validation.
+        parse_index(raw, quarter=quarter)
+        lines = raw.decode("latin-1").splitlines()
+        start, end = QUARTER_BOUNDS[quarter]
+        for line in lines[lines.index(HEADER) + 2:]:
+            if not line.strip():
+                continue
+            fields = line.split("|")
+            if len(fields) != 5:
+                raise PopulationStop("Malformed original SEC index event row")
+            cik, name, form, filed, path = fields
+            if form not in FORM25_FORMS:
+                continue
+            if (not re.fullmatch(r"[0-9]{1,10}", cik)
+                or int(cik) == 0 or not name.strip() or len(name) > 250
+                or not start <= filed <= end
+                or not re.fullmatch(r"edgar/data/[0-9]+/[0-9-]+\.txt", path)
+                or int(path.split("/")[2]) != int(cik) or path in seen):
+                raise PopulationStop("Unverifiable or duplicated original Form 25 index entry")
+            seen.add(path)
+            issuer = int(cik)
+            events.append({
+                "filer_cik": issuer,
+                "filer_name_in_original_index": name.strip(),
+                "form_type": form,
+                "filing_date": filed,
+                "quarter": f"2017_Q{quarter}",
+                "sec_archive_path": path,
+                "same_cik_in_full_2017_10k_filer_population": issuer in tenk_dates,
+                "same_cik_10k_filed_on_or_before_form25": any(
+                    date <= filed for date in tenk_dates.get(issuer, [])),
+            })
+    events.sort(key=lambda row: (
+        row["filing_date"], row["filer_cik"], row["sec_archive_path"]))
+    return events
+
+
+def evaluate_form25_index(index_by_quarter: dict[int, bytes]) -> dict:
+    """Source-bound index-only event census; NEVER a common-share exit census."""
+    events = form25_index_manifest(index_by_quarter)
+    payload = _manifest_bytes(events)
+    forms = {form: sum(row["form_type"] == form for row in events)
+             for form in FORM25_FORMS}
+    matched = [row for row in events
+               if row["same_cik_in_full_2017_10k_filer_population"]]
+    prior = [row for row in matched
+             if row["same_cik_10k_filed_on_or_before_form25"]]
+    return {
+        "schema": FORM25_INDEX_SCHEMA,
+        "source_index_sha256": {
+            f"2017_Q{quarter}": sha256(index_by_quarter[quarter]).hexdigest()
+            for quarter in QUARTER_BOUNDS
+        },
+        "original_form25_manifest_file": "historical-2017-form25-index-events.jsonl",
+        "original_form25_manifest_sha256": sha256(payload).hexdigest(),
+        "original_form25_index_entries": len(events),
+        "form_type_index_entries": forms,
+        "original_form25_distinct_filer_ciks": len({
+            row["filer_cik"] for row in events}),
+        "same_cik_2017_10k_filer_index_entries": len(matched),
+        "same_cik_2017_10k_filer_distinct_ciks": len({
+            row["filer_cik"] for row in matched}),
+        "same_cik_prior_or_same_day_10k_index_entries": len(prior),
+        "current_ticker_registry_not_used": True,
+        "form25_filing_date_not_effective_delisting_date": True,
+        "form25_index_does_not_identify_security_class_or_common_stock": True,
+        "exchange_25_nse_and_amendments_not_deduplicated_as_exits": True,
+        "same_cik_not_proof_of_delisting_or_investability": True,
+        "original_form25_documents_not_examined": True,
+        "no_delisting_adjusted_total_return_or_investable_alpha": True,
+        "broker_requests": 0, "broker_orders": 0,
+        "paper_authorized": False, "live_authorized": False,
+    }
+
+
+
 def capture_annual(output_dir: Path, agent: str) -> dict:
     """Read four official SEC quarter indexes; preserve raw reproducible bytes."""
     first = capture(output_dir, agent)
@@ -320,6 +420,14 @@ def capture_annual(output_dir: Path, agent: str) -> dict:
     (output_dir / report["historical_filing_manifest_file"]).write_bytes(manifest)
     (output_dir / "historical-2017-annual-filer-census.json").write_text(
         json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    form25 = evaluate_form25_index(original)
+    form25_manifest = _manifest_bytes(form25_index_manifest(original))
+    if (sha256(form25_manifest).hexdigest() != form25["original_form25_manifest_sha256"]
+        or form25_manifest.count(b"\n") != form25["original_form25_index_entries"]):
+        raise PopulationStop("Original Form 25 index evidence reconciliation failed")
+    (output_dir / form25["original_form25_manifest_file"]).write_bytes(form25_manifest)
+    (output_dir / "historical-2017-form25-index-census.json").write_text(
+        json.dumps(form25, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     return report
 
 
