@@ -331,10 +331,24 @@ jobs:
           assert v["outcomes_overlapping_across_issuers_are_not_independent"]
           assert not v["promotable_new_strategy"] and not v["live_order_authorized"]
           assert v["broker_posts"]==v["broker_gets"]==0
+          screen=v["within_year_quality_discrimination"]
+          assert screen["screen_is_not_independent_alpha_or_trade_authorization"]
+          assert screen["predeclared_min_comparable_calendar_years_for_triage"]==4
+          assert not screen["live_trading_authorized"]
+          assert (screen["qualifying_calendar_years_positive_gap"]
+                  + screen["qualifying_calendar_years_nonpositive_gap"]
+                  == screen["calendar_years_with_at_least_two_distinct_issuers_per_disjoint_group"])
           print("SEC 15bps matched-SPY calendar annual fragility",
                 v["calendar_year_mean_excess_pp"],
                 "quality group years",v["high_quality_panel"]["distinct_entry_calendar_years"])
-          print("Historical survivor-selection restriction: must never promote to LIVE.")
+          print("QUALITY WITHIN-YEAR DESCRIPTIVE SCREEN",screen["descriptive_quality_screen"])
+          print("QUALIFYING YEARS",screen["calendar_years_with_at_least_two_distinct_issuers_per_disjoint_group"],
+                "REGIMES",screen["qualifying_calendar_regimes_represented"],
+                "POSITIVE/NONPOSITIVE",
+                screen["qualifying_calendar_years_positive_gap"],
+                screen["qualifying_calendar_years_nonpositive_gap"],
+                "YEAR-EQUAL GAP pp",screen["qualifying_year_equal_quality_gap_pp"])
+          print("Historical survivor-selection restriction: never promote this to LIVE.")
           PY
       - name: Research original SEC diluted EPS yield versus prior momentum (not alpha)
         if: steps.capture.outputs.acquired == 'true'
