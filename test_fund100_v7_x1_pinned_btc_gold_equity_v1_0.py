@@ -183,3 +183,67 @@ def test_report_contains_source_matched_passive_spy_risk_return_comparator():
     assert report["broker_gets"]==report["broker_posts"]==report["broker_orders"]==0
     assert not report["candidate_live_promoted"]
 
+
+
+def test_same_sleeve_spy_reference_exact_parity_when_equity_prices_identical():
+    btc,etf,rate=fixture()
+    prices,yields=x1.market_view(btc,etf,rate)
+    for coin_cost in x1.COSTS_CRYPTO_BPS:
+        reference=x1.same_sleeve_passive_spy_references(
+            etf,prices,yields["IRX_MINUS_50BP"],coin_cost)
+        for name,weights in x1.CANDIDATES.items():
+            original=x1.simulate(
+                prices,yields["IRX_MINUS_50BP"],weights,coin_cost)["path"]
+            assert reference[name].index.equals(original.index)
+            assert float((reference[name]-original).abs().max())<1e-10
+        assert float((reference["CASH_CONTROL_75"]-
+                      x1.passive_spy_75_reference(
+                          etf,yields["IRX_MINUS_50BP"])).abs().max())<1e-10
+
+
+def test_same_sleeve_spy_comparator_changes_only_equity_and_rejects_mismatched_sources():
+    btc,etf,rate=fixture(btc_daily=.002,gold_daily=.0003,equity_daily=.0002)
+    prices,yields=x1.market_view(btc,etf,rate)
+    cash=yields["IRX_GROSS"]
+    original=x1.simulate(prices,cash,x1.CANDIDATES["BTC_5_GOLD_5"],35)["path"]
+    faster=etf.copy()
+    faster["SPY"]*=np.exp(.0002*np.arange(len(faster)))
+    benchmark=x1.same_sleeve_passive_spy_references(
+        faster,prices,cash,35)["BTC_5_GOLD_5"]
+    assert benchmark.iloc[-1]>original.iloc[-1]
+    # Both the sector and passive counterfactual retain identical BTC,
+    # gold, cash and crypto-cost assumptions; a different SPY trend
+    # affects only the passive equity counterfactual.
+    with pytest.raises(x1.AllocationStop,match="calendar, gold or cash"):
+        wrong=prices.copy()
+        wrong["GLD"]*=1.001
+        x1.same_sleeve_passive_spy_references(etf,wrong,cash,35)
+    with pytest.raises(x1.AllocationStop):
+        x1.same_sleeve_passive_spy_references(
+            etf.drop(pd.Timestamp("2020-03-16")),prices,cash,35)
+    with pytest.raises(x1.AllocationStop,match="calendar, gold or cash"):
+        x1.same_sleeve_passive_spy_references(etf,prices,cash.iloc[:-1],35)
+
+
+def test_report_separates_sector_selection_from_same_sleeve_asset_allocation():
+    btc,etf,rate=fixture()
+    result=x1.inspect(btc,etf,rate)
+    assert result["same_sleeve_SPY_reference_preserves_BTC_GLD_cash_weights"]
+    assert result["same_sleeve_sector_effect_is_retrospective_not_predictive_alpha"]
+    for cost,scenarios in result["results"].items():
+        for scenario,study in scenarios.items():
+            matched=study["same_BTC_GLD_cash_sleeve_SPY_references"]
+            assert set(matched)==set(study["return_and_risk_periods"])
+            for period,group in study["return_and_risk_periods"].items():
+                assert set(matched[period])==set(x1.CANDIDATES)
+                for name,metrics in group.items():
+                    ref=matched[period][name]
+                    for metric,base in (
+                        ("net_cagr_pp","net_cagr_pct"),
+                        ("drawdown_pp","max_drawdown_pct"),
+                        ("volatility_pp","annualized_volatility_pct")):
+                        assert metrics["minus_same_sleeve_SPY_"+metric]==pytest.approx(
+                            metrics[base]-ref[base],abs=.000001)
+                    assert abs(metrics["minus_same_sleeve_SPY_net_cagr_pp"])<1e-5
+    assert result["broker_gets"]==result["broker_posts"]==result["broker_orders"]==0
+    assert not result["trading_authorized"]
