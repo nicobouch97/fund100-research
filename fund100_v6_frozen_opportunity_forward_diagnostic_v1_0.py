@@ -198,6 +198,8 @@ def evaluate(*,history:pd.DataFrame,source_sha256:str,
         "one_time_source_migration_does_not_infer_order_permission":True,
         "overall":_summarize(windows),
         "calendar_windows":sections,
+        # Full dated per-episode trace is preserved for audit and lag tests.
+        "nonoverlapping_episodes":windows,
         "first_evaluated_decision":windows[0]["decision_session"],
         "last_evaluated_decision":windows[-1]["decision_session"],
         "last_forward_outcome_session":windows[-1]["outcome_last_session"],
@@ -220,7 +222,8 @@ def main():
                      default=Path("research_lab/frozen_history_v2.csv"))
     args=cli.parse_args()
     result=evaluate_original(file=args.frozen)
-    print(json.dumps(result,sort_keys=True,indent=2))
+    concise={k:v for k,v in result.items() if k!="nonoverlapping_episodes"}
+    print(json.dumps(concise,sort_keys=True,indent=2))
     print("RESEARCH_ONLY_NOT_AN_APPROVED_STRATEGY_NO_LIVE_ORDERS")
 
 if __name__=="__main__":
