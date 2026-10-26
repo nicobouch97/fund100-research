@@ -129,6 +129,50 @@ def test_invalid_allocation_funding_fx_or_risk_does_not_create_trade(change):
     with pytest.raises(x5.CapacityStop):
         plan(**kw)
 
+
+def test_shared_daily_ticket_limit_counts_every_symbol_not_just_largest_symbol():
+    spec=x5.sample_spec()
+    for row in spec.values():
+        row["maximum_ticket_usd"]="10"
+    result=plan("1000.00",spec=spec,positions={},cash="1000.00",
+                target={"XLK":"0.25","XLE":"0.25","IWM":"0.25",
+                        "GLD":"0.10","BTC/USD":"0.10"})
+    assert all(x["modelled_ticket_count"]<=30
+               for x in result["estimated_trade_side_details"].values())
+    assert result["aggregate_modelled_ticket_count"]==95
+    assert result["global_shared_ticket_capacity_minimum_days"]==4
+    assert result["maximum_modeled_capacity_days"]>=4
+    assert any(w["reason"]=="MULTI_SESSION_LIQUIDITY_CAPACITY_REQUIRES_REEVALUATION"
+               for w in result["too_small_or_infeasible_target_warnings"])
+
+
+def test_untraded_dust_reduces_actual_post_trade_cash_and_preserves_concentration():
+    spec=x5.sample_spec()
+    spec["XLK"]["minimum_notional_usd"]="5"
+    result=plan("1000.00",spec=spec,positions={"XLK":"501.00"},
+                cash="499.00",target={"XLK":"0.50","XLE":"0.449"})
+    warnings={x["reason"] for x in result["too_small_or_infeasible_target_warnings"]}
+    assert "UNEXECUTABLE_DUST_MAKES_TARGET_APPROXIMATE" in warnings
+    assert "POST_COST_CAPITAL_RESERVE_WOULD_BE_BREACHED" in warnings
+    assert "POST_COST_SINGLE_POSITION_LIMIT_BREACH" in warnings
+    assert "XLK_SELL" not in result["estimated_trade_side_details"]
+    # $501 XLK stays held. $449 XLE purchase plus its rounded fee
+    # comes out of the original $499 settled cash, not an imaginary sale.
+    assert Decimal(result["model_net_cash_reserve_after_all_rebalances_usd"])<Decimal("50")
+    assert Decimal(result["post_cost_model_nav_usd"])<Decimal("1000")
+    assert not result["live_authorized"]
+
+
+def test_post_fee_crypto_concentration_is_measured_against_actual_equity():
+    result=plan("1000.00",positions={},cash="1000.00",
+                target={"XLK":"0.50","XLE":"0.35","BTC/USD":"0.10"})
+    warnings={x["reason"] for x in result["too_small_or_infeasible_target_warnings"]}
+    assert "POST_COST_CRYPTO_EXPOSURE_LIMIT_BREACH" in warnings
+    assert "POST_COST_SINGLE_POSITION_LIMIT_BREACH" in warnings
+    assert "POST_COST_GROSS_EXPOSURE_LIMIT_BREACH" in warnings
+    assert not result["trading_authorized"]
+
+
 def test_no_real_live_writer_credentials_fx_or_private_payloads():
     assert x5.BROKER_GETS==x5.BROKER_POSTS==x5.BROKER_ORDERS==0
     assert x5.LIVE_ENABLED is False
