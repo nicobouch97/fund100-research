@@ -1,0 +1,66 @@
+name: Fund-100 V7 Actual Listed Factor ETF Return Evidence (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_listed_factor_etf_returns_v1_0.py'
+      - 'test_fund100_v7_listed_factor_etf_returns_v1_0.py'
+      - '.github/workflows/fund100-v7-listed-factor-etf-evidence.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_listed_factor_etf_returns_v1_0.py'
+      - 'test_fund100_v7_listed_factor_etf_returns_v1_0.py'
+      - '.github/workflows/fund100-v7-listed-factor-etf-evidence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actual-listed-etf-source-study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install existing data analysis dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check fixed historical methodology and no-trade state
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v7_listed_factor_etf_returns_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Acquire and evaluate actual factor ETFs against SPY ACWI
+        run: |
+          set -euo pipefail
+          python fund100_v7_listed_factor_etf_returns_v1_0.py \
+            --output-dir /tmp/fund100-factor-etf-original-vintage
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          folder=Path('/tmp/fund100-factor-etf-original-vintage')
+          r=json.loads((folder/'factor-etf-net-cost-regime-report.json').read_text())
+          original=(folder/'original-etf-adjusted-price-source.csv').read_bytes()
+          assert hashlib.sha256(original).hexdigest()==r['original_source_canonical_csv_sha256']
+          assert r['last_observed_trading_session']=='2026-10-23'
+          assert set(r['factor_era_screen'])=={'MTUM','QUAL'}
+          assert r['real_broker_gets']==r['real_broker_posts']==0
+          assert r['trading_authorized'] is False and r['live_order_authorized'] is False
+          assert r['spread_liquidity_and_micro_fractional_eligibility_unverified']
+          for factor in ('MTUM','QUAL'):
+              d=r['factor_era_screen'][factor]
+              print('SOURCE-VERIFIED',factor,'15 bps-side vs SPY',
+                    d['predeclared_15bps_spy_relative_cagr_pp_by_era'])
+              print('EVIDENCE VERDICT',factor,d['screen'])
+          print('No ETF automatically approved for the live HIGH pilot.')
+          PY
+      - name: Retain full 4-ETF original source and costed results
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-real-listed-factor-etf-evidence-${{ github.run_id }}
+          path: /tmp/fund100-factor-etf-original-vintage/
+          retention-days: 90
+          if-no-files-found: error
