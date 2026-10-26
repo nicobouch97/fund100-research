@@ -38,6 +38,11 @@ def fake_FUTURE_risk_V2_release_only_in_credentialless_test(monkeypatch):
             "broker_post_attempts":0,
         }
     monkeypatch.setattr(risk,"inspect_actual_original_seven_get",fake_approved)
+    # Mock ONLY: current-main GitHub operator and broker kill read are
+    # deliberately NEVER bypassed in the real reviewed writer.
+    import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+    monkeypatch.setattr(active,"_scope",lambda:None)
+
 
 QTY=fixture.ORIGINAL_QTY
 ID=fixture.ORDER_ID
@@ -401,6 +406,50 @@ def test_final_writer_rejects_missing_original_active_high_sell_scope_before_any
     with pytest.raises(writer.LiveWriterCandidateLocked,match="risk remains STOPPED"):
         call(fake)
     assert fake.calls==0
+
+
+def test_emergency_stop_after_risk_before_original_acwi_post_fails_closed(
+        monkeypatch):
+    import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+    fake_release(monkeypatch)
+    attempted=FakeBrokerPost()
+    checks=[]
+    def emergency_stop():
+        checks.append("current_main_GO_revoked_after_real_broker_risk")
+        raise active.ActiveSellStop("V6 operator stopped after seven GET")
+    monkeypatch.setattr(active,"_scope",emergency_stop)
+    with pytest.raises(writer.LiveWriterCandidateLocked,
+                       match="operator revoked or emergency kill before POST"):
+        call(attempted)
+    assert checks==["current_main_GO_revoked_after_real_broker_risk"]
+    assert attempted.calls==0
+
+
+def test_last_gate_operator_scope_read_occurs_once_before_first_alpaca_post(
+        monkeypatch):
+    import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+    fake_release(monkeypatch)
+    checks=[]
+    monkeypatch.setattr(active,"_scope",lambda:checks.append("GO revalidated"))
+    fake=FakeBrokerPost()
+    result=call(fake)
+    assert checks==["GO revalidated"]
+    assert fake.calls==1
+    assert result["resubmission_permitted"] is False
+
+
+def test_revocation_recheck_occurs_after_live_risk_before_broker_post():
+    source=Path(writer.__file__).read_text()
+    start=source.index("def submit_v6_s1_original_acwi_fractional_sell(")
+    end=len(source)
+    body=source[start:end]
+    gate=body.index("order_time=risk.inspect_actual_original_seven_get(")
+    scope=body.index("active._scope()",gate)
+    broker=body.index('url=LIVE_BASE_URL+LIVE_ORDER_PATH',scope)
+    request=body.index('method="POST"',broker)
+    assert gate<scope<broker<request
+    assert "operator revoked or emergency kill before POST" in body
+
 
 def test_original_v5_writer_entrypoint_and_hard_locks_preserved():
     source=Path(writer.__file__).read_text()

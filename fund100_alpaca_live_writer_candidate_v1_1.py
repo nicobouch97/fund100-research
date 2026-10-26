@@ -1123,6 +1123,17 @@ def submit_v6_s1_original_acwi_fractional_sell(*,
     # IMPORTANT: the original V1 reader only returns STILL_STOPPED and
     # broker_order_authorized=False. Live POST is therefore impossible until
     # a separately reviewed, source-authenticated active risk V2 exists.
+    # A STOP or emergency broker kill may arrive AFTER the seven-GET
+    # check. Re-authenticate original V5 STOP, current-main V6 GO and the
+    # DISENGAGED kill switch at the last broker POST boundary. This helper
+    # is SOURCE-released only for the exact original ACWI active HIGH path.
+    # Any unavailable/stale/changed GitHub operator response => zero POST.
+    try:
+        import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+        active._scope()
+    except Exception:
+        raise LiveWriterCandidateLocked(
+            "V6 original ACWI operator revoked or emergency kill before POST") from None
     validate_credentials(key,secret)
     url=LIVE_BASE_URL+LIVE_ORDER_PATH
     validate_live_url(url)
