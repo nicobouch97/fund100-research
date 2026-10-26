@@ -194,3 +194,16 @@ def test_dynamic_year_attribution_rejects_unmatched_or_invalid_nav():
     bad.iloc[3] = 0.
     with pytest.raises(mod.TrendStudyStop, match="relative NAV"):
         mod._relative_year_concentration(good, bad)
+
+
+def test_year_concentration_with_no_winning_year_does_not_invent_one():
+    dates = pd.DatetimeIndex(["2024-01-02", "2024-12-31", "2025-12-31"])
+    baseline = pd.Series([100., 100., 100.], index=dates)
+    candidate = pd.Series([99., 95., 90.], index=dates)
+    result = mod._relative_year_concentration(candidate, baseline)
+    assert result["largest_positive_year"] is None
+    assert result["largest_positive_year_log_relative_wealth_pct"] is None
+    assert result["positive_years"] == 0
+    assert result["negative_years"] == 2
+    assert result["total_ex_largest_positive_year_log_relative_wealth_pct"] == (
+        result["terminal_relative_log_wealth_pct"])
