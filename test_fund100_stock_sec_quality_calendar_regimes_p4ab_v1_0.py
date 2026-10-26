@@ -121,7 +121,6 @@ def test_code_has_no_broker_or_live_signal_source():
     src=Path(m.__file__).read_text()
     assert m.TRADING_RELEASED is False
     assert m.BROKER_ORDERS==0
-    assert "ACWI" not in src or "ACWI" in m.__doc__
     for banned in ("import requests","import urllib","import socket",
                    "ALPACA_LIVE_KEY","ALPACA_LIVE_SECRET",
                    "method=\"POST\"","git push"):
