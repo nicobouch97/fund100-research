@@ -67,8 +67,7 @@ def key(*,strategy_id:str,signal_time_utc:str,signal_sha256:str,
     raw=json.dumps(doc,sort_keys=True,separators=(",",":"),ensure_ascii=True).encode("ascii")
     return NAMESPACE+sha256(raw).hexdigest()[:40]
 
-def classify(*,current_event_id:str,observed_prior_event_ids,
-             missing_broker_reconciliation:bool=True)->dict:
+def classify(*,current_event_id:str,observed_prior_event_ids)->dict:
     """STOP/HOLD only; never infer safe resend or settlement.
 
     Even a previously unseen event ID is NOT an execution authorisation:
@@ -80,8 +79,7 @@ def classify(*,current_event_id:str,observed_prior_event_ids,
         or type(observed_prior_event_ids) not in (set,frozenset)
         or any(type(item) is not str or re.fullmatch(
             r"V6EV-[0-9a-f]{40}",item) is None
-            for item in observed_prior_event_ids)
-        or type(missing_broker_reconciliation) is not bool):
+            for item in observed_prior_event_ids)):
         raise IdentityStop("Invalid autonomous event identity or journal snapshot")
     known=current_event_id in observed_prior_event_ids
     state=(
@@ -94,7 +92,7 @@ def classify(*,current_event_id:str,observed_prior_event_ids,
         "source_signal_authenticated":False,
         "standing_mandate_authenticated":False,
         "previous_event_known":known,
-        "broker_reconciliation_proved":not missing_broker_reconciliation,
+        "broker_reconciliation_proved":False,
         "broker_order_authorized":False,
         "broker_posts":0,
         "manual_per_trade_approval_required":False,
