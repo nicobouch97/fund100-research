@@ -615,7 +615,7 @@ def test_structured_12b_aggregates_only_captured_source_backed_rows(tmp_path):
         "<p>Securities registered pursuant to Section 12(g): None</p>")
     report = p4u.capture(tmp_path, tmp_path / "rows", "Research contact@example.com",
                          per_stratum=1, getter=lambda path, agent: raw)
-    assert report["schema"].endswith("_V4")
+    assert report["schema"].endswith("_V5")
     assert report["possible_structured_12b_security_class_rows"] == 2
     assert report["filings_with_structured_12b_rows"] == 2
     assert report["structured_rows_not_historical_investable_security_master"]
@@ -703,10 +703,108 @@ def test_capture_counts_only_original_xbrl_symbols_from_full_submissions(tmp_pat
         "<dei:TradingSymbol contextRef='2017'>OLD</dei:TradingSymbol>")
     report = p4u.capture(tmp_path, tmp_path / "xbrl", "Research contact@example.com",
                          per_stratum=1, getter=lambda path, agent: raw)
-    assert report["schema"].endswith("_V4")
+    assert report["schema"].endswith("_V5")
     assert report["original_xbrl_ticker_review_candidates"] == 2
     assert report["original_xbrl_not_evaluated_primary_only"] == 0
     assert report["original_xbrl_ticker_not_historical_security_master"]
     assert all(row["original_xbrl_trading_symbol"] == "OLD"
                for row in report["observations"])
     assert report["broker_orders"] == 0 and not report["live_authorized"]
+
+
+def test_same_filing_single_common_class_associates_original_xbrl_issuer_hint_only():
+    raw = _submission_with_xbrl("<dei:TradingSymbol>OLD</dei:TradingSymbol>")
+    result = p4u.inspect_original_10k(raw)
+    assert result["same_filing_ticker_class_crosscheck_state"] == (
+        "SINGLE_CLASS_ISSUER_TICKER_ASSOCIATION_REVIEW_ONLY")
+    candidates = result["same_filing_ticker_class_review_candidates"]
+    assert len(candidates) == 1
+    assert candidates[0]["issuer_xbrl_ticker"] == "OLD"
+    assert candidates[0]["security_class_text"] == "Common Stock"
+    assert candidates[0]["exchange_text"] == "NYSE"
+    assert candidates[0]["explicit_12b_symbol_concordant"] is False
+    assert result["possible_12b_security_class_rows"][0][
+        "trading_symbol_in_original_10k"] is None
+    assert result["same_filing_ticker_not_independent_listing_or_security_id"]
+
+
+def test_same_filing_explicit_class_symbol_matches_issuer_xbrl():
+    raw = _submission_with_xbrl("<dei:TradingSymbol>ABC.A</dei:TradingSymbol>")
+    raw = raw.replace(b"<td>Common Stock</td><td>NYSE</td>",
+                      b"<td>Common Stock</td><td>ABC.A</td><td>NYSE</td>")
+    result = p4u.inspect_original_10k(raw)
+    assert result["same_filing_ticker_class_crosscheck_state"] == (
+        "EXPLICIT_CLASS_SYMBOL_CONCORDANT_REVIEW_ONLY")
+    assert result["same_filing_ticker_class_review_candidates"][0][
+        "explicit_12b_symbol_concordant"] is True
+
+
+def test_same_filing_original_xbrl_conflicts_with_explicit_class_symbol():
+    raw = _submission_with_xbrl("<dei:TradingSymbol>ABC</dei:TradingSymbol>")
+    raw = raw.replace(b"<td>Common Stock</td><td>NYSE</td>",
+                      b"<td>Common Stock</td><td>OTHER</td><td>NYSE</td>")
+    result = p4u.inspect_original_10k(raw)
+    assert result["same_filing_ticker_class_crosscheck_state"] == (
+        "CONFLICTING_ORIGINAL_SYMBOLS_ABSTAIN")
+    assert result["same_filing_ticker_class_review_candidates"] == []
+    assert result["possible_12b_security_class_rows"][0][
+        "trading_symbol_in_original_10k"] == "OTHER"
+
+
+def test_same_filing_multiple_common_share_classes_abstain():
+    raw = _submission_with_xbrl("<dei:TradingSymbol>ABC</dei:TradingSymbol>")
+    raw = raw.replace(b"</tr></table>",
+                      b"</tr><tr><td>Class A Common Stock</td><td>Nasdaq</td></tr></table>")
+    result = p4u.inspect_original_10k(raw)
+    assert len(result["possible_12b_security_class_rows"]) == 2
+    assert result["same_filing_ticker_class_crosscheck_state"] == (
+        "MULTIPLE_COMMON_CLASSES_ABSTAIN")
+    assert result["same_filing_ticker_class_review_candidates"] == []
+
+
+def test_same_filing_invalid_xbrl_and_no_xbrl_abstain():
+    for raw in (
+        _submission_with_xbrl("<dei:TradingSymbol>AAA</dei:TradingSymbol>"
+                              "<dei:TradingSymbol>BBB</dei:TradingSymbol>"),
+        original_10k("<p>Securities registered pursuant to Section 12(b):</p>"
+                     "<table><tr><td>Common Stock</td><td>NYSE</td></tr></table>"),
+    ):
+        result = p4u.inspect_original_10k(raw)
+        assert result["same_filing_ticker_class_crosscheck_state"] == (
+            "NO_UNAMBIGUOUS_ORIGINAL_XBRL_TICKER")
+        assert result["same_filing_ticker_class_review_candidates"] == []
+
+
+def test_same_filing_primary_only_never_infers_ticker_from_cover():
+    raw = (b"<html><body>Securities registered pursuant to Section 12(b):"
+           b"<table><tr><td>Common Stock</td><td>NYSE</td></tr></table>"
+           b"</body></html>")
+    result = p4u.inspect_primary_10k(raw)
+    assert len(result["possible_12b_security_class_rows"]) == 1
+    assert result["same_filing_ticker_class_crosscheck_state"] == "PRIMARY_ONLY_NO_XBRL"
+    assert result["same_filing_ticker_class_review_candidates"] == []
+
+
+def test_same_filing_no_structured_common_share_class_abstains():
+    raw = _submission_with_xbrl("<dei:TradingSymbol>ABC</dei:TradingSymbol>")
+    raw = raw.replace(b"<td>Common Stock</td>", b"<td>Senior Notes</td>")
+    result = p4u.inspect_original_10k(raw)
+    assert result["same_filing_ticker_class_crosscheck_state"] == (
+        "NO_STRUCTURED_12B_COMMON_CLASS")
+    assert result["same_filing_ticker_class_review_candidates"] == []
+
+
+def test_capture_counts_only_same_original_submission_review_associations(tmp_path):
+    make_sources(tmp_path)
+    raw = _submission_with_xbrl("<dei:TradingSymbol>OLD</dei:TradingSymbol>")
+    report = p4u.capture(tmp_path, tmp_path / "crosscheck",
+                         "Research contact@example.com", per_stratum=1,
+                         getter=lambda path, agent: raw)
+    assert report["schema"].endswith("_V5")
+    assert report["same_filing_ticker_class_review_candidates"] == 2
+    assert report["same_filing_ticker_class_crosscheck_states"] == {
+        "SINGLE_CLASS_ISSUER_TICKER_ASSOCIATION_REVIEW_ONLY": 2}
+    assert report["same_filing_ticker_not_independent_listing_or_security_id"]
+    assert report["original_xbrl_ticker_review_candidates"] == 2
+    assert report["broker_orders"] == 0
+    assert not report["live_authorized"] and not report["trading_authorized"]
