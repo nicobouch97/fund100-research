@@ -20,10 +20,10 @@ MODE="SYNTHETIC_CAPITAL_MARKET_LIQUIDITY_SCENARIOS_ONLY"
 LIVE_CAP_USD="130.30"
 ASSET_CLASSES=frozenset({"EQUITY","EQUITY_ETF","BOND_ETF","COMMODITY_ETF","CRYPTO"})
 MAX_ASSETS=40
-MAX_SINGLE_WEIGHT=Decimal(".50")
+MAX_SINGLE_WEIGHT=Decimal("0.50")
 MAX_CRYPTO_TOTAL=Decimal(".10")
 MAX_GROSS=Decimal(".95")
-CENTS=Decimal(".01")
+CENTS=Decimal("0.01")
 MAX_TICKETS=100000
 MAX_TICKETS_PER_MODELED_DAY=30
 PARTICIPATION=Decimal(".005") # 0.5% *unverified* daily USD traded volume
@@ -112,7 +112,7 @@ def route(*,capital_nav_usd,prospective_cap_usd,settled_cash_usd,
         if weight>MAX_SINGLE_WEIGHT:raise CapacityStop("50% single instrument concentration")
         weights[k]=weight
     gross=sum(weights.values(),Decimal(0))
-    if gross<=0 or gross>MAX_GROSS or Decimal(1)-gross<Decimal(".05"):
+    if gross<=0 or gross>MAX_GROSS or Decimal(1)-gross<Decimal("0.05"):
         raise CapacityStop("No 5%+ cash reserve or gross allocation above 95%")
     crypto=sum((v for k,v in weights.items() if specs[k]["class"]=="CRYPTO"),Decimal(0))
     if crypto>MAX_CRYPTO_TOTAL:raise CapacityStop("Crypto sleeve above research HIGH cap")
@@ -161,12 +161,12 @@ def route(*,capital_nav_usd,prospective_cap_usd,settled_cash_usd,
             all_side_fees+=cost
             if side=="BUY":combined_buy+=amount+cost
             else:combined_sell+=amount-cost
-    if combined_buy>0 and (cash-combined_buy)<(nav*Decimal(".05")):
+    if combined_buy>0 and (cash-combined_buy)<(nav*Decimal("0.05")):
         # Cash is NOT refillable from this candidate's unsettled sells.
         funding="SELL_OR_DEPOSIT_FIRST_THEN_REVERIFY_SETTLEMENT"
     else: funding="HYPOTHETICAL_SETTLED_CASH_SUFFICIENT_ONLY"
     expected_cash_post=nav-sum(targets.values(),Decimal(0))-all_side_fees
-    if expected_cash_post<nav*Decimal(".05"):
+    if expected_cash_post<nav*Decimal("0.05"):
         blocked.append({"symbol":"ALL","reason":"POST_COST_CAPITAL_RESERVE_WOULD_BE_BREACHED"})
     if max_capacity_days>1:
         blocked.append({"symbol":"ALL","reason":"MULTI_SESSION_LIQUIDITY_CAPACITY_REQUIRES_REEVALUATION"})
@@ -236,14 +236,14 @@ def sample_spec():
     } for symbol,parts in rows.items()}
 
 def illustrative_scenarios():
-    target={"XLK":".375","XLE":".225","IWM":".15",
-            "GLD":".05","BTC/USD":".05"}
+    target={"XLK":"0.375","XLE":"0.225","IWM":"0.15",
+            "GLD":"0.05","BTC/USD":"0.05"}
     outputs={}
     for tier in USD_TEST_CAPITAL:
         n=num(tier,"fixed stress tier",positive=True)
         positions={
-            "XLK":nstr(n*Decimal(".40")),
-            "XLE":nstr(n*Decimal(".30")),
+            "XLK":nstr(n*Decimal("0.40")),
+            "XLE":nstr(n*Decimal("0.30")),
             "IWM":nstr(n*Decimal(".24"))}
         # Reconcile rounded holdings and cash exactly, no fake unsettled proceeds.
         cash=nstr(n-sum((Decimal(v) for v in positions.values()),Decimal(0)))
