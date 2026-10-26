@@ -576,3 +576,99 @@ def test_form25_structured_xml_class_has_precedence_over_cover_text():
     assert out["security_class_state"] == "OTHER_OR_MIXED_SECURITY_REVIEW_ONLY"
     assert out["security_class_description"] == "Senior Notes"
     assert out["security_class_source"] == "ORIGINAL_XML_CLASS"
+
+
+# P4AA: the Form 25-NSE INDEX CIK can be the exchange, not the issuer.
+def _nse_original_xml(exchange: int, issuer: int, title="Common Stock") -> str:
+    return (f"<notificationOfRemoval><exchange><cik>{exchange:010d}</cik></exchange>"
+            f"<issuer><cik>{issuer:010d}</cik></issuer>"
+            f"<descriptionClassSecurity>{title}</descriptionClassSecurity>"
+            f"</notificationOfRemoval>")
+
+
+def test_form25_nse_original_subject_issuer_not_confused_with_exchange_index():
+    accession = "0001001001-17-000101"
+    raw = _form25_submission(accession, "25-NSE", None).replace(
+        b"<other>Not a security title</other>",
+        _nse_original_xml(9009, 1001).encode())
+    out = p4y.parse_original_submission(
+        raw, accession=accession, form_type="25-NSE", index_cik=9009)
+    assert out["security_class_state"] == "POSSIBLE_COMMON_EQUITY_REVIEW_ONLY"
+    assert out["original_nse_issuer_cik"] == 1001
+    assert out["original_nse_exchange_cik"] == 9009
+    assert out["original_nse_index_cik_role"] == "EXCHANGE"
+    assert out["nse_issuer_identity_state"] == "ORIGINAL_NSE_PARTIES_INDEX_CONCORDANT"
+    issuer_index = p4y.parse_original_submission(
+        raw, accession=accession, form_type="25-NSE", index_cik=1001)
+    assert issuer_index["original_nse_index_cik_role"] == "ISSUER"
+    # A valid common-stock description alone is NOT sufficient to
+    # associate an original issuer with an unrelated SEC index CIK.
+    unrelated = p4y.parse_original_submission(
+        raw, accession=accession, form_type="25-NSE", index_cik=2002)
+    assert unrelated["security_class_state"] == "POSSIBLE_COMMON_EQUITY_REVIEW_ONLY"
+    assert unrelated["nse_issuer_identity_state"] == "NO_VERIFIED_ORIGINAL_NSE_ISSUER"
+    assert "original_nse_issuer_cik" not in unrelated
+
+
+@pytest.mark.parametrize("invalid", [
+    "duplicate", "no_issuer", "same_party", "bad_cik", "conflicting_class",
+    "entity", "doctype", "malformed",
+])
+def test_form25_nse_issuer_identity_abstains_on_unreconciled_xml(invalid):
+    accession = "0001001001-17-000101"
+    xml = _nse_original_xml(9009, 1001)
+    if invalid == "duplicate":
+        xml += _nse_original_xml(9009, 2002)
+    elif invalid == "no_issuer":
+        xml = xml.replace("<issuer><cik>0000001001</cik></issuer>", "")
+    elif invalid == "same_party":
+        xml = xml.replace("<issuer><cik>0000001001</cik></issuer>",
+                          "<issuer><cik>0000009009</cik></issuer>")
+    elif invalid == "bad_cik":
+        xml = xml.replace("0000001001", "BADCIK")
+    elif invalid == "conflicting_class":
+        xml = xml.replace("</notificationOfRemoval>",
+                          "<descriptionClassSecurity>Senior Notes</descriptionClassSecurity>"
+                          "</notificationOfRemoval>")
+    elif invalid == "entity":
+        xml = xml.replace("Common Stock", "&malicious;")
+    elif invalid == "doctype":
+        xml = "<!DOCTYPE notificationOfRemoval [<!ENTITY x 'Common Stock'>]>" + xml
+    else:
+        xml = xml.replace("</notificationOfRemoval>", "")
+    raw = _form25_submission(accession, "25-NSE", None).replace(
+        b"<other>Not a security title</other>", xml.encode())
+    out = p4y.parse_original_submission(
+        raw, accession=accession, form_type="25-NSE", index_cik=9009)
+    assert out["nse_issuer_identity_state"] == "NO_VERIFIED_ORIGINAL_NSE_ISSUER"
+    assert "original_nse_issuer_cik" not in out
+
+
+def test_form25_original_source_issuer_cik_joins_prior_10k_not_exchange_filer(
+        tmp_path, monkeypatch):
+    selected = _p4y_original_fixture(tmp_path, monkeypatch)
+    def original(url, agent):
+        path = url.removeprefix(p4y.SEC_PREFIX)
+        row = next(r for r in selected if r["sec_archive_path"] == path)
+        accession = p4y.ARCHIVE_PATH.fullmatch(path).group(2)
+        if row["form_type"] == "25":
+            return _form25_submission(accession, "25", "Common Stock")
+        # 9009 exchange filed 2017-10-05 about issuer 3003, whose
+        # original 10-K was filed 2017-08-15; 1001 exchange filed
+        # 2017-01-20 about issuer 3003, before that 10-K was filed.
+        xml = _nse_original_xml(row["filer_cik"], 3003)
+        return _form25_submission(accession, "25-NSE", None).replace(
+            b"<other>Not a security title</other>", xml.encode())
+    monkeypatch.setattr(p4y, "_official_form25_get", original)
+    out = p4y.capture_original_sample(tmp_path, "Research contact@example.org")
+    assert out["nse_verified_original_issuer_exchange_pairs"] == 2
+    assert out["nse_verified_issuer_in_2017_10k_population"] == 2
+    assert out["nse_verified_issuer_10k_on_or_before_notice"] == 1
+    assert out["nse_index_role_counts"] == {"EXCHANGE": 2}
+    assert out["exchange_filed_index_cik_not_necessarily_security_issuer"]
+    nse = [x for x in out["observations"] if x["form_type"] == "25-NSE"]
+    assert {x["original_nse_issuer_cik"] for x in nse} == {3003}
+    assert all(x["nse_issuer_in_original_2017_10k_population"] for x in nse)
+    assert sorted(x["nse_issuer_10k_on_or_before_notice"] for x in nse) == [False, True]
+    assert out["broker_requests"] == out["broker_orders"] == 0
+    assert not out["paper_authorized"] and not out["live_authorized"]
