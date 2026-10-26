@@ -144,3 +144,22 @@ unidentifiable beta rather than spurious precision. This remains
 research-only, not independently replicated ETF holdings or fills.
 No capital ceiling, operator STOP, kill switch, LIVE release lock, or
 protected private-state record is changed.
+
+## 26 October 2026 — correct volatility-blend drifted-weight trading costs
+
+The original volatility-managed blend earned the preceding close's risky
+allocation return, then charged costs only for changes between two *target*
+risky weights. That omitted the rebalance needed to restore an unchanged
+target after a nonzero market return: the risky fraction naturally drifts.
+
+For each session, calculate the pre-rebalance risky fraction as
+`old_target * (1 + risky_return) / (1 + old_target * risky_return)`.
+Charge the existing 5/15/35bp one-way cost on the absolute difference
+between the new target and this **drifted** fraction, after earning the
+preceding target's gross return. Entry and exit still incur their original
+one-way costs; no leverage or new parameter is introduced.
+
+This fixes understated synthetic turnover and potentially overstated net
+historical returns for the existing 10% vol-target sensitivity. The
+historical comparison is still in-sample, a synthetic model-of-models,
+and not a broker-executable portfolio or evidence of new alpha.
