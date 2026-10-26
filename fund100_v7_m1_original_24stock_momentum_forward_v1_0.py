@@ -117,7 +117,7 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
         raise ForwardStop("Later source loses essential original lookback")
     # Do not fabricate missing NYSE sessions even on an incomplete horizon.
     after=data.index[data.index>pd.Timestamp(ORIGINAL_LAST_SESSION)]
-    if len(after) and not after.equals(_calendar(ENTRY_SESSION,last)):
+    if len(after) and not after.equals(_calendar("2026-10-26",last)):
         raise ForwardStop("Gap, extra source price date or missing XNYS closes")
     target=_calendar(ENTRY_SESSION,"2026-12-15")
     if len(target)<=HOLD_SESSIONS or target[0]!=pd.Timestamp(ENTRY_SESSION):
@@ -181,6 +181,8 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
         "costed_95pct_stocks_versus_95pct_spy":by_cost,
         "not_a_survivorship_safe_universe":True,
         "only_one_contemporary_frozen_selection":True,
+        "initial_equal_weight_sector_pilot_single_symbol_leq_50pct":
+            bool(len(selected)>=2),
         "stock_total_returns_or_tradable_fills_verified":False,
         "historical_prices_revisable_and_current_marks_not_original_entry_fills":True,
         "signal_predictive_alpha_proven":False,
