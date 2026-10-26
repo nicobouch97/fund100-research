@@ -1,0 +1,104 @@
+name: Fund-100 V7 M1 Frozen 24-Stock Momentum Forward vs SPY (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_m1_original_24stock_momentum_forward_v1_0.py'
+      - 'test_fund100_v7_m1_original_24stock_momentum_forward_v1_0.py'
+      - 'research_lab/V7_M1_PREDECLARED_ORIGINAL_24_STOCK_MOMENTUM_FORWARD_2026_10_26.md'
+      - '.github/workflows/fund100-v7-m1-original-24stock-forward.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_m1_original_24stock_momentum_forward_v1_0.py'
+      - 'test_fund100_v7_m1_original_24stock_momentum_forward_v1_0.py'
+      - '.github/workflows/fund100-v7-m1-original-24stock-forward.yml'
+  schedule:
+    - cron: '35 12 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: fund100-v7-m1-original-pinned-24stock-forward
+  cancel-in-progress: false
+
+jobs:
+  frozen-causal-stock-momentum-source-and-return:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install original public market research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test frozen selection, non-lookahead dates, ETF cost match and no broker orders
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python -m pytest -q test_fund100_v7_m1_original_24stock_momentum_forward_v1_0.py
+          python - <<'PY'
+          import fund100_v7_m1_original_24stock_momentum_forward_v1_0 as m
+          assert m.ORIGINAL_RUN_ID==40368883430 and m.ORIGINAL_ARTIFACT_ID==12670273944
+          assert m.ENTRY_SESSION=='2026-10-27' and m.HOLD_SESSIONS==21
+          assert m.BROKER_GETS==m.BROKER_POSTS==m.BROKER_ORDERS==0
+          assert not m.LIVE_AUTHORIZED
+          PY
+      - name: Fetch ONLY the green original main-branch Oct26 pre-entry P4L source
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fund100-v7-m1-original
+          gh run view 40368883430 --repo "$GH_REPO" \
+            --json databaseId,headBranch,status,conclusion > /tmp/fund100-v7-m1-pinned.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('/tmp/fund100-v7-m1-pinned.json').read_text())
+          assert d['databaseId']==40368883430
+          assert d['headBranch']=='main'
+          assert d['status']=='completed' and d['conclusion']=='success'
+          PY
+          gh run download 40368883430 --repo "$GH_REPO" \
+            -n fund100-v7-e7-24issuer-independent-event-prices-40368883430 \
+            -D /tmp/fund100-v7-m1-original
+          test -s /tmp/fund100-v7-m1-original/original-price-manifest.json
+          test -s /tmp/fund100-v7-m1-original/original-24issuer-prices.csv
+      - name: Calculate unchanged original picks only against the later original price vintage
+        run: |
+          set -euo pipefail
+          python fund100_v7_m1_original_24stock_momentum_forward_v1_0.py \
+            --original-dir /tmp/fund100-v7-m1-original \
+            --output-dir /tmp/fund100-v7-m1-observed
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import fund100_v7_m1_original_24stock_momentum_forward_v1_0 as m
+          doc=json.loads(Path(
+              '/tmp/fund100-v7-m1-observed/frozen-forward-stocks-versus-SPY.json'
+          ).read_text())
+          assert doc['schema']==m.SCHEMA
+          assert doc['original_fixed_run_id']==m.ORIGINAL_RUN_ID
+          assert doc['frozen_entry_close_session']==m.ENTRY_SESSION
+          assert doc['required_holding_intervals']==m.HOLD_SESSIONS
+          assert doc['broker_gets']==doc['broker_posts']==doc['broker_orders']==0
+          assert doc['trading_authorized'] is False
+          assert doc['signal_predictive_alpha_proven'] is False
+          print('Cohort measurements completed:',doc['observed_holding_intervals'])
+          print('Final frozen comparison available:',doc['final_result_completed'])
+          print('Latest verdict:',doc['status'])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-m1-frozen-24issuer-21session-SPY-${{ github.run_id }}
+          path: /tmp/fund100-v7-m1-observed/
+          retention-days: 90
+          if-no-files-found: error
