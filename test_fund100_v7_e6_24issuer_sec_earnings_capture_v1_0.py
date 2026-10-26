@@ -128,7 +128,7 @@ def test_capture_never_backdates_or_mixes_before_registration():
     def normal(url,agent):
         cik=url.split("CIK",1)[1].split(".json",1)[0]
         return source(cik,mode="empty")
-    with pytest.raises(e6.ExpandedFeedStop,match="captured before"):
+    with pytest.raises(e6.ExpandedFeedStop,match="Future cohort not yet registered"):
         e6.collect(agent=AGENT,loader=normal,
                    clock=lambda:"2026-10-22T00:00:00Z")
     count=[0]
