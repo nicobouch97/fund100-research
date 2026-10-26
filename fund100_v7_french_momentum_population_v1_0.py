@@ -23,6 +23,7 @@ import json
 import math
 from pathlib import Path
 import re
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import zipfile
 
@@ -216,14 +217,19 @@ def inspect(momentum_zip:bytes,market_zip:bytes,*,captured_utc:str)->dict:
 def _get(url):
     if url not in (MOM_URL,MARKET_URL):
         raise MomentumPopulationStop("Non-official academic data host")
-    req=Request(url,headers={"User-Agent":"Fund100AcademicResearch/1.0","Accept":"application/zip"})
+    req=Request(url,headers={"User-Agent":"Mozilla/5.0 (compatible; Fund100Research/1.0)","Accept":"application/zip, application/octet-stream"})
     try:
         with urlopen(req,timeout=25) as response:
             if response.status!=200 or response.geturl()!=url:
                 raise MomentumPopulationStop("Official academic source redirect/status mismatch")
             raw=response.read(MAX_ARCHIVE_BYTES+1)
-    except (OSError,TimeoutError):
-        raise MomentumPopulationStop("Official academic source unavailable") from None
+    except HTTPError as exc:
+        # University public download status code only; never expose headers
+        # or fabricate a return series when the host declines the request.
+        raise MomentumPopulationStop(
+            "Official academic HTTP source status "+str(exc.code)) from None
+    except (URLError,OSError,TimeoutError):
+        raise MomentumPopulationStop("Official academic source network unavailable") from None
     if not 0<len(raw)<=MAX_ARCHIVE_BYTES:
         raise MomentumPopulationStop("Academic archive size invalid")
     return raw
