@@ -45,6 +45,8 @@ on:
       - "fund100_v6_autonomous_event_identity_v1_0.py"
       - "fund100_v6_opportunity_rebalance_economics_v1_0.py"
       - "fund100_v6_frozen_signal_to_opportunity_v1_0.py"
+      - "fund100_v6_frozen_opportunity_forward_diagnostic_v1_0.py"
+      - "test_fund100_v6_frozen_opportunity_forward_diagnostic_v1_0.py"
       - "test_fund100_v6_frozen_signal_to_opportunity_v1_0.py"
       - "test_fund100_v6_opportunity_rebalance_economics_v1_0.py"
       - "research_lab/V6_OPPORTUNITY_SWITCH_BEFORE_DISCRETIONARY_LIVE_2026_10_26.md"
@@ -158,6 +160,8 @@ on:
       - "fund100_v6_autonomous_event_identity_v1_0.py"
       - "fund100_v6_opportunity_rebalance_economics_v1_0.py"
       - "fund100_v6_frozen_signal_to_opportunity_v1_0.py"
+      - "fund100_v6_frozen_opportunity_forward_diagnostic_v1_0.py"
+      - "test_fund100_v6_frozen_opportunity_forward_diagnostic_v1_0.py"
       - "test_fund100_v6_frozen_signal_to_opportunity_v1_0.py"
       - "test_fund100_v6_opportunity_rebalance_economics_v1_0.py"
       - "research_lab/V6_OPPORTUNITY_SWITCH_BEFORE_DISCRETIONARY_LIVE_2026_10_26.md"
@@ -275,6 +279,11 @@ jobs:
         run: |
           set -euo pipefail
           pytest -q
+
+      - name: Research-only frozen ETF 21-session forecast vs realized benchmark (NO BROKER)
+        run: |
+          set -euo pipefail
+          python -B fund100_v6_frozen_opportunity_forward_diagnostic_v1_0.py
 
       - name: Re-run Static Audit v1.17 baseline
         run: |
