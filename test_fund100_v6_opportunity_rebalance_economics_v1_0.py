@@ -122,6 +122,60 @@ def test_dust_trades_do_not_count_as_alpha_or_orders():
     assert z["state"]=="HOLD_NO_MATERIAL_DIFFERENCE"
     assert z["hypothetical_sell_usd_by_symbol"]=={}
 
+def test_retained_dust_cannot_overrun_95pct_gross_or_5pct_cash():
+    c=case()
+    c["snapshot"].update({
+        "equity_usd":"100.00","cash_usd":"50.00",
+        "settled_cash_usd":"50.00",
+        "positions_usd":{"ACWI":"49.50","EEM":"0.50"}})
+    c["target_weights"]={"XLK":"0.50","XLE":"0.45"}
+    c["expected_returns"]={"ACWI":"0.00","EEM":"0.00",
+                           "XLK":"0.40","XLE":"0.30"}
+    c["round_trip_side_cost_bps"]="0"
+    c["forecast_uncertainty_bps"]="0"
+    z=run(c)
+    assert z["hypothetical_sell_usd_by_symbol"]=={"ACWI":"49.50"}
+    assert z["hypothetical_buy_usd_by_symbol"]=={"XLE":"45.00","XLK":"50.00"}
+    assert z["hypothetical_post_trade_gross_usd"]=="95.50"
+    assert z["hypothetical_post_trade_cash_after_costs_usd"]=="4.50"
+    assert z["hypothetical_post_trade_risk_within_limits"] is False
+    assert z["state"]=="HOLD_POST_TRADE_RISK_LIMIT_BREACH"
+    assert z["live_order_submission_authorized"] is False
+
+
+def test_retained_dust_cannot_overrun_single_name_50pct_cap():
+    c=case()
+    c["snapshot"].update({
+        "equity_usd":"100.00","cash_usd":"49.50",
+        "settled_cash_usd":"49.50","positions_usd":{"ACWI":"50.50"}})
+    c["target_weights"]={"ACWI":"0.50","XLK":"0.40"}
+    c["expected_returns"]={"ACWI":"0.00","XLK":"0.50"}
+    c["round_trip_side_cost_bps"]="0"
+    z=run(c)
+    assert z["hypothetical_sell_usd_by_symbol"]=={}
+    assert z["hypothetical_buy_usd_by_symbol"]=={"XLK":"40.00"}
+    assert z["hypothetical_post_trade_gross_usd"]=="90.50"
+    assert z["hypothetical_post_trade_risk_within_limits"] is False
+    assert z["state"]=="HOLD_POST_TRADE_RISK_LIMIT_BREACH"
+
+
+def test_transaction_costs_reduce_actual_cash_reserve_before_switch():
+    c=case()
+    c["snapshot"].update({
+        "equity_usd":"100.00","cash_usd":"100.00",
+        "settled_cash_usd":"100.00","positions_usd":{}})
+    c["target_weights"]={"XLK":"0.50","XLE":"0.45"}
+    c["expected_returns"]={"XLK":"0.40","XLE":"0.30"}
+    c["round_trip_side_cost_bps"]="35"
+    c["forecast_uncertainty_bps"]="0"
+    z=run(c)
+    assert z["hypothetical_post_trade_gross_usd"]=="95.00"
+    assert z["hypothetical_post_trade_cash_after_costs_usd"]=="4.66"
+    assert z["hypothetical_post_trade_risk_within_limits"] is False
+    assert z["state"]=="HOLD_POST_TRADE_RISK_LIMIT_BREACH"
+    assert z["live_order_submission_authorized"] is False
+
+
 @pytest.mark.parametrize("bad",[
     {"mode":"LIVE_AUTHENTICATED"},
     {"signal_status":"DEPLOYED_CERTIFIED_ALPHA"},
