@@ -438,6 +438,19 @@ def test_last_gate_operator_scope_read_occurs_once_before_first_alpaca_post(
     assert result["resubmission_permitted"] is False
 
 
+def test_revocation_recheck_occurs_after_live_risk_before_broker_post():
+    source=Path(writer.__file__).read_text()
+    start=source.index("def submit_v6_s1_original_acwi_fractional_sell(")
+    end=len(source)
+    body=source[start:end]
+    gate=body.index("order_time=risk.inspect_actual_original_seven_get(")
+    scope=body.index("active._scope()",gate)
+    broker=body.index('url=LIVE_BASE_URL+LIVE_ORDER_PATH',scope)
+    request=body.index('method="POST"',broker)
+    assert gate<scope<broker<request
+    assert "operator revoked or emergency kill before POST" in body
+
+
 def test_original_v5_writer_entrypoint_and_hard_locks_preserved():
     source=Path(writer.__file__).read_text()
     assert "def submit_authorized_order_batch(" in source
