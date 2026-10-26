@@ -120,7 +120,7 @@ def _vol_target_fixed_blend(dates: pd.DatetimeIndex, navs: dict,
 
     At close t use the 63 returns THROUGH t to set next-session exposure.
     Apply t-1 exposure to the return ending at t, then pay the one-way
-    cost for the exposure change at close t. No borrowing or shorts.
+    cost for the actual drifted-to-target risky-weight trade at close t. No borrowing or shorts.
     A single predeclared 10% volatility target is NOT fitted to history.
     This is a synthetic NAV challenger, not replicable broker orders.
     """
@@ -144,9 +144,20 @@ def _vol_target_fixed_blend(dates: pd.DatetimeIndex, navs: dict,
     held = 0.0
     capital = 100.0
     for t in range(first, len(dates)):
+        # A target weight is set at the PREVIOUS close. After the next
+        # return, the risky fraction drifts before the new close rebalance.
+        # Costs must apply to actual shares/notional traded to restore the
+        # target, not merely to the difference between consecutive targets.
+        drifted = held
         if t > first:
             # Exposure fixed at the preceding close: no same-close foresight.
-            capital *= 1 + held * float(daily[t - 1])
+            gross_growth = 1 + held * float(daily[t - 1])
+            if not math.isfinite(gross_growth) or gross_growth <= 0:
+                raise WalkforwardStop("Invalid drifted risk-blend growth")
+            capital *= gross_growth
+            drifted = held * (1 + float(daily[t - 1])) / gross_growth
+            if not math.isfinite(drifted) or not 0 <= drifted <= 1:
+                raise WalkforwardStop("Invalid drifted risky weight")
         trailing = daily[t - VOL_LOOKBACK_SESSIONS:t]
         if len(trailing) != VOL_LOOKBACK_SESSIONS:
             raise WalkforwardStop("Incomplete trailing volatility history")
@@ -154,7 +165,7 @@ def _vol_target_fixed_blend(dates: pd.DatetimeIndex, navs: dict,
         if not math.isfinite(annual_vol):
             raise WalkforwardStop("Invalid trailing volatility")
         new = min(1.0, VOL_TARGET_ANNUAL / annual_vol) if annual_vol > 1e-12 else 1.0
-        changed = abs(new - held)
+        changed = abs(new - drifted)
         # Synthetic one-way trade cost, on current capital at each close.
         capital *= 1 - changed * cost_bps / 10000
         if not math.isfinite(capital) or capital <= 0 or not 0 <= new <= 1:
@@ -425,6 +436,7 @@ def evaluate(paths: dict, *, switch_side_cost_bps: int) -> dict:
         "vol_target_blend_decision_after_close_applies_next_session": True,
         "vol_target_blend_no_leverage_or_shorting": True,
         "vol_target_blend_extra_one_way_costs_included": True,
+        "vol_target_blend_turnover_accounts_for_return_drift": True,
         "vol_target_blend_target_not_parameter_optimized": True,
         "historical_model_risk_screens_not_live_controls": True,
         "synthetic_model_sleeve_replication_not_verified": True,
