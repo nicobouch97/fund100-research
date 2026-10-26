@@ -25,3 +25,29 @@ C13 V5 found that a 10% fixed GLD allocation, funded from interest-bearing cash 
 4. Any result is exploratory because the rule was proposed after observing static gold performance and the historical data. No model promotion, no trading intent, no funded orders, no private-state mutations.
 
 **Existing capital ceiling $130.30, operator STOP, ENGAGED kill switch, 14-ETF LIVE whitelist, protected risk controls and every LIVE release lock remain untouched.**
+
+## 26 October 2026 — post-result calendar-year concentration audit
+
+This follow-up is explicitly **after the original dynamic-gold historical
+results**, not a fresh signal, new allocation, independent holdout, or
+pre-registered investment test. Preserve the original 126-session lag,
+75% equity mix, cash-rate scenarios, 5/15/35bp ETF trading costs,
+frozen source verification, and all previous dynamic/static/cash NAVs.
+
+For each existing scenario, decompose **net relative log wealth** of the
+dynamic gold/cash rule against (a) 25% cash and (b) static 10% GLD into
+calendar-year contributions. Include relative inception transaction costs
+in the first calendar year. Report the largest positive calendar year and
+total relative log wealth excluding that year's contribution.
+
+This exposes whether a seemingly attractive backtest is dominated by one
+calendar year (especially previously observed 2025 gold performance).
+Removing the strongest year is **only arithmetic attribution**; it is
+not an executable leave-one-year-out backtest, a predictive rule, or
+proof of statistical significance. Reconcile each year's log increments
+to terminal relative wealth and reject missing/misaligned/nonpositive NAV.
+
+This research does not alter LIVE/PAPER workflows, broker permissions,
+original USD130.30 capital ceiling, operator STOP, ENGAGED kill switch,
+risk policy, holdings, or release locks. No funded orders or private-state
+mutations are authorised.

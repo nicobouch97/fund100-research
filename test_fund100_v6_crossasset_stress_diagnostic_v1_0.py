@@ -349,3 +349,21 @@ def test_original_calendar_guard_is_wired_before_source_evaluation():
     report = mod.evaluate(prices(), acquired_at_utc="2025-01-02T12:00:00Z",
                           cash_rates=cash_rates())
     assert "original_price_calendar_full_coverage" not in report
+
+
+def test_gold_trend_year_decomposition_matches_existing_static_gold_audit():
+    # The dynamic research extension must use the SAME relative wealth
+    # convention as C13's earlier static-sleeve calendar-year analysis.
+    import fund100_v6_c13_dynamic_gold_cash_v1_0 as trend
+    frame = prices()
+    names = (mod.CASH_CONTROL, mod.GOLD_ONLY, mod.SHY_ONLY, mod.GOLD_SHY)
+    paths = {
+        name: mod.simulate(frame, mod.WEIGHTS[name], 15)["nav"]
+        for name in names
+    }
+    established = mod.calendar_year_relative_log_wealth(paths)[mod.GOLD_ONLY]
+    new = trend._relative_year_concentration(
+        paths[mod.GOLD_ONLY], paths[mod.CASH_CONTROL])
+    for key, value in established.items():
+        assert new[key] == value
+    assert new["ex_largest_year_is_arithmetic_not_executable_or_out_of_sample"]
