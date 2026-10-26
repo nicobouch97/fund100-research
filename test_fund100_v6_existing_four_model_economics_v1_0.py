@@ -235,3 +235,94 @@ def test_fixed_four_model_lookthrough_fails_closed_on_missing_or_fake_weights():
     paths[e.MODELS[1]].loc[:,"weight_XLK"]=float("nan")
     with pytest.raises(e.EconomicsStop,match="Inconsistent original"):
         e._fixed_blend_etf_lookthrough(paths,"2014-01-01")
+
+
+def _synthetic_factor_proxy_inputs(n=790):
+    """Independent synthetic ETF spread returns with a known linear blend."""
+    dates=pd.bdate_range("2014-01-02",periods=n)
+    t=np.arange(n-1,dtype=float)
+    spy=.0004+.005*np.sin(t/11)
+    acwi=.0005+.004*np.sin(t/17)+.002*np.cos(t/31)
+    xlk=spy+.003*np.sin(t/7)+.001*np.cos(t/23)
+    xle=spy+.004*np.cos(t/13)
+    iwm=spy+.003*np.sin(t/19)
+    raw={"SPY":spy,"ACWI_BENCHMARK":acwi,
+         "XLK":xlk,"XLE":xle,"IWM":iwm}
+    prices=pd.DataFrame({s:100*np.cumprod(np.r_[1.,1+r])
+                         for s,r in raw.items()},index=dates)
+    y=.0001+.4*acwi+.2*(xlk-spy)+.1*(xle-spy)-.05*(iwm-spy)
+    nav=100*np.cumprod(np.r_[1.,1+y])
+    bench=prices["ACWI_BENCHMARK"].to_numpy()
+    paths={m:pd.DataFrame({"nav":nav,"benchmark":bench},index=dates)
+           for m in e.MODELS}
+    return prices,paths
+
+
+def test_fixed_blend_factor_proxy_regression_recovers_known_return_loadings():
+    prices,paths=_synthetic_factor_proxy_inputs()
+    d=e._fixed_blend_factor_proxy_attribution(prices,paths,"2014-01-01",15)
+    assert d["status"]=="DESCRIPTIVE_FACTOR_PROXY_FIT"
+    assert d["return_observations"]>=259
+    assert d["factors"]==list(e.FACTOR_PROXY_NAMES)
+    assert d["historical_joint_factor_R2_pct"]==pytest.approx(100.)
+    assert d["historical_ACWI_only_R2_pct"]<100.
+    assert d["historical_incremental_fit_vs_ACWI_pp"]>0
+    assert d["factor_coefficients"]==pytest.approx({
+        "ACWI":.4,"XLK_MINUS_SPY":.2,"XLE_MINUS_SPY":.1,
+        "IWM_MINUS_SPY":-.05},abs=1e-4)
+    assert d["arithmetic_annual_intercept_pct"]==pytest.approx(2.52,abs=.001)
+    assert d["intercept_HAC5_95pct_interval_annual_pct"][0]<=2.52<=d["intercept_HAC5_95pct_interval_annual_pct"][1]
+    assert d["original_model_and_synthetic_entry_costs_included"]
+    assert d["factor_betas_are_not_underlying_stock_or_sector_holdings"]
+    assert d["historical_intercept_is_not_investable_alpha"]
+    assert d["not_a_funded_strategy_or_live_release"]
+
+
+def test_factor_proxy_fit_fails_closed_on_unidentifiable_sector_spreads():
+    prices,paths=_synthetic_factor_proxy_inputs()
+    for sym in ("XLK","XLE","IWM"):
+        prices[sym]=prices["SPY"]
+    d=e._fixed_blend_factor_proxy_attribution(prices,paths,"2014-01-01",15)
+    assert d["status"]=="UNIDENTIFIABLE_FACTOR_PROXIES"
+    assert d["factor_coefficients"] is None
+    assert d["historical_joint_factor_R2_pct"] is None
+    assert d["arithmetic_annual_intercept_pct"] is None
+
+
+def test_factor_proxy_fit_rejects_different_source_dates_benchmark_and_cost():
+    prices,paths=_synthetic_factor_proxy_inputs()
+    with pytest.raises(e.EconomicsStop,match="dates or columns"):
+        e._fixed_blend_factor_proxy_attribution(prices.iloc[1:],paths,
+                                                "2014-01-01",15)
+    wrong=prices.copy()
+    wrong.loc[wrong.index[200],"ACWI_BENCHMARK"]*=1.01
+    with pytest.raises(e.EconomicsStop,match="benchmark differs"):
+        e._fixed_blend_factor_proxy_attribution(wrong,paths,"2014-01-01",15)
+    with pytest.raises(e.EconomicsStop,match="cost"):
+        e._fixed_blend_factor_proxy_attribution(prices,paths,"2014-01-01",20)
+    bad=prices.copy()
+    bad.loc[bad.index[300],"XLK"]=np.nan
+    with pytest.raises(e.EconomicsStop,match="invalid frozen factor"):
+        e._fixed_blend_factor_proxy_attribution(bad,paths,"2014-01-01",15)
+
+
+def test_frozen_four_model_factor_proxy_attribution_is_research_only():
+    prices,source=r1.load_frozen(Path("research_lab/frozen_history_v2.csv"))
+    report=e.evaluate(prices,source_sha=source)
+    assert report["factor_proxy_regression_is_descriptive_not_stock_lookthrough"]
+    assert set(report["fixed_four_model_factor_proxy_attribution_by_window"])=={"5","15","35"}
+    for windows in report["fixed_four_model_factor_proxy_attribution_by_window"].values():
+        assert set(windows)==set(e.WINDOWS)
+        for result in windows.values():
+            assert result["status"] in ("DESCRIPTIVE_FACTOR_PROXY_FIT",
+                                        "UNIDENTIFIABLE_FACTOR_PROXIES")
+            assert result["return_observations"]>=259
+            assert result["same_vintage_contemporaneous_adjusted_ETF_price_proxies"]
+            assert result["already_inspected_history_not_independent_out_of_sample"]
+            assert result["not_a_funded_strategy_or_live_release"]
+            if result["status"]=="DESCRIPTIVE_FACTOR_PROXY_FIT":
+                assert 0<=result["historical_ACWI_only_R2_pct"]<=100
+                assert (result["historical_joint_factor_R2_pct"]+1e-3>=
+                        result["historical_ACWI_only_R2_pct"])
+    assert report["strategy_promoted_for_funded_trading"] is None
+    assert report["real_broker_orders"]==0
