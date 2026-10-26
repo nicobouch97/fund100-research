@@ -384,6 +384,34 @@ def evaluate_form25_index(index_by_quarter: dict[int, bytes]) -> dict:
         "form_type_index_entries": forms,
         "original_form25_distinct_filer_ciks": len({
             row["filer_cik"] for row in events}),
+        # 25 is issuer-filed; 25-NSE is exchange-filed. The SEC index
+        # CIK is not independently verified as the affected share issuer.
+        "form25_filing_role_counts": {
+            "issuer_filed_including_amendments": sum(
+                row["form_type"] in {"25", "25/A"} for row in events),
+            "exchange_filed_including_amendments": sum(
+                row["form_type"] in {"25-NSE", "25-NSE/A"} for row in events),
+        },
+        "form25_role_10k_cik_overlap": {
+            role: {
+                "index_entries": len(group),
+                "same_cik_2017_10k_entries": sum(
+                    row["same_cik_in_full_2017_10k_filer_population"]
+                    for row in group),
+                "same_cik_prior_or_same_day_10k_entries": sum(
+                    row["same_cik_10k_filed_on_or_before_form25"]
+                    for row in group),
+                "same_cik_2017_10k_distinct_ciks": len({
+                    row["filer_cik"] for row in group
+                    if row["same_cik_in_full_2017_10k_filer_population"]}),
+            }
+            for role, group in (
+                ("issuer_filed_25", [
+                    row for row in events if row["form_type"] in {"25", "25/A"}]),
+                ("exchange_filed_25_nse", [
+                    row for row in events if row["form_type"] in {"25-NSE", "25-NSE/A"}]))
+        },
+        "form25_exchange_filed_index_cik_not_proof_of_issuer": True,
         "same_cik_2017_10k_filer_index_entries": len(matched),
         "same_cik_2017_10k_filer_distinct_ciks": len({
             row["filer_cik"] for row in matched}),
@@ -401,7 +429,7 @@ def evaluate_form25_index(index_by_quarter: dict[int, bytes]) -> dict:
 
 
 
-def capture_annual(output_dir: Path, agent: str) -> dict:
+def capture_annual(output_dir: Path, agent: str, *, form25_documents: bool = False) -> dict:
     """Read four official SEC quarter indexes; preserve raw reproducible bytes."""
     first = capture(output_dir, agent)
     original = {1: (output_dir / "original-sec-2017q1-master.idx").read_bytes()}
@@ -428,6 +456,11 @@ def capture_annual(output_dir: Path, agent: str) -> dict:
     (output_dir / form25["original_form25_manifest_file"]).write_bytes(form25_manifest)
     (output_dir / "historical-2017-form25-index-census.json").write_text(
         json.dumps(form25, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    if form25_documents:
+        # Original-source only: 8 issuer-filed and 8 exchange-filed
+        # non-amendment filings. Never an order or an exit classification.
+        from fund100_stock_historical_sec_form25_p4y_v1_0 import capture_original_sample
+        capture_original_sample(output_dir, agent)
     return report
 
 
@@ -438,6 +471,6 @@ if __name__ == "__main__":
                      help="Capture all four 2017 quarters, preserving Q1 legacy census")
     args = cli.parse_args()
     agent = os.environ.get("SEC_USER_AGENT", "")
-    result = (capture_annual(args.output_dir, agent) if args.annual_2017
+    result = (capture_annual(args.output_dir, agent, form25_documents=True) if args.annual_2017
               else capture(args.output_dir, agent))
     print(json.dumps(result, sort_keys=True))
