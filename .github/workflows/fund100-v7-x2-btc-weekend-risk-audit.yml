@@ -19,7 +19,7 @@ permissions:
   actions: read
 
 jobs:
-  24-7-bitcoin-risk-versus-original-NYSE:
+  audit-bitcoin-risk-around-the-clock:
     runs-on: ubuntu-latest
     timeout-minutes: 17
     env:
