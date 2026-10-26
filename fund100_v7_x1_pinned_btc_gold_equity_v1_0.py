@@ -191,6 +191,47 @@ def simulate(data:pd.DataFrame,yield_annual:pd.Series,
         "crypto_target_exceeded_intramonth_days":breach,
         "monthly_rebalances":monthly}
 
+
+def passive_spy_75_reference(etf:pd.DataFrame,yield_annual:pd.Series)->pd.Series:
+    """Costed passive 75% SPY / 25% cash, on EXACTLY X1's market calendar.
+
+    Same 15bp ETF purchase and rebalance friction, same lagged cash carry,
+    same last-completed-session monthly reset and same opening fee convention.
+    This is a comparator, not a sixth fitted trading strategy or LIVE asset.
+    """
+    try:
+        source=c13.validate_prices(etf)
+        c13.verify_original_exchange_sessions(source.index)
+    except (c13.CrossAssetStop,ValueError,TypeError) as exc:
+        raise AllocationStop("Invalid passive SPY original source") from exc
+    spy=source.loc[FIRST:LAST,"SPY"]
+    if (not isinstance(yield_annual,pd.Series)
+        or not spy.index.equals(yield_annual.index)
+        or not np.isfinite(yield_annual.to_numpy(dtype=float)).all()
+        or (yield_annual<0).any() or (yield_annual>25).any()):
+        raise AllocationStop("Passive benchmark dates or cash carry do not match X1")
+    fee=ETF_SIDE_BPS/10000.
+    nav=1.-.75*fee
+    stock_weight=.75
+    values=[nav]
+    for t in range(1,len(spy)):
+        elapsed=(spy.index[t]-spy.index[t-1]).days
+        stock_growth=float(spy.iloc[t]/spy.iloc[t-1])
+        cash_growth=math.exp(float(yield_annual.iloc[t-1])/100*elapsed/365.25)
+        factor=stock_weight*stock_growth+(1.-stock_weight)*cash_growth
+        if factor<=0 or not math.isfinite(factor):
+            raise AllocationStop("Invalid passive benchmark mark")
+        nav*=factor
+        stock_weight=stock_weight*stock_growth/factor
+        if t<len(spy)-1 and spy.index[t].month!=spy.index[t+1].month:
+            nav*=1.-abs(stock_weight-.75)*fee
+            stock_weight=.75
+        values.append(nav)
+    path=pd.Series(values,index=spy.index,name="passive_75_SPY_25_cash_net_nav")
+    if (path<=0).any() or not np.isfinite(path.to_numpy(dtype=float)).all():
+        raise AllocationStop("Invalid costed passive SPY wealth path")
+    return path
+
 def path_report(path:pd.Series,start:str,end:str)->dict:
     subset=path.loc[start:end]
     expected=xcals.get_calendar("XNYS").sessions_in_range(
@@ -239,11 +280,19 @@ def inspect(crypto:pd.DataFrame,etf:pd.DataFrame,rate:pd.DataFrame)->dict:
             positions={name:simulate(prices,yields[rate_name],weights,coin_cost)
                        for name,weights in CANDIDATES.items()}
             navs={name:p["path"] for name,p in positions.items()}
+            passive=passive_spy_75_reference(etf,yields[rate_name])
             windows={}
+            passive_periods={}
             for label,start,end in (*FIXED_PERIODS,LATEST,("full","2020-01-02",LAST)):
                 group={name:path_report(navs[name],start,end) for name in CANDIDATES}
                 base=group["CASH_CONTROL_75"]
+                spy_ref=path_report(passive,start,end)
+                passive_periods[label]=spy_ref
                 for name in CANDIDATES:
+                    group[name]["minus_passive_75pct_SPY_25pct_cash_net_cagr_pp"]=round(
+                        group[name]["net_cagr_pct"]-spy_ref["net_cagr_pct"],6)
+                    group[name]["minus_passive_75pct_SPY_25pct_cash_drawdown_pp"]=round(
+                        group[name]["max_drawdown_pct"]-spy_ref["max_drawdown_pct"],6)
                     group[name]["minus_cash_control_net_cagr_pp"]=round(
                         group[name]["net_cagr_pct"]-base["net_cagr_pct"],6)
                     group[name]["minus_cash_control_drawdown_pp"]=round(
@@ -251,6 +300,7 @@ def inspect(crypto:pd.DataFrame,etf:pd.DataFrame,rate:pd.DataFrame)->dict:
                 windows[label]=group
             rate_scenarios[rate_name]={
                 "return_and_risk_periods":windows,
+                "passive_75pct_SPY_25pct_cash_reference":passive_periods,
                 "turnover_and_source_risk":{
                     k:{"gross_weight_turnover":p["turnover_abs_weight_sum"],
                        "summed_fractional_trade_fees_not_dollars":p["cost_fraction_nav_sum_not_dollar"],
@@ -272,6 +322,9 @@ def inspect(crypto:pd.DataFrame,etf:pd.DataFrame,rate:pd.DataFrame)->dict:
         "source_crypto_24_7_complete_required":True,
         "source_etf_XNYS_complete_required":True,
         "fixed_75pct_equity_weights":{"XLK":.375,"XLE":.225,"IWM":.15},
+        "passive_SPY_reference_matches_75pct_equity_and_25pct_cash":True,
+        "passive_SPY_reference_uses_same_monthly_rebalance_and_15bp_ETF_cost":True,
+        "SPY_comparison_is_not_sector_or_factor_risk_matched_alpha":True,
         "fixed_candidate_basket_weights":{
             k:dict(zip((*SLEEVE_ASSETS,"CASH"),v))
             for k,v in CANDIDATES.items()},
@@ -312,6 +365,10 @@ def main():
             d=sample[name]
             print(name,"CAGR",d["net_cagr_pct"],"MDD",d["max_drawdown_pct"],
                   "minus_cash_CAGR_pp",d["minus_cash_control_net_cagr_pp"])
+    reference=report["results"]["35"]["IRX_MINUS_50BP"][
+        "passive_75pct_SPY_25pct_cash_reference"]["full"]
+    print("Matched 75% passive SPY reference CAGR",reference["net_cagr_pct"],
+          "max drawdown",reference["max_drawdown_pct"])
     print("Research only: no BTC trading eligibility or future alpha certified.")
 
 if __name__=="__main__":

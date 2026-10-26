@@ -139,3 +139,47 @@ def test_actual_source_roster_sha_pinned_and_zero_broker_order():
     for bad in ("TradingClient","ALPACA_LIVE_KEY","ALPACA_LIVE_SECRET",
                 "api.alpaca.markets","submit_order","place_order"):
         assert bad not in s
+
+
+def test_passive_spy_same_underlying_matches_costed_sector_control_without_crypto():
+    btc,etf,rate=fixture()
+    prices,yields=x1.market_view(btc,etf,rate)
+    spy=x1.passive_spy_75_reference(etf,yields["IRX_MINUS_50BP"])
+    control=x1.simulate(prices,yields["IRX_MINUS_50BP"],
+                        x1.CANDIDATES["CASH_CONTROL_75"],35)["path"]
+    # In this synthetic source SPY, XLK, XLE and IWM have IDENTICAL returns.
+    # Any divergence would mean benchmark fees, cash carry or timing differ.
+    assert spy.index.equals(control.index)
+    assert float((spy-control).abs().max())<1e-10
+    assert spy.iloc[0]==pytest.approx(1.-.75*x1.ETF_SIDE_BPS/10000.)
+    faster=etf.copy()
+    faster["SPY"]*=np.exp(.00015*np.arange(len(faster)))
+    changed=x1.passive_spy_75_reference(faster,yields["IRX_MINUS_50BP"])
+    assert changed.iloc[-1]>spy.iloc[-1]
+    with pytest.raises(x1.AllocationStop):
+        x1.passive_spy_75_reference(etf.drop(pd.Timestamp("2020-03-16")),
+                                     yields["IRX_MINUS_50BP"])
+    with pytest.raises(x1.AllocationStop):
+        x1.passive_spy_75_reference(etf,yields["IRX_MINUS_50BP"].iloc[:-1])
+
+
+def test_report_contains_source_matched_passive_spy_risk_return_comparator():
+    btc,etf,rate=fixture()
+    report=x1.inspect(btc,etf,rate)
+    assert report["passive_SPY_reference_matches_75pct_equity_and_25pct_cash"]
+    assert report["SPY_comparison_is_not_sector_or_factor_risk_matched_alpha"]
+    for cost,scenarios in report["results"].items():
+        for name,study in scenarios.items():
+            ref=study["passive_75pct_SPY_25pct_cash_reference"]
+            assert set(ref)=={"2020_2022","2023_2025",
+                              "2026_YTD_DESCRIPTIVE_ONLY","full"}
+            for window,group in study["return_and_risk_periods"].items():
+                for strategy in x1.CANDIDATES:
+                    row=group[strategy]
+                    assert row["minus_passive_75pct_SPY_25pct_cash_net_cagr_pp"]==pytest.approx(
+                        row["net_cagr_pct"]-ref[window]["net_cagr_pct"],abs=.000001)
+                    assert row["minus_passive_75pct_SPY_25pct_cash_drawdown_pp"]==pytest.approx(
+                        row["max_drawdown_pct"]-ref[window]["max_drawdown_pct"],abs=.000001)
+    assert report["broker_gets"]==report["broker_posts"]==report["broker_orders"]==0
+    assert not report["candidate_live_promoted"]
+
