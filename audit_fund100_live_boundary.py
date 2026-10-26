@@ -208,7 +208,7 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
     (
         ".github/workflows/fund100-v7-x3-real-btc-gold-six-getonly.yml",
         "fund100_v7_x3_actual_live_crypto_gold_getonly_v1_0.py",
-    ): "08f1850e20c69a3072d397d8fb9e166e403374c9",
+    ): "5cce1b541cc49c6b724c70ca9f4363e98022b66a",
     # V6 source-reviewed CURRENT-account inspector: only 4 GET
     # requests; code is Git-blob pinned and workflow main-only.
     (
