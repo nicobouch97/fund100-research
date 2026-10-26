@@ -1,4 +1,5 @@
 """Adversarial synthetic capital-flow versus actual performance tests."""
+from decimal import Decimal
 import pytest
 import fund100_v7_x7_flow_neutral_strategy_benchmark_v1_0 as x
 
@@ -16,9 +17,9 @@ def test_deposit_and_withdrawal_are_not_strategy_returns():
         mark(T0,"100.00","100.00"),
         mark(T1,"220.00","110.00","100.00","BEFORE_PERIOD_RETURN"),
         mark(T2,"181.00","121.00","-50.00","AFTER_PERIOD_RETURN")])
-    assert out["fund_flow_neutral_cumulative_return_pct"]=="15.500"
-    assert out["benchmark_same_period_cumulative_return_pct"]=="21.00"
-    assert out["fund_minus_benchmark_cumulative_return_pp"]=="-5.500"
+    assert Decimal(out["fund_flow_neutral_cumulative_return_pct"])==Decimal("15.5")
+    assert Decimal(out["benchmark_same_period_cumulative_return_pct"])==Decimal("21")
+    assert Decimal(out["fund_minus_benchmark_cumulative_return_pp"])==Decimal("-5.5")
     assert out["net_external_contributions_usd"]=="50.00"
     assert out["accounting_gain_excluding_net_external_flows_usd"]=="31.00"
     assert out["funded_principal_ceiling_usd_unchanged"]=="130.30"
@@ -52,6 +53,6 @@ def test_no_flow_drawdown_reflects_returns_not_deposit_jumps():
     v=x.evaluate(marks=[mark(T0,"100.00","100.00"),
                         mark(T1,"80.00","90.00"),
                         mark(T2,"90.00","99.00")])
-    assert v["fund_unitised_max_drawdown_pct"]=="-20.0"
-    assert v["fund_flow_neutral_cumulative_return_pct"]=="-10.0000"
+    assert Decimal(v["fund_unitised_max_drawdown_pct"])==Decimal("-20")
+    assert Decimal(v["fund_flow_neutral_cumulative_return_pct"])==Decimal("-10")
     assert v["broker_gets"]==v["broker_posts"]==v["broker_orders"]==0
