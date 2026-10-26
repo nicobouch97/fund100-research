@@ -1,0 +1,114 @@
+name: Fund-100 V7 X1 Pinned BTC and Gold Equity Diversification (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_x1_pinned_btc_gold_equity_v1_0.py'
+      - 'test_fund100_v7_x1_pinned_btc_gold_equity_v1_0.py'
+      - 'research_lab/V7_X1_FIXED_SMALL_BTC_SLEEVE_PRE_REGISTERED_2026_10_26.md'
+      - '.github/workflows/fund100-v7-x1-btc-gold-equity-source.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_x1_pinned_btc_gold_equity_v1_0.py'
+      - 'test_fund100_v7_x1_pinned_btc_gold_equity_v1_0.py'
+      - '.github/workflows/fund100-v7-x1-btc-gold-equity-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  original-pinned-btc-gold-diversification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install original research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify frozen 24-7/XNYS chronology, model costs and broker isolation
+        run: |
+          set -euo pipefail
+          test "${FUND100_BROKER_KILL_SWITCH}" = ENGAGED
+          python -m pytest -q \
+            test_fund100_v7_x1_pinned_btc_gold_equity_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Download exact two original successful source runs rather than fresh vendor data
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fund100-v7x1-crypto /tmp/fund100-v7x1-etfs
+          gh run download 39027912139 \
+            -n fund100-v6c1-original-btc-eth-cost-review \
+            -D /tmp/fund100-v7x1-crypto
+          gh run download 40298967469 \
+            -n fund100-v6-c13-crossasset-stress-source-and-report \
+            -D /tmp/fund100-v7x1-etfs
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          import fund100_v7_x1_pinned_btc_gold_equity_v1_0 as x1
+          c=Path('/tmp/fund100-v7x1-crypto')
+          e=Path('/tmp/fund100-v7x1-etfs')
+          paths=[
+              (c/'fund100-v6c1-original-crypto-price.csv',x1.CRYPTO_SHA),
+              (e/'fund100-c13-price-source.csv',x1.ETF_SHA),
+              (e/'fund100-c13-yahoo-irx-source.csv',x1.IRX_SHA),
+          ]
+          for path,want in paths:
+              data=path.read_bytes()
+              assert hashlib.sha256(data).hexdigest()==want, f'Missing/changed original SHA {path.name}'
+          cdoc=json.loads((c/'fund100-v6c1-actual-research.json').read_text())
+          edoc=json.loads((e/'fund100-c13-crossasset-risk.json').read_text())
+          assert cdoc['canonical_original_price_sha256']==x1.CRYPTO_SHA
+          assert edoc['price_sha256']==x1.ETF_SHA
+          assert edoc['cash_rate_sha256']==x1.IRX_SHA
+          assert cdoc['broker_orders']==0 and edoc['live_orders']==0
+          print('Source-verified original October 17 crypto and October 26 ETFs/IRX, not re-downloaded.')
+          PY
+      - name: Evaluate fixed monthly costed cross-asset control and BTC-gold sleeves
+        run: |
+          set -euo pipefail
+          python fund100_v7_x1_pinned_btc_gold_equity_v1_0.py \
+            --crypto-csv /tmp/fund100-v7x1-crypto/fund100-v6c1-original-crypto-price.csv \
+            --etf-csv /tmp/fund100-v7x1-etfs/fund100-c13-price-source.csv \
+            --irx-csv /tmp/fund100-v7x1-etfs/fund100-c13-yahoo-irx-source.csv \
+            --output /tmp/fund100-v7x1-crossasset-btc-gold-result.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import fund100_v7_x1_pinned_btc_gold_equity_v1_0 as x1
+          r=json.loads(Path('/tmp/fund100-v7x1-crossasset-btc-gold-result.json').read_text())
+          assert r['schema']==x1.SCHEMA
+          assert r['last_joint_qualifying_XNYS_session']=='2026-10-16'
+          assert r['first_joint_qualifying_XNYS_session']=='2020-01-02'
+          assert r['original_c1_crypto_source_sha256']==x1.CRYPTO_SHA
+          assert r['original_c13_etf_source_sha256']==x1.ETF_SHA
+          assert r['original_c13_irx_source_sha256']==x1.IRX_SHA
+          assert set(r['results'])=={'35','60'}
+          assert all(set(v)==set(x1.CASH_SCENARIOS) for v in r['results'].values())
+          assert all(set(s['return_and_risk_periods'])==
+                     {'2020_2022','2023_2025','2026_YTD_DESCRIPTIVE_ONLY','full'}
+                     for v in r['results'].values() for s in v.values())
+          assert r['candidate_live_promoted'] is False
+          assert r['real_account_btc_eligibility_and_mins_authenticated'] is False
+          assert r['broker_gets']==r['broker_posts']==r['broker_orders']==0
+          assert not r['paper_authorized'] and not r['live_authorized'] and not r['trading_authorized']
+          print('REAL SOURCE: BTC, fixed-gold and identical equity with original crypto/ETF/cash rates.')
+          PY
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Archive full actual historical net return comparisons with source SHA references
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7x1-pinned-btc-gold-matched-equity-report-${{ github.run_id }}
+          path: /tmp/fund100-v7x1-crossasset-btc-gold-result.json
+          retention-days: 90
+          if-no-files-found: error
