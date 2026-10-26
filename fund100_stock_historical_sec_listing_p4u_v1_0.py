@@ -23,7 +23,7 @@ from urllib.request import Request, urlopen
 
 from fund100_stock_historical_sec_population_p4t_v1_0 import parse_current_registry
 
-SCHEMA = "FUND100_P4U_2017_ORIGINAL_10K_COVER_SOURCE_AUDIT_V4"
+SCHEMA = "FUND100_P4U_2017_ORIGINAL_10K_COVER_SOURCE_AUDIT_V5"
 MAX_FILING_BYTES = 12_000_000  # full submission remains tightly bounded
 # A separately verified primary 10-K can exceed 12 MB without its exhibits.
 # This independent ceiling never applies to full submissions or index pages.
@@ -337,6 +337,52 @@ def _original_submission_xbrl_symbol(raw: bytes) -> dict:
     return result
 
 
+
+def _crosscheck_same_filing_ticker_and_common_class(evidence: dict) -> dict:
+    """Compare two ORIGINAL filing observations without inventing security IDs.
+
+    An issuer-level XBRL TradingSymbol is not a class-specific exchange
+    listing. With exactly one structured 12(b) common-share class, it is
+    worth flagging a *review association*, never filling the class ticker
+    or declaring investability. Multiple classes, conflicting original
+    symbols and primary-only captures abstain.
+    """
+    rows = evidence.get("possible_12b_security_class_rows", [])
+    state = evidence.get("original_xbrl_ticker_state")
+    ticker = evidence.get("original_xbrl_trading_symbol")
+    result = {
+        "same_filing_ticker_class_crosscheck_state": "NOT_EVALUATED",
+        "same_filing_ticker_class_review_candidates": [],
+        "same_filing_ticker_not_independent_listing_or_security_id": True,
+    }
+    if not rows:
+        result["same_filing_ticker_class_crosscheck_state"] = "NO_STRUCTURED_12B_COMMON_CLASS"
+    elif state == "NOT_EVALUATED_PRIMARY_10K_ONLY":
+        result["same_filing_ticker_class_crosscheck_state"] = "PRIMARY_ONLY_NO_XBRL"
+    elif state != "ONE_ORIGINAL_XBRL_TICKER_REVIEW_ONLY" or not ticker:
+        result["same_filing_ticker_class_crosscheck_state"] = "NO_UNAMBIGUOUS_ORIGINAL_XBRL_TICKER"
+    elif len(rows) != 1:
+        result["same_filing_ticker_class_crosscheck_state"] = "MULTIPLE_COMMON_CLASSES_ABSTAIN"
+    else:
+        row = rows[0]
+        explicit = row["trading_symbol_in_original_10k"]
+        if explicit is not None and explicit != ticker:
+            result["same_filing_ticker_class_crosscheck_state"] = "CONFLICTING_ORIGINAL_SYMBOLS_ABSTAIN"
+        else:
+            matched = explicit is not None
+            result["same_filing_ticker_class_crosscheck_state"] = (
+                "EXPLICIT_CLASS_SYMBOL_CONCORDANT_REVIEW_ONLY" if matched
+                else "SINGLE_CLASS_ISSUER_TICKER_ASSOCIATION_REVIEW_ONLY")
+            result["same_filing_ticker_class_review_candidates"] = [{
+                "issuer_xbrl_ticker": ticker,
+                "security_class_text": row["security_class_text"],
+                "exchange_text": row["exchange_text"],
+                "explicit_12b_symbol_concordant": matched,
+                "evidence_level": "SAME_ORIGINAL_2017_10K_SUBMISSION_REVIEW_ONLY",
+            }]
+    return result
+
+
 def inspect_original_10k(raw: bytes) -> dict:
     """Inspect a 10-K document explicitly identified inside an original submission."""
     if type(raw) is not bytes or not 0 < len(raw) <= MAX_FILING_BYTES:
@@ -356,6 +402,7 @@ def inspect_original_10k(raw: bytes) -> dict:
                 "section_12b_excerpt": ""}
     result = _inspect_cover_text(match.group(1).decode("latin-1", errors="replace"))
     result.update(_original_submission_xbrl_symbol(raw))
+    result.update(_crosscheck_same_filing_ticker_and_common_class(result))
     return result
 
 
@@ -374,6 +421,7 @@ def inspect_primary_10k(raw: bytes) -> dict:
         "original_xbrl_ticker_state": "NOT_EVALUATED_PRIMARY_10K_ONLY",
         "original_xbrl_ticker_not_security_class_or_listing_proof": True,
     })
+    result.update(_crosscheck_same_filing_ticker_and_common_class(result))
     return result
 
 
@@ -657,6 +705,13 @@ def capture(source_dir: Path, output_dir: Path, agent: str,
             r.get("original_xbrl_ticker_state") ==
             "ONE_ORIGINAL_XBRL_TICKER_REVIEW_ONLY" for r in observations),
         "original_xbrl_ticker_not_historical_security_master": True,
+        "same_filing_ticker_class_review_candidates": sum(
+            len(r.get("same_filing_ticker_class_review_candidates", []))
+            for r in observations),
+        "same_filing_ticker_class_crosscheck_states": dict(sorted(Counter(
+            r.get("same_filing_ticker_class_crosscheck_state", "NOT_EVALUATED")
+            for r in observations).items())),
+        "same_filing_ticker_not_independent_listing_or_security_id": True,
         "original_xbrl_not_evaluated_primary_only": sum(
             r.get("original_xbrl_ticker_state") ==
             "NOT_EVALUATED_PRIMARY_10K_ONLY" for r in observations),
