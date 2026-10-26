@@ -811,3 +811,124 @@ def test_capture_counts_only_same_original_submission_review_associations(tmp_pa
     assert report["original_xbrl_ticker_review_candidates"] == 2
     assert report["broker_orders"] == 0
     assert not report["live_authorized"] and not report["trading_authorized"]
+
+
+def _index_with_original_xbrl(path, *, href=None, kind="EX-101.INS"):
+    index = sec_filing_detail(path).decode()
+    _, primary_url = p4u._primary_urls(path, "primary10k.htm")
+    url = primary_url.rsplit("/", 1)[0] + "/issuer-2017.xml"
+    link = href if href is not None else url.removeprefix("https://www.sec.gov")
+    row = ('<tr><td>3</td><td>Original XBRL instance</td><td><a href="' +
+           link + '">issuer-2017.xml</a></td><td>' + kind +
+           '</td><td>1000</td></tr>')
+    return index.replace("</table>", row + "</table>").encode()
+
+
+def test_original_indexed_xbrl_requires_one_canonical_same_accession_exhibit():
+    path = "edgar/data/1001/0001001-17-000001.txt"
+    index = _index_with_original_xbrl(path)
+    filename, url = p4u._primary_xbrl_from_index(path, index)
+    assert filename == "issuer-2017.xml"
+    assert url.endswith("/000100117000001/issuer-2017.xml")
+    duplicate = index.replace(b"</table>",
+                              index[index.index(b"<tr><td>3</td>"):index.index(b"</table>")]
+                              + b"</table>")
+    for invalid, reason in (
+        (_index_with_original_xbrl(path, href="https://evil.invalid/x.xml"),
+         "PRIMARY_XBRL_UNSAFE_LINK"),
+        (_index_with_original_xbrl(path, kind="EX-101.CAL"),
+         "PRIMARY_XBRL_MISSING_OR_AMBIGUOUS"),
+        (duplicate, "PRIMARY_XBRL_MISSING_OR_AMBIGUOUS"),
+    ):
+        with pytest.raises(p4u.FilingSourceFailure) as exc:
+            p4u._primary_xbrl_from_index(path, invalid)
+        assert exc.value.reason_code == reason
+
+
+def test_indexed_original_xbrl_get_has_canonical_url_and_size_bound(monkeypatch):
+    path = "edgar/data/1001/0001001-17-000001.txt"
+    index = _index_with_original_xbrl(path)
+    _, url = p4u._primary_xbrl_from_index(path, index)
+    seen = []
+    mode = ["ok"]
+    class Response:
+        status = 200
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def geturl(self):
+            return url if mode[0] != "redirect" else "https://evil.invalid/"
+        def read(self, limit):
+            seen.append(limit)
+            return b"<xbrl/>" if mode[0] != "oversize" else b"x" * limit
+    def fake_urlopen(request, timeout):
+        assert request.full_url == url
+        assert timeout == 35
+        return Response()
+    monkeypatch.setattr(p4u, "urlopen", fake_urlopen)
+    assert p4u._official_primary_xbrl_get(
+        path, index, "Research contact@example.com") == (
+            b"<xbrl/>", "issuer-2017.xml", url)
+    assert seen == [p4u.MAX_PRIMARY_XBRL_BYTES + 1]
+    for value, reason in (("redirect", "PRIMARY_XBRL_NONCANONICAL_HTTP"),
+                          ("oversize", "PRIMARY_XBRL_OVERSIZED")):
+        mode[0] = value
+        with pytest.raises(p4u.FilingSourceFailure) as exc:
+            p4u._official_primary_xbrl_get(path, index, "Research contact@example.com")
+        assert exc.value.reason_code == reason
+
+
+def test_primary_only_recovers_independently_indexed_xbrl_with_sha_and_no_listing_claim(tmp_path):
+    make_sources(tmp_path)
+    primary = (b"<html><body><p>Securities registered pursuant to Section 12(b):</p>"
+               b"<table><tr><td>Common Stock</td><td>NYSE</td></tr></table></body></html>")
+    xml = b"<xbrl><dei:TradingSymbol contextRef='2017'>HIST</dei:TradingSymbol></xbrl>"
+    def oversized(path, agent):
+        raise p4u.FilingSourceFailure("OVER_12MB_SOURCE_LIMIT")
+    def primary_get(path, agent):
+        name = "primary10k.htm"
+        index_url, primary_url = p4u._primary_urls(path, name)
+        return primary, _index_with_original_xbrl(path), name, primary_url, index_url
+    def xbrl_get(path, index, agent):
+        name, url = p4u._primary_xbrl_from_index(path, index)
+        return xml, name, url
+    out = tmp_path / "indexed-xbrl"
+    report = p4u.capture(tmp_path, out, "Research contact@example.com",
+                         per_stratum=1, getter=oversized, primary_getter=primary_get,
+                         xbrl_getter=xbrl_get)
+    assert report["original_filing_sources_captured"] == 2
+    assert report["index_verified_primary_xbrl_sources_captured"] == 2
+    assert report["index_verified_primary_xbrl_ticker_review_candidates"] == 2
+    assert report["original_xbrl_ticker_review_candidates"] == 0
+    assert report["original_xbrl_not_evaluated_primary_only"] == 2
+    assert report["same_filing_ticker_class_review_candidates"] == 0
+    assert report["index_verified_primary_xbrl_not_historical_security_master"]
+    for row in report["observations"]:
+        assert row["primary_xbrl_source_state"] == "INDEX_VERIFIED_XBRL_BYTES_CAPTURED"
+        assert row["primary_xbrl_trading_symbol"] == "HIST"
+        assert row["primary_xbrl_original_sha256"] == sha256(xml).hexdigest()
+        assert (out / row["primary_xbrl_local_file"]).read_bytes() == xml
+        assert row["original_xbrl_trading_symbol"] is None
+        assert row["same_filing_ticker_class_review_candidates"] == []
+    assert report["broker_requests"] == report["broker_orders"] == 0
+    assert not report["trading_authorized"] and not report["live_authorized"]
+
+
+def test_indexed_xbrl_unavailable_keeps_verified_primary_and_abstains(tmp_path):
+    make_sources(tmp_path)
+    primary = b"<html><body>SEC primary 10-K</body></html>"
+    def oversized(path, agent):
+        raise p4u.FilingSourceFailure("OVER_12MB_SOURCE_LIMIT")
+    def primary_get(path, agent):
+        name = "primary10k.htm"
+        index_url, primary_url = p4u._primary_urls(path, name)
+        return primary, sec_filing_detail(path), name, primary_url, index_url
+    def unavailable(path, index, agent):
+        raise p4u.FilingSourceFailure("HTTP_404")
+    report = p4u.capture(tmp_path, tmp_path / "no-xbrl", "Research contact@example.com",
+                         per_stratum=1, getter=oversized, primary_getter=primary_get,
+                         xbrl_getter=unavailable)
+    assert report["original_filing_sources_captured"] == 2
+    assert report["index_verified_primary_xbrl_sources_captured"] == 0
+    assert report["index_verified_primary_xbrl_source_failure_reasons"] == {"HTTP_404": 2}
+    assert all(row["primary_xbrl_trading_symbol"] is None for row in report["observations"])
+    assert report["broker_orders"] == 0 and not report["live_authorized"]
