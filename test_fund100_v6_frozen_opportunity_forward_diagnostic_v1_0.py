@@ -74,7 +74,10 @@ def test_frozen_original_file_is_actually_hash_verified_not_caller_asserted():
     assert result["overall"]["hypothetical_hurdle_pass_windows"]==0
     assert result["retrospective_evidence_disposition"]==(
         "REJECT_NO_SWITCH_CLEARED_COST_AND_UNCERTAINTY_HURDLE")
-    assert result["overall"]["all_candidate_windows_mean_excess_vs_95pct_acwi_after_cost_bps"]<0
+    # Relative implementation costs are now correctly measured from the
+    # same 50% ACWI/50% cash initial inventory. No sign is preordained.
+    assert isinstance(result["overall"]["all_candidate_windows_mean_excess_vs_95pct_acwi_after_cost_bps"],float)
+    assert result["selection_cost_comparison_uses_common_50pct_acwi_starting_inventory"] is True
 
 def test_signal_uses_past_bars_outcome_uses_next_tradable_close():
     f=fake_prices()
@@ -174,7 +177,34 @@ def test_same_gross_acwi_comparator_does_not_confuse_cash_beta_with_selection():
     fixed95=study._selection_excess_vs_acwi(
         weights=weights,actual=actual,benchmark_gross=.95)
     assert matched==pytest.approx(.475*(.04-.02)-.0035*(.475+.475))
-    assert fixed95==pytest.approx(.475*.04-.95*.02-.0035*(.475+.95))
+    # Both allocations start from 50% ACWI, NOT from each other.
+    # Candidate sells .50 ACWI and buys .475 XLK; 95%-ACWI buys .45.
+    assert fixed95==pytest.approx(.475*.04-.95*.02-.0035*(.975-.45))
     assert matched>0>fixed95
     assert study._selection_excess_vs_acwi(
         weights={"ACWI":.475},actual=actual,benchmark_gross=.475)==0
+
+
+def test_relative_costs_do_not_charge_switch_between_two_alternative_books():
+    actual={"ACWI":.02,"XLK":.04,"XLE":.01}
+    # Candidate: from 50% ACWI -> sell 50%, buy 47.5% XLK,
+    # buy 47.5% XLE = 145% one-way turnover.
+    # Benchmark: from 50% ACWI -> buy 45% ACWI = 45% turnover.
+    # Relative fee is 100% * 35bp, NOT the 190% turnover required
+    # to switch directly between the two fully-formed alternatives.
+    weights={"XLK":.475,"XLE":.475}
+    got=study._selection_excess_vs_acwi(
+        weights=weights,actual=actual,benchmark_gross=.95)
+    assert got==pytest.approx(.475*.04+.475*.01-.95*.02-.0035*(1.45-.45))
+    assert got!=pytest.approx(.475*.04+.475*.01-.95*.02-.0035*1.90)
+
+
+def test_relative_costs_can_favor_candidate_with_lower_starting_turnover():
+    actual={"ACWI":.02,"XLK":.02}
+    # Selection 49% ACWI + 46% XLK: sell 1% ACWI, buy 46% XLK.
+    # Comparator 95% ACWI: buy 45% ACWI. Equal gross and returns,
+    # but the selection incurs 2% more turnover, not 92%.
+    got=study._selection_excess_vs_acwi(
+        weights={"ACWI":.49,"XLK":.46},actual=actual,benchmark_gross=.95)
+    assert got==pytest.approx(-.0035*(.47-.45))
+    assert got<0

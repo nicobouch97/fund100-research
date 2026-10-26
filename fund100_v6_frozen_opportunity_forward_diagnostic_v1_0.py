@@ -121,12 +121,25 @@ def _summarize(rows):
     }
 
 def _selection_excess_vs_acwi(*,weights:dict,actual:dict,benchmark_gross:float)->float:
-    """Costed one-episode ETF selection edge vs ACWI at stated gross weight."""
-    delta=weights.copy()
-    delta["ACWI"]=delta.get("ACWI",0.)-benchmark_gross
+    """Relative costed return from the SAME 50% ACWI / 50% cash starting book.
+
+    The original comparison incorrectly charged the turnover of converting
+    the proposed allocation DIRECTLY into the ACWI comparator. That is not
+    the experiment: each independent episode starts with 50% ACWI. Charge
+    the candidate and benchmark their respective trade costs from that
+    common initial inventory, then subtract those costs. Otherwise the
+    benchmark's own implementation trades are omitted and the candidate
+    can be materially over-penalized. This is still synthetic research,
+    not a broker execution-cost estimate or strategy promotion.
+    """
+    initial={"ACWI":0.50}
+    candidate_turnover=sum(
+        abs(float(weights.get(s,0))-initial.get(s,0.))
+        for s in set(weights)|set(initial))
+    benchmark_turnover=abs(benchmark_gross-initial["ACWI"])
     return (sum(float(w)*actual[s] for s,w in weights.items())
             -benchmark_gross*actual["ACWI"]
-            -.0035*sum(abs(v) for v in delta.values()))
+            -.0035*(candidate_turnover-benchmark_turnover))
 
 def _retrospective_disposition(summary:dict)->str:
     """Reject unqualified economics; NEVER promote from reused historical data."""
@@ -255,6 +268,7 @@ def evaluate(*,history:pd.DataFrame,source_sha256:str,
         "hypothetical_portfolio":"EACH_NONOVERLAPPING_EPISODE_STARTS_ACWI_50_CASH_50_USD_100",
         "fixed_95pct_acwi_comparison_not_always_gross_matched":True,
         "same_gross_acwi_comparison_matches_each_candidate_invested_weight":True,
+        "selection_cost_comparison_uses_common_50pct_acwi_starting_inventory":True,
         "price_signal_last_bar": "SESSION_BEFORE_DECISION",
         "realized_outcome_prices": "DECISION_DAY_CLOSE_TO_21_SESSIONS_LATER",
         "horizon_sessions":HORIZON,
