@@ -185,6 +185,136 @@ def _fixed_blend_etf_lookthrough(paths:dict,begin:str)->dict:
     }
 
 
+
+# These are contemporaneous, price-based equity factor PROXIES, not point-in-time
+# constituent holdings, independently sourced factors or investable hedges.
+FACTOR_PROXY_NAMES=("ACWI","XLK_MINUS_SPY","XLE_MINUS_SPY","IWM_MINUS_SPY")
+FACTOR_PROXY_PRICE_COLUMNS=("ACWI_BENCHMARK","SPY","XLK","XLE","IWM")
+
+
+def _fixed_blend_factor_proxy_attribution(prices:pd.DataFrame, paths:dict,
+                                          begin:str, cost_bps:int)->dict:
+    """Decompose fixed-blend historical returns using original equity ETF proxies.
+
+    A same-close explanatory regression, NOT a forecast, causal sector
+    attribution, true stock look-through or an alpha promotion test. The
+    dependent variable includes each original model's costs. The one-time
+    synthetic blend entry cost cancels from post-entry daily returns, so it is
+    NOT included in this return regression. Factors use frozen adjusted-price
+    vintage. All series use identical close-to-close sessions AFTER entry.
+    """
+    if type(cost_bps) is not int or cost_bps not in COSTS:
+        raise EconomicsStop("Unregistered historical cost scenario")
+    try:
+        dates,benchmark,navs=adaptive._verified_paths(paths)
+    except adaptive.WalkforwardStop as exc:
+        raise EconomicsStop("Invalid original model paths for factor attribution") from exc
+    if (not isinstance(prices,pd.DataFrame) or not dates.equals(prices.index)
+        or any(c not in prices.columns for c in FACTOR_PROXY_PRICE_COLUMNS)):
+        raise EconomicsStop("Frozen factor price dates or columns disagree")
+    px=prices.loc[:,FACTOR_PROXY_PRICE_COLUMNS].to_numpy(dtype=float)
+    if not np.isfinite(px).all() or (px<=0).any():
+        raise EconomicsStop("Missing or invalid frozen factor prices")
+    # Compare the market-price benchmark *returns*, not its arbitrary NAV base.
+    price_benchmark=px[:,0]/px[0,0]
+    nav_benchmark=benchmark/benchmark[0]
+    if not np.allclose(price_benchmark,nav_benchmark,atol=1e-9,rtol=1e-9):
+        raise EconomicsStop("Original ACWI benchmark differs from factor source")
+    first=next((t for t in range(adaptive.TRAINING_RETURNS+1,len(dates))
+                if dates[t].to_period("Q")!=dates[t-1].to_period("Q")),None)
+    if first is None:
+        raise EconomicsStop("No eligible original fixed-blend entry")
+    start=max(first,int(dates.searchsorted(pd.Timestamp(begin))))
+    if len(dates)-start<260:
+        raise EconomicsStop("Insufficient completed factor-return observations")
+    levels=adaptive._fixed_equal_model_blend(dates,navs,cost_bps)
+    y=levels[start+1:]/levels[start:-1]-1
+    rets=px[1:]/px[:-1]-1
+    daily=rets[start:]
+    # The three spreads are EXCESS RETURNS of sector/size ETF price proxies
+    # versus SPY, not pure industry factors or issuer-level allocations.
+    factors=np.column_stack((daily[:,0],
+                             daily[:,2]-daily[:,1],
+                             daily[:,3]-daily[:,1],
+                             daily[:,4]-daily[:,1]))
+    if (len(y)!=len(factors) or not np.isfinite(y).all()
+        or not np.isfinite(factors).all() or (y<=-1).any()
+        or (rets<=-1).any()):
+        raise EconomicsStop("Invalid or misaligned historical factor returns")
+    common={
+        "status":"UNIDENTIFIABLE_FACTOR_PROXIES",
+        "method":"SAME_CLOSE_HISTORICAL_COSTED_BLEND_OLS_HAC5",
+        "first_session":dates[start].date().isoformat(),
+        "last_session":dates[-1].date().isoformat(),
+        "return_observations":len(y),
+        "factors":list(FACTOR_PROXY_NAMES),
+        "factor_coefficients":None,
+        "historical_ACWI_only_R2_pct":None,
+        "historical_joint_factor_R2_pct":None,
+        "historical_incremental_fit_vs_ACWI_pp":None,
+        "arithmetic_annual_intercept_pct":None,
+        "intercept_HAC5_95pct_interval_annual_pct":None,
+        "historical_residual_annual_vol_pct":None,
+        "original_model_costs_included_entry_cost_excluded_from_daily_regression":True,
+        "same_vintage_contemporaneous_adjusted_ETF_price_proxies":True,
+        "factor_betas_are_not_underlying_stock_or_sector_holdings":True,
+        "not_point_in_time_constituent_or_independent_factor_data":True,
+        "historical_intercept_is_not_investable_alpha":True,
+        "already_inspected_history_not_independent_out_of_sample":True,
+        "not_a_funded_strategy_or_live_release":True,
+    }
+    if np.std(y,ddof=1)<1e-8 or (np.std(factors,axis=0,ddof=1)<1e-8).any():
+        return common
+    # Scale to check identification without mistaking daily-return units for
+    # collinearity. Reject singular/near-singular proxy sets rather than
+    # publishing arbitrary factor coefficients.
+    z=(factors-factors.mean(axis=0))/factors.std(axis=0,ddof=1)
+    if np.linalg.cond(z)>1e6:
+        return common
+    x=np.column_stack((np.ones(len(y)),factors))
+    coef=np.linalg.lstsq(x,y,rcond=None)[0]
+    residual=y-x@coef
+    xx=x.T@x
+    if np.linalg.cond(xx)>1e12:
+        return common
+    xu=x*residual[:,None]
+    meat=xu.T@xu
+    for lag in range(1,6):
+        cross=xu[lag:].T@xu[:-lag]
+        meat+=(1-lag/6)*(cross+cross.T)
+    inv=np.linalg.inv(xx)
+    variance=float((inv@meat@inv)[0,0])
+    if variance < -1e-12:
+        raise EconomicsStop("Invalid historical factor intercept variance")
+    se=float(np.sqrt(max(0.,variance)))
+    alpha=float(coef[0])*252
+    base=factors[:,0]
+    baseline_residual=y-(y.mean()+
+                        np.dot(y-y.mean(),base-base.mean())/
+                        np.dot(base-base.mean(),base-base.mean())*
+                        (base-base.mean()))
+    var_y=float(np.var(y,ddof=1))
+    r2=1-float(np.var(residual,ddof=1))/var_y
+    base_r2=1-float(np.var(baseline_residual,ddof=1))/var_y
+    vals=[*coef,alpha,se,r2,base_r2]
+    if not np.isfinite(vals).all() or r2+1e-8<base_r2:
+        raise EconomicsStop("Invalid historical factor attribution fit")
+    return dict(common,
+        status="DESCRIPTIVE_FACTOR_PROXY_FIT",
+        factor_coefficients={name:round(float(beta),5)
+                             for name,beta in zip(FACTOR_PROXY_NAMES,coef[1:])},
+        historical_ACWI_only_R2_pct=round(100*max(0.,min(1.,base_r2)),4),
+        historical_joint_factor_R2_pct=round(100*max(0.,min(1.,r2)),4),
+        historical_incremental_fit_vs_ACWI_pp=round(
+            100*max(0.,r2-base_r2),4),
+        arithmetic_annual_intercept_pct=round(100*alpha,4),
+        intercept_HAC5_95pct_interval_annual_pct=[
+            round(100*(alpha-1.96*252*se),4),
+            round(100*(alpha+1.96*252*se),4)],
+        historical_residual_annual_vol_pct=round(
+            100*float(np.std(residual,ddof=1)*np.sqrt(252)),4))
+
+
 def _beta_attribution(path:pd.DataFrame)->dict:
     """Descriptive same-session OLS, not a forward alpha estimate or strategy.
 
@@ -308,6 +438,7 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
     uncertainty={}
     causal_switching={}
     lookthrough={}
+    factor_proxy_attribution={}
     for cost in COSTS:
         frames=_all_paths(data,cost)
         causal_switching[str(cost)] = adaptive.evaluate(
@@ -315,6 +446,7 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
         windows={}
         uncertainty_windows={}
         lookthrough_windows={}
+        factor_windows={}
         for label,start in WINDOWS.items():
             windows[label]={
                 name:_metrics(frame,start,drawdown_guard=.20,vol_guard=.35)
@@ -324,9 +456,12 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
                 raise EconomicsStop("Historical start dates are inconsistent")
             uncertainty_windows[label]=selection.evaluate(frames,start)
             lookthrough_windows[label]=_fixed_blend_etf_lookthrough(frames,start)
+            factor_windows[label]=_fixed_blend_factor_proxy_attribution(
+                data,frames,start,cost)
         output[str(cost)]=windows
         uncertainty[str(cost)]=uncertainty_windows
         lookthrough[str(cost)]=lookthrough_windows
+        factor_proxy_attribution[str(cost)]=factor_windows
     return {
         "schema":SCHEMA,
         "status":"ORIGINAL_MODELS_COMPARABLE_HISTORICAL_NOT_INDEPENDENT_NOT_LIVE",
@@ -349,6 +484,8 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
         "joint_four_model_selection_uncertainty":uncertainty,
         "causal_quarterly_model_switching_exploratory":causal_switching,
         "fixed_four_model_ETF_lookthrough_by_window":lookthrough,
+        "fixed_four_model_factor_proxy_attribution_by_window":factor_proxy_attribution,
+        "factor_proxy_regression_is_descriptive_not_stock_lookthrough":True,
         "lookthrough_is_ETF_ticker_level_not_underlying_stock_constituents":True,
         "meta_selection_rule_predeclared_not_parameter_optimized":True,
         "meta_selector_not_independent_holdout_or_live_strategy":True,
