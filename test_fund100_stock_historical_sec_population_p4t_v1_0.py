@@ -240,18 +240,18 @@ def quarters_with_form25_events():
     quarters = annual_quarters()
     quarters[1] = index(
         ONE, TWO,
-        "1001|OLDCO INC|25-NSE|2017-01-20|edgar/data/1001/0001001-17-000101.txt")
+        "1001|OLDCO INC|25-NSE|2017-01-20|edgar/data/1001/0000001001-17-000101.txt")
     quarters[2] = index(
         "1001|OLDCO INC|10-K|2017-05-15|edgar/data/1001/0001001-17-000011.txt",
-        "1001|OLDCO INC|25|2017-05-21|edgar/data/1001/0001001-17-000102.txt",
-        "1001|OLDCO INC|25/A|2017-05-22|edgar/data/1001/0001001-17-000103.txt")
+        "1001|OLDCO INC|25|2017-05-21|edgar/data/1001/0000001001-17-000102.txt",
+        "1001|OLDCO INC|25/A|2017-05-22|edgar/data/1001/0000001001-17-000103.txt")
     quarters[3] = index(
         "3003|NEWCO INC|10-K|2017-08-15|edgar/data/3003/0003003-17-000012.txt",
-        "3003|NEWCO INC|25|2017-08-20|edgar/data/3003/0003003-17-000104.txt")
+        "3003|NEWCO INC|25|2017-08-20|edgar/data/3003/0000003003-17-000104.txt")
     quarters[4] = index(
         "4004|LATER INC|10-K|2017-11-15|edgar/data/4004/0004004-17-000013.txt",
-        "9009|UNRELATED|25-NSE|2017-10-05|edgar/data/9009/0009009-17-000105.txt",
-        "4004|LATER INC|25-NSE/A|2017-11-20|edgar/data/4004/0004004-17-000106.txt")
+        "9009|UNRELATED|25-NSE|2017-10-05|edgar/data/9009/0000009009-17-000105.txt",
+        "4004|LATER INC|25-NSE/A|2017-11-20|edgar/data/4004/0000004004-17-000106.txt")
     return quarters
 
 
@@ -289,13 +289,13 @@ def test_form25_index_links_real_2017_filer_ciks_without_claiming_stock_delistin
                                       "missing_name", "unsafe_path"])
 def test_form25_index_rejects_invalid_event_provenance(change):
     quarters = quarters_with_form25_events()
-    old = "1001|OLDCO INC|25-NSE|2017-01-20|edgar/data/1001/0001001-17-000101.txt"
+    old = "1001|OLDCO INC|25-NSE|2017-01-20|edgar/data/1001/0000001001-17-000101.txt"
     bad = {
         "duplicate": old,
         "wrong_cik": old.replace("edgar/data/1001/", "edgar/data/9009/"),
         "wrong_quarter": old.replace("2017-01-20", "2017-04-20"),
         "missing_name": old.replace("OLDCO INC", ""),
-        "unsafe_path": old.replace("0001001-17-000101.txt", "../bad.txt"),
+        "unsafe_path": old.replace("0000001001-17-000101.txt", "../bad.txt"),
     }[change]
     if change == "duplicate":
         quarters[1] = index(ONE, TWO, old, bad)
