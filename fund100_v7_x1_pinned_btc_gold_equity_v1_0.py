@@ -232,6 +232,40 @@ def passive_spy_75_reference(etf:pd.DataFrame,yield_annual:pd.Series)->pd.Series
         raise AllocationStop("Invalid costed passive SPY wealth path")
     return path
 
+def same_sleeve_passive_spy_references(etf:pd.DataFrame,prices:pd.DataFrame,
+                                      yield_annual:pd.Series,
+                                      crypto_side_bps:int)->dict[str,pd.Series]:
+    """Counterfactual: replace ONLY 75% sector equities with SPY.
+
+    Preserve each candidate's exact BTC, GLD, cash weights, monthly close
+    timing, ETF/BTC side fees and lagged bill carry. SPY is represented by
+    three proportional virtual legs to reuse the original cost engine; its
+    proportional ETF fee is exactly the fee on one 75% SPY trade. This
+    post-result decomposition is descriptive, NOT an independent holdout.
+    """
+    try:
+        source=c13.validate_prices(etf)
+        c13.verify_original_exchange_sessions(source.index)
+    except (c13.CrossAssetStop,ValueError,TypeError) as exc:
+        raise AllocationStop("Invalid original SPY same-sleeve reference source") from exc
+    spy=source.loc[FIRST:LAST,"SPY"]
+    gold=source.loc[FIRST:LAST,"GLD"]
+    if (not isinstance(prices,pd.DataFrame)
+        or tuple(prices.columns)!=SLEEVE_ASSETS
+        or not prices.index.equals(spy.index)
+        or not np.array_equal(prices["GLD"].to_numpy(dtype=float),
+                              gold.to_numpy(dtype=float))
+        or not isinstance(yield_annual,pd.Series)
+        or not yield_annual.index.equals(spy.index)):
+        raise AllocationStop("SPY same-sleeve calendar, gold or cash source mismatch")
+    counterfactual=prices.copy()
+    for equity in ("XLK","XLE","IWM"):
+        counterfactual[equity]=spy.to_numpy(dtype=float)
+    return {name:simulate(counterfactual,yield_annual,weights,
+                          crypto_side_bps)["path"]
+            for name,weights in CANDIDATES.items()}
+
+
 def path_report(path:pd.Series,start:str,end:str)->dict:
     subset=path.loc[start:end]
     expected=xcals.get_calendar("XNYS").sessions_in_range(
@@ -281,18 +315,31 @@ def inspect(crypto:pd.DataFrame,etf:pd.DataFrame,rate:pd.DataFrame)->dict:
                        for name,weights in CANDIDATES.items()}
             navs={name:p["path"] for name,p in positions.items()}
             passive=passive_spy_75_reference(etf,yields[rate_name])
+            matched_spy=same_sleeve_passive_spy_references(
+                etf,prices,yields[rate_name],coin_cost)
             windows={}
             passive_periods={}
+            matched_spy_periods={}
             for label,start,end in (*FIXED_PERIODS,LATEST,("full","2020-01-02",LAST)):
                 group={name:path_report(navs[name],start,end) for name in CANDIDATES}
                 base=group["CASH_CONTROL_75"]
                 spy_ref=path_report(passive,start,end)
                 passive_periods[label]=spy_ref
+                sleeve_ref={name:path_report(matched_spy[name],start,end)
+                            for name in CANDIDATES}
+                matched_spy_periods[label]=sleeve_ref
                 for name in CANDIDATES:
                     group[name]["minus_passive_75pct_SPY_25pct_cash_net_cagr_pp"]=round(
                         group[name]["net_cagr_pct"]-spy_ref["net_cagr_pct"],6)
                     group[name]["minus_passive_75pct_SPY_25pct_cash_drawdown_pp"]=round(
                         group[name]["max_drawdown_pct"]-spy_ref["max_drawdown_pct"],6)
+                    group[name]["minus_same_sleeve_SPY_net_cagr_pp"]=round(
+                        group[name]["net_cagr_pct"]-sleeve_ref[name]["net_cagr_pct"],6)
+                    group[name]["minus_same_sleeve_SPY_drawdown_pp"]=round(
+                        group[name]["max_drawdown_pct"]-sleeve_ref[name]["max_drawdown_pct"],6)
+                    group[name]["minus_same_sleeve_SPY_volatility_pp"]=round(
+                        group[name]["annualized_volatility_pct"]-
+                        sleeve_ref[name]["annualized_volatility_pct"],6)
                     group[name]["minus_cash_control_net_cagr_pp"]=round(
                         group[name]["net_cagr_pct"]-base["net_cagr_pct"],6)
                     group[name]["minus_cash_control_drawdown_pp"]=round(
@@ -301,6 +348,7 @@ def inspect(crypto:pd.DataFrame,etf:pd.DataFrame,rate:pd.DataFrame)->dict:
             rate_scenarios[rate_name]={
                 "return_and_risk_periods":windows,
                 "passive_75pct_SPY_25pct_cash_reference":passive_periods,
+                "same_BTC_GLD_cash_sleeve_SPY_references":matched_spy_periods,
                 "turnover_and_source_risk":{
                     k:{"gross_weight_turnover":p["turnover_abs_weight_sum"],
                        "summed_fractional_trade_fees_not_dollars":p["cost_fraction_nav_sum_not_dollar"],
@@ -325,6 +373,8 @@ def inspect(crypto:pd.DataFrame,etf:pd.DataFrame,rate:pd.DataFrame)->dict:
         "passive_SPY_reference_matches_75pct_equity_and_25pct_cash":True,
         "passive_SPY_reference_uses_same_monthly_rebalance_and_15bp_ETF_cost":True,
         "SPY_comparison_is_not_sector_or_factor_risk_matched_alpha":True,
+        "same_sleeve_SPY_reference_preserves_BTC_GLD_cash_weights":True,
+        "same_sleeve_sector_effect_is_retrospective_not_predictive_alpha":True,
         "fixed_candidate_basket_weights":{
             k:dict(zip((*SLEEVE_ASSETS,"CASH"),v))
             for k,v in CANDIDATES.items()},
@@ -369,6 +419,11 @@ def main():
         "passive_75pct_SPY_25pct_cash_reference"]["full"]
     print("Matched 75% passive SPY reference CAGR",reference["net_cagr_pct"],
           "max drawdown",reference["max_drawdown_pct"])
+    selected=report["results"]["35"]["IRX_MINUS_50BP"][
+        "return_and_risk_periods"]["full"]["BTC_5_GOLD_5"]
+    print("BTC_5_GOLD_5 versus same BTC/gold/cash with SPY instead of sector ETFs:",
+          "net CAGR pp",selected["minus_same_sleeve_SPY_net_cagr_pp"],
+          "drawdown pp",selected["minus_same_sleeve_SPY_drawdown_pp"])
     print("Research only: no BTC trading eligibility or future alpha certified.")
 
 if __name__=="__main__":
