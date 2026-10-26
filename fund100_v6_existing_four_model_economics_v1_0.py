@@ -361,6 +361,64 @@ def _costed_etf_buy_hold_nav(prices:pd.DataFrame, first:int,
     return nav
 
 
+
+def _paired_equity_stress(dates:pd.DatetimeIndex, navs:dict,
+                          start:int)->dict:
+    """Descriptive matched-market selloff comparison; never a trading signal.
+
+    Select the worst 5% of *completed* ACWI sessions and its worst completed
+    21-session interval ex post. Compare the same dates for the four-model
+    blend and both passive ETF controls; do not select each portfolio's own
+    worst days, which would produce an incomparable stress sample.
+    """
+    names=("FIXED_FOUR_MODEL_BLEND","ACWI_ONLY","FOUR_ETF_EQUAL_BUY_HOLD")
+    if (not isinstance(dates,pd.DatetimeIndex) or dates.has_duplicates
+        or not dates.is_monotonic_increasing or dates.tz is not None
+        or type(start) is not int or start<0 or len(dates)-start<260
+        or type(navs) is not dict or set(navs)!=set(names)):
+        raise EconomicsStop("Invalid matched equity stress sessions")
+    levels={}
+    for name in names:
+        arr=np.asarray(navs[name])
+        if (arr.ndim!=1 or len(arr)!=len(dates)
+            or not np.issubdtype(arr.dtype,np.number)):
+            raise EconomicsStop("Invalid matched equity stress NAV shape")
+        arr=arr.astype(float)
+        if not np.isfinite(arr).all() or (arr<=0).any():
+            raise EconomicsStop("Invalid matched equity stress NAV")
+        levels[name]=arr[start:]
+    returns={name:nav[1:]/nav[:-1]-1 for name,nav in levels.items()}
+    market=returns["ACWI_ONLY"]
+    count=max(1,int(np.ceil(.05*len(market))))
+    worst=np.argsort(market,kind="stable")[:count]
+    horizon=21
+    market_windows=(levels["ACWI_ONLY"][horizon:]/
+                    levels["ACWI_ONLY"][:-horizon]-1)
+    first=int(np.argmin(market_windows))
+    window={
+        "first_session":dates[start+first].date().isoformat(),
+        "last_session":dates[start+first+horizon].date().isoformat(),
+        "completed_session_intervals":horizon,
+        "matched_portfolio_returns_pct":{
+            name:round(100*float(nav[first+horizon]/nav[first]-1),4)
+            for name,nav in levels.items()},
+    }
+    return {
+        "status":"DESCRIPTIVE_MATCHED_ACWI_STRESS_NO_PROMOTION",
+        "return_observations":len(market),
+        "worst_ACWI_5pct_session_count":count,
+        "mean_daily_return_on_same_worst_ACWI_5pct_sessions_pct":{
+            name:round(100*float(ret[worst].mean()),4)
+            for name,ret in returns.items()},
+        "worst_ACWI_21_session_window":window,
+        "stress_dates_selected_ex_post_not_a_predictive_signal":True,
+        "identical_completed_sessions_and_frozen_source":True,
+        "not_risk_matched_not_independent_holdout":True,
+        "broker_orders":0,
+        "strategy_promoted_for_live":None,
+    }
+
+
 def _simple_etf_comparator(prices:pd.DataFrame, paths:dict,
                            begin:str, cost_bps:int)->dict:
     """Same-entry, same-session four-model vs two simple ETF controls.
@@ -424,6 +482,8 @@ def _simple_etf_comparator(prices:pd.DataFrame, paths:dict,
         "control_weights":SIMPLE_ETF_CONTROLS,
         "fixed_four_model_blend":blend_metrics,
         "costed_simple_etf_controls":control_metrics,
+        "matched_equity_downside_stress":_paired_equity_stress(
+            dates,{"FIXED_FOUR_MODEL_BLEND":blend,**controls},start),
         "fixed_blend_minus_ACWI_only_CAGR_pp":round(
             blend_metrics["historical_cagr_pct"]-
             control_metrics["ACWI_ONLY"]["historical_cagr_pct"],4),
