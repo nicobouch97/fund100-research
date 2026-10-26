@@ -124,9 +124,11 @@ def assess(*,account:dict,positions:list,orders:list,clock:dict,
     cash=_money(account.get("cash"),"original cash")
     if equity<=0 or cash>equity*Decimal("1.001"):
         raise AccessStop("Unreconciled customer asset/cash ceiling")
-    funded=min(equity,CAP)
-    btc_upper=(funded*BTC_TARGET).quantize(Decimal(".01"),rounding=ROUND_DOWN)
-    gold_upper=(funded*GLD_TARGET).quantize(Decimal(".01"),rounding=ROUND_DOWN)
+    # Publish only the original fixed capital mandate ceiling. Deriving
+    # notional from live equity (even at 5%) would disclose the customer
+    # balance indirectly; the real equity is checked privately above.
+    btc_upper=(CAP*BTC_TARGET).quantize(Decimal(".01"),rounding=ROUND_DOWN)
+    gold_upper=(CAP*GLD_TARGET).quantize(Decimal(".01"),rounding=ROUND_DOWN)
     if btc_upper<=0 or gold_upper<=0:
         raise AccessStop("Zero attainable microaccount target")
     # A 5% allocation cannot exceed $6.51 under the original $130.30 cap.
