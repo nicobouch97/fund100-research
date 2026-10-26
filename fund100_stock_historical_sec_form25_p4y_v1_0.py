@@ -101,10 +101,17 @@ def parse_original_submission(raw: bytes, *, accession: str, form_type: str) -> 
         or re.search(r"CONFORMED SUBMISSION TYPE:\s*" + re.escape(form_type) + r"\s", head, re.I) is None):
         raise Form25SourceStop("Original Form 25 SGML accession/type not verified")
     text = raw.decode("latin-1")
+    # Ignore unrelated exhibits and embedded quotes in other SGML documents.
+    documents = re.findall(
+        r"<DOCUMENT>\s*<TYPE>\s*([^\r\n<]+).*?<TEXT>(.*?)</TEXT>\s*</DOCUMENT>",
+        text, flags=re.IGNORECASE | re.DOTALL)
+    primary = [body for doc_type, body in documents
+               if doc_type.strip().upper() == form_type]
     descriptions = [
         re.sub(r"\s+", " ", unescape(value)).strip()
-        for value in CLASS_TAG.findall(text)]
-    if len(descriptions) != 1 or not descriptions[0] or len(descriptions[0]) > 300:
+        for body in primary for value in CLASS_TAG.findall(body)]
+    if (len(primary) != 1 or len(descriptions) != 1
+        or not descriptions[0] or len(descriptions[0]) > 300):
         return {"security_class_state": "NO_UNAMBIGUOUS_STRUCTURED_CLASS",
                 "security_class_description": None}
     description = descriptions[0]
