@@ -47,12 +47,34 @@ def test_funded_blueprint_manual_main_first_attempt_and_real_owner_only():
         "github.ref == 'refs/heads/main'",
         "github.run_attempt == 1",
         "github.actor == 'nicobouch97'",
-        "inputs.confirmation == 'APPROVE_ONE_ORIGINAL_ACWI_SELL_NO_RETRY'",
+        "inputs.confirmation == 'AUTHORIZE_AUTONOMOUS_HIGH_PILOT_ONCE'",
         "test \"$GITHUB_RUN_ATTEMPT\" = '1'",
         'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
         "test \"$GITHUB_ACTOR\" = 'nicobouch97'",
     ):
         assert check in s
+
+def test_authorisation_is_standing_high_pilot_once_not_per_trade():
+    s=source()
+    assert entry.MANUAL_CONFIRMATION=="AUTHORIZE_AUTONOMOUS_HIGH_PILOT_ONCE"
+    assert "no manual approval for later orders" in s.lower()
+    assert "future autonomous multi-event order loop" in s.lower()
+    assert "FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM" in s
+    assert "FUND100_ORIGINAL_ACWI_FIRST_ORDER_CONFIRM" not in s
+    assert "APPROVE_ONE_ORIGINAL_ACWI_SELL_NO_RETRY" not in s
+    # This workflow is STILL initial migration only, not a recurring strategy
+    # runner. A separately reviewed automated loop must make future decisions.
+    assert s.count("  workflow_dispatch:")==1
+    assert "  schedule:" not in s
+    assert "  push:" not in s
+    assert "  workflow_run:" not in s
+    assert "review-only" in str(BLUEPRINT).lower()
+    # Frozen V5 source must remain STOP; independent V6 main is still STOP.
+    import json
+    operator=json.loads(Path("fund100_v6_s1_operator_control.json").read_text())
+    assert operator["trading_enabled"] is False
+    assert operator["first_original_acwi_sell_enabled"] is False
+
 
 def test_one_protected_job_has_exact_writer_mutex_and_tiny_issue_write_scope():
     s=source()
@@ -94,7 +116,7 @@ def test_exact_go_kill_legacy_v5_stop_and_single_original_send():
     for needle in (
         "FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}",
         "FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}",
-        "FUND100_ORIGINAL_ACWI_FIRST_ORDER_CONFIRM: ${{ inputs.confirmation }}",
+        "FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM: ${{ inputs.confirmation }}",
         "test \"$FUND100_BROKER_KILL_SWITCH\" = 'DISENGAGED'",
         "test \"$FUND100_RISK_LEVEL\" = 'HIGH'",
         '''grep -Eq '"trading_enabled": false' fund100_live_operator_control.json''',

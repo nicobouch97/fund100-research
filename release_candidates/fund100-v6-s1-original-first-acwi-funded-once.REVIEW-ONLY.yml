@@ -7,15 +7,20 @@
 # V6-specific writer are all hardcoded FALSE on production main. Those
 # source releases, independently authorised current-main V6 GO and broker
 # kill DISENGAGED need a separate funded launch change and consent.
-name: Fund-100 V6-S1 FIRST ORIGINAL ACWI SELL (FUNDED APPROVAL REQUIRED)
+name: Fund-100 V6-S1 ONE-TIME AUTONOMOUS HIGH PILOT ACTIVATION (NOT ACTIVE)
 
-# Exactly one original manual main run. Never trigger on push, schedules,
-# workflow_run, repository_dispatch, retries, or unattended research.
+# Exactly ONE initial standing real-money HIGH pilot authorisation.
+# Future strategy decisions/orders must be automated with NO per-order owner
+# confirmation, using separately reviewed recurring V6 source, fresh risk,
+# current-main operator GO, broker kill and reconciled idempotent orders.
+# This first-attempt workflow only migrates the original ACWI inventory;
+# it does NOT yet provide the future autonomous multi-event order loop.
+# Never trigger this migration on push, schedule, workflow_run or retries.
 on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: 'Exact funded order authorisation; ONE ACWI sell, NEVER RETRY'
+        description: 'Authorise HIGH pilot ONCE; no manual approval for later orders'
         required: true
         type: string
 
@@ -31,14 +36,15 @@ concurrency:
 
 jobs:
   first-original-acwi-sell-once:
-    # This is NOT user authorisation, and this file is NOT runnable.
-    # Future activation needs separate explicit current funded GO approval.
+    # This candidate does NOT authorise a pilot or run as a workflow.
+    # On actual future launch, this is ONE-TIME mandate consent, never
+    # a request for individual follow-on strategy order approval.
     if: >-
       github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/main' &&
       github.run_attempt == 1 &&
       github.actor == 'nicobouch97' &&
-      inputs.confirmation == 'APPROVE_ONE_ORIGINAL_ACWI_SELL_NO_RETRY'
+      inputs.confirmation == 'AUTHORIZE_AUTONOMOUS_HIGH_PILOT_ONCE'
     runs-on: ubuntu-latest
     environment: fund100-live-broker
     timeout-minutes: 10
@@ -49,7 +55,7 @@ jobs:
       FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
       FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
       FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
-      FUND100_ORIGINAL_ACWI_FIRST_ORDER_CONFIRM: ${{ inputs.confirmation }}
+      FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM: ${{ inputs.confirmation }}
     steps:
       - name: Checkout exact protected main SHA; do not persist credential
         uses: actions/checkout@v4
@@ -72,7 +78,7 @@ jobs:
           test "$FUND100_RISK_LEVEL" = 'HIGH'
           test "$FUND100_BROKER_KILL_SWITCH" = 'DISENGAGED'
           test "$FUND100_ENABLE_LIVE_READONLY" = 'YES_READ_ONLY_LIVE'
-          test "$FUND100_ORIGINAL_ACWI_FIRST_ORDER_CONFIRM" = 'APPROVE_ONE_ORIGINAL_ACWI_SELL_NO_RETRY'
+          test "$FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM" = 'AUTHORIZE_AUTONOMOUS_HIGH_PILOT_ONCE'
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
           grep -Eq '"trading_enabled": true' fund100_v6_s1_operator_control.json
           grep -Eq '"first_original_acwi_sell_enabled": true' fund100_v6_s1_operator_control.json

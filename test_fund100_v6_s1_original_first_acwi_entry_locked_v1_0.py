@@ -17,7 +17,7 @@ def env(monkeypatch):
         ("FUND100_RISK_LEVEL","HIGH"),
         ("FUND100_BROKER_KILL_SWITCH","DISENGAGED"),
         ("FUND100_ENABLE_LIVE_READONLY","YES_READ_ONLY_LIVE"),
-        ("FUND100_ORIGINAL_ACWI_FIRST_ORDER_CONFIRM",entry.MANUAL_CONFIRMATION),
+        ("FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM",entry.MANUAL_CONFIRMATION),
     ):
         monkeypatch.setenv(name,value)
     keys={
@@ -114,7 +114,7 @@ def test_one_run_wires_real_coordinator_argument_contract_offline_only(activated
     ("FUND100_BROKER_KILL_SWITCH","ENGAGED"),
     ("FUND100_RISK_LEVEL","LOW"),
     ("FUND100_ENABLE_LIVE_READONLY","NO"),
-    ("FUND100_ORIGINAL_ACWI_FIRST_ORDER_CONFIRM","YES"),
+    ("FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM","YES"),
 ])
 def test_wrong_first_run_or_operator_scope_cannot_read_or_trade(
         activated_offline,monkeypatch,name,bad):

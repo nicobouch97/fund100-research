@@ -18,7 +18,10 @@ SCHEMA="FUND100_V6_S1_FIRST_ACWI_ORIGINAL_EXECUTION_ENTRY_HARD_LOCKED_V1"
 ORIGINAL_ACWI_ENTRYPOINT_RELEASED=False
 RETRY_AFTER_UNCERTAIN_OUTCOME=False
 MAX_CHAIN_INVOCATIONS=1
-MANUAL_CONFIRMATION="APPROVE_ONE_ORIGINAL_ACWI_SELL_NO_RETRY"
+# Launch-level funded HIGH mandate (NOT approval for each order).
+# This one-shot entry handles only the FIRST ACWI inventory-migration sale;
+# autonomous later trades use a separate event-driven production controller.
+MANUAL_CONFIRMATION="AUTHORIZE_AUTONOMOUS_HIGH_PILOT_ONCE"
 REQUIRED_SECRETS=(
     "FUND100_PRIVATE_STATE_READ_TOKEN",
     "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN",
@@ -39,6 +42,7 @@ def run_protected_first_acwi_once()->dict:
 
     Keeps the entire chain in one original GitHub workflow process. No
     user-supplied context, fake preapproval, dynamic URL or stage reentry.
+    The input is the ONCE-only standing pilot activation, not per-order consent.
     The only present production outcome is HARD LOCKED with zero network.
     """
     if (ORIGINAL_ACWI_ENTRYPOINT_RELEASED is not True
@@ -61,7 +65,7 @@ def run_protected_first_acwi_once()->dict:
         or e.get("FUND100_RISK_LEVEL")!="HIGH"
         or e.get("FUND100_BROKER_KILL_SWITCH")!="DISENGAGED"
         or e.get("FUND100_ENABLE_LIVE_READONLY")!="YES_READ_ONLY_LIVE"
-        or e.get("FUND100_ORIGINAL_ACWI_FIRST_ORDER_CONFIRM")!=MANUAL_CONFIRMATION):
+        or e.get("FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM")!=MANUAL_CONFIRMATION):
         raise EntryStop("Original ACWI protected first-run authorisation STOP")
     if (any(type(e.get(name)) is not str or
             len(e[name].strip())<10 or
