@@ -13,7 +13,7 @@ replacement cannot justify switching costs and estimated uncertainty.
 """
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation, ROUND_DOWN
+from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_UP
 import re
 
 SCHEMA="FUND100_V6_OPPORTUNITY_REBALANCE_ECONOMICS_RESEARCH_ONLY_V1"
@@ -117,6 +117,15 @@ def evaluate(*,snapshot:dict,target_weights:dict,expected_returns:dict,
     turnover=sum((abs(x) for x in effective.values()),Decimal(0))
     gain=sum((effective[s]*forecasts[s] for s in symbols),Decimal(0))
     cost=turnover*side_cost/Decimal(10000)
+    # A notional-funded BUY also consumes cash for its own estimated side
+    # costs. Apply a conservative upward cent rounding to EACH hypothetical
+    # buy leg, rather than relying on unsettled sale receipts to pay fees.
+    # Sell-side costs remain charged in total NAV but can be funded from
+    # the separate sale's eventual proceeds. This is NOT broker fee proof.
+    buy_side_cost_buffer=sum(
+        ((notional*side_cost/Decimal(10000)).quantize(CENTS,rounding=ROUND_UP)
+         for notional in buys.values()), Decimal(0))
+    settled_buy_cash_required=sum(buys.values(),Decimal(0))+buy_side_cost_buffer
     penalty=turnover*uncertainty/Decimal(10000)
     net=gain-cost-penalty
     required=max(min_edge,deployable*Decimal("0.005"))
@@ -145,7 +154,7 @@ def evaluate(*,snapshot:dict,target_weights:dict,expected_returns:dict,
         state="HOLD_INSUFFICIENT_COSTED_NET_ADVANTAGE"
     elif any(v>MAX_ORDER for v in list(sells.values())+list(buys.values())):
         state="HOLD_SWITCH_EXCEEDS_SINGLE_ORDER_CAP"
-    elif sum(buys.values(),Decimal(0))>settled:
+    elif settled_buy_cash_required>settled:
         state="HYPOTHETICAL_SWITCH_SELL_SETTLEMENT_REQUIRED"
     else:
         state="HYPOTHETICAL_SWITCH_WITH_SETTLED_CASH"
@@ -171,6 +180,9 @@ def evaluate(*,snapshot:dict,target_weights:dict,expected_returns:dict,
         "hypothetical_post_trade_cash_after_costs_usd":cashfmt(post_cash),
         "hypothetical_post_trade_risk_within_limits":post_risk_ok,
         "buy_cash_currently_settled_usd":cashfmt(settled),
+        "estimated_buy_side_cost_buffer_usd":cashfmt(buy_side_cost_buffer),
+        "settled_cash_required_for_buys_and_buy_side_costs_usd":cashfmt(settled_buy_cash_required),
+        "buy_side_cost_buffer_rounded_up_per_order":True,
         "deployable_pilot_capital_usd":cashfmt(deployable),
         "future_sell_proceeds_assumed_spendable":False,
         "real_broker_gets":0,
