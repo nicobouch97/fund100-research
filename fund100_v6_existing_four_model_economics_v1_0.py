@@ -198,8 +198,9 @@ def _fixed_blend_factor_proxy_attribution(prices:pd.DataFrame, paths:dict,
 
     A same-close explanatory regression, NOT a forecast, causal sector
     attribution, true stock look-through or an alpha promotion test. The
-    dependent variable includes each original model's costs and the synthetic
-    fixed-blend entry cost. Factors come from the *same* frozen adjusted-price
+    dependent variable includes each original model's costs. The one-time
+    synthetic blend entry cost cancels from post-entry daily returns, so it is
+    NOT included in this return regression. Factors use frozen adjusted-price
     vintage. All series use identical close-to-close sessions AFTER entry.
     """
     if type(cost_bps) is not int or cost_bps not in COSTS:
@@ -254,7 +255,7 @@ def _fixed_blend_factor_proxy_attribution(prices:pd.DataFrame, paths:dict,
         "arithmetic_annual_intercept_pct":None,
         "intercept_HAC5_95pct_interval_annual_pct":None,
         "historical_residual_annual_vol_pct":None,
-        "original_model_and_synthetic_entry_costs_included":True,
+        "original_model_costs_included_entry_cost_excluded_from_daily_regression":True,
         "same_vintage_contemporaneous_adjusted_ETF_price_proxies":True,
         "factor_betas_are_not_underlying_stock_or_sector_holdings":True,
         "not_point_in_time_constituent_or_independent_factor_data":True,
