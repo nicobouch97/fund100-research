@@ -132,6 +132,7 @@ def simulate(raw:pd.DataFrame,*,cost_bps:int)->pd.DataFrame:
             "gross_equity_exposure":exposure,
             "cash_weight":max(0.,1.-exposure),
             "portfolio_names":",".join(sorted(s for s,v in current.items() if v>1e-6)),
+            **{"weight_"+s:current[s] for s in UNIVERSE},
         })
     return pd.DataFrame(rows).set_index("date")
 
