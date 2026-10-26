@@ -44,7 +44,7 @@ jobs:
               '/v2/clock','/v2/assets','/v2/assets/GLD')
           assert not x3.EXECUTION_ALLOWED
           assert not x3.BROKER_ORDERS and not x3.BROKER_NON_GETS
-          assert x3.CAP == 130.30
+          assert str(x3.CAP) == '130.30'
           print('No order, no asset enablement, no personal financial payload persistence.')
           PY
 
