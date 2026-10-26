@@ -1,0 +1,93 @@
+name: Fund-100 V7 Frozen Costed Monthly ETF Rotation (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_pinned_etf_monthly_switch_v1_0.py'
+      - 'test_fund100_v7_pinned_etf_monthly_switch_v1_0.py'
+      - '.github/workflows/fund100-v7-pinned-monthly-etf-rotation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_pinned_etf_monthly_switch_v1_0.py'
+      - 'test_fund100_v7_pinned_etf_monthly_switch_v1_0.py'
+      - '.github/workflows/fund100-v7-pinned-monthly-etf-rotation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  pinned-no-trade-market-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install existing test and exchange calendar dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check timestamp lookback, source gates, math, costs and no broker
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v7_pinned_etf_monthly_switch_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Download only the immutable source archive from successful main
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fund100-v7-rotation-source
+          gh run download 40358792118 \
+            -n fund100-v7-real-listed-factor-etf-evidence-40358792118 \
+            -D /tmp/fund100-v7-rotation-source
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json
+          import fund100_v7_pinned_etf_monthly_switch_v1_0 as m
+          directory=Path('/tmp/fund100-v7-rotation-source')
+          src=directory/'original-etf-adjusted-price-source.csv'
+          report=directory/'factor-etf-net-cost-regime-report.json'
+          raw=src.read_bytes()
+          metadata=json.loads(report.read_text())
+          assert hashlib.sha256(raw).hexdigest()==m.SOURCE_CSV_SHA256
+          assert metadata['original_source_canonical_csv_sha256']==m.SOURCE_CSV_SHA256
+          assert metadata['last_observed_trading_session']=='2026-10-23'
+          assert metadata['real_broker_gets']==metadata['real_broker_posts']==0
+          assert metadata['trading_authorized'] is False
+          print('Verified the exact original 26 Oct 2026 main run source, not a fresh vendor revision.')
+          PY
+      - name: Compute unchanged monthly rotation and fully costed benchmarks
+        run: |
+          set -euo pipefail
+          python fund100_v7_pinned_etf_monthly_switch_v1_0.py \
+            --original-csv /tmp/fund100-v7-rotation-source/original-etf-adjusted-price-source.csv \
+            --output /tmp/fund100-v7-rotation-result.json
+          python - <<'PY'
+          from pathlib import Path
+          import json,hashlib
+          import fund100_v7_pinned_etf_monthly_switch_v1_0 as m
+          r=json.loads(Path('/tmp/fund100-v7-rotation-result.json').read_text())
+          assert r['schema']==m.SCHEMA
+          assert r['pinned_source_price_sha256']==m.SOURCE_CSV_SHA256
+          assert r['live_signal_promotable'] is False
+          assert r['live_authorized'] is False and r['trading_authorized'] is False
+          assert r['broker_http_gets']==r['broker_http_posts']==0
+          assert r['last_ytd_diagnostic_excluded_from_screen']
+          assert len(r['all_results'])==3
+          for k,report in r['all_results'].items():
+              assert len(report['execution_diagnostics']['monthly_execution_decisions'])>110
+              assert set(report['era_results'])=={
+                  '2016_2019','2020_2022','2023_2025','2026_YTD_NOT_A_HOLDOUT'}
+          print('Frozen strategy research outcome:',r['predeclared_15bps_SPY_research_verdict'])
+          PY
+      - name: Preserve source-linked monthly switches, all cost scenarios and results
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-pinned-etf-monthly-switch-${{ github.run_id }}
+          path: /tmp/fund100-v7-rotation-result.json
+          retention-days: 90
+          if-no-files-found: error
