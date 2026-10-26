@@ -1,0 +1,67 @@
+name: Fund-100 V7 Official French Momentum Population (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_french_momentum_population_v1_0.py'
+      - 'test_fund100_v7_french_momentum_population_v1_0.py'
+      - '.github/workflows/fund100-v7-french-momentum-mechanism.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_french_momentum_population_v1_0.py'
+      - 'test_fund100_v7_french_momentum_population_v1_0.py'
+      - '.github/workflows/fund100-v7-french-momentum-mechanism.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  official-universe-momentum:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Audit fixed historical cohort and source input contract offline
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v7_french_momentum_population_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Acquire two original official French academic ZIP sources (main only)
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: |
+          set -euo pipefail
+          python fund100_v7_french_momentum_population_v1_0.py \
+            --output-dir /tmp/fund100-french-universe
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          root=Path('/tmp/fund100-french-universe')
+          r=json.loads((root/'historical-momentum-versus-market.json').read_text())
+          a=(root/'original-french-10-momentum-deciles.zip').read_bytes()
+          b=(root/'original-french-ff-market.zip').read_bytes()
+          assert hashlib.sha256(a).hexdigest()==r['raw_momentum_zip_sha256']
+          assert hashlib.sha256(b).hexdigest()==r['raw_market_zip_sha256']
+          assert r['months_source_matched']==432
+          assert set(r['periods'])=={'1990_2004','2005_2014','2015_2025'}
+          assert all(set(p)=={'5','15','35'} for p in r['periods'].values())
+          assert r['source_universe_does_not_filter_to_2026_surviving_tickers']
+          assert r['exact_live_replication_turnover_spread_and_tax_unknown']
+          assert r['holdout_independent_of_prior_academic_publication'] is False
+          assert r['broker_requests']==r['broker_orders']==0
+          assert r['trading_authorized'] is False and r['live_authorized'] is False
+          print('PREDECLARED HISTORICAL FACTOR POPULATION VERDICT:',
+                r['predeclared_35bps_era_screen'])
+          PY
+      - name: Archive original public university bytes and diagnostic
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-original-french-momentum-population-${{ github.run_id }}
+          path: /tmp/fund100-french-universe/
+          retention-days: 90
+          if-no-files-found: error
