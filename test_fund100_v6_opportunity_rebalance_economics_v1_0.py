@@ -317,7 +317,7 @@ def multi(**overrides):
             "RESEARCH_TECH":{"XLK":"0.49"},
             "RESEARCH_ENERGY":{"XLE":"0.49"},
         },
-        "expected_returns":{"ACWI":"0.02","XLK":"0.15","XLE":"0.04"},
+        "expected_returns":{"ACWI":"0.02","XLK":"0.15","XLE":"0.07"},
         "round_trip_side_cost_bps":"15",
         "forecast_uncertainty_bps":"50",
         "minimum_net_advantage_usd":"0.50",
