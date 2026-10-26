@@ -8,6 +8,8 @@ on:
       - "fund100_stock_broad_sec_annual_replay_p4q_v1_0.py"
       - "test_fund100_stock_broad_sec_annual_replay_p4q_v1_0.py"
       - "fund100_stock_sec_quality_forward_p4r_v1_0.py"
+      - "fund100_stock_sec_quality_calendar_regimes_p4ab_v1_0.py"
+      - "test_fund100_stock_sec_quality_calendar_regimes_p4ab_v1_0.py"
       - "test_fund100_stock_sec_quality_forward_p4r_v1_0.py"
       - "fund100_stock_sec_eps_yield_p4s_v1_0.py"
       - "test_fund100_stock_sec_eps_yield_p4s_v1_0.py"
@@ -20,6 +22,8 @@ on:
       - "fund100_stock_broad_sec_annual_replay_p4q_v1_0.py"
       - "test_fund100_stock_broad_sec_annual_replay_p4q_v1_0.py"
       - "fund100_stock_sec_quality_forward_p4r_v1_0.py"
+      - "fund100_stock_sec_quality_calendar_regimes_p4ab_v1_0.py"
+      - "test_fund100_stock_sec_quality_calendar_regimes_p4ab_v1_0.py"
       - "test_fund100_stock_sec_quality_forward_p4r_v1_0.py"
       - "fund100_stock_sec_eps_yield_p4s_v1_0.py"
       - "test_fund100_stock_sec_eps_yield_p4s_v1_0.py"
@@ -51,6 +55,7 @@ jobs:
             test_fund100_stock_broad_sec_coverage_p4n_v1_0.py \
             test_fund100_stock_broad_sec_annual_replay_p4q_v1_0.py \
             test_fund100_stock_sec_quality_forward_p4r_v1_0.py \
+            test_fund100_stock_sec_quality_calendar_regimes_p4ab_v1_0.py \
             test_fund100_stock_sec_eps_yield_p4s_v1_0.py \
             test_fund100_stock_sec_source_p4b_v1_0.py \
             test_fund100_stock_sec_quality_p4a_v1_0.py \
@@ -304,6 +309,32 @@ jobs:
           print("15bp pre-filing momentum x SEC quality:",
                 d["quality_by_pre_filing_relative_momentum"]["15"])
           print("RETROSPECTIVE SURVIVORS, NOT A VALIDATED INVESTABLE BACKTEST")
+          PY
+      - name: Test SEC event advantage persistence across calendar regimes (no orders)
+        if: steps.capture.outputs.acquired == 'true'
+        run: |
+          set -euo pipefail
+          python fund100_stock_sec_quality_calendar_regimes_p4ab_v1_0.py \
+            --source-p4r-report /tmp/fund100-p4n-original-sec/quality-126-session-event-study.json \
+            --output /tmp/fund100-p4n-original-sec/quality-calendar-regime-fragility.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("/tmp/fund100-p4n-original-sec/quality-calendar-regime-fragility.json")
+          v=json.loads(p.read_text())
+          original=json.loads(Path("/tmp/fund100-p4n-original-sec/quality-126-session-event-study.json").read_text())
+          assert v["all_event_panel"]["events"]==original["completed_event_returns"]
+          assert sum(x["all_scored"]["events"] for x in v["calendar_regime_panels"].values())==original["completed_event_returns"]
+          assert v["calendar_years_with_positive_mean"]+v["calendar_years_with_nonpositive_mean"]==v["calendar_years_with_eligible_events"]
+          assert v["original_p4r_event_rows_reused_without_new_selection"]
+          assert v["issuer_set_selected_with_future_2026_information"]
+          assert v["outcomes_overlapping_across_issuers_are_not_independent"]
+          assert not v["promotable_new_strategy"] and not v["live_order_authorized"]
+          assert v["broker_posts"]==v["broker_gets"]==0
+          print("SEC 15bps matched-SPY calendar annual fragility",
+                v["calendar_year_mean_excess_pp"],
+                "quality group years",v["high_quality_panel"]["distinct_entry_calendar_years"])
+          print("Historical survivor-selection restriction: must never promote to LIVE.")
           PY
       - name: Research original SEC diluted EPS yield versus prior momentum (not alpha)
         if: steps.capture.outputs.acquired == 'true'
