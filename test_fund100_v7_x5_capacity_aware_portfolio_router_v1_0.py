@@ -182,3 +182,47 @@ def test_no_real_live_writer_credentials_fx_or_private_payloads():
     for bad in ("TradingClient","ALPACA_LIVE_SECRET","ALPACA_LIVE_KEY",
                 "api.alpaca.markets","submit_order(","place_order(","requests.post("):
         assert bad not in source
+
+
+def test_impossible_buy_ticket_partition_does_not_invent_holdings_or_fees():
+    spec=x5.sample_spec()
+    spec["XLK"]["minimum_notional_usd"]="10"
+    spec["XLK"]["maximum_ticket_usd"]="10"
+    # A $15 XLK buy cannot become two tickets of at least $10 each.
+    result=plan("1000.00",spec=spec,positions={},cash="1000.00",
+                target={"XLK":"0.015","XLE":"0.20"})
+    warnings={w["reason"] for w in result["too_small_or_infeasible_target_warnings"]}
+    assert "MODELED_TICKET_SPLIT_VIOLATES_MINIMUM" in warnings
+    assert "UNEXECUTABLE_MIN_TICKET_SPLIT_MAKES_TARGET_APPROXIMATE" in warnings
+    assert "XLK_BUY" not in result["estimated_trade_side_details"]
+    assert result["estimated_trade_side_details"]["XLE_BUY"]["hypothetical_notional_usd"]=="200.00"
+    assert result["modeled_all_sides_fees_usd"]=="0.30"
+    assert result["model_net_cash_reserve_after_all_rebalances_usd"]=="799.70"
+    assert result["post_cost_model_nav_usd"]=="999.70"
+    assert result["broker_orders"]==0 and not result["trading_authorized"]
+
+
+def test_impossible_sell_ticket_partition_retains_existing_position():
+    spec=x5.sample_spec()
+    spec["XLK"]["minimum_notional_usd"]="10"
+    spec["XLK"]["maximum_ticket_usd"]="10"
+    result=plan("1000.00",spec=spec,positions={"XLK":"15.00"},
+                cash="985.00",target={"XLE":"0.20"})
+    warnings={w["reason"] for w in result["too_small_or_infeasible_target_warnings"]}
+    assert "MODELED_TICKET_SPLIT_VIOLATES_MINIMUM" in warnings
+    assert "XLK_SELL" not in result["estimated_trade_side_details"]
+    assert result["combined_hypothetical_sell_proceeds_after_costs_usd"]=="0.00"
+    assert result["model_net_cash_reserve_after_all_rebalances_usd"]=="784.70"
+    assert result["post_trade_holdings_include_untraded_dust"] is True
+    assert not result["live_authorized"]
+
+
+def test_exact_feasible_min_max_ticket_partition_remains_modeled():
+    spec=x5.sample_spec()
+    spec["XLK"]["minimum_notional_usd"]="10"
+    spec["XLK"]["maximum_ticket_usd"]="10"
+    result=plan("1000.00",spec=spec,positions={},cash="1000.00",
+                target={"XLK":"0.02"})
+    assert result["estimated_trade_side_details"]["XLK_BUY"]["modelled_ticket_count"]==2
+    assert not any(w["reason"]=="MODELED_TICKET_SPLIT_VIOLATES_MINIMUM"
+                   for w in result["too_small_or_infeasible_target_warnings"])
