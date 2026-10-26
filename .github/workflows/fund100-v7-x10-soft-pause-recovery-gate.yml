@@ -1,0 +1,44 @@
+name: Fund-100 V7 X10 Soft Pause Recovery Gate (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_x10_strategy_pause_recovery_gate_v1_0.py'
+      - 'test_fund100_v7_x10_strategy_pause_recovery_gate_v1_0.py'
+      - 'research_lab/V7_X10_HARD_STOP_SOFT_PAUSE_RECOVERY_2026_10_26.md'
+      - '.github/workflows/fund100-v7-x10-soft-pause-recovery-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_x10_strategy_pause_recovery_gate_v1_0.py'
+      - 'test_fund100_v7_x10_strategy_pause_recovery_gate_v1_0.py'
+      - '.github/workflows/fund100-v7-x10-soft-pause-recovery-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-synthetic-recovery-economics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt
+      - name: Exercise hard-stop immutability, source capture and cash/economic blockers
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python -m pytest -q test_fund100_v7_x10_strategy_pause_recovery_gate_v1_0.py test_fund100_v7_x6_costed_multiasset_opportunity_selector_v1_0.py test_fund100_v7_x5_capacity_aware_portfolio_router_v1_0.py
+          python - <<'PY'
+          import fund100_v7_x10_strategy_pause_recovery_gate_v1_0 as x10
+          assert x10.BROKER_GETS==x10.BROKER_POSTS==x10.BROKER_ORDERS==0
+          assert not x10.LIVE_TRADING_ENABLED
+          assert x10.LIVE_CAP_USD=='130.30'
+          PY
