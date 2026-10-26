@@ -272,7 +272,7 @@ def test_fixed_blend_factor_proxy_regression_recovers_known_return_loadings():
         "IWM_MINUS_SPY":-.05},abs=1e-4)
     assert d["arithmetic_annual_intercept_pct"]==pytest.approx(2.52,abs=.001)
     assert d["intercept_HAC5_95pct_interval_annual_pct"][0]<=2.52<=d["intercept_HAC5_95pct_interval_annual_pct"][1]
-    assert d["original_model_and_synthetic_entry_costs_included"]
+    assert d["original_model_costs_included_entry_cost_excluded_from_daily_regression"]
     assert d["factor_betas_are_not_underlying_stock_or_sector_holdings"]
     assert d["historical_intercept_is_not_investable_alpha"]
     assert d["not_a_funded_strategy_or_live_release"]
