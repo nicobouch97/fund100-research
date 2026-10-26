@@ -124,11 +124,22 @@ def route(*,capital_nav_usd,prospective_cap_usd,settled_cash_usd,
     blocked=[]
     for k,amount in changes.items():
         minimum=specs[k]["min"]
-        if abs(amount)<minimum:
+        # A ticket must satisfy BOTH the maximum and the venue minimum.
+        # Rounding the tradable notional to cents comes first: otherwise
+        # a sub-cent remainder can manufacture an invalid final ticket.
+        tradable=down(abs(amount))
+        if tradable<minimum or tradable==0:
             if amount!=0:blocked.append({"symbol":k,"reason":"MODELED_NOTIONAL_BELOW_UNVERIFIED_MIN"})
             continue
-        if amount>0:buys[k]=down(amount)
-        elif amount<0:sells[k]=down(-amount)
+        minimum_tickets=count_to_fit(tradable,specs[k]["max_ticket"])
+        if tradable<Decimal(minimum_tickets)*minimum:
+            # E.g. $15 cannot be split into $10-max, $10-min tickets.
+            # Preserve the current holding/cash rather than pretending a
+            # partial order was executable or charging fictional fees.
+            blocked.append({"symbol":k,"reason":"MODELED_TICKET_SPLIT_VIOLATES_MINIMUM"})
+            continue
+        if amount>0:buys[k]=tradable
+        elif amount<0:sells[k]=tradable
     # Reporting per-ticket fees rounds *up* on every possible slice;
     # a single flat fee on a million-dollar order understates rounding.
     estimates={}
@@ -197,6 +208,8 @@ def route(*,capital_nav_usd,prospective_cap_usd,settled_cash_usd,
         blocked.append({"symbol":"ALL","reason":"MULTI_SESSION_LIQUIDITY_CAPACITY_REQUIRES_REEVALUATION"})
     if any(x["reason"].startswith("MODELED_NOTIONAL_BELOW") for x in blocked):
         blocked.append({"symbol":"ALL","reason":"UNEXECUTABLE_DUST_MAKES_TARGET_APPROXIMATE"})
+    if any(x["reason"]=="MODELED_TICKET_SPLIT_VIOLATES_MINIMUM" for x in blocked):
+        blocked.append({"symbol":"ALL","reason":"UNEXECUTABLE_MIN_TICKET_SPLIT_MAKES_TARGET_APPROXIMATE"})
     return {
         "schema":SCHEMA,"mode":MODE,
         "model_status":"SYNTHETIC_CAPACITY_PLANNING_NOT_EXECUTABLE",
