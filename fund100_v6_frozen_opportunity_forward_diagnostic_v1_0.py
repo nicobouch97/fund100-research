@@ -69,6 +69,8 @@ def _summarize(rows):
             "all_windows_mean_absolute_forecast_error_bps":None,
             "all_windows_zero_return_naive_mae_bps":None,
             "all_candidate_windows_mean_realized_edge_after_cost_bps":None,
+            "all_candidate_windows_mean_excess_vs_95pct_acwi_after_cost_bps":None,
+            "hurdle_pass_mean_excess_vs_95pct_acwi_after_cost_bps":None,
             "actual_forward_returns_are_out_of_sample":False,
         }
     selected=[r for r in rows if r["hypothetical_hurdle_pass"]]
@@ -78,6 +80,8 @@ def _summarize(rows):
     def mean(a):return round(float(sum(a)/len(a)),4) if a else None
     realised=[r["realized_edge_after_two_side_cost_bps"] for r in selected]
     cand=[r["realized_edge_after_two_side_cost_bps"] for r in candidate]
+    liquid=[r["selection_excess_vs_95pct_acwi_after_cost_bps"] for r in candidate]
+    liquid_selected=[r["selection_excess_vs_95pct_acwi_after_cost_bps"] for r in selected]
     return {
         "evaluated_decision_windows":len(rows),
         "hypothetical_hurdle_pass_windows":len(selected),
@@ -90,6 +94,8 @@ def _summarize(rows):
         "all_windows_mean_absolute_forecast_error_bps":mean(errors),
         "all_windows_zero_return_naive_mae_bps":mean(zero),
         "all_candidate_windows_mean_realized_edge_after_cost_bps":mean(cand),
+        "all_candidate_windows_mean_excess_vs_95pct_acwi_after_cost_bps":mean(liquid),
+        "hurdle_pass_mean_excess_vs_95pct_acwi_after_cost_bps":mean(liquid_selected),
         "actual_forward_returns_are_out_of_sample":False,
     }
 
@@ -160,6 +166,16 @@ def evaluate(*,history:pd.DataFrame,source_sha256:str,
             realised_edge=sum(v*actual[s] for s,v in delta.items())-cost
         if considered and not np.isfinite(realised_edge):
             raise CalibrationStop("Invalid costed hypothetical forward outcome")
+        # Separate equally invested 95%-ACWI counterfactual: strips out
+        # the apparent gain from moving a 50%-cash baseline to 95% ETFs.
+        # Benchmark starts ACWI 95/cash 5 in EACH independent episode.
+        # Charge sell+buy costs on genuinely changed ETF exposures.
+        selected_weights={s:float(v) for s,v in out["hypothetical_target_weights"].items()}
+        target_vs_acwi=selected_weights.copy()
+        target_vs_acwi["ACWI"]=target_vs_acwi.get("ACWI",0.)-.95
+        selection_turnover=sum(abs(v) for v in target_vs_acwi.values())
+        selection_excess=(sum(float(weight)*actual[s] for s,weight in selected_weights.items())
+                          -.95*actual["ACWI"]-.0035*selection_turnover)
         windows.append({
             "decision_session":decision_day,
             "outcome_last_session":data.index[t+HORIZON].date().isoformat(),
@@ -173,6 +189,8 @@ def evaluate(*,history:pd.DataFrame,source_sha256:str,
             "zero_return_baseline_errors_bps":zero,
             "realized_edge_after_two_side_cost_bps":round(
                 realised_edge/100.*10000,6),
+            "selection_excess_vs_95pct_acwi_after_cost_bps":(
+                round(selection_excess*10000,6) if considered else None),
         })
     if not windows:
         raise CalibrationStop("No fully realized, causal historical windows")
