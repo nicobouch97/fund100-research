@@ -11,7 +11,7 @@ def query(nav="1000.00",cash=None,held=None,targets=None,forecasts=None,spec=Non
         current_holdings_usd=held or {},
         candidate_target_weights=targets or {
             "RESEARCH_GROWTH":{"XLK":"0.45","XLE":"0.30"},
-            "RESEARCH_VALUE":{"XLK":"0.25","XLE":"0.50"}},
+            "RESEARCH_VALUE":{"XLK":"0.25","XLE":"0.45"}},
         expected_returns_fraction=forecasts or {"XLK":"0.10","XLE":"0.05"},
         asset_spec=spec or x5.sample_spec(),
         forecast_horizon_sessions=21)
