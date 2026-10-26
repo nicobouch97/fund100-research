@@ -57,3 +57,31 @@ explicitly unavailable or abstained, never silently classified.
 
 Original $130.30 LIVE ceiling, operator STOP, ENGAGED environment kill
 switch and all release locks remain unchanged.
+
+## P4Z — original issuer-filed cover captions (26 October 2026)
+
+The first **post-merge P4Y** original-source artifact (run 40306356524)
+verified all 16 source submissions, but the initial XML-only parser
+abstained on **all eight issuer-filed Form 25** documents because they
+used HTML or plain-text cover captions rather than
+`descriptionClassSecurity` XML. The same source artifact had three
+possible common-equity review candidates among eight exchange-filed
+Form 25-NSE documents. This is a *source-format blind spot*, not evidence
+that the eight issuer filings concerned no common shares.
+
+P4Z now reads the exact primary issuer-filed `25` document and requires
+**one address caption followed by one class-of-securities caption** before
+accepting a short cover description. Original XML remains preferred when
+present, and conflicting/multiple structured tags still abstain. The
+exchange-filed `25-NSE` extraction is unchanged. Ordinary shares may be
+possible common equity; fund/ETF beneficial interests are conservatively
+excluded from corporate common-equity candidates. Source format is
+recorded per recovered class.
+
+No accession selection, original-source bytes, source hashes, security
+identity assumptions, delisting effective dates, trading logic, risk
+controls or broker capabilities change. The fixed sample remains
+nonrepresentative; possible common equity is **not** proof of an
+independently identified historical listed security or delisting.
+Independent security-master, corporate-action and delisting-inclusive
+total-return evidence remains the central backtest blocker.
