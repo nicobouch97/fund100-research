@@ -28,6 +28,11 @@ MODELS=("S1_HIGH_FIXED_SECTORS","R1_WEEKLY_RELATIVE_MOMENTUM",
 WINDOWS={"since_2014":"2014-01-01","since_2020":"2020-01-01",
          "since_2023":"2023-01-01"}
 COSTS=(5,15,35)
+# ETF-level, not constituent-stock, exposures from each original post-close path.
+WEIGHT_SYMBOLS={MODELS[0]:tuple(r1.UNIVERSE),MODELS[1]:tuple(r1.UNIVERSE),
+                MODELS[2]:tuple(l1.NAMES),MODELS[3]:tuple(r2.UNIVERSE)}
+ALL_ETFS=tuple(sorted({symbol for symbols in WEIGHT_SYMBOLS.values()
+                       for symbol in symbols}))
 NO_NEW_SIGNAL_PARAMETERS=True
 NO_BROKER_NETWORK=True
 NO_ORDER_RELEASE=True
@@ -51,6 +56,11 @@ def _normalized(label:str,path:pd.DataFrame)->pd.DataFrame:
     except KeyError:
         raise EconomicsStop("Original strategy backtest changed reporting contract") from None
     out.columns=["nav","benchmark","turnover","gross","cash"]
+    symbols=WEIGHT_SYMBOLS[label]
+    if any("weight_"+s not in path.columns for s in symbols):
+        raise EconomicsStop("Original post-close ETF weights unavailable")
+    for symbol in symbols:
+        out["weight_"+symbol]=path["weight_"+symbol]
     if (out.index.has_duplicates or not out.index.is_monotonic_increasing
         or not isinstance(out.index,pd.DatetimeIndex) or out.index.tz is not None
         or not np.isfinite(out.to_numpy(dtype=float)).all()):
@@ -61,6 +71,11 @@ def _normalized(label:str,path:pd.DataFrame)->pd.DataFrame:
         or (out["gross"]>1+1e-8).any()
         or ((out["cash"]+out["gross"]-1).abs()>1e-8).any()):
         raise EconomicsStop("Original NAV, leverage or cash invalid")
+    weights=out[["weight_"+s for s in symbols]]
+    if ((weights<-1e-10).any().any() or (weights>1+1e-10).any().any()
+        or not np.allclose(weights.sum(axis=1).to_numpy(),out["gross"].to_numpy(),
+                            atol=1e-8,rtol=0)):
+        raise EconomicsStop("Original ETF weights disagree with reported exposure")
     return out
 
 def _all_paths(prices:pd.DataFrame,cost:int):
@@ -80,6 +95,95 @@ def _all_paths(prices:pd.DataFrame,cost:int):
                                rtol=1e-11,atol=1e-8)):
             raise EconomicsStop("Four independent models disagree about benchmark history")
     return result
+
+def _fixed_blend_etf_lookthrough(paths:dict,begin:str)->dict:
+    """Exact ETF-level exposures of the fixed 25%-per-model synthetic blend.
+
+    Each model sleeve is purchased at the common first eligible quarter close,
+    then its *units* are held; the four sleeve weights drift with their original
+    costed NAVs. The original after-close ETF holdings drift/rebalance within
+    each model. No constituent-stock, issuer, sector or ETF-fund look-through is
+    inferred. This is descriptive historical research, never an order plan.
+    """
+    if type(paths) is not dict or set(paths)!=set(MODELS):
+        raise EconomicsStop("Exactly four original model paths required")
+    dates=paths[MODELS[0]].index
+    if (not isinstance(dates,pd.DatetimeIndex) or dates.tz is not None
+        or dates.has_duplicates or not dates.is_monotonic_increasing):
+        raise EconomicsStop("Invalid historical look-through dates")
+    for model in MODELS:
+        frame=paths[model]
+        if not isinstance(frame,pd.DataFrame) or not dates.equals(frame.index):
+            raise EconomicsStop("Historical look-through dates differ")
+        if any("weight_"+s not in frame.columns for s in WEIGHT_SYMBOLS[model]):
+            raise EconomicsStop("Missing original ETF exposure observations")
+        original=frame[["weight_"+s for s in WEIGHT_SYMBOLS[model]]].to_numpy(dtype=float)
+        gross=frame["gross"].to_numpy(dtype=float)
+        if (not np.isfinite(original).all() or not np.isfinite(gross).all()
+            or (original<-1e-10).any() or (original>1+1e-10).any()
+            or not np.allclose(original.sum(axis=1),gross,rtol=0,atol=1e-8)):
+            raise EconomicsStop("Inconsistent original model ETF exposure")
+    first=next((t for t in range(adaptive.TRAINING_RETURNS+1,len(dates))
+                if dates[t].to_period("Q")!=dates[t-1].to_period("Q")),None)
+    if first is None:
+        raise EconomicsStop("No common eligible fixed-blend entry")
+    start=max(first,int(dates.searchsorted(pd.Timestamp(begin))))
+    if len(dates)-start<260:
+        raise EconomicsStop("Insufficient eligible look-through sessions")
+    levels=np.column_stack([paths[m]["nav"].to_numpy(dtype=float)
+                            for m in MODELS])
+    if not np.isfinite(levels).all() or (levels<=0).any():
+        raise EconomicsStop("Invalid model sleeve NAV for look-through")
+    units=levels[first:]/levels[first]
+    sleeve_weights=units/units.sum(axis=1)[:,None]
+    if not np.isfinite(sleeve_weights).all():
+        raise EconomicsStop("Invalid drifting model sleeve fractions")
+    etf=np.zeros((len(dates)-first,len(ALL_ETFS)))
+    owners=np.zeros_like(etf,dtype=int)
+    column={symbol:i for i,symbol in enumerate(ALL_ETFS)}
+    for j,model in enumerate(MODELS):
+        for symbol in WEIGHT_SYMBOLS[model]:
+            raw=paths[model]["weight_"+symbol].to_numpy(dtype=float)[first:]
+            k=column[symbol]
+            etf[:,k]+=sleeve_weights[:,j]*raw
+            owners[:,k]+=(raw>1e-8).astype(int)
+    total=etf.sum(axis=1)
+    expected=sum(sleeve_weights[:,j]*
+                 paths[m]["gross"].to_numpy(dtype=float)[first:]
+                 for j,m in enumerate(MODELS))
+    if ((etf<-1e-9).any() or (total>1+1e-8).any()
+        or not np.allclose(total,expected,rtol=0,atol=1e-8)):
+        raise EconomicsStop("Fixed-blend ETF exposure cannot be reconciled")
+    etf=etf[start-first:]
+    owners=owners[start-first:]
+    total=total[start-first:]
+    overlap=np.where(owners>=2,etf,0.).sum(axis=1)
+    largest=etf.max(axis=1)
+    top3=np.sort(etf,axis=1)[:,-3:].sum(axis=1)
+    peak_t,peak_sym=np.unravel_index(int(np.argmax(etf)),etf.shape)
+    return {
+        "first_session":dates[start].date().isoformat(),
+        "last_session":dates[-1].date().isoformat(),
+        "sessions":len(etf),
+        "first_eligible_entry_session":dates[first].date().isoformat(),
+        "method":"ORIGINAL_POST_CLOSE_ETF_WEIGHTS_DRIFTING_COSTED_MODEL_UNITS",
+        "fixed_initial_sleeve_weight_each":0.25,
+        "model_sleeves_rebalanced_after_entry":False,
+        "ETF_constituent_stock_overlap_NOT_measured":True,
+        "not_independent_out_of_sample_or_live_authority":True,
+        "average_gross_ETF_exposure_pct":round(100*float(total.mean()),4),
+        "average_cash_pct":round(100*float((1-total).mean()),4),
+        "average_largest_single_ETF_pct":round(100*float(largest.mean()),4),
+        "maximum_single_ETF_pct":round(100*float(etf[peak_t,peak_sym]),4),
+        "symbol_at_maximum_single_ETF":ALL_ETFS[peak_sym],
+        "maximum_top_three_ETFs_pct":round(100*float(top3.max()),4),
+        "average_ETF_notional_shared_by_two_or_more_models_pct":
+            round(100*float(overlap.mean()),4),
+        "sessions_single_ETF_over_35pct_descriptive":int((largest>.35+1e-10).sum()),
+        "distinct_ETF_tickers_held_during_window":
+            int((etf>1e-8).any(axis=0).sum()),
+    }
+
 
 def _beta_attribution(path:pd.DataFrame)->dict:
     """Descriptive same-session OLS, not a forward alpha estimate or strategy.
@@ -203,12 +307,14 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
     output={}
     uncertainty={}
     causal_switching={}
+    lookthrough={}
     for cost in COSTS:
         frames=_all_paths(data,cost)
         causal_switching[str(cost)] = adaptive.evaluate(
             frames, switch_side_cost_bps=cost)
         windows={}
         uncertainty_windows={}
+        lookthrough_windows={}
         for label,start in WINDOWS.items():
             windows[label]={
                 name:_metrics(frame,start,drawdown_guard=.20,vol_guard=.35)
@@ -217,8 +323,10 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
             if len({m["first_session"] for m in windows[label].values()})!=1:
                 raise EconomicsStop("Historical start dates are inconsistent")
             uncertainty_windows[label]=selection.evaluate(frames,start)
+            lookthrough_windows[label]=_fixed_blend_etf_lookthrough(frames,start)
         output[str(cost)]=windows
         uncertainty[str(cost)]=uncertainty_windows
+        lookthrough[str(cost)]=lookthrough_windows
     return {
         "schema":SCHEMA,
         "status":"ORIGINAL_MODELS_COMPARABLE_HISTORICAL_NOT_INDEPENDENT_NOT_LIVE",
@@ -240,6 +348,8 @@ def evaluate(prices:pd.DataFrame,*,source_sha:str,
         "evaluated_models":output,
         "joint_four_model_selection_uncertainty":uncertainty,
         "causal_quarterly_model_switching_exploratory":causal_switching,
+        "fixed_four_model_ETF_lookthrough_by_window":lookthrough,
+        "lookthrough_is_ETF_ticker_level_not_underlying_stock_constituents":True,
         "meta_selection_rule_predeclared_not_parameter_optimized":True,
         "meta_selector_not_independent_holdout_or_live_strategy":True,
         "selection_adjustment_only_within_four_original_models":True,
