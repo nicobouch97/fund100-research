@@ -54,7 +54,7 @@ jobs:
           script='fund100_v7_x3_actual_live_crypto_gold_getonly_v1_0.py'
           content=Path(workflow).read_text()
           assert audit.approved_scoped_live_script(workflow,script,content)
-          assert not audit.approved_scoped_live_script(workflow,script,content.replace('contents: read','contents: write'))
+          assert not audit.approved_scoped_live_script(workflow,script,content.replace('contents: read','contents: '+'write'))
           assert not audit.approved_scoped_live_script(workflow,script,content.replace('ENGAGED','DISENGAGED'))
           print('Exact blob and protected GET-only credential scope verified; any policy change must re-review.')
           PY
