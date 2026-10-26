@@ -14,13 +14,14 @@ from html.parser import HTMLParser
 import json
 from pathlib import Path
 import re
+import xml.etree.ElementTree as ET
 from time import sleep
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from fund100_stock_historical_sec_population_p4t_v1_0 import (
     FORM25_INDEX_SCHEMA, FORM25_FORMS, PopulationStop, QUARTER_BOUNDS,
-    _manifest_bytes, evaluate_form25_index, form25_index_manifest,
+    _manifest_bytes, annual_filing_manifest, evaluate_form25_index, form25_index_manifest,
 )
 
 SCHEMA = "FUND100_P4Y_ORIGINAL_2017_FORM25_CLASS_SOURCE_AUDIT_V1"
@@ -142,7 +143,69 @@ def _issuer_cover_class(primary: str) -> str | None:
     return candidate
 
 
-def parse_original_submission(raw: bytes, *, accession: str, form_type: str) -> dict:
+
+def _nse_issuer_parties(primary: str, *, index_cik: int | None) -> dict:
+    """Recover the SUBJECT issuer CIK, not just the exchange/index filer CIK.
+
+    The SEC 25-NSE primary XML has separate exchange and issuer elements.
+    Both can appear in archive indexes. A 25-NSE index CIK or accession
+    alone cannot identify the security's issuer. Only an unambiguous
+    original notification with the indexed CIK matching one party qualifies.
+    """
+    unknown = {"nse_issuer_identity_state": "NO_VERIFIED_ORIGINAL_NSE_ISSUER"}
+    if index_cik is None or "<!DOCTYPE" in primary.upper() or "<!ENTITY" in primary.upper():
+        return unknown
+    notifications = re.findall(
+        r"<notificationOfRemoval(?:\s+[^<>]*)?>.*?</notificationOfRemoval\s*>",
+        primary, re.IGNORECASE | re.DOTALL)
+    if len(notifications) != 1:
+        return unknown
+    try:
+        root = ET.fromstring(notifications[0])
+    except ET.ParseError:
+        return unknown
+
+    def one(parent, name):
+        if parent is None:
+            return None
+        matches = [x for x in parent if x.tag.rsplit("}", 1)[-1] == name]
+        return matches[0] if len(matches) == 1 else None
+
+    if root.tag.rsplit("}", 1)[-1] != "notificationOfRemoval":
+        return unknown
+    exchange = one(root, "exchange")
+    issuer = one(root, "issuer")
+    exchange_cik = one(exchange, "cik")
+    issuer_cik = one(issuer, "cik")
+    security = one(root, "descriptionClassSecurity")
+    if (exchange_cik is None or issuer_cik is None or security is None
+        or len(security) or security.text is None):
+        return unknown
+    try:
+        raw_exchange = exchange_cik.text.strip()
+        raw_issuer = issuer_cik.text.strip()
+        if (re.fullmatch(r"[0-9]{1,10}", raw_exchange) is None
+            or re.fullmatch(r"[0-9]{1,10}", raw_issuer) is None):
+            return unknown
+        exchange_id, issuer_id = int(raw_exchange), int(raw_issuer)
+    except (AttributeError, ValueError):
+        return unknown
+    if (exchange_id <= 0 or issuer_id <= 0 or issuer_id == exchange_id
+        or index_cik not in (issuer_id, exchange_id)
+        or not security.text.strip() or len(security.text.strip()) > 300):
+        return unknown
+    return {
+        "nse_issuer_identity_state": "ORIGINAL_NSE_PARTIES_INDEX_CONCORDANT",
+        "original_nse_issuer_cik": issuer_id,
+        "original_nse_exchange_cik": exchange_id,
+        "original_nse_index_cik_role": (
+            "ISSUER" if index_cik == issuer_id else "EXCHANGE"),
+        "original_nse_class_text": re.sub(r"\s+", " ", security.text).strip(),
+    }
+
+
+def parse_original_submission(raw: bytes, *, accession: str, form_type: str,
+                              index_cik: int | None = None) -> dict:
     """Validate SGML identity; prefer XML class, then issuer cover captions.
 
     Missing/ambiguous class evidence abstains. A candidate is not a
@@ -150,7 +213,8 @@ def parse_original_submission(raw: bytes, *, accession: str, form_type: str) -> 
     """
     if (type(raw) is not bytes or not 0 < len(raw) <= MAX_ORIGINAL_BYTES
         or form_type not in ROLES
-        or re.fullmatch(r"[0-9]{10}-17-[0-9]{6}", accession) is None):
+        or re.fullmatch(r"[0-9]{10}-17-[0-9]{6}", accession) is None
+        or (index_cik is not None and (type(index_cik) is not int or index_cik <= 0))):
         raise Form25SourceStop("Invalid bounded original Form 25 submission")
     head = raw[:100_000].decode("latin-1")
     if (re.search(r"<SEC-DOCUMENT>\s*" + re.escape(accession) + r"\.txt", head, re.I) is None
@@ -168,9 +232,11 @@ def parse_original_submission(raw: bytes, *, accession: str, form_type: str) -> 
     descriptions = [
         re.sub(r"\s+", " ", unescape(value)).strip()
         for body in primary for value in CLASS_TAG.findall(body)]
+    parties = (_nse_issuer_parties(primary[0], index_cik=index_cik)
+               if len(primary) == 1 and form_type == "25-NSE" else {})
     if len(primary) != 1 or len(descriptions) > 1:
         return {"security_class_state": "NO_UNAMBIGUOUS_STRUCTURED_CLASS",
-                "security_class_description": None}
+                "security_class_description": None, **parties}
     if descriptions:
         description = descriptions[0]
         source = "ORIGINAL_XML_CLASS"
@@ -183,7 +249,12 @@ def parse_original_submission(raw: bytes, *, accession: str, form_type: str) -> 
     if (not description or len(description) > 300
         or "<" in description or ">" in description):
         return {"security_class_state": "NO_UNAMBIGUOUS_STRUCTURED_CLASS",
-                "security_class_description": None}
+                "security_class_description": None, **parties}
+    # An XML issuer identity must refer to the SAME security-class text.
+    if (parties.get("nse_issuer_identity_state") ==
+            "ORIGINAL_NSE_PARTIES_INDEX_CONCORDANT"
+        and parties["original_nse_class_text"] != description):
+        parties = {"nse_issuer_identity_state": "NO_VERIFIED_ORIGINAL_NSE_ISSUER"}
     if PLAIN_COMMON.search(description) and not NONPLAIN.search(description):
         state = "POSSIBLE_COMMON_EQUITY_REVIEW_ONLY"
     elif NONPLAIN.search(description) or not PLAIN_COMMON.search(description):
@@ -192,7 +263,7 @@ def parse_original_submission(raw: bytes, *, accession: str, form_type: str) -> 
         state = "NO_UNAMBIGUOUS_STRUCTURED_CLASS"
     return {"security_class_state": state,
             "security_class_description": description,
-            "security_class_source": source}
+            "security_class_source": source, **parties}
 
 
 def _official_form25_get(url: str, agent: str) -> bytes:
@@ -234,6 +305,9 @@ def capture_original_sample(source_dir: Path, agent: str) -> dict:
         or sha256(manifest_raw).hexdigest() != report["original_form25_manifest_sha256"]):
         raise Form25SourceStop("Original Form 25 index provenance failed")
     selected = select_original_sample(expected_rows)
+    original_10k_dates = {}
+    for filing in annual_filing_manifest(original):
+        original_10k_dates.setdefault(filing["cik"], []).append(filing["filing_date"])
     observations = []
     raw_dir = source_dir / "original-form25-submissions"
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -253,7 +327,15 @@ def capture_original_sample(source_dir: Path, agent: str) -> dict:
         try:
             raw = _official_form25_get(SEC_PREFIX + row["sec_archive_path"], agent)
             extracted = parse_original_submission(
-                raw, accession=accession, form_type=row["form_type"])
+                raw, accession=accession, form_type=row["form_type"],
+                index_cik=row["filer_cik"])
+            if extracted.get("nse_issuer_identity_state") == (
+                    "ORIGINAL_NSE_PARTIES_INDEX_CONCORDANT"):
+                issuer = extracted["original_nse_issuer_cik"]
+                original_dates = original_10k_dates.get(issuer, [])
+                extracted["nse_issuer_in_original_2017_10k_population"] = bool(original_dates)
+                extracted["nse_issuer_10k_on_or_before_notice"] = any(
+                    filed <= row["filing_date"] for filed in original_dates)
             name = f"{accession}.txt"
             (raw_dir / name).write_bytes(raw)
             observation.update({
@@ -280,7 +362,20 @@ def capture_original_sample(source_dir: Path, agent: str) -> dict:
         "unavailable_or_unverifiable_sources": sum(
             r["source_state"] != "ORIGINAL_SUBMISSION_VERIFIED" for r in observations),
         "security_class_review_states": dict(sorted(counts.items())),
+        "nse_verified_original_issuer_exchange_pairs": sum(
+            r.get("nse_issuer_identity_state") ==
+            "ORIGINAL_NSE_PARTIES_INDEX_CONCORDANT" for r in observations),
+        "nse_verified_issuer_in_2017_10k_population": sum(
+            r.get("nse_issuer_in_original_2017_10k_population") is True
+            for r in observations),
+        "nse_verified_issuer_10k_on_or_before_notice": sum(
+            r.get("nse_issuer_10k_on_or_before_notice") is True
+            for r in observations),
+        "nse_index_role_counts": dict(sorted(Counter(
+            r["original_nse_index_cik_role"] for r in observations
+            if "original_nse_index_cik_role" in r).items())),
         "observations": observations,
+        "exchange_filed_index_cik_not_necessarily_security_issuer": True,
         "sample_not_historical_delisting_universe": True,
         "filing_date_not_effective_delisting_date": True,
         "index_cik_not_independently_verified_security_issuer": True,
