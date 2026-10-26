@@ -8,15 +8,10 @@ import fund100_v7_x10_strategy_pause_recovery_gate_v1_0 as x10
 
 NOW="2026-10-26T21:00:00Z"
 
-def report(forecasts=None,settled="1000.00"):
-    return x6.select(
-        capital_nav_usd="1000.00",prospective_cap_usd="1000.00",
-        settled_cash_usd=settled,current_holdings_usd={},
-        candidate_target_weights={
-            "RESEARCH_GROWTH":{"XLK":"0.45","XLE":"0.30"},
-            "RESEARCH_VALUE":{"XLK":"0.25","XLE":"0.45"}},
-        expected_returns_fraction=forecasts or {"XLK":"0.10","XLE":"0.05"},
-        asset_spec=x5.sample_spec(),forecast_horizon_sessions=21)
+CANDIDATES={
+    "RESEARCH_GROWTH":{"XLK":"0.45","XLE":"0.30"},
+    "RESEARCH_VALUE":{"XLK":"0.25","XLE":"0.45"},
+}
 
 def fixture():
     return {
@@ -44,10 +39,16 @@ def captures():
          "risk_vol_63_fraction":"0.28","daily_benchmark_return_fraction":"0.002"},
     ]
 
-def call(s=None,c=None,e=None):
-    return x10.assess(snapshot=fixture() if s is None else s,
-                      captures=captures() if c is None else c,
-                      economic_report=report() if e is None else e,now_utc=NOW)
+def call(s=None,c=None,forecasts=None,cap="1000.00",spec=None):
+    return x10.assess(
+        snapshot=fixture() if s is None else s,
+        captures=captures() if c is None else c,
+        candidate_target_weights=CANDIDATES,
+        expected_returns_fraction=forecasts or {"XLK":"0.10","XLE":"0.05"},
+        asset_spec=x5.sample_spec() if spec is None else spec,
+        hypothetical_capital_limit_usd=cap,
+        forecast_horizon_sessions=21,
+        now_utc=NOW)
 
 def test_soft_pause_can_only_be_marked_research_eligible_not_live():
     r=call()
@@ -92,35 +93,33 @@ def test_risk_break_not_overridden_by_attractive_signal():
         s[key]=value
         assert call(s=s)["reason"]=="HOLD_POST_PAUSE_ACCOUNT_RISK_OUTSIDE_HIGH_LIMITS"
 
-def test_costed_candidate_must_be_atleast_hypothetically_eligible():
-    no_edge=report(forecasts={"XLK":"0.0001","XLE":"0.0001"})
-    r=call(e=no_edge)
+def test_costed_candidate_must_be_at_least_hypothetically_eligible():
+    r=call(forecasts={"XLK":"0.0001","XLE":"0.0001"})
     assert r["reason"]=="HOLD_NO_COSTED_OPPORTUNITY_TO_REENTER"
     assert not r["synthetic_soft_pause_recovery_candidate"]
-    staged=report(settled="0.00")
-    assert call(e=staged)["reason"]=="HOLD_SWITCH_NOT_COST_SETTLEMENT_AND_CAPACITY_ELIGIBLE"
+    spec=x5.sample_spec()
+    for item in spec.values():
+        item["minimum_notional_usd"]="1000"
+        item["maximum_ticket_usd"]="1000"
+    # A model that cannot split or afford the required tickets is a HOLD.
+    assert call(spec=spec)["reason"]=="HOLD_NO_COSTED_OPPORTUNITY_TO_REENTER"
 
 def test_chronology_revision_or_late_market_vintage_never_passes():
     for field,value in (
         ("price_session","2026-10-19"),
-        ("captured_utc","2026-10-22T09:00:00Z"),
+        ("captured_utc","2026-10-21T09:00:00Z"),
+        ("price_session","2026-10-24"),
+        ("captured_utc","2026-10-22T01:00:00Z")):
+        c=captures()
+        c[1][field]=value
+        with pytest.raises(x10.RecoveryStop):
+            call(c=c)
+    for field,value in (
         ("risk_vol_63_fraction","0.40"),
         ("daily_benchmark_return_fraction","-0.07")):
         c=captures()
         c[1][field]=value
-        r=call(c=c)
-        if field in ("price_session","captured_utc"):
-            # Reverse receipt or prior source session is rejected before scoring.
-            if field=="price_session":
-                with pytest.raises(x10.RecoveryStop):
-                    c[1]["price_session"]="2026-10-18"
-                    call(c=c)
-            else:
-                with pytest.raises(x10.RecoveryStop):
-                    c[1]["captured_utc"]=c[0]["captured_utc"]
-                    call(c=c)
-        else:
-            assert r["reason"]=="HOLD_POST_PAUSE_MARKET_STRESS_NOT_CLEARED"
+        assert call(c=c)["reason"]=="HOLD_POST_PAUSE_MARKET_STRESS_NOT_CLEARED"
     for c in (
         captures()[:1],
         [captures()[0],captures()[0]],
@@ -129,11 +128,11 @@ def test_chronology_revision_or_late_market_vintage_never_passes():
         with pytest.raises(x10.RecoveryStop):
             call(c=c)
 
-def test_fake_full_authority_economic_report_or_stale_risk_is_refused():
-    r=report()
-    r["trading_authorized"]=True
+def test_invalid_synthetic_opportunity_or_unbound_nav_cannot_pass():
     with pytest.raises(x10.RecoveryStop):
-        call(e=r)
+        call(cap="130.30")
+    with pytest.raises(x10.RecoveryStop):
+        call(forecasts={"XLK":"NaN","XLE":"0.1"})
     s=fixture()
     s["risk_measurement_utc"]="2026-10-24T20:00:00Z"
     with pytest.raises(x10.RecoveryStop):
@@ -141,11 +140,13 @@ def test_fake_full_authority_economic_report_or_stale_risk_is_refused():
 
 def test_premature_soft_pause_cooldown_holds():
     s=fixture()
-    s["pause_recorded_utc"]="2026-10-23T21:00:00Z"
-    # Post-pause session chronology then needs a new prospective capture.
-    c=captures()
-    c[0]["price_session"]="2026-10-24"
-    c[0]["captured_utc"]="2026-10-25T09:00:00Z"
-    c[1]["price_session"]="2026-10-25"
-    c[1]["captured_utc"]="2026-10-26T09:00:00Z"
+    s["pause_recorded_utc"]="2026-10-21T22:00:00Z"
+    c=[
+        {"source_mode":x10.MODE,"price_session":"2026-10-22",
+         "captured_utc":"2026-10-23T09:00:00Z",
+         "risk_vol_63_fraction":"0.27","daily_benchmark_return_fraction":"0.001"},
+        {"source_mode":x10.MODE,"price_session":"2026-10-23",
+         "captured_utc":"2026-10-24T09:00:00Z",
+         "risk_vol_63_fraction":"0.28","daily_benchmark_return_fraction":"0.002"},
+    ]
     assert call(s=s,c=c)["reason"]=="HOLD_RESEARCH_PAUSE_COOLDOWN_NOT_MET"
