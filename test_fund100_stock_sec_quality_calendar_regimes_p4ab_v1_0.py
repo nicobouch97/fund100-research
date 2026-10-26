@@ -94,6 +94,53 @@ def test_zero_source_events_is_not_fake_positive_alpha():
     assert z["calendar_years_with_eligible_events"]==0
     assert not z["live_order_authorized"]
 
+
+def test_within_year_comparison_does_not_confuse_spy_outperformance_with_quality_skill():
+    # All years with only one score group must abstain, even if the
+    # retrospective high-quality event mean happens to be positive.
+    out=m.inspect(fixture())["within_year_quality_discrimination"]
+    assert out["calendar_years_with_both_quality_groups"]==1
+    assert out["calendar_years_with_at_least_two_distinct_issuers_per_disjoint_group"]==0
+    assert out["qualifying_year_equal_quality_gap_pp"] is None
+    assert not out["per_entry_calendar_year"]["2020"]["eligible_for_descriptive_year_equal_mean"]
+    assert not out["live_trading_authorized"]
+
+def test_quality_gap_same_year_issuer_equal_exposes_negative_and_positive_years():
+    d=fixture()
+    additions=[
+        ("NVDA","0000000003-20-000001","2020-02-10","2020-02-11","2020-08-11",2,3),
+        ("TSM","0000000004-20-000001","2020-02-12","2020-02-13","2020-08-13",3,1),
+        ("AMD","0000000005-20-000001","2020-02-14","2020-02-18","2020-08-18",1,-1),
+        ("INTC","0000000006-20-000001","2020-02-20","2020-02-21","2020-08-21",0,-2),
+        ("AAPL","0000000001-21-000001","2021-02-01","2021-02-02","2021-08-02",2,5),
+        ("NVDA","0000000003-21-000001","2021-02-01","2021-02-02","2021-08-02",3,9),
+        ("MSFT","0000000002-21-000001","2021-02-01","2021-02-02","2021-08-02",1,1),
+        ("AMD","0000000005-21-000001","2021-02-01","2021-02-02","2021-08-02",0,-1),
+    ]
+    d["event_returns"].extend(event(*row) for row in additions)
+    d["completed_event_returns"]=len(d["event_returns"])
+    z=m.inspect(d)["within_year_quality_discrimination"]
+    assert z["calendar_years_with_both_quality_groups"]==2
+    assert z["calendar_years_with_at_least_two_distinct_issuers_per_disjoint_group"]==2
+    assert z["qualifying_calendar_years_positive_gap"]==1
+    assert z["qualifying_calendar_years_nonpositive_gap"]==1
+    assert z["per_entry_calendar_year"]["2020"]["high_minus_low_issuer_equal_pp"]==pytest.approx(-4/3)
+    assert z["per_entry_calendar_year"]["2021"]["high_minus_low_issuer_equal_pp"]==7
+    assert z["qualifying_year_equal_quality_gap_pp"]==pytest.approx((-4/3+7)/2,abs=1e-5)
+    assert z["sparse_years_excluded_not_backfilled"]
+    assert z["historical_2026_survivor_selected_not_independent_alpha"]
+
+def test_same_issuer_on_both_sides_of_year_is_not_treated_as_independent():
+    d=fixture()
+    d["event_returns"].append(
+        event("AAPL","0000000001-20-000002","2020-03-01","2020-03-02",
+              "2020-09-02",0,12))
+    d["completed_event_returns"]=len(d["event_returns"])
+    year=m.inspect(d)["within_year_quality_discrimination"]["per_entry_calendar_year"]["2020"]
+    assert year["issuers_appearing_in_both_quality_groups"]==["AAPL"]
+    assert year["high_minus_low_issuer_equal_pp"] is not None
+    assert not year["eligible_for_descriptive_year_equal_mean"]
+
 @pytest.mark.parametrize("mutate",[
     lambda d:d.update(schema="UNVERIFIED"),
     lambda d:d.update(retrospectively_selected_2026_survivors=False),
