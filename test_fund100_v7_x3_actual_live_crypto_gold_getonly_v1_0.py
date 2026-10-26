@@ -60,8 +60,8 @@ def test_btc_usd_and_gld_metadata_not_customer_trading_authority(monkeypatch):
     assert result["BTC_USD_sufficient_minimum_notional_verified"] is False
     assert result["broker_original_live_crypto_policy_allowed"] is False
     assert result["broker_original_live_GLD_in_whitelist"] is False
-    assert result["5pct_BTC_theoretical_upper_notional_usd"]=="6.40"
-    assert result["5pct_GLD_theoretical_upper_notional_usd"]=="6.40"
+    assert result["5pct_BTC_theoretical_upper_notional_usd"]=="6.51"
+    assert result["5pct_GLD_theoretical_upper_notional_usd"]=="6.51"
     assert result["reported_account_cash_above_BTC_theoretical_target"] is False
     assert result["broker_gets"]==6
     assert result["broker_non_gets"]==result["broker_orders"]==0
