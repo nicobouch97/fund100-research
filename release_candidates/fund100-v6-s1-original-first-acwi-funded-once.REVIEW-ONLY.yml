@@ -1,0 +1,95 @@
+# FUND-100 REVIEW-ONLY SOURCE. NOT AN ACTIVE GITHUB ACTION.
+# This file is intentionally outside .github/workflows/ and CANNOT run.
+# Requires a separate human-reviewed, explicitly funded launch transition
+# BEFORE any file is copied into .github/workflows/.
+# Do not release by copying this YAML alone: current V6 entry, coordinator,
+# owner-CAS/seq2/public witness, immutable release, active HIGH risk and
+# V6-specific writer are all hardcoded FALSE on production main. Those
+# source releases, independently authorised current-main V6 GO and broker
+# kill DISENGAGED need a separate funded launch change and consent.
+name: Fund-100 V6-S1 FIRST ORIGINAL ACWI SELL (FUNDED APPROVAL REQUIRED)
+
+# Exactly one original manual main run. Never trigger on push, schedules,
+# workflow_run, repository_dispatch, retries, or unattended research.
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Exact funded order authorisation; ONE ACWI sell, NEVER RETRY'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: read
+
+# MUST match the existing V5 writer's exact mutex group and the current V6
+# locked first-original workflow; never run two writers concurrently.
+concurrency:
+  group: fund100-v5-002-live-production
+  cancel-in-progress: false
+
+jobs:
+  first-original-acwi-sell-once:
+    # This is NOT user authorisation, and this file is NOT runnable.
+    # Future activation needs separate explicit current funded GO approval.
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1 &&
+      github.actor == 'nicobouch97' &&
+      inputs.confirmation == 'APPROVE_ONE_ORIGINAL_ACWI_SELL_NO_RETRY'
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    env:
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+      FUND100_ORIGINAL_ACWI_FIRST_ORDER_CONFIRM: ${{ inputs.confirmation }}
+    steps:
+      - name: Checkout exact protected main SHA; do not persist credential
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fail closed before original single-process transaction
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = 'true'
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$GITHUB_ACTOR" = 'nicobouch97'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$FUND100_RISK_LEVEL" = 'HIGH'
+          test "$FUND100_BROKER_KILL_SWITCH" = 'DISENGAGED'
+          test "$FUND100_ENABLE_LIVE_READONLY" = 'YES_READ_ONLY_LIVE'
+          test "$FUND100_ORIGINAL_ACWI_FIRST_ORDER_CONFIRM" = 'APPROVE_ONE_ORIGINAL_ACWI_SELL_NO_RETRY'
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": true' fund100_v6_s1_operator_control.json
+          grep -Eq '"first_original_acwi_sell_enabled": true' fund100_v6_s1_operator_control.json
+      - name: One authenticated first-attempt original signed ACWI SELL; NEVER RETRY
+        # Only this step receives live/WRITE credentials, and only after the
+        # protected main/manual/HIGH/current STOP checks above. No retry,
+        # followup continuation step, debug credential print or log artifact.
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}
+          FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN }}
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Source-hard-locked until separately reviewed V6 funded release.
+          python -B fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py

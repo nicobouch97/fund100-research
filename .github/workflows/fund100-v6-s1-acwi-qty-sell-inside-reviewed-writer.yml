@@ -18,6 +18,8 @@ on:
       - "fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py"
       - "test_fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py"
       - "test_fund100_v6_s1_original_acwi_one_attempt_workflow_locked_v1_0.py"
+      - "test_fund100_v6_s1_original_first_acwi_funded_workflow_blueprint_v1_0.py"
+      - "release_candidates/fund100-v6-s1-original-first-acwi-funded-once.REVIEW-ONLY.yml"
       - "fund100_v6_s1_first_execution_principals_getonly_v1_0.py"
       - "test_fund100_v6_s1_first_execution_principals_getonly_v1_0.py"
       - ".github/workflows/fund100-v6-s1-first-execution-principals-getonly.yml"
@@ -65,6 +67,7 @@ jobs:
             test_fund100_v6_s1_original_one_attempt_chain_locked_v1_0.py \
             test_fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py \
             test_fund100_v6_s1_original_acwi_one_attempt_workflow_locked_v1_0.py \
+            test_fund100_v6_s1_original_first_acwi_funded_workflow_blueprint_v1_0.py \
             test_fund100_v6_s1_first_execution_principals_getonly_v1_0.py \
             test_fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py \
             test_fund100_v6_s1_operator_control_v2_0.py \
