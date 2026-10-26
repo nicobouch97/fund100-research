@@ -1,0 +1,77 @@
+name: Fund-100 V7 X4 Scalable Bitcoin Gold Capital and Settlement (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_x4_funding_aware_sleeve_feasibility_v1_0.py'
+      - 'test_fund100_v7_x4_funding_aware_sleeve_feasibility_v1_0.py'
+      - 'research_lab/V7_X4_CAPITAL_SIZE_AND_CASH_SETTLEMENT_NOT_AUTHORISATION_2026_10_26.md'
+      - '.github/workflows/fund100-v7-x4-scaling-feasibility.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_x4_funding_aware_sleeve_feasibility_v1_0.py'
+      - 'test_fund100_v7_x4_funding_aware_sleeve_feasibility_v1_0.py'
+      - '.github/workflows/fund100-v7-x4-scaling-feasibility.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  size-only-independent-cash-settlement-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install small offline Decimal scenario test dependencies
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Prove no-live-cap-increase and source-disconnected settlement/no-orders policy
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v7_x4_funding_aware_sleeve_feasibility_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          from pathlib import Path
+          import fund100_v7_x4_funding_aware_sleeve_feasibility_v1_0 as x4
+          assert x4.ORIGINAL_CAP==x4.Decimal('130.30')
+          assert x4.BROKER_GETS==x4.BROKER_POSTS==x4.BROKER_ORDERS==0
+          assert not x4.BROKER_MIN_NOTIONAL_USD_VERIFIED
+          assert not x4.FUTURE_MANDATE_ENABLED
+          source=Path(x4.__file__).read_text()
+          assert ('ALPACA'+'_'+'LIVE'+'_'+'KEY') not in source
+          assert 'urlopen(' not in source
+          print('No broker, no new capital authorization, no actual deposit inferred.')
+          PY
+      - name: Calculate predeclared cash-fee-inclusive BTC 5pct and GLD 5pct sizing tiers
+        run: |
+          set -euo pipefail
+          python fund100_v7_x4_funding_aware_sleeve_feasibility_v1_0.py \
+            --output /tmp/fund100-v7x4-scaling-scenarios.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/fund100-v7x4-scaling-scenarios.json').read_text())
+          assert r['original_live_capital_ceiling_usd']=='130.30'
+          assert r['scenarios']['35']['BTC_MIN_10_USD'][
+              'required_prospective_capital_with_purchase_fee_usd']=='200.80'
+          assert r['scenarios']['60']['BTC_MIN_10_USD'][
+              'required_prospective_capital_with_purchase_fee_usd']=='201.20'
+          assert r['no_capital_increase_or_future_deposit_authorized'] is True
+          assert not r['live_authorized'] and not r['trading_authorized']
+          assert r['broker_gets']==r['broker_posts']==r['broker_orders']==0
+          print('Investment sizes are synthetic hypothetical; 10USD minimum is NOT actual account verified.')
+          PY
+      - name: Archive safe capital-tier and financing evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7x4-synthetic-capital-tiers-${{ github.run_id }}
+          path: /tmp/fund100-v7x4-scaling-scenarios.json
+          retention-days: 90
+          if-no-files-found: error
