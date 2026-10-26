@@ -163,3 +163,41 @@ This fixes understated synthetic turnover and potentially overstated net
 historical returns for the existing 10% vol-target sensitivity. The
 historical comparison is still in-sample, a synthetic model-of-models,
 and not a broker-executable portfolio or evidence of new alpha.
+
+
+## Simple ETF economic controls (26 October 2026)
+
+The previous factor regression showed that same-session broad equity and sector
+proxies explained most of the fixed four-model blend's daily return variance.
+Regression fit does not answer the economic question: **did running four
+overlapping models beat simply holding the corresponding exchange-traded
+funds?** The existing four-model evaluation therefore now reports two
+transparent, non-optimised, buy-and-hold controls alongside the *unchanged*
+fixed model-sleeve blend:
+
+1. 100% ACWI benchmark ETF adjusted-price proxy.
+2. 25% each ACWI, XLK, XLE and IWM adjusted-price proxies.
+
+Both controls enter at the **same first eligible quarter close** as the
+existing fixed model blend, pay the same 5/15/35bp **one-time entry-side**
+cost, and then **never rebalance**; their ETF weights naturally drift.
+The fixed model blend continues to embed each original model's trading costs
+and the existing synthetic one-time model-sleeve entry cost. All comparisons
+use identical completed sessions and the same SHA-pinned frozen adjusted
+prices. The report provides CAGR, realised volatility, drawdown, worst daily
+return and blend-minus-control CAGR for 2014+, 2020+ and 2023+ windows.
+
+**Interpretation:** A buy-and-hold ETF control has substantially lower
+trading requirements than a strategy with recurring model-level turnover.
+Equal 25% ETF weights are deliberately simple, not optimised or risk matched;
+the control is not a factor-mimicking portfolio or an ETF constituent-stock
+look-through. The entry fee is present in full simulated wealth but cancels
+from the CAGR of windows that start at/after entry, so differing cost scenarios
+affect the four models much more than the passive controls. Vendor-adjusted
+closes are not verified execution prices and cannot guarantee historical
+investability, spreads, dividend treatment, tax or capacity. These histories
+have already been examined repeatedly: **any observed return difference is
+descriptive, not independent alpha or a promotion decision**.
+
+No trading strategy, protected LIVE risk policy, holdings, pilot capital
+ceiling, STOP switch, environment kill switch or release lock changes.
