@@ -28,8 +28,8 @@ from urllib.request import Request, urlopen
 import zipfile
 
 SCHEMA="FUND100_V7_FRENCH_HISTORICAL_MOMENTUM_MECHANISM_RESEARCH_ONLY_V1"
-MOM_URL="https://mba.tuck.dartmouth.edu/pages/faculty/Ken.french/ftp/10_Portfolios_Prior_12_2_CSV.zip"
-MARKET_URL="https://mba.tuck.dartmouth.edu/pages/faculty/Ken.french/ftp/F-F_Research_Data_Factors_CSV.zip"
+MOM_URL="https://mba.tuck.dartmouth.edu/pages/faculty/Ken.French/ftp/10_Portfolios_Prior_12_2_CSV.zip"
+MARKET_URL="https://mba.tuck.dartmouth.edu/pages/faculty/Ken.French/ftp/F-F_Research_Data_Factors_CSV.zip"
 MOM_MEMBER="10_Portfolios_Prior_12_2.csv"
 MARKET_MEMBER="F-F_Research_Data_Factors.csv"
 MAX_ARCHIVE_BYTES=2_000_000
