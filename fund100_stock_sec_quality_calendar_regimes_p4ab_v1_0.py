@@ -116,6 +116,23 @@ def _within_year_quality_discrimination(rows):
         if qualifying:
             qualified.append(spread)
     comparable=[row for row in per_year.values() if row["has_both_groups"]]
+    # This is a frozen descriptive research triage, not hypothesis testing.
+    # No subset, score threshold, horizon or cost is retuned on observed
+    # outcomes. With too few *comparable* years, positive average excess
+    # is an abstention, NEVER signal promotion.
+    years_by_regime={_regime(int(year)) for year,row in per_year.items()
+                     if row["eligible_for_descriptive_year_equal_mean"]}
+    npos=sum(x>0 for x in qualified)
+    nnonpos=len(qualified)-npos
+    average=_mean(qualified)
+    if len(qualified)<MIN_YEAR_BREADTH or len(years_by_regime)<2:
+        screening="ABSTAIN_INSUFFICIENT_COMPARABLE_YEARS_OR_REGIMES"
+    elif average is None or average<=0 or npos<=nnonpos:
+        screening="UNFAVOURABLE_DESCRIPTIVE_QUALITY_DISCRIMINATION"
+    elif nnonpos:
+        screening="MIXED_DESCRIPTIVE_QUALITY_DISCRIMINATION"
+    else:
+        screening="PERSISTENT_POSITIVE_DESCRIPTIVE_COMPARISON_NOT_VALIDATED_ALPHA"
     return {
         "method":"UNALTERED_15BPS_MATCHED_SPY_ISSUER_EQUAL_WITHIN_YEAR_HIGH_MINUS_LOW",
         "per_entry_calendar_year":per_year,
@@ -123,7 +140,11 @@ def _within_year_quality_discrimination(rows):
         "calendar_years_with_at_least_two_distinct_issuers_per_disjoint_group":len(qualified),
         "qualifying_calendar_years_positive_gap":sum(x>0 for x in qualified),
         "qualifying_calendar_years_nonpositive_gap":sum(x<=0 for x in qualified),
-        "qualifying_year_equal_quality_gap_pp":_mean(qualified),
+        "qualifying_year_equal_quality_gap_pp":average,
+        "predeclared_min_comparable_calendar_years_for_triage":MIN_YEAR_BREADTH,
+        "qualifying_calendar_regimes_represented":sorted(years_by_regime),
+        "descriptive_quality_screen":screening,
+        "screen_is_not_independent_alpha_or_trade_authorization":True,
         "sparse_years_excluded_not_backfilled":True,
         "high_low_filing_dates_within_year_not_exactly_contemporaneous":True,
         "matched_spy_is_not_independently_beta_risk_matched":True,
