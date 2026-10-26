@@ -1,0 +1,96 @@
+name: Fund-100 V7 X3 Actual LIVE BTC GLD Asset Availability (SIX GET, NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_x3_actual_live_crypto_gold_getonly_v1_0.py'
+      - 'test_fund100_v7_x3_actual_live_crypto_gold_getonly_v1_0.py'
+      - '.github/workflows/fund100-v7-x3-real-btc-gold-six-getonly.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_x3_actual_live_crypto_gold_getonly_v1_0.py'
+      - 'test_fund100_v7_x3_actual_live_crypto_gold_getonly_v1_0.py'
+      - '.github/workflows/fund100-v7-x3-real-btc-gold-six-getonly.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v7-x3-fresh-stopped-real-crypto-gold-six-get
+  cancel-in-progress: false
+
+jobs:
+  offline-six-get-account-and-assets-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install credentialless regression test dependencies
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Prove exact account lineage, budget cap, passive GET endpoint and no-order contracts
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v7_x3_actual_live_crypto_gold_getonly_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import fund100_v7_x3_actual_live_crypto_gold_getonly_v1_0 as x3
+          assert x3.EXPECTED_PATHS == (
+              '/v2/account','/v2/positions','/v2/orders',
+              '/v2/clock','/v2/assets','/v2/assets/GLD')
+          assert not x3.EXECUTION_ALLOWED
+          assert not x3.BROKER_ORDERS and not x3.BROKER_NON_GETS
+          assert x3.CAP == 130.30
+          print('No order, no asset enablement, no personal financial payload persistence.')
+          PY
+
+  real-stopped-account-six-get-only:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: offline-six-get-account-and-assets-validation
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Confirm protected main stopped before injecting LIVE GET-only credentials
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test "${FUND100_BROKER_KILL_SWITCH}" = ENGAGED
+          test "${FUND100_RISK_LEVEL}" = HIGH
+          test "${FUND100_LIVE_WRITE_MODE}" = DISABLED
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          from pathlib import Path
+          source=Path('fund100_v7_x3_actual_live_crypto_gold_getonly_v1_0.py').read_text()
+          assert source.count('live.get_json(')==1
+          assert not any(x in source for x in (
+              'live.live_request(', 'urlopen(', 'method="POST"',
+              "method='POST'", 'submit_order(', 'place_order(',
+              'requests.post(', 'requests.delete('))
+          print('Six named GET endpoints only. Original crypto and GLD policy remains closed.')
+          PY
+      - name: Read customer crypto status and current BTC/GLD asset definitions without orders
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_v7_x3_actual_live_crypto_gold_getonly_v1_0.py
+      - name: Confirm LIVE operator remains STOPPED
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo "Six GET source metadata only, no orders, no account modification, no permissions updated."
