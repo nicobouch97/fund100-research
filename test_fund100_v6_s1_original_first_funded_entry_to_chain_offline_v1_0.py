@@ -31,7 +31,7 @@ def first_protected_original_run(monkeypatch,signed_chain_setup):
         ("FUND100_RISK_LEVEL","HIGH"),
         ("FUND100_BROKER_KILL_SWITCH","DISENGAGED"),
         ("FUND100_ENABLE_LIVE_READONLY","YES_READ_ONLY_LIVE"),
-        ("FUND100_ORIGINAL_ACWI_FIRST_ORDER_CONFIRM",entry.MANUAL_CONFIRMATION),
+        ("FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM",entry.MANUAL_CONFIRMATION),
         ("FUND100_PRIVATE_STATE_READ_TOKEN",READ),
         ("FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN",WRITE),
         ("FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX",context["key"].hex()),
@@ -81,7 +81,7 @@ def test_entire_one_process_entry_calls_real_original_chain_and_one_fake_post(
     ("GITHUB_EVENT_NAME","push"),
     ("GITHUB_REF","refs/heads/unreviewed"),
     ("FUND100_BROKER_KILL_SWITCH","ENGAGED"),
-    ("FUND100_ORIGINAL_ACWI_FIRST_ORDER_CONFIRM","INSPECT_ORIGINAL_ACWI_LOCKED_NO_ORDERS"),
+    ("FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM","INSPECT_ORIGINAL_ACWI_LOCKED_NO_ORDERS"),
     ("FUND100_RISK_LEVEL","LOW"),
 ])
 def test_entire_entry_never_hydrates_or_claims_if_real_admission_rejected(
