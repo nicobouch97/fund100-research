@@ -1,0 +1,72 @@
+name: Fund-100 V2 universe research CI
+
+on:
+  push:
+    branches:
+      - "research/v2-universe-*"
+  pull_request:
+    paths:
+      - "fund100_v2/**"
+      - "test_fund100_v2_universe.py"
+      - ".github/workflows/fund100-v2-universe-research-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v2-research-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  no-broker-offline-tests:
+    name: Offline V2 and baseline tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - name: Checkout research branch
+        uses: actions/checkout@v4
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+      - name: Check V2 module cannot use broker APIs
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          forbidden_roots = {
+              "alpaca", "requests", "httpx", "urllib", "socket",
+              "subprocess", "fund100_live_bootstrap_v1_0",
+              "fund100_live_production_controller_v1_0",
+          }
+          for file in sorted(Path("fund100_v2").glob("*.py")):
+              source = file.read_text(encoding="utf-8")
+              tree = ast.parse(source)
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.Import):
+                      for item in node.names:
+                          assert item.name.split(".")[0] not in forbidden_roots
+                  if isinstance(node, ast.ImportFrom):
+                      root = (node.module or "").split(".")[0]
+                      assert root not in forbidden_roots
+              assert "ALPACA_LIVE_KEY" not in source
+              assert "ALPACA_LIVE_SECRET" not in source
+          print("Research-only import boundary: PASS")
+          PY
+      - name: Full offline regression suite
+        run: |
+          set -euo pipefail
+          test "${FUND100_BROKER_KILL_SWITCH}" = ENGAGED
+          test -z "${ALPACA_LIVE_KEY:-}"
+          test -z "${ALPACA_LIVE_SECRET:-}"
+          python -m pytest -q
