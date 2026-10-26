@@ -148,3 +148,47 @@ def test_contact_identity_legal_and_zero_broker_or_live_state():
     for forbidden in ("ALPACA_LIVE_KEY","TradingClient","create_order",
                       "api.alpaca.markets","alpaca-py","FUND100_BROKER_KILL_SWITCH"):
         assert forbidden not in script
+
+
+def test_large_real_jpm_style_sec_recent_feed_is_validated_then_windowed():
+    cik=e6.EXTRA_SIXTEEN["JPM"]
+    # Official JPM "recent" original had 26,430 rows; original eight E1
+    # bounds are 5k. Historical, pre-registered trailing 10-K rows cannot
+    # cause a truthful source-only 24-company earnings feed to fail.
+    n=26430
+    filings={
+        "form":["10-K"]*(n-1)+["8-K"],
+        "accessionNumber":[f"0000000000-16-{i:06d}" for i in range(n-1)]
+                          +["0000000000-26-000777"],
+        "filingDate":["2016-12-31"]*(n-1)+["2026-10-26"],
+        "items":[""]*(n-1)+["2.02,9.01"],
+    }
+    sec_obj={"cik":int(cik),"filings":{"recent":filings}}
+    good,older=e6._events(sec_obj,"JPM",cik,"2026-10-24",
+                          "2026-10-27T17:00:00Z")
+    assert len(good)==1 and good[0]["original_sec_accession"]=="0000000000-26-000777"
+    assert older==[]
+    # Full source array consistency is checked BEFORE any date filtering.
+    filings["items"].pop()
+    with pytest.raises(e6.ExpandedFeedStop,match="inconsistent or unbounded"):
+        e6._events(sec_obj,"JPM",cik,"2026-10-24",
+                   "2026-10-27T17:00:00Z")
+
+
+def test_large_source_future_earnings_filing_cannot_be_filtered_away():
+    cik=e6.EXTRA_SIXTEEN["JPM"]
+    n=5500
+    records={
+        "form":["10-K"]*(n-1)+["8-K"],
+        "accessionNumber":[f"0000000000-16-{i:06d}" for i in range(n-1)]
+                          +["0000000000-26-000778"],
+        "filingDate":["2016-12-31"]*(n-1)+["2026-10-28"],
+        "items":[""]*(n-1)+["2.02,9.01"],
+    }
+    with pytest.raises(Exception,match="Future-dated"):
+        e6._events({"filings":{"recent":records}},"JPM",cik,
+                   "2026-10-24","2026-10-27T17:00:00Z")
+    records["filingDate"]=["2026-10-28"]*n
+    with pytest.raises(e6.ExpandedFeedStop,match="unexpectedly oversized"):
+        e6._events({"filings":{"recent":records}},"JPM",cik,
+                   "2026-10-24","2026-10-27T17:00:00Z")
