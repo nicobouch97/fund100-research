@@ -91,6 +91,7 @@ def fixed_backtest(raw:pd.DataFrame,*,cost_bps:int)->pd.DataFrame:
         records.append({"date":date,"v6_nav":nav,"acwi_nav":ref,
             "one_way_turnover":turnover,"gross_equity_exposure":gross,
             "cash_weight":max(0.0,1-gross),
+            **{"weight_"+k:curr[k] for k in active.UNIVERSE},
             "rebalance_session":traded,
             "signal_day":t==start or month_changed,
             "below_five_percent_cash":t>=start and 1-gross<CASH_FLOOR-1e-9})
