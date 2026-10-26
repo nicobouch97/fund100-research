@@ -201,3 +201,22 @@ descriptive, not independent alpha or a promotion decision**.
 
 No trading strategy, protected LIVE risk policy, holdings, pilot capital
 ceiling, STOP switch, environment kill switch or release lock changes.
+
+
+## Matched equity-market downside comparison (26 October 2026)
+
+The simple ACWI and ACWI/XLK/XLE/IWM buy-and-hold economic controls now
+also report **paired stress exposure**, using precisely the same completed
+sessions as the existing costed four-model fixed blend. The analysis selects
+the worst 5% of ACWI daily sessions and the worst 21-session ACWI return
+interval *ex post*, then measures all three portfolios over those **same**
+days. This avoids the invalid comparison of each portfolio's different
+worst dates and helps establish whether active complexity bought meaningful
+protection during historical market selloffs. The 21-session horizon and 5%
+tail are descriptive fixed reporting conventions, not fitted trading rules.
+
+The selected market dates depend on the complete historical sample: this is
+**not** a point-in-time market-stress forecast, trade trigger, causal hedge,
+risk-matched performance test, independent holdout or evidence of new alpha.
+The original costed strategy NAVs, simple ETF holdings, frozen prices, LIVE
+capital ceiling, operator STOP, kill switch and release locks remain unchanged.
