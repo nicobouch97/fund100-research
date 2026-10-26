@@ -56,6 +56,13 @@ def test_source_exact_original_prices_full_four_models_three_costs():
             assert comparison["broker_orders"]==0
             assert comparison["strategy_promoted_for_live"] is None
             assert set(comparison["costed_simple_etf_controls"])==set(e.SIMPLE_ETF_CONTROLS)
+            stress=comparison["matched_equity_downside_stress"]
+            assert stress["status"]=="DESCRIPTIVE_MATCHED_ACWI_STRESS_NO_PROMOTION"
+            assert stress["return_observations"]==comparison["sessions"]-1
+            assert stress["worst_ACWI_5pct_session_count"]>=1
+            assert stress["worst_ACWI_21_session_window"]["completed_session_intervals"]==21
+            assert stress["stress_dates_selected_ex_post_not_a_predictive_signal"]
+            assert stress["broker_orders"]==0
     for cost,windows in report["fixed_four_model_ETF_lookthrough_by_window"].items():
         assert set(windows)==set(e.WINDOWS)
         for window,metrics in windows.items():
@@ -396,3 +403,58 @@ def test_simple_etf_controls_fail_closed_on_source_mismatch_or_invalid_costs():
         e._costed_etf_buy_hold_nav(prices,300,{"XLK":-1.,"XLE":2.},15)
     with pytest.raises(e.EconomicsStop,match="cost"):
         e._costed_etf_buy_hold_nav(prices,300,{"XLK":1.},True)
+
+
+def test_matched_equity_stress_uses_same_market_days_for_all_portfolios():
+    dates=pd.bdate_range("2020-01-01",periods=300)
+    market=np.full(299,.001)
+    blend=np.full(299,.001)
+    passive=np.full(299,.001)
+    market[[79,80]]=-.10
+    blend[[79,80]]=-.03
+    passive[[79,80]]=-.07
+    def nav(ret):
+        return np.r_[100.,100.*np.cumprod(1+ret)]
+    inputs={"FIXED_FOUR_MODEL_BLEND":nav(blend),
+            "ACWI_ONLY":nav(market),
+            "FOUR_ETF_EQUAL_BUY_HOLD":nav(passive)}
+    result=e._paired_equity_stress(dates,inputs,0)
+    assert result["status"]=="DESCRIPTIVE_MATCHED_ACWI_STRESS_NO_PROMOTION"
+    assert result["return_observations"]==299
+    assert result["worst_ACWI_5pct_session_count"]==15
+    tails=result["mean_daily_return_on_same_worst_ACWI_5pct_sessions_pct"]
+    assert tails["FIXED_FOUR_MODEL_BLEND"]>tails["FOUR_ETF_EQUAL_BUY_HOLD"]
+    assert tails["FOUR_ETF_EQUAL_BUY_HOLD"]>tails["ACWI_ONLY"]
+    stress=result["worst_ACWI_21_session_window"]
+    assert stress["completed_session_intervals"]==21
+    assert stress["matched_portfolio_returns_pct"]["FIXED_FOUR_MODEL_BLEND"]>stress["matched_portfolio_returns_pct"]["ACWI_ONLY"]
+    assert result["stress_dates_selected_ex_post_not_a_predictive_signal"]
+    assert result["strategy_promoted_for_live"] is None
+    assert result["broker_orders"]==0
+    # A future shock must not change any earlier matched stress observation.
+    earlier=e._paired_equity_stress(dates[:260],
+             {name:levels[:260] for name,levels in inputs.items()},0)
+    later={name:levels.copy() for name,levels in inputs.items()}
+    later["ACWI_ONLY"][-1]*=.5
+    changed=e._paired_equity_stress(dates,later,0)
+    assert earlier["worst_ACWI_21_session_window"]==result["worst_ACWI_21_session_window"]
+    assert changed["worst_ACWI_21_session_window"]!=result["worst_ACWI_21_session_window"]
+
+
+def test_matched_equity_stress_rejects_misaligned_invalid_or_short_sources():
+    dates=pd.bdate_range("2020-01-01",periods=300)
+    valid=np.linspace(100.,130.,300)
+    inputs={"FIXED_FOUR_MODEL_BLEND":valid,
+            "ACWI_ONLY":valid.copy(),
+            "FOUR_ETF_EQUAL_BUY_HOLD":valid.copy()}
+    with pytest.raises(e.EconomicsStop,match="sessions"):
+        e._paired_equity_stress(dates[:259],
+              {name:nav[:259] for name,nav in inputs.items()},0)
+    with pytest.raises(e.EconomicsStop,match="shape"):
+        e._paired_equity_stress(dates,{**inputs,"ACWI_ONLY":valid[:-1]},0)
+    invalid=valid.copy()
+    invalid[10]=np.nan
+    with pytest.raises(e.EconomicsStop,match="NAV"):
+        e._paired_equity_stress(dates,{**inputs,"ACWI_ONLY":invalid},0)
+    with pytest.raises(e.EconomicsStop,match="sessions"):
+        e._paired_equity_stress(dates[::-1],inputs,0)
