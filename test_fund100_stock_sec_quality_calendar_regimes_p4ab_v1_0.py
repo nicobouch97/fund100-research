@@ -130,6 +130,59 @@ def test_quality_gap_same_year_issuer_equal_exposes_negative_and_positive_years(
     assert z["sparse_years_excluded_not_backfilled"]
     assert z["historical_2026_survivor_selected_not_independent_alpha"]
 
+
+def test_sparse_high_quality_returns_do_not_pass_yearwise_screen():
+    out=m.inspect(fixture())["within_year_quality_discrimination"]
+    assert out["descriptive_quality_screen"]=="ABSTAIN_INSUFFICIENT_COMPARABLE_YEARS_OR_REGIMES"
+    assert out["predeclared_min_comparable_calendar_years_for_triage"]==m.MIN_YEAR_BREADTH
+    assert out["qualifying_calendar_regimes_represented"]==[]
+    assert out["screen_is_not_independent_alpha_or_trade_authorization"]
+
+def _four_year_quality_panel(gaps):
+    # Each original-calendar-year test uses two distinct high-score and
+    # two distinct low-score issuers, each with one original event.
+    d=fixture()
+    d["event_returns"]=[]
+    symbols=("AAPL","MSFT","NVDA","AMD")
+    for i,(year,gap) in enumerate(zip((2018,2020,2022,2024),gaps)):
+        for j,name in enumerate(symbols):
+            side_high=j<2
+            d["event_returns"].append(event(
+                name,f"{j+1:010d}-{str(year)[2:]}-{i+1:06d}",
+                f"{year}-01-10",f"{year}-01-11",f"{year}-07-11",
+                3 if side_high else 1,gap if side_high else 0))
+    d["completed_event_returns"]=len(d["event_returns"])
+    return d
+
+def test_predeclared_four_year_regime_breadth_can_show_descriptive_consistency_only():
+    z=m.inspect(_four_year_quality_panel((2,1,4,3)))["within_year_quality_discrimination"]
+    assert z["calendar_years_with_at_least_two_distinct_issuers_per_disjoint_group"]==4
+    assert z["qualifying_calendar_regimes_represented"]==["2017_2019","2020_2022","2023_2026"]
+    assert z["descriptive_quality_screen"]=="PERSISTENT_POSITIVE_DESCRIPTIVE_COMPARISON_NOT_VALIDATED_ALPHA"
+    assert z["qualifying_year_equal_quality_gap_pp"]==2.5
+    assert not z["live_trading_authorized"]
+
+def test_mixed_or_unfavourable_quality_years_do_not_claim_persistent_alpha():
+    mixed=m.inspect(_four_year_quality_panel((2,1,-1,3)))["within_year_quality_discrimination"]
+    assert mixed["descriptive_quality_screen"]=="MIXED_DESCRIPTIVE_QUALITY_DISCRIMINATION"
+    unfavourable=m.inspect(_four_year_quality_panel((2,-4,-1,-3)))["within_year_quality_discrimination"]
+    assert unfavourable["descriptive_quality_screen"]=="UNFAVOURABLE_DESCRIPTIVE_QUALITY_DISCRIMINATION"
+
+def test_positive_years_from_only_one_regime_still_abstain():
+    d=_four_year_quality_panel((1,2,3,4))
+    # Move all four original 2018/2020/2022/2024 events into
+    # 2023-2026 with unique fiscal-year accession identities.
+    for i,row in enumerate(d["event_returns"]):
+        old=int(row["entry_next_session_close"][:4])
+        year={2018:2023,2020:2024,2022:2025,2024:2026}[old]
+        row["conservative_available_date"]=f"{year}-01-10"
+        row["entry_next_session_close"]=f"{year}-01-11"
+        row["exit_126_sessions_later"]=f"{year}-07-11"
+        row["original_10k_accession"]=f"{i+1:010d}-{str(year)[2:]}-000001"
+    z=m.inspect(d)["within_year_quality_discrimination"]
+    assert z["qualifying_calendar_regimes_represented"]==["2023_2026"]
+    assert z["descriptive_quality_screen"]=="ABSTAIN_INSUFFICIENT_COMPARABLE_YEARS_OR_REGIMES"
+
 def test_same_issuer_on_both_sides_of_year_is_not_treated_as_independent():
     d=fixture()
     d["event_returns"].append(
