@@ -63,6 +63,7 @@ def evaluate(*,snapshot:dict,target_weights:dict,expected_returns:dict,
         or snapshot.get("mode")!=MODE
         or snapshot.get("signal_status")!="UNQUALIFIED_RESEARCH_HYPOTHESIS"
         or snapshot.get("open_order_count")!=0
+        or snapshot.get("forecast_horizon_sessions") not in (5,21,63)
         or type(target_weights) is not dict
         or type(expected_returns) is not dict
         or not target_weights
@@ -77,8 +78,11 @@ def evaluate(*,snapshot:dict,target_weights:dict,expected_returns:dict,
     equity=amount(snapshot.get("equity_usd"),"account equity")
     cash=amount(snapshot.get("cash_usd"),"available broker cash")
     settled=amount(snapshot.get("settled_cash_usd"),"settled broker cash")
-    if not Decimal(0)<equity<=CAP or cash>equity or settled>cash:
+    if not Decimal(0)<equity or cash>equity or settled>cash:
         raise OpportunityStop("Unfunded/excess pilot, cash or unsettled-source breach")
+    # Account equity may legitimately grow above the originally funded pilot.
+    # Never deploy excess NAV merely because the account appreciated.
+    deployable=min(equity,CAP)
     observed={s:amount(v,"position "+s) for s,v in positions.items()}
     if any(v<=0 for v in observed.values()):
         raise OpportunityStop("Zero/negative legacy position is not a holding")
@@ -101,7 +105,7 @@ def evaluate(*,snapshot:dict,target_weights:dict,expected_returns:dict,
             min_edge<Decimal("0.50") or min_edge>Decimal("10.00")):
         raise OpportunityStop("Unreviewed switching assumption or missing hysteresis")
     symbols=sorted(set(observed)|set(tw))
-    targets={s:(equity*tw.get(s,Decimal(0))).quantize(CENTS,rounding=ROUND_DOWN)
+    targets={s:(deployable*tw.get(s,Decimal(0))).quantize(CENTS,rounding=ROUND_DOWN)
              for s in symbols}
     difference={s:targets[s]-observed.get(s,Decimal(0)) for s in symbols}
     # A tiny drift is not a trade; retain its existing exposure in both
@@ -115,7 +119,7 @@ def evaluate(*,snapshot:dict,target_weights:dict,expected_returns:dict,
     cost=turnover*side_cost/Decimal(10000)
     penalty=turnover*uncertainty/Decimal(10000)
     net=gain-cost-penalty
-    required=max(min_edge,equity*Decimal("0.005"))
+    required=max(min_edge,deployable*Decimal("0.005"))
     if not sells and not buys:
         state="HOLD_NO_MATERIAL_DIFFERENCE"
     elif net<=required:
@@ -145,6 +149,7 @@ def evaluate(*,snapshot:dict,target_weights:dict,expected_returns:dict,
         "required_hysteresis_advantage_usd":cashfmt(required),
         "gross_turnover_usd":cashfmt(turnover),
         "buy_cash_currently_settled_usd":cashfmt(settled),
+        "deployable_pilot_capital_usd":cashfmt(deployable),
         "future_sell_proceeds_assumed_spendable":False,
         "real_broker_gets":0,
         "real_broker_posts":0,
