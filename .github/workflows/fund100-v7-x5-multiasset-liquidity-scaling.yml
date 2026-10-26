@@ -1,0 +1,78 @@
+name: Fund-100 V7 X5 Multi-Asset Capital and Liquidity Scaling (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_x5_capacity_aware_portfolio_router_v1_0.py'
+      - 'test_fund100_v7_x5_capacity_aware_portfolio_router_v1_0.py'
+      - 'research_lab/V7_X5_SCALE_FROM_1000_GBP_TO_INSTITUTIONAL_CAPITAL_2026_10_26.md'
+      - '.github/workflows/fund100-v7-x5-multiasset-liquidity-scaling.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_x5_capacity_aware_portfolio_router_v1_0.py'
+      - 'test_fund100_v7_x5_capacity_aware_portfolio_router_v1_0.py'
+      - '.github/workflows/fund100-v7-x5-multiasset-liquidity-scaling.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  brokerless-usd-tier-capacity-and-gbp-intent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install only credentialless regression-test dependency
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Test no FX assumptions, no cap lift, daily liquidity and two-stage buys
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v7_x5_capacity_aware_portfolio_router_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import fund100_v7_x5_capacity_aware_portfolio_router_v1_0 as x
+          assert x.BROKER_GETS==x.BROKER_POSTS==x.BROKER_ORDERS==0
+          assert not x.LIVE_ENABLED
+          assert x.LIVE_CAP_USD=='130.30'
+          assert len(x.GBP_INTENTION_TIERS)>=4 and len(x.USD_TEST_CAPITAL)>=6
+          print('Pure synthetic inputs; potential GBP deposit NOT converted into USD or authorised.')
+          PY
+      - name: Report synthetic capacity at tiny through 100m USD sizes
+        run: |
+          set -euo pipefail
+          python fund100_v7_x5_capacity_aware_portfolio_router_v1_0.py \
+            --output /tmp/fund100-v7x5-liquidity-scenario.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import fund100_v7_x5_capacity_aware_portfolio_router_v1_0 as x
+          d=json.loads(Path('/tmp/fund100-v7x5-liquidity-scenario.json').read_text())
+          assert d['schema']==x.SCHEMA
+          assert d['current_funded_USD_authority_unchanged']=='130.30'
+          assert d['GBP_1000_USER_INTENT_NOT_CONVERTED_TO_USD'] is True
+          assert set(d['scenarios'])==set(x.USD_TEST_CAPITAL)
+          for r in d['scenarios'].values():
+              assert r['funding_ceiling_raise_executed'] is False
+              assert r['model_liquidity_not_verified_with_market_data'] is True
+              assert r['GBP_not_converted_into_broker_deployable_USD'] is True
+              assert r['proceeds_of_unsettled_sales_used_for_buys'] is False
+              assert not r['live_authorized'] and not r['trading_authorized']
+              assert r['broker_gets']==r['broker_posts']==r['broker_orders']==0
+          assert d['scenarios']['100000000.00']['maximum_modeled_capacity_days']>1
+          print('No source-vetted strategy, real GBP funds, actual broker ADV or order release.')
+          PY
+      - name: Archive nonpersonal prospective capital-size capacity stress only
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7x5-capital-scaling-synthetic-only-${{ github.run_id }}
+          path: /tmp/fund100-v7x5-liquidity-scenario.json
+          retention-days: 90
+          if-no-files-found: error
