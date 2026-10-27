@@ -104,3 +104,73 @@ def test_comparator_same_cash_fees_and_permanently_research_only():
         assert item["final_risky_exit_is_modeled_only"]
     assert r["not_a_survivorship_safe_universe"]
     assert not r["stock_total_returns_or_tradable_fills_verified"]
+
+
+def test_preentry_volatility_match_never_levers_or_changes_original_selection():
+    original,first,later,ts=fixtures("2026-10-28")
+    # Add a smooth nonconstant return pattern in the original source
+    # and regenerate the pinned source receipt, BEFORE the fixed entry.
+    days=np.arange(len(first),dtype=float)
+    for symbol in first.columns:
+        first[symbol]*=np.exp(.0015*np.sin(days/8. + len(symbol)))
+    original=p4l.evaluate(first,acquired_at_utc=original["source_acquired_at_utc"],
+                          provider_reference=original["source_reference"])
+    result=m.evaluate(original_manifest=original,original_prices=first,
+                      later_prices=later,captured_utc=ts)
+    risk=result["secondary_frozen_preentry_volatility_match"]
+    assert risk["status"]=="PREENTRY_RISK_MATCHED_NO_LEVERAGE_RESEARCH_ONLY"
+    assert risk["pinned_through"]=="2026-10-23"
+    assert risk["lookback_completed_returns"]==126
+    assert 0<risk["stock_risky_fraction"]<=.95
+    assert 0<risk["spy_risky_fraction"]<=.95
+    assert max(risk["stock_risky_fraction"],risk["spy_risky_fraction"])==.95
+    assert abs(risk["stock_risky_weight_times_volatility"]-
+               risk["spy_risky_weight_times_volatility"])<1e-10
+    assert result["original_pretrade_selection"]==original["momentum_only_watchlist"]
+    for bps in ("5","15","35"):
+        item=result["costed_95pct_stocks_versus_95pct_spy"][bps]
+        matched=item["secondary_preentry_volatility_matched"]
+        fee=int(bps)/10000
+        entry=later.loc["2026-10-27"]
+        end=later.loc["2026-10-28"]
+        growth=np.mean([end[s]/entry[s] for s in result["original_pretrade_selection"]])
+        sw=risk["stock_risky_fraction"]
+        expected=100*(1-sw)+100*sw/(1+fee)*growth*(1-fee)
+        assert matched["stock_final_after_costs_usd"]==pytest.approx(expected,abs=1e-8)
+        assert item["equal_95pct_initial_cash_and_round_trip_costs"]
+        assert matched["preentry_only_no_future_risk_fit"]
+
+
+def test_preentry_risk_is_frozen_even_if_later_returns_change():
+    original,first,later,ts=fixtures("2026-10-28")
+    days=np.arange(len(first),dtype=float)
+    for symbol in first.columns:
+        first[symbol]*=np.exp(.001*np.sin(days/7. + len(symbol)))
+    original=p4l.evaluate(first,acquired_at_utc=original["source_acquired_at_utc"],
+                          provider_reference=original["source_reference"])
+    before=m.evaluate(original_manifest=original,original_prices=first,
+                      later_prices=later,captured_utc=ts)
+    later=later.copy()
+    later.loc["2026-10-28","SPY"]*=1.1
+    after=m.evaluate(original_manifest=original,original_prices=first,
+                     later_prices=later,captured_utc=ts)
+    assert (before["secondary_frozen_preentry_volatility_match"]==
+            after["secondary_frozen_preentry_volatility_match"])
+    assert (before["costed_95pct_stocks_versus_95pct_spy"]["15"]
+            ["stock_minus_spy_net_percentage_points"] !=
+            after["costed_95pct_stocks_versus_95pct_spy"]["15"]
+            ["stock_minus_spy_net_percentage_points"])
+
+
+def test_flat_preentry_risk_does_not_fabricate_risk_matched_alpha():
+    original,first,later,ts=fixtures("2026-10-28")
+    # Flat original stock and SPY prices make the volatility target
+    # undefined; preserve the original primary forward comparison.
+    first.loc[:,list(p4l.SECTORS)+["SPY"]]=100.
+    original=p4l.evaluate(first,acquired_at_utc=original["source_acquired_at_utc"],
+                          provider_reference=original["source_reference"])
+    # P4L may select no names when all pre-entry signals are flat;
+    # the prospective evaluator must fail closed rather than invent picks.
+    with pytest.raises(m.ForwardStop):
+        m.evaluate(original_manifest=original,original_prices=first,
+                   later_prices=later,captured_utc=ts)
