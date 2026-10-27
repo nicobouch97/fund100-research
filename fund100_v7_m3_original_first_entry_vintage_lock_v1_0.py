@@ -88,10 +88,8 @@ def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
         raise EntryAnchorStop("Anchor price cutoff or later market session missing")
     # The zero lookahead decision demands the very SAME originally
     # published 26 share/benchmark prices on model entry day.
-    anchored=p4l.canonical_csv(original.loc[[date]])
-    updated=p4l.canonical_csv(later.loc[[date]])
-    # P4L validator requires 127+ rows. Above two one-row series are
-    # therefore encoded with the SAME declared 10-decimal CSV precision.
+    # P4L validates full input histories; compare the selected day's
+    # strictly numeric values at the original 10-decimal CSV precision.
     first=original.loc[date]
     current=later.loc[date]
     modified=[ticker for ticker in first.index if
