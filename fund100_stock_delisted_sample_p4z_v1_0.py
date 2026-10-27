@@ -11,6 +11,8 @@ import csv
 from datetime import date, timedelta
 from hashlib import sha256
 from io import StringIO
+from html.parser import HTMLParser
+import re
 import json
 import math
 from pathlib import Path
@@ -19,6 +21,8 @@ from zipfile import BadZipFile, ZipFile
 SCHEMA = "FUND100_P4Z_DELIMITED_DELISTED_PRICE_SAMPLE_AUDIT_V1"
 SOURCE_URL = "https://historicaldata.net/file/stocks_sample_2022H2.zip"
 SOURCE_CREDIT = "https://historicaldata.net/samples.html"
+SEC_MERGER_URL = ("https://www.sec.gov/Archives/edgar/data/1418091/"
+                  "000119312522272772/d411753d8k.htm")
 FILES = {
     "TSLA": "TSLA_day.csv",
     "KO": "KO_day.csv",
@@ -88,7 +92,79 @@ def _read_daily(archive: ZipFile, symbol: str) -> tuple[list[dict], str]:
     return rows, sha256(raw).hexdigest()
 
 
-def audit_zip(path: Path) -> dict:
+
+class _FilingText(HTMLParser):
+    """Extract visible text from an original SEC HTML filing, without scripts."""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts = []
+        self.ignored = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("script", "style"):
+            self.ignored += 1
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style") and self.ignored:
+            self.ignored -= 1
+
+    def handle_data(self, data):
+        if not self.ignored:
+            self.parts.append(data)
+
+
+def audit_twtr_sec_merger(original: bytes) -> dict:
+    """Verify issuer, class, effective merger and cash right in original 8-K.
+
+    This is a CONTRACTUAL conversion right, not evidence of broker cash
+    settlement, investor-specific tax, appraisal rights or tradable profit.
+    """
+    if not 1_000 <= len(original) <= 4_000_000:
+        raise DelistedSampleStop("SEC merger source missing or oversized")
+    try:
+        parser = _FilingText()
+        parser.feed(original.decode("utf-8-sig"))
+        text = re.sub(r"\\s+", " ", " ".join(parser.parts)).strip()
+    except (UnicodeError, ValueError) as exc:
+        raise DelistedSampleStop("SEC merger source not valid HTML text") from exc
+    if not re.search(r"TWITTER,? INC\\.", text, re.IGNORECASE):
+        raise DelistedSampleStop("SEC merger issuer identity absent")
+    if not re.search(
+        r"Common Stock.{0,130}TWTR.{0,100}New York Stock Exchange",
+        text, re.IGNORECASE,
+    ):
+        raise DelistedSampleStop("SEC merger share-class / ticker identity absent")
+    if not re.search(
+        r"On October 27, 2022.{0,150}Merger Agreement.{0,100}"
+        r"Merger was consummated",
+        text, re.IGNORECASE,
+    ):
+        raise DelistedSampleStop("SEC merger completion not verified")
+    consideration = re.findall(
+        r"converted into the right to receive\\s*\\$([0-9]+\\.[0-9]{2})"
+        r"\\s+in cash, without interest",
+        text, re.IGNORECASE,
+    )
+    if not consideration or set(consideration) != {"54.20"}:
+        raise DelistedSampleStop("SEC merger cash consideration missing or contradictory")
+    if not re.search(
+        r"trading of Twitter.{0,50}common stock.{0,100}"
+        r"suspended prior to the opening.{0,80}October 28, 2022",
+        text, re.IGNORECASE,
+    ):
+        raise DelistedSampleStop("SEC trading suspension not verified")
+    return {
+        "sec_original_filing_url": SEC_MERGER_URL,
+        "sec_original_filing_sha256": sha256(original).hexdigest(),
+        "twtr_sec_verified_contractual_cash_consideration_usd": 54.20,
+        "twtr_sec_merger_effective_date": "2022-10-27",
+        "twtr_sec_nyse_trading_suspended_before_open": "2022-10-28",
+        "sec_contractual_right_not_proof_of_actual_cash_settlement": True,
+        "sec_later_filing_not_a_signal_at_2022_10_27_close": True,
+    }
+
+
+def audit_zip(path: Path, *, sec_merger_filing: Path | None = None) -> dict:
     """Bounded source-specific audit, NOT an investable delisting backtest."""
     if not isinstance(path, Path) or not path.is_file():
         raise DelistedSampleStop("Original sample ZIP is missing")
@@ -133,7 +209,13 @@ def audit_zip(path: Path) -> dict:
             for d in dates
         ):
             raise DelistedSampleStop("KO documented cash distribution mismatch")
+    sec_evidence = {}
+    if sec_merger_filing is not None:
+        if not sec_merger_filing.is_file():
+            raise DelistedSampleStop("Original SEC merger filing is missing")
+        sec_evidence = audit_twtr_sec_merger(sec_merger_filing.read_bytes())
     return {
+        **sec_evidence,
         "schema": SCHEMA,
         "status": "FOUR_LISTING_SOURCE_SAMPLE_VALIDATED_NO_ALPHA",
         "source_credit": SOURCE_CREDIT,
@@ -171,14 +253,17 @@ def audit_zip(path: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-zip", type=Path, required=True)
+    parser.add_argument("--sec-merger-filing", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    result = audit_zip(args.source_zip)
+    result = audit_zip(args.source_zip, sec_merger_filing=args.sec_merger_filing)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, sort_keys=True, indent=2) + "\n")
     print("Original source SHA256", result["original_zip_sha256"])
     print("Listing rows", {r["symbol"]: r["daily_rows"] for r in result["listings"]})
-    print("TWTR terminal proceeds UNKNOWN; no historical alpha or broker order.")
+    print("TWTR actual settlement UNKNOWN; SEC contractual cash right:",
+          result.get("twtr_sec_verified_contractual_cash_consideration_usd"))
+    print("No historical alpha or broker order.")
 
 
 if __name__ == "__main__":
