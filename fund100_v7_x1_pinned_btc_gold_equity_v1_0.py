@@ -282,6 +282,50 @@ def path_report(path:pd.Series,start:str,end:str)->dict:
         "max_drawdown_pct":round(100*float(d.min()),6),
         "annualized_volatility_pct":round(float(100*pct.std(ddof=1)*np.sqrt(252)),6)}
 
+def paired_same_sleeve_active_risk(strategy:pd.Series, benchmark:pd.Series,
+                                   start:str,end:str)->dict:
+    """Paired net-of-cost risk of sectors against identical-sleeve SPY.
+
+    This is a retrospective *active risk* diagnostic, not an investable
+    volatility-matched portfolio, factor-adjusted alpha or confidence test.
+    Both paths target the same BTC/GLD/cash sleeve; their paired returns
+    still include compounding and rebalancing interactions and cannot be
+    interpreted as the return of a tradable pure sector factor.
+    """
+    expected=xcals.get_calendar("XNYS").sessions_in_range(
+        pd.Timestamp(start),pd.Timestamp(end)).tz_localize(None)
+    if (not isinstance(strategy,pd.Series) or not isinstance(benchmark,pd.Series)
+        or len(expected)<80 or not strategy.index.equals(benchmark.index)
+        or not strategy.loc[start:end].index.equals(expected)
+        or not benchmark.loc[start:end].index.equals(expected)):
+        raise AllocationStop("Active risk requires identical complete fixed XNYS sessions")
+    a=strategy.loc[start:end].to_numpy(dtype=float)
+    b=benchmark.loc[start:end].to_numpy(dtype=float)
+    if (not np.isfinite(a).all() or not np.isfinite(b).all()
+        or (a<=0).any() or (b<=0).any()):
+        raise AllocationStop("Active risk requires finite positive net wealth paths")
+    relative_log=np.log(a)-np.log(b)
+    active_daily=np.diff(relative_log)
+    annual_active=100.*252.*float(active_daily.mean())
+    tracking=100.*math.sqrt(252.)*float(active_daily.std(ddof=1))
+    relative=np.exp(relative_log-relative_log[0])
+    worst_relative=100.*float(np.min(relative/np.maximum.accumulate(relative)-1.))
+    daily_a=a[1:]/a[:-1]-1.
+    daily_b=b[1:]/b[:-1]-1.
+    benchmark_variance=float(np.var(daily_b,ddof=1))
+    beta=(None if benchmark_variance<=1e-16 else
+          round(float(np.cov(daily_a,daily_b,ddof=1)[0,1]/benchmark_variance),6))
+    return {
+        "paired_sessions":len(a),
+        "annualized_active_log_return_pct":round(annual_active,6),
+        "annualized_tracking_error_pct":round(tracking,6),
+        "active_information_ratio":(
+            None if tracking<=1e-10 else round(annual_active/tracking,6)),
+        "worst_relative_wealth_drawdown_pct":round(worst_relative,6),
+        "ex_post_net_return_beta_to_same_sleeve_SPY":beta,
+        "descriptive_not_factor_adjusted_or_predictive_alpha":True}
+
+
 def year_log_contribution(navs:dict[str,pd.Series])->dict:
     base=navs["CASH_CONTROL_75"]
     result={}
@@ -340,6 +384,9 @@ def inspect(crypto:pd.DataFrame,etf:pd.DataFrame,rate:pd.DataFrame)->dict:
                     group[name]["minus_same_sleeve_SPY_volatility_pp"]=round(
                         group[name]["annualized_volatility_pct"]-
                         sleeve_ref[name]["annualized_volatility_pct"],6)
+                    group[name]["paired_same_sleeve_SPY_active_risk"]=(
+                        paired_same_sleeve_active_risk(
+                            navs[name],matched_spy[name],start,end))
                     group[name]["minus_cash_control_net_cagr_pp"]=round(
                         group[name]["net_cagr_pct"]-base["net_cagr_pct"],6)
                     group[name]["minus_cash_control_drawdown_pp"]=round(
@@ -375,6 +422,7 @@ def inspect(crypto:pd.DataFrame,etf:pd.DataFrame,rate:pd.DataFrame)->dict:
         "SPY_comparison_is_not_sector_or_factor_risk_matched_alpha":True,
         "same_sleeve_SPY_reference_preserves_BTC_GLD_cash_weights":True,
         "same_sleeve_sector_effect_is_retrospective_not_predictive_alpha":True,
+        "paired_active_risk_is_ex_post_not_factor_adjusted_alpha":True,
         "fixed_candidate_basket_weights":{
             k:dict(zip((*SLEEVE_ASSETS,"CASH"),v))
             for k,v in CANDIDATES.items()},
@@ -424,6 +472,13 @@ def main():
     print("BTC_5_GOLD_5 versus same BTC/gold/cash with SPY instead of sector ETFs:",
           "net CAGR pp",selected["minus_same_sleeve_SPY_net_cagr_pp"],
           "drawdown pp",selected["minus_same_sleeve_SPY_drawdown_pp"])
+    active=selected["paired_same_sleeve_SPY_active_risk"]
+    print("BTC_5_GOLD_5 same-sleeve SPY active-risk diagnostic:",
+          "annualized log active pct",active["annualized_active_log_return_pct"],
+          "tracking error pct",active["annualized_tracking_error_pct"],
+          "information ratio",active["active_information_ratio"],
+          "relative max drawdown pct",active["worst_relative_wealth_drawdown_pct"],
+          "ex-post matched-sleeve beta",active["ex_post_net_return_beta_to_same_sleeve_SPY"])
     print("Research only: no BTC trading eligibility or future alpha certified.")
 
 if __name__=="__main__":

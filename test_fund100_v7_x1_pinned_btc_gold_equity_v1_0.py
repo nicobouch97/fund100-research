@@ -230,6 +230,7 @@ def test_report_separates_sector_selection_from_same_sleeve_asset_allocation():
     result=x1.inspect(btc,etf,rate)
     assert result["same_sleeve_SPY_reference_preserves_BTC_GLD_cash_weights"]
     assert result["same_sleeve_sector_effect_is_retrospective_not_predictive_alpha"]
+    assert result["paired_active_risk_is_ex_post_not_factor_adjusted_alpha"]
     for cost,scenarios in result["results"].items():
         for scenario,study in scenarios.items():
             matched=study["same_BTC_GLD_cash_sleeve_SPY_references"]
@@ -245,5 +246,55 @@ def test_report_separates_sector_selection_from_same_sleeve_asset_allocation():
                         assert metrics["minus_same_sleeve_SPY_"+metric]==pytest.approx(
                             metrics[base]-ref[base],abs=.000001)
                     assert abs(metrics["minus_same_sleeve_SPY_net_cagr_pp"])<1e-5
+                    active=metrics["paired_same_sleeve_SPY_active_risk"]
+                    assert active["paired_sessions"]==metrics["sessions"]
+                    assert active["annualized_tracking_error_pct"]>=0
+                    assert active["descriptive_not_factor_adjusted_or_predictive_alpha"]
     assert result["broker_gets"]==result["broker_posts"]==result["broker_orders"]==0
     assert not result["trading_authorized"]
+
+
+def test_paired_same_sleeve_active_risk_parity_and_adverse_sector_selection():
+    btc,etf,rate=fixture(btc_daily=.001,gold_daily=.0003,equity_daily=.0002)
+    prices,yields=x1.market_view(btc,etf,rate)
+    cash=yields["IRX_GROSS"]
+    original=x1.simulate(prices,cash,x1.CANDIDATES["BTC_5_GOLD_5"],35)["path"]
+    same=x1.same_sleeve_passive_spy_references(
+        etf,prices,cash,35)["BTC_5_GOLD_5"]
+    parity=x1.paired_same_sleeve_active_risk(original,same,"2020-01-02","2022-12-30")
+    assert parity["paired_sessions"]>700
+    assert parity["annualized_active_log_return_pct"]==pytest.approx(0.,abs=1e-9)
+    assert parity["annualized_tracking_error_pct"]==pytest.approx(0.,abs=1e-9)
+    assert parity["active_information_ratio"] is None
+    assert parity["worst_relative_wealth_drawdown_pct"]==pytest.approx(0.,abs=1e-9)
+    assert parity["descriptive_not_factor_adjusted_or_predictive_alpha"]
+
+    faster=etf.copy()
+    faster["SPY"]*=np.exp(.00025*np.arange(len(faster)))
+    better_spy=x1.same_sleeve_passive_spy_references(
+        faster,prices,cash,35)["BTC_5_GOLD_5"]
+    adverse=x1.paired_same_sleeve_active_risk(
+        original,better_spy,"2020-01-02","2022-12-30")
+    assert adverse["annualized_active_log_return_pct"]<0
+    assert adverse["worst_relative_wealth_drawdown_pct"]<0
+    assert adverse["annualized_tracking_error_pct"]>0
+    assert adverse["active_information_ratio"]<0
+    assert adverse["ex_post_net_return_beta_to_same_sleeve_SPY"] is not None
+
+
+def test_paired_active_risk_rejects_missing_sessions_and_invalid_wealth():
+    btc,etf,rate=fixture()
+    prices,yields=x1.market_view(btc,etf,rate)
+    cash=yields["ZERO"]
+    path=x1.simulate(prices,cash,x1.CANDIDATES["CASH_CONTROL_75"],35)["path"]
+    with pytest.raises(x1.AllocationStop,match="identical complete"):
+        x1.paired_same_sleeve_active_risk(
+            path,path.drop(pd.Timestamp("2020-03-16")),"2020-01-02","2022-12-30")
+    invalid=path.copy()
+    invalid.loc["2020-03-16"]=0.
+    with pytest.raises(x1.AllocationStop,match="finite positive"):
+        x1.paired_same_sleeve_active_risk(
+            invalid,path,"2020-01-02","2022-12-30")
+    with pytest.raises(x1.AllocationStop,match="identical complete"):
+        x1.paired_same_sleeve_active_risk(
+            path,path,"2020-01-02","2020-01-03")
