@@ -153,3 +153,32 @@ def test_two_conflicting_fund_asof_headers_never_permit_discretionary_vintage_ch
         b'Fund Holdings as of,"Oct 23, 2026"\nHoldings as of,"Oct 24, 2026"')
     with pytest.raises(u.UniverseStop,match="Ambiguous"):
         evaluate(hold=forged,sec=sec)
+
+
+def test_current_ishares_issuer_ticker_header_is_accepted_without_relabeling():
+    raw,sec=fixtures()
+    current=raw.replace(
+        b"Ticker,Name,Sector,Asset Class,Weight (%),Market Value",
+        b"Issuer Ticker,Name,Sector,Asset Class,Weight (%),Market Value")
+    assert current!=raw
+    result=evaluate(hold=current,sec=sec)
+    assert result["prospectively_frozen_100_unique_cik_roster"][0]["ticker"]=="S000"
+    assert result["original_provider_csv_sha256"]!=evaluate()["original_provider_csv_sha256"]
+
+
+def test_ambiguous_ishares_ticker_aliases_are_rejected():
+    raw,sec=fixtures()
+    ambiguous=raw.replace(
+        b"Ticker,Name,Sector,Asset Class,Weight (%),Market Value",
+        b"Ticker,Issuer Ticker,Name,Sector,Asset Class,Weight (%),Market Value")
+    with pytest.raises(u.UniverseStop,match="Ambiguous original holdings columns"):
+        evaluate(hold=ambiguous,sec=sec)
+
+
+def test_duplicate_issuer_ticker_columns_are_rejected():
+    raw,sec=fixtures()
+    duplicated=raw.replace(
+        b"Ticker,Name,Sector,Asset Class,Weight (%),Market Value",
+        b"Issuer Ticker,Issuer Ticker,Name,Sector,Asset Class,Weight (%),Market Value")
+    with pytest.raises(u.UniverseStop,match="Ambiguous original holdings columns"):
+        evaluate(hold=duplicated,sec=sec)
