@@ -247,3 +247,47 @@ def test_feasible_non_maximal_split_uses_actual_valid_ticket_fee():
     assert result["model_net_cash_reserve_after_all_rebalances_usd"]=="974.90"
     assert not any(w["reason"]=="MODELED_TICKET_SPLIT_VIOLATES_MINIMUM"
                    for w in result["too_small_or_infeasible_target_warnings"])
+
+
+def test_daily_volume_cap_limits_individual_tickets_and_rounding_costs():
+    spec=x5.sample_spec()
+    spec["XLK"]["assumed_average_daily_volume_usd"]="2100"  # 0.5% = $10.50/day
+    result=plan("1000.00",spec=spec,positions={},cash="1000.00",
+                target={"XLK":"0.02101"})
+    order=result["estimated_trade_side_details"]["XLK_BUY"]
+    assert order["hypothetical_notional_usd"]=="21.01"
+    assert order["modeled_effective_max_ticket_after_daily_liquidity_usd"]=="10.50"
+    assert order["modelled_ticket_count"]==3
+    assert order["modelled_minimum_distinct_execution_days"]>=3
+    # Three valid tickets ($10.50, $9.51, $1.00) incur 5c of
+    # per-ticket rounded fees, versus 4c if incorrectly counted as one.
+    assert order["modeled_fee_per_ticket_rounded_up_usd"]=="0.05"
+    assert result["aggregate_modelled_ticket_count"]==3
+    assert result["modeled_all_sides_fees_usd"]=="0.05"
+    assert result["ticket_fees_include_per_asset_daily_participation_limit"]
+    assert result["modeled_days_are_lower_bound_not_feasible_joint_schedule"]
+    assert not result["trading_authorized"]
+
+
+def test_daily_liquidity_forces_infeasible_minimum_ticket_partition_to_abstain():
+    spec=x5.sample_spec()
+    spec["XLK"]["minimum_notional_usd"]="10"
+    spec["XLK"]["assumed_average_daily_volume_usd"]="2000"  # $10/day
+    result=plan("1000.00",spec=spec,positions={},cash="1000.00",
+                target={"XLK":"0.015","XLE":"0.20"})
+    warnings={x["reason"] for x in result["too_small_or_infeasible_target_warnings"]}
+    assert "MODELED_TICKET_SPLIT_VIOLATES_MINIMUM" in warnings
+    assert "UNEXECUTABLE_MIN_TICKET_SPLIT_MAKES_TARGET_APPROXIMATE" in warnings
+    assert "XLK_BUY" not in result["estimated_trade_side_details"]
+    assert result["modeled_all_sides_fees_usd"]=="0.30"
+    assert result["model_net_cash_reserve_after_all_rebalances_usd"]=="799.70"
+    assert not result["live_authorized"]
+
+
+def test_daily_participation_below_minimum_ticket_fails_closed():
+    spec=x5.sample_spec()
+    spec["XLK"]["minimum_notional_usd"]="10"
+    spec["XLK"]["assumed_average_daily_volume_usd"]="1999"  # $9.995/day
+    with pytest.raises(x5.CapacityStop,match="daily liquidity below minimum ticket"):
+        plan("1000.00",spec=spec,positions={},cash="1000.00",
+             target={"XLK":"0.20"})
