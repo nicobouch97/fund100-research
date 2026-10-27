@@ -10,6 +10,9 @@ on:
       - "fund100_alpaca_live_*.py"
       - "fund100_alpaca_paper_*.py"
       - "fund100_broker_safety.py"
+      # Shared market-data changes affect frozen forward research and deserve the full audit.
+      - "fund100.py"
+      - "test_fund100.py"
       - "test_fund100_alpaca_live_*.py"
       - "test_fund100_alpaca_paper_*.py"
       - "test_fund100_live_*.py"
@@ -161,6 +164,9 @@ on:
       - "fund100_alpaca_live_*.py"
       - "fund100_alpaca_paper_*.py"
       - "fund100_broker_safety.py"
+      # Shared market-data changes affect frozen forward research and deserve the full audit.
+      - "fund100.py"
+      - "test_fund100.py"
       - "test_fund100_alpaca_live_*.py"
       - "test_fund100_alpaca_paper_*.py"
       - "test_fund100_live_*.py"
