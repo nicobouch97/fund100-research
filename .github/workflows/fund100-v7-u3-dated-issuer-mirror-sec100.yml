@@ -1,0 +1,92 @@
+name: Fund-100 V7 U3 Dated IVV Mirror and SEC 100 Issuers (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_u3_dated_issuer_mirror_sec100_v1_0.py'
+      - 'test_fund100_v7_u3_dated_issuer_mirror_sec100_v1_0.py'
+      - 'research_lab/V7_U3_DATED_THIRD_PARTY_IVV_SEC100_2026_10_27.md'
+      - '.github/workflows/fund100-v7-u3-dated-issuer-mirror-sec100.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_u3_dated_issuer_mirror_sec100_v1_0.py'
+      - 'test_fund100_v7_u3_dated_issuer_mirror_sec100_v1_0.py'
+      - '.github/workflows/fund100-v7-u3-dated-issuer-mirror-sec100.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v7-u3-first-sec100-issuer-attributed-watch-universe
+  cancel-in-progress: false
+
+jobs:
+  strict-brokerless-two-source-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test dated third-party provenance, real SEC identities and no trading
+        run: |
+          set -euo pipefail
+          python -m pip install pytest
+          python -m pytest -q test_fund100_v7_u3_dated_issuer_mirror_sec100_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import fund100_v7_u3_dated_issuer_mirror_sec100_v1_0 as m
+          assert not m.LIVE_ENABLED
+          assert m.BROKER_GETS==m.BROKER_POSTS==m.BROKER_ORDERS==0
+          assert m.TARGET_ISSUERS==100
+          assert m.MIRROR_URL.startswith('https://tickerinside.com/')
+          PY
+
+  first-main-dated-mirror-and-original-sec-capture:
+    needs: strict-brokerless-two-source-test
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+      SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Capture FIRST dated CC BY IVV mirror and original SEC ticker file
+        run: |
+          set -euo pipefail
+          test -n "$SEC_USER_AGENT" || { echo "SEC requester missing"; exit 1; }
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python fund100_v7_u3_dated_issuer_mirror_sec100_v1_0.py \
+            --output-dir /tmp/fund100-u3-original-2026-sec100
+          python - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          import fund100_v7_u3_dated_issuer_mirror_sec100_v1_0 as m
+          d=Path('/tmp/fund100-u3-original-2026-sec100')
+          r=json.loads((d/'U3-first-100-issuer-research-roster.json').read_text())
+          assert r['schema']==m.SCHEMA
+          assert r['source_is_direct_official_ishares_file'] is False
+          assert r['mirror_attribution_license']=='CC BY 4.0'
+          assert len(r['first_100_distinct_SEC_CIK_mapped_issuer_roster'])==100
+          assert len({x['sec_cik_10_digit'] for x in r['first_100_distinct_SEC_CIK_mapped_issuer_roster']})==100
+          assert r['broker_gets']==r['broker_posts']==r['broker_orders']==0
+          assert not r['trading_authorized'] and not r['live_authorized']
+          assert r['no_predictive_alpha_evidence']
+          assert hashlib.sha256((d/'first-vintage-third-party-IVV-snapshot.json').read_bytes()).hexdigest()==r['exact_mirror_original_json_sha256']
+          assert hashlib.sha256((d/'first-vintage-official-SEC-ticker-map.json').read_bytes()).hexdigest()==r['exact_SEC_original_ticker_bytes_sha256']
+          PY
+      - name: Archive dated third-party and official SEC source bytes for replay
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-u3-first-dated-mirror-sec100-${{ github.run_id }}
+          path: /tmp/fund100-u3-original-2026-sec100/
+          retention-days: 90
+          if-no-files-found: error
