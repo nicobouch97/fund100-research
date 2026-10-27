@@ -65,6 +65,48 @@ def _source_day(raw):
     except ValueError:
         raise UniverseStop("Unexpected original IVV holdings date") from None
 
+def original_layout_diagnostic(raw:bytes):
+    """Return ONLY PUBLIC, bounded original provider CSV structure.
+
+    Observe the actual issuer file on a credentialless PR without
+    redistributing the source vendor's security position data.
+    Date metadata is represented by format only (never guessed),
+    columns are displayed only when they resemble known header tokens.
+    """
+    original=_text(raw,MAX_RAW_HOLDINGS_BYTES,"holdings layout")
+    try:
+        lines=list(reader(StringIO(original)))
+    except Exception as e:
+        raise UniverseStop("Cannot inspect holdings CSV rows") from e
+    tags=("ticker","issuer ticker","name","sector","asset class",
+          "weight (%)","fund holdings as of","holdings as of","as of",
+          "fund name","fund","ticker symbol")
+    observations=[]
+    for i,row in enumerate(lines[:90]):
+        clean=[str(x).strip().lstrip("\ufeff") for x in row]
+        tokens=[x for x in clean if x.lower() in tags]
+        has_asof=any("holdings" in x.lower() and ("as of" in x.lower()
+                        or "date" in x.lower()) for x in clean)
+        # No issuer names, prices, weights, portfolio holdings or
+        # raw bytes emitted. For troublesome date layouts show only
+        # field count and first cell's length, not full source strings.
+        if tokens or has_asof or i<5:
+            observations.append({
+                "zero_based_csv_row":i,
+                "field_count":len(clean),
+                "matching_public_column_labels":tokens[:18],
+                "row_has_holdings_asof_label":has_asof,
+                "first_field_character_count":len(clean[0]) if clean else 0,
+                "second_field_character_count":len(clean[1]) if len(clean)>1 else 0,
+            })
+    return {"schema":"FUND100_U2_PUBLIC_ORIGINAL_IVV_COLUMN_LAYOUT_ONLY",
+            "original_content_sha256":sha256(raw).hexdigest(),
+            "original_csv_row_count":len(lines),
+            "original_byte_count":len(raw),
+            "candidate_metadata_and_header_rows":observations,
+            "source_constituent_data_redistributed":False,
+            "broker_gets":0,"broker_posts":0,"broker_orders":0}
+
 def _holdings(raw:bytes):
     original=_text(raw,MAX_RAW_HOLDINGS_BYTES,"fund holdings")
     try:
@@ -251,8 +293,17 @@ def acquire_original(*,contact_agent:str)->tuple[dict,bytes,bytes]:
 def main():
     import argparse,os
     parser=argparse.ArgumentParser()
-    parser.add_argument("--output-dir",type=Path,required=True)
+    parser.add_argument("--output-dir",type=Path)
+    parser.add_argument("--inspect-provider-layout",action="store_true")
     args=parser.parse_args()
+    if args.inspect_provider_layout:
+        raw=_fetch(ORIGINAL_IVV_HOLDINGS_URL,
+                   "Fund100 institutional prospective ETF source schema audit",MAX_RAW_HOLDINGS_BYTES)
+        print(json.dumps(original_layout_diagnostic(raw),
+                         indent=2,sort_keys=True))
+        return
+    if args.output_dir is None:
+        raise UniverseStop("Original roster directory must be explicit")
     if args.output_dir.exists() and list(args.output_dir.iterdir()):
         raise UniverseStop("Never overwrite original prospective roster artifact")
     report,raw_ivv,raw_sec=acquire_original(
