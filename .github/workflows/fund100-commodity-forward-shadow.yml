@@ -19,6 +19,8 @@ concurrency:
 
 jobs:
   observe:
+    # Manual dispatch can target non-main refs; never publish those outputs to main.
+    if: github.ref == 'refs/heads/main'
     name: Observe new completed commodity session without trading
     runs-on: ubuntu-latest
     timeout-minutes: 25

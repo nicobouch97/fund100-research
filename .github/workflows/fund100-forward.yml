@@ -16,6 +16,8 @@ concurrency:
 
 jobs:
   forward-lab:
+    # Manual dispatch can target non-main refs; never publish those outputs to main.
+    if: github.ref == 'refs/heads/main'
     name: Run Fund-100 Forward Lab
     runs-on: ubuntu-latest
     timeout-minutes: 30

@@ -23,6 +23,8 @@ concurrency:
 
 jobs:
   v5-shadow:
+    # Manual dispatch can target non-main refs; never publish those outputs to main.
+    if: github.ref == 'refs/heads/main'
     name: Run V5-002 Shadow Forward
 
     runs-on: ubuntu-latest
