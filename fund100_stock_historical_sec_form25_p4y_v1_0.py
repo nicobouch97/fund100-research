@@ -157,7 +157,7 @@ def _sgml_header_ciks(raw: bytes) -> set[int]:
                           head, re.IGNORECASE | re.DOTALL)
     if len(sections) != 1:
         return set()
-    values = re.findall(r"(?im)^\\s*CENTRAL INDEX KEY:\\s*([0-9]{1,10})\\s*$",
+    values = re.findall(r"(?im)^\s*CENTRAL INDEX KEY:\s*([0-9]{1,10})\s*$",
                         sections[0])
     return {int(value) for value in values if int(value) > 0}
 
