@@ -170,3 +170,20 @@ def test_sec_cash_right_requires_complete_original_filing(tmp_path):
         p4z.audit_zip(_zip(tmp_path), sec_merger_filing=tmp_path / "absent.htm")
     with pytest.raises(p4z.DelistedSampleStop, match="missing or oversized"):
         p4z.audit_twtr_sec_merger(b"<html>no filing</html>")
+
+
+def test_sec_conflicting_cash_right_and_script_spoof_fail_closed():
+    html = _sec_html()
+    contradiction = html.replace(
+        b"</body>",
+        b"<p>Other shares converted into the right to receive "
+        b"$51.20 in cash, without interest.</p></body>",
+    )
+    with pytest.raises(p4z.DelistedSampleStop, match="contradictory"):
+        p4z.audit_twtr_sec_merger(contradiction)
+    spoof = html.replace(
+        b"<h1>TWITTER, INC.</h1>",
+        b"<script>TWITTER, INC.</script>",
+    )
+    with pytest.raises(p4z.DelistedSampleStop, match="issuer"):
+        p4z.audit_twtr_sec_merger(spoof)
