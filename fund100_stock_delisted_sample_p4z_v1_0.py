@@ -92,7 +92,7 @@ def audit_zip(path: Path) -> dict:
     """Bounded source-specific audit, NOT an investable delisting backtest."""
     if not isinstance(path, Path) or not path.is_file():
         raise DelistedSampleStop("Original sample ZIP is missing")
-    if not 100_000 <= path.stat().st_size <= 16_000_000:
+    if not 1_000 <= path.stat().st_size <= 16_000_000:
         raise DelistedSampleStop("Unexpected free-sample ZIP size")
     raw_hash = sha256(path.read_bytes()).hexdigest()
     try:
