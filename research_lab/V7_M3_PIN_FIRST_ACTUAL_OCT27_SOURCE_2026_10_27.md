@@ -16,6 +16,12 @@ A later M1 source with at least **one full completed future NYSE interval** must
 
 If any originally accepted 27 Oct source price changes in the later vendor history, **HOLD_SOURCE_REVISION**, never silently use the adjusted 2026 future price to improve the prospective score. It may require a separately and explicitly specified corporate action entitlement correction; don't invent such fixes on original historical data. Only when all entry quotes match can later source-captured M1 model-vintage return comparisons be archived with an audit record.
 
+## Pre-entry source-to-return consistency hardening (27 October, before entry close)
+
+The first-vintage price equality check alone cannot detect a *later* report whose after-cost performance numbers were calculated from a different CSV, or whose completed-session count and saved clock proof were altered. The existing M3 verifier therefore independently replays the actual NYSE close-plus-90-minute timestamp, confirms the original 21-session calendar and final-horizon status, and recalculates the primary stock-versus-SPY and same-sector control terminal values at all three frozen 5/15/35bps per-side cost levels from the attached vendor price series. Missing, stale or inconsistent figures fail closed. A genuinely new future exit price remains admissible only when the accompanying report recomputes consistently; the original entry vintage cannot change.
+
+This does not establish actual fills, independent price provenance, a licensed point-in-time universe, or predictive alpha. It is a report/price coherence check, not a new strategy, risk limit, trading release or revised selection.
+
 Artifact retention is 90 days, sufficient for this fixed 21-NYSE-session study; expiry or unavailable historical source must cause HOLD rather than a new, discretionarily reset anchor. Source-vintage continuity does NOT prove actual investor total return, exchange print availability, executable fills, prediction skill, a delisting-free historical universe or any trade permission.
 
 ## Explicitly no LIVE work

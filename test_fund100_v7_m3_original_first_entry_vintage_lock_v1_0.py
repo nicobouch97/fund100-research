@@ -91,11 +91,50 @@ def test_entry_gap_or_future_lookahead_and_phantom_trades_fail():
     with pytest.raises(m3.EntryAnchorStop):
         check(a=a,p=p,b=b,q=missing)
 
-def test_unrelated_later_trading_days_can_change_without_reselecting_entry():
+def test_future_vendor_prices_require_matching_economic_report_not_stale_pnl():
     a,p,b,q=samples()
     later=q.copy()
-    later.loc["2026-10-28","AAPL"]*=1.01
-    outcome=check(a=a,p=p,b=b,q=later)
+    selected=b["original_pretrade_selection"][0]
+    later.loc["2026-10-28",selected]*=1.01
+    with pytest.raises(m3.EntryAnchorStop,match="after-cost return"):
+        check(a=a,p=p,b=b,q=later)
+    original,first,_,ts=fixtures("2026-10-28",capture="2026-10-28T23:45:00Z")
+    recomputed=m1.evaluate(original_manifest=original,original_prices=first,
+                           later_prices=later,captured_utc=ts)
+    outcome=check(a=a,p=p,b=recomputed,q=later)
     assert outcome["status"]=="PINNED_2026_10_27_FIRST_ENTRY_SOURCE_STABLE_RESEARCH_ONLY"
+    assert outcome["independently_recomputed_primary_and_sector_costed_returns"]
+    assert outcome["verified_original_exchange_close_receipts"]
     assert outcome["actual_anchor_price_vintage_sha256"]==check(
         a=a,p=p,b=b,q=q)["actual_anchor_price_vintage_sha256"]
+
+def test_saved_return_report_cannot_invent_excess_or_sector_performance():
+    a,p,b,q=samples()
+    for cost in ("5","15","35"):
+        bad=deepcopy(b)
+        bad["costed_95pct_stocks_versus_95pct_spy"][cost][
+            "stock_minus_spy_net_percentage_points"]+=1.0
+        with pytest.raises(m3.EntryAnchorStop,match="after-cost return"):
+            check(a=a,p=p,b=bad,q=q)
+    bad=deepcopy(b)
+    bad["costed_95pct_stocks_versus_95pct_spy"]["15"][
+        "secondary_same_sector_original_cohort"][
+        "selected_minus_same_sector_net_percentage_points"]+=1.0
+    with pytest.raises(m3.EntryAnchorStop,match="after-cost return"):
+        check(a=a,p=p,b=bad,q=q)
+
+def test_saved_nyse_receipt_and_horizon_cannot_claim_phantom_session():
+    a,p,b,q=samples()
+    bad=deepcopy(b)
+    bad["observed_holding_intervals"]=2
+    with pytest.raises(m3.EntryAnchorStop,match="return horizon"):
+        check(a=a,p=p,b=bad,q=q)
+    bad=deepcopy(b)
+    bad["later_price_observed_utc"]="2026-10-28T19:00:00Z"
+    with pytest.raises(m3.EntryAnchorStop,match="exchange-close receipt"):
+        check(a=a,p=p,b=bad,q=q)
+    bad=deepcopy(b)
+    bad["original_later_source_completed_nyse_close_evidence"][
+        "official_nyse_session_close_utc"]="2026-10-28T00:00:00Z"
+    with pytest.raises(m3.EntryAnchorStop,match="disagrees"):
+        check(a=a,p=p,b=bad,q=q)

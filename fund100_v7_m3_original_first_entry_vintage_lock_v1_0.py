@@ -52,6 +52,16 @@ def _proof(r:dict,required_stage:str):
         or source.get("captured_after_exchange_close_plus_buffer") is not True
         or source.get("post_close_source_buffer_minutes")!=90):
         raise EntryAnchorStop("Missing independent post-close source proof")
+    # A Boolean in a saved report is not evidence of a completed session.
+    # Independently replay the original NYSE clock from its source receipt.
+    try:
+        expected=m1._source_close_qualified(
+            last_session=r["completed_price_session"],
+            capture=m1._timestamp(r["later_price_observed_utc"]))
+    except (KeyError,TypeError,ValueError) as exc:
+        raise EntryAnchorStop("Unverifiable original exchange-close receipt") from exc
+    if source!=expected:
+        raise EntryAnchorStop("Saved exchange-close proof disagrees with its timestamp")
     return source
 
 def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
@@ -100,6 +110,64 @@ def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
         # relationships in a rejected audit without authenticated account
         # context. Caller keeps original pinned source and must HOLD.
         raise EntryAnchorStop("Previously observed entry close was vendor-revised")
+    # The archived report and CSV are a single economic observation.
+    # Recalculate its original 21-session chronology and all primary/sector
+    # after-cost returns from the actual supplied prices. A report from a
+    # different price vintage must never inherit a valid entry-price pin.
+    try:
+        sessions=m1._calendar("2026-10-26",later.index[-1].date().isoformat())
+        if not later.index[later.index>pd.Timestamp(m1.ORIGINAL_LAST_SESSION)].equals(sessions):
+            raise EntryAnchorStop("Missing or extra later NYSE price session")
+        horizon=m1._calendar(ORIGINAL_ENTRY_SESSION,"2026-12-15")
+        final=horizon[m1.HOLD_SESSIONS]
+        finished=later.index[-1]>=final
+        exit_day=final if finished else later.index[-1]
+        periods=len(m1._calendar(ORIGINAL_ENTRY_SESSION,exit_day))-1
+        expected_stage=("COMPLETED_FROZEN_21_SESSION_FORWARD_MARK_NOT_ALPHA"
+                        if finished else "INTERIM_FOR_INFORMATION_NOT_QUALIFICATION")
+        if (periods!=subsequent_report["observed_holding_intervals"]
+            or subsequent_report["status"]!=expected_stage
+            or subsequent_report.get("fixed_exit_close_session")!=final.date().isoformat()
+            or subsequent_report.get("final_result_completed") is not finished):
+            raise EntryAnchorStop("Reported return horizon does not match NYSE sessions")
+        selected=subsequent_report["original_pretrade_selection"]
+        if (type(selected) is not list or not selected
+            or len(set(selected))!=len(selected)
+            or any(t not in p4l.SECTORS for t in selected)):
+            raise EntryAnchorStop("Unverifiable selected issuer weights")
+        entry=later.loc[date]
+        exit_prices=later.loc[exit_day]
+        stock_growth=sum(float(exit_prices[t]/entry[t]) for t in selected)/len(selected)
+        spy_growth=float(exit_prices[p4l.BENCHMARK]/entry[p4l.BENCHMARK])
+        control=m1._frozen_sector_control(selected)
+        sector_growth=sum(w*float(exit_prices[t]/entry[t]) for t,w in control.items())
+        if subsequent_report.get("secondary_frozen_sector_control_weights")!={
+                t:round(w,12) for t,w in control.items()}:
+            raise EntryAnchorStop("Original sector weights changed after entry")
+        results=subsequent_report.get("costed_95pct_stocks_versus_95pct_spy")
+        if type(results) is not dict or set(results)!={str(b) for b in m1.COST_BPS}:
+            raise EntryAnchorStop("Missing predeclared transaction-cost scenarios")
+        for bps in m1.COST_BPS:
+            fee=bps/10000.
+            risky=(m1.INITIAL_NAV-m1.INITIAL_CASH)/(1+fee)
+            stock=round(m1.INITIAL_CASH+risky*stock_growth*(1-fee),8)
+            spy=round(m1.INITIAL_CASH+risky*spy_growth*(1-fee),8)
+            sector=round(m1.INITIAL_CASH+risky*sector_growth*(1-fee),8)
+            row=results[str(bps)]
+            control_row=row.get("secondary_same_sector_original_cohort",{})
+            if (row.get("theoretical_stock_terminal_after_exit_fee_usd")!=stock
+                or row.get("theoretical_spy_terminal_after_exit_fee_usd")!=spy
+                or row.get("stock_minus_spy_net_percentage_points")!=round(
+                    (m1.INITIAL_NAV-m1.INITIAL_CASH)/(1+fee)
+                    *(stock_growth-spy_growth)*(1-fee),8)
+                or control_row.get("sector_control_terminal_after_exit_fee_usd")!=sector
+                or control_row.get("selected_minus_same_sector_net_percentage_points")!=round(
+                    risky*(stock_growth-sector_growth)*(1-fee),8)):
+                raise EntryAnchorStop("Reported after-cost return disagrees with source prices")
+    except (KeyError,TypeError,IndexError,ValueError) as exc:
+        if isinstance(exc,EntryAnchorStop):
+            raise
+        raise EntryAnchorStop("Cannot independently reconcile source to returns") from exc
     first_sha=sha256(("".join(
         f"{k},{float(first[k]):.10f}\n" for k in sorted(first.index)
         )).encode("ascii")).hexdigest()
@@ -113,6 +181,8 @@ def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
         "entry_date_price_symbols_compared":len(first.index),
         "anchor_source_stage_before_any_exit":"ENTRY_CLOSE_OBSERVED_AWAITING_FIRST_FUTURE_MARK",
         "checked_later_complete_intervals":subsequent_report["observed_holding_intervals"],
+        "independently_recomputed_primary_and_sector_costed_returns":True,
+        "verified_original_exchange_close_receipts":True,
         "source_prices_are_vendor_adjusted_not_executable_fills":True,
         "no_alpha_established":True,
         "no_automatic_cashflow_or_corporate_action_repairs":True,
