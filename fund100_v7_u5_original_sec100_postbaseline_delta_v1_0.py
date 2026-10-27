@@ -118,6 +118,8 @@ def original_source_delta(*,original_u3_dir:Path,
             ]
             previous_manifest_sha=sha256(
                 (previous_successful_sec_dir/"manifest.json").read_bytes()).hexdigest()
+        except NewSourceStop:
+            raise
         except (u4.BaselineStop,KeyError,ValueError,TypeError,OSError,EOFError,
                 zlib.error,json.JSONDecodeError) as exc:
             raise NewSourceStop("Previous successful SEC archive failed original replay") from exc
