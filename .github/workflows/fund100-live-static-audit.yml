@@ -115,6 +115,9 @@ on:
       - "test_fund100_stock_sec_eps_yield_p4s_v1_0.py"
       - "fund100_v7_listed_factor_etf_returns_v1_0.py"
       - "test_fund100_v7_listed_factor_etf_returns_v1_0.py"
+      # Costed factor benchmark risk accounting must pass the full LIVE audit.
+      - "fund100_v7_f1_literature_factor_baseline_v1_0.py"
+      - "test_fund100_v7_f1_literature_factor_baseline_v1_0.py"
       - "fund100_v7_pinned_etf_monthly_switch_v1_0.py"
       - "test_fund100_v7_pinned_etf_monthly_switch_v1_0.py"
       - "fund100_stock_quality_momentum_p4g_v1_0.py"
@@ -267,6 +270,9 @@ on:
       - "test_fund100_stock_sec_eps_yield_p4s_v1_0.py"
       - "fund100_v7_listed_factor_etf_returns_v1_0.py"
       - "test_fund100_v7_listed_factor_etf_returns_v1_0.py"
+      # Costed factor benchmark risk accounting must pass the full LIVE audit.
+      - "fund100_v7_f1_literature_factor_baseline_v1_0.py"
+      - "test_fund100_v7_f1_literature_factor_baseline_v1_0.py"
       - "fund100_v7_pinned_etf_monthly_switch_v1_0.py"
       - "test_fund100_v7_pinned_etf_monthly_switch_v1_0.py"
       - "fund100_stock_quality_momentum_p4g_v1_0.py"
