@@ -99,9 +99,55 @@ def _original(original:dict, original_prices:pd.DataFrame)->list[str]:
         raise ForwardStop("Original frozen momentum selection unavailable")
     return names
 
+
+def _frozen_preentry_risk(original_prices:pd.DataFrame, selected:list[str])->dict:
+    """One pre-entry 126-return risk estimate; no later vendor prices.
+
+    Daily constant-weight returns are a risk proxy, NOT an investable
+    retrospective selection backtest. Both exposures are reduced (never
+    levered) to the lower observed pre-entry volatility.
+    """
+    sample=original_prices.loc[:ORIGINAL_LAST_SESSION]
+    if len(sample)<p4l.LOOKBACK+1:
+        raise ForwardStop("Insufficient pinned pre-entry risk observations")
+    daily=sample.loc[:,selected+[p4l.BENCHMARK]].iloc[
+        -p4l.LOOKBACK-1:].pct_change(fill_method=None).iloc[1:]
+    stock=daily[selected].mean(axis=1).to_numpy(dtype=float)
+    spy=daily[p4l.BENCHMARK].to_numpy(dtype=float)
+    if (len(stock)!=p4l.LOOKBACK or not np.isfinite(stock).all()
+        or not np.isfinite(spy).all()):
+        raise ForwardStop("Unqualified original pre-entry risk sample")
+    stock_vol=float(np.std(stock,ddof=1)*np.sqrt(252))
+    spy_vol=float(np.std(spy,ddof=1)*np.sqrt(252))
+    if stock_vol<=1e-8 or spy_vol<=1e-8:
+        return {
+            "status":"UNAVAILABLE_ZERO_PREENTRY_VOLATILITY",
+            "pinned_through":ORIGINAL_LAST_SESSION,
+            "lookback_completed_returns":p4l.LOOKBACK,
+            "stock_risky_fraction":None,"spy_risky_fraction":None,
+            "stock_preentry_volatility_pct":round(stock_vol*100,8),
+            "spy_preentry_volatility_pct":round(spy_vol*100,8),
+        }
+    stock_weight=.95*min(1.,spy_vol/stock_vol)
+    spy_weight=.95*min(1.,stock_vol/spy_vol)
+    return {
+        "status":"PREENTRY_RISK_MATCHED_NO_LEVERAGE_RESEARCH_ONLY",
+        "pinned_through":ORIGINAL_LAST_SESSION,
+        "lookback_completed_returns":p4l.LOOKBACK,
+        "stock_risky_fraction":round(stock_weight,12),
+        "spy_risky_fraction":round(spy_weight,12),
+        "stock_preentry_volatility_pct":round(stock_vol*100,8),
+        "spy_preentry_volatility_pct":round(spy_vol*100,8),
+        "stock_risky_weight_times_volatility":round(stock_weight*stock_vol,12),
+        "spy_risky_weight_times_volatility":round(spy_weight*spy_vol,12),
+        "cash_assumed_zero_return":True,
+        "risk_estimate_not_future_volatility_or_alpha":True,
+    }
+
 def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
              later_prices:pd.DataFrame,captured_utc:str):
     selected=_original(original_manifest,original_prices)
+    preentry_risk=_frozen_preentry_risk(original_prices,selected)
     capture=_timestamp(captured_utc)
     try:
         data=p4l.validate_prices(later_prices)
@@ -157,6 +203,27 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
                 "entry_purchase_cost_usd":round(95.-risky,8),
                 "final_risky_exit_is_modeled_only":True,
             }
+            # Secondary, PREDECLARED before the first entry: compare the
+            # identical frozen picks with SPY at matched 126-return
+            # original-source volatility. No leverage, hindsight or
+            # change to the primary 95%-gross experiment.
+            if preentry_risk["status"]=="PREENTRY_RISK_MATCHED_NO_LEVERAGE_RESEARCH_ONLY":
+                sw=preentry_risk["stock_risky_fraction"]
+                bw=preentry_risk["spy_risky_fraction"]
+                stock_risky=100.*sw/(1+fee)
+                spy_risky=100.*bw/(1+fee)
+                stock_risk_final=100.*(1-sw)+stock_risky*stock_growth*(1-fee)
+                spy_risk_final=100.*(1-bw)+spy_risky*spy_growth*(1-fee)
+                by_cost[str(bps)]["secondary_preentry_volatility_matched"]= {
+                    "stock_risky_fraction":sw,
+                    "spy_risky_fraction":bw,
+                    "stock_final_after_costs_usd":round(stock_risk_final,8),
+                    "spy_final_after_costs_usd":round(spy_risk_final,8),
+                    "stock_minus_spy_net_percentage_points":round(
+                        stock_risk_final-spy_risk_final,8),
+                    "preentry_only_no_future_risk_fit":True,
+                    "not_a_factor_neutral_or_live_qualified_test":True,
+                }
         stage=("COMPLETED_FROZEN_21_SESSION_FORWARD_MARK_NOT_ALPHA"
                if finished else "INTERIM_FOR_INFORMATION_NOT_QUALIFICATION")
         provisional=by_cost["15"]["stock_minus_spy_net_percentage_points"]
@@ -170,6 +237,7 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
         "original_source_observed_utc":original_manifest["source_acquired_at_utc"],
         "original_pretrade_selection":selected,
         "original_selection_size":len(selected),
+        "secondary_frozen_preentry_volatility_match":preentry_risk,
         "frozen_entry_close_session":ENTRY_SESSION,
         "fixed_exit_close_session":final.date().isoformat(),
         "completed_price_session":last,
