@@ -1,0 +1,134 @@
+name: Fund-100 V7 U5 Original SEC 100-Issuer Postbaseline Watch (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_u5_original_sec100_postbaseline_delta_v1_0.py'
+      - 'test_fund100_v7_u5_original_sec100_postbaseline_delta_v1_0.py'
+      - 'research_lab/V7_U5_POSTBASELINE_ORIGINAL_SEC100_CUMULATIVE_WATCH_2026_10_27.md'
+      - '.github/workflows/fund100-v7-u5-original-sec100-watch.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_u5_original_sec100_postbaseline_delta_v1_0.py'
+      - 'test_fund100_v7_u5_original_sec100_postbaseline_delta_v1_0.py'
+      - '.github/workflows/fund100-v7-u5-original-sec100-watch.yml'
+  schedule:
+    - cron: '45 23 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: fund100-v7-u5-original-sec100-source-watch-one-at-a-time
+  cancel-in-progress: false
+
+jobs:
+  offline-original-accession-delta-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 11
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify pinned-source replay, SEC deltas and no trading
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m pytest -q \
+            test_fund100_v7_u5_original_sec100_postbaseline_delta_v1_0.py \
+            test_fund100_v7_u4_100issuer_original_sec_baseline_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import fund100_v7_u5_original_sec100_postbaseline_delta_v1_0 as x
+          assert x.PINNED_U3_MAIN_RUN_ID==40545345749
+          assert x.PINNED_U4_MAIN_RUN_ID==40550119246
+          assert x.PINNED_U4_FIRST_BASELINE_ARTIFACT_ID==12755320802
+          assert x.BROKER_GETS==x.BROKER_POSTS==x.BROKER_ORDERS==0
+          assert x.TRADING_AUTHORIZED is False
+          PY
+
+  new-original-SEC100-source-followup:
+    needs: offline-original-accession-delta-test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 26
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install same SEC research dependency environment as tested
+        run: python -m pip install -r requirements.txt
+      - name: Verify original TWO main public source runs and download exact source vintages
+        run: |
+          set -euo pipefail
+          test -n "$SEC_USER_AGENT" || { echo "SEC user identity missing"; exit 1; }
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/40545345749" > /tmp/u5-first-u3-run.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/40550119246" > /tmp/u5-first-u4-run.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          src=(
+              ('/tmp/u5-first-u3-run.json','fund100-v7-u3-dated-issuer-mirror-sec100.yml'),
+              ('/tmp/u5-first-u4-run.json','fund100-v7-u4-first-sec100-baseline.yml'),
+          )
+          for filename,expected in src:
+              d=json.loads(Path(filename).read_text())
+              assert d['conclusion']=='success' and d['status']=='completed'
+              assert d['head_branch']=='main' and d['path'].endswith('/'+expected)
+          PY
+          mkdir -p /tmp/fund100-u5-first-u3 /tmp/fund100-u5-first-u4
+          gh run download 40545345749 --repo "$GITHUB_REPOSITORY" \
+            -n fund100-v7-u3-first-dated-mirror-sec100-40545345749 \
+            -D /tmp/fund100-u5-first-u3
+          gh run download 40550119246 --repo "$GITHUB_REPOSITORY" \
+            -n fund100-v7-u4-first-100-sec-original-baseline-40550119246 \
+            -D /tmp/fund100-u5-first-u4
+          python - <<'PY'
+          from pathlib import Path
+          import fund100_v7_u4_100issuer_original_sec_baseline_v1_0 as u4
+          root=Path('/tmp/fund100-u5-first-u3')
+          prior=u4.verify(u3_dir=root,report_dir=Path('/tmp/fund100-u5-first-u4'))
+          assert prior['source_count']==100 and prior['first_new_postbaseline_sec_event_count']==0
+          assert prior['broker_gets']==prior['broker_posts']==prior['broker_orders']==0
+          print('Original first 100 CIK official SEC source verified; historical events NOT re-promoted.')
+          PY
+      - name: Acquire future official SEC 100 issuers and compute CUMULATIVE set difference
+        run: |
+          set -euo pipefail
+          python fund100_v7_u4_100issuer_original_sec_baseline_v1_0.py \
+            --u3-source-dir /tmp/fund100-u5-first-u3 \
+            --output-dir /tmp/fund100-u5-later-original-sec100
+          python fund100_v7_u5_original_sec100_postbaseline_delta_v1_0.py \
+            --original-u3 /tmp/fund100-u5-first-u3 \
+            --original-first-sec /tmp/fund100-u5-first-u4 \
+            --later-sec /tmp/fund100-u5-later-original-sec100 \
+            --output /tmp/fund100-u5-later-original-sec100/cumulative-original-accession-delta.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          doc=json.loads(Path('/tmp/fund100-u5-later-original-sec100/cumulative-original-accession-delta.json').read_text())
+          assert doc['schema']=='FUND100_V7_U5_ORIGINAL_SEC100_CUMULATIVE_POSTBASELINE_CENSUS_V1'
+          assert doc['exact_preselected_100_SEC_CIK_sources_verified']
+          assert doc['newly_observed_TODAY_or_first_seen_in_this_run_proven'] is False
+          assert doc['measured_portfolio_alpha'] is False
+          assert doc['broker_gets']==doc['broker_posts']==doc['broker_orders']==0
+          assert doc['trading_authorized'] is False and doc['live_authorized'] is False
+          PY
+      - name: Archive original current SEC100 source and source-qualified cumulative event research
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-u5-100issuer-original-delta-${{ github.run_id }}
+          path: /tmp/fund100-u5-later-original-sec100/
+          retention-days: 90
+          if-no-files-found: error
