@@ -85,17 +85,19 @@ def evaluate(frozen:dict,*,prices:pd.DataFrame|None,
         raise MarkStop("Unqualified frozen original SEC100 cohort")
     captured=u6.stamp(frozen.get("current_source_finished_utc"))
     rows=frozen.get("deduplicated_stock_entry_exposures")
+    accessions=frozen.get("source_qualified_accessions")
     if (not isinstance(rows,list) or len(rows)>MAX_EXPOSURES
-        or frozen.get("distinct_model_exposures")!=len(rows)
-        or not isinstance(frozen.get("source_qualified_accessions"),list)
-        or frozen.get("new_accessions_relative_to_preceding_successful_observer")!=
-           len(frozen["source_qualified_accessions"])
-           if frozen.get("new_accessions_relative_to_preceding_successful_observer") is not None
-           else not isinstance(rows,list) or len(rows)>MAX_EXPOSURES):
+        or type(frozen.get("distinct_model_exposures")) is not int
+        or frozen["distinct_model_exposures"]!=len(rows)
+        or not isinstance(accessions,list)
+        or len(accessions)>MAX_EXPOSURES):
         raise MarkStop("Frozen accession and position counts inconsistent")
-    if (frozen.get("new_accessions_relative_to_preceding_successful_observer") is None
-        and rows):
-        raise MarkStop("Absent prior observer cannot create model positions")
+    n=frozen.get("new_accessions_relative_to_preceding_successful_observer")
+    if n is None:
+        if rows or accessions:
+            raise MarkStop("Absent prior observer cannot create model positions")
+    elif type(n) is not int or n!=len(accessions):
+        raise MarkStop("New accession census disagrees with original source")
     seen=set()
     expected_symbols={BENCHMARK}
     for entry in rows:
