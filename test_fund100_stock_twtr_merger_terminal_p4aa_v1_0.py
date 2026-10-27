@@ -103,8 +103,8 @@ def test_source_must_be_bounded_and_refuse_fake_cash_right():
         p.reconcile(b"x"*(p.MAX_SEC_BYTES+1),sample())
     with pytest.raises(p.MergerEvidenceStop):
         p.reconcile(official().replace(
-            b"the right to receive $54.20 in cash",
-            b"the right to receive $54.20 in stock"),sample())
+            b"in cash, without interest",
+            b"in stock, without interest"),sample())
 
 def test_no_original_live_or_fake_historical_cash_activation():
     assert p.BROKER_GETS==p.BROKER_POSTS==p.BROKER_ORDERS==0
