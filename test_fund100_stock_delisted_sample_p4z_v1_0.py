@@ -117,3 +117,56 @@ def test_research_boundary_does_not_download_or_execute(tmp_path):
     assert p4z.BROKER_GETS == p4z.BROKER_POSTS == p4z.BROKER_ORDERS == 0
     with pytest.raises(p4z.DelistedSampleStop, match="missing"):
         p4z.audit_zip(tmp_path / "absent.zip")
+
+
+def _sec_html():
+    """Synthetic 8-K text: not vendor data and not a historical market signal."""
+    return (
+        "<html><body><h1>TWITTER, INC.</h1>"
+        "<p>Common Stock, par value $0.000005 per share TWTR "
+        "New York Stock Exchange</p>"
+        "<p>On October 27, 2022, pursuant to the terms of the Merger "
+        "Agreement, the Merger was consummated.</p>"
+        "<p>Each issued and outstanding share was canceled and "
+        "converted into the right to receive $54.20 in cash, "
+        "without interest.</p>"
+        "<p>As a result, trading of Twitter's common stock on the NYSE "
+        "was suspended prior to the opening of the NYSE on "
+        "October 28, 2022.</p>"
+        + "<p>Unrelated original filing boilerplate.</p>" * 35
+        + "</body></html>"
+    ).encode()
+
+
+def test_original_sec_cash_right_is_not_actual_broker_settlement(tmp_path):
+    sec = tmp_path / "original-sec-8k.htm"
+    sec.write_bytes(_sec_html())
+    result = p4z.audit_zip(_zip(tmp_path), sec_merger_filing=sec)
+    assert result["twtr_sec_verified_contractual_cash_consideration_usd"] == 54.20
+    assert result["twtr_sec_merger_effective_date"] == "2022-10-27"
+    assert result["twtr_sec_nyse_trading_suspended_before_open"] == "2022-10-28"
+    assert result["sec_contractual_right_not_proof_of_actual_cash_settlement"]
+    assert result["sec_later_filing_not_a_signal_at_2022_10_27_close"]
+    assert len(result["sec_original_filing_sha256"]) == 64
+    assert result["twtr_terminal_shareholder_proceeds_usd"] is None
+    assert result["twtr_post_delisting_total_return"] is None
+    assert result["historical_stock_alpha_backtest_eligible"] is False
+
+
+@pytest.mark.parametrize("old,new,reason", [
+    ("TWITTER, INC.", "ANOTHER ISSUER", "issuer"),
+    ("TWTR New York Stock Exchange", "WRONG NASDAQ", "share-class"),
+    ("Merger was consummated", "Merger was postponed", "completion"),
+    ("$54.20 in cash", "$0.00 in cash", "consideration"),
+    ("October 28, 2022.", "October 31, 2022.", "suspension"),
+])
+def test_sec_source_conflicts_fail_closed(old, new, reason):
+    with pytest.raises(p4z.DelistedSampleStop, match=reason):
+        p4z.audit_twtr_sec_merger(_sec_html().replace(old.encode(), new.encode()))
+
+
+def test_sec_cash_right_requires_complete_original_filing(tmp_path):
+    with pytest.raises(p4z.DelistedSampleStop, match="missing"):
+        p4z.audit_zip(_zip(tmp_path), sec_merger_filing=tmp_path / "absent.htm")
+    with pytest.raises(p4z.DelistedSampleStop, match="missing or oversized"):
+        p4z.audit_twtr_sec_merger(b"<html>no filing</html>")
