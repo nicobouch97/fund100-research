@@ -124,10 +124,10 @@ def audit_twtr_sec_merger(original: bytes) -> dict:
     try:
         parser = _FilingText()
         parser.feed(original.decode("utf-8-sig"))
-        text = re.sub(r"\\s+", " ", " ".join(parser.parts)).strip()
+        text = re.sub(r"\s+", " ", " ".join(parser.parts)).strip()
     except (UnicodeError, ValueError) as exc:
         raise DelistedSampleStop("SEC merger source not valid HTML text") from exc
-    if not re.search(r"TWITTER,? INC\\.", text, re.IGNORECASE):
+    if not re.search(r"TWITTER,? INC\.", text, re.IGNORECASE):
         raise DelistedSampleStop("SEC merger issuer identity absent")
     if not re.search(
         r"Common Stock.{0,130}TWTR.{0,100}New York Stock Exchange",
@@ -141,8 +141,8 @@ def audit_twtr_sec_merger(original: bytes) -> dict:
     ):
         raise DelistedSampleStop("SEC merger completion not verified")
     consideration = re.findall(
-        r"converted into the right to receive\\s*\\$([0-9]+\\.[0-9]{2})"
-        r"\\s+in cash, without interest",
+        r"converted into the right to receive\s*\$([0-9]+\.[0-9]{2})"
+        r"\s+in cash, without interest",
         text, re.IGNORECASE,
     )
     if not consideration or set(consideration) != {"54.20"}:
