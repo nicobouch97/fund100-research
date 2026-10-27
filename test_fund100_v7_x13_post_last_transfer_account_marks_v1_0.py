@@ -56,6 +56,18 @@ def test_multiple_deposits_are_not_counted_as_return():
     assert not r["risk_limits_cleared_for_next_order"]
     assert r["broker_gets"]==r["broker_posts"]==r["broker_orders"]==0
 
+def test_no_verified_external_cashflow_cannot_claim_clean_post_transfer_returns():
+    h,a,acct=scenario()
+    for activities in ([],[event for event in a
+                           if event["activity_type"]=="DIV"]):
+        result=x.inspect(history=h,activities=activities,account=acct,
+                         observed_at_utc=NOW)
+        assert result["status"]=="HOLD_NO_VERIFIED_EXTERNAL_CASHFLOW_IN_SOURCE"
+        assert result["clean_post_last_transfer_segment_observed"] is False
+        assert result["observed_segment_high_risk_breach"] is None
+        assert result["new_capital_or_trade_released"] is False
+
+
 def test_additional_third_funding_starts_fresh_observation_not_prior_profit():
     h,a,acct=scenario(third="2026-10-15")
     result=x.inspect(history=h,activities=a,account=acct,
