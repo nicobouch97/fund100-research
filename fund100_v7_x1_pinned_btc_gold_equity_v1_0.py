@@ -288,8 +288,9 @@ def paired_same_sleeve_active_risk(strategy:pd.Series, benchmark:pd.Series,
 
     This is a retrospective *active risk* diagnostic, not an investable
     volatility-matched portfolio, factor-adjusted alpha or confidence test.
-    The paired log return removes the common BTC/GLD/cash sleeve mechanically;
-    any remaining beta and tracking error describe sector-selection risk.
+    Both paths target the same BTC/GLD/cash sleeve; their paired returns
+    still include compounding and rebalancing interactions and cannot be
+    interpreted as the return of a tradable pure sector factor.
     """
     expected=xcals.get_calendar("XNYS").sessions_in_range(
         pd.Timestamp(start),pd.Timestamp(end)).tz_localize(None)
