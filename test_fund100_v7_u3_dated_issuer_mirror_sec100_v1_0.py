@@ -101,7 +101,7 @@ def test_cik_duplicate_stock_symbol_rejects_unsupported_sec_or_provider_bytes():
     a,b=fixtures()
     doc=json.loads(b)
     doc["1100"]={"ticker":"S000","cik_str":1234500,"title":"Conflicting company"}
-    with pytest.raises(u.UniverseStop):
+    with pytest.raises(u.original.UniverseStop):
         run(mirror=a,sec=json.dumps(doc).encode())
     x=json.loads(a);x["holdings"]["BAD/TICKER"]=0.01;x["positions"]=505
     with pytest.raises(u.MirrorStop):
@@ -110,7 +110,7 @@ def test_cik_duplicate_stock_symbol_rejects_unsupported_sec_or_provider_bytes():
 def test_different_2026_vendor_vintage_has_distinct_hash_even_same_top100():
     a,b=fixtures()
     doc=json.loads(a)
-    doc["holdings"]["S400"]=0.201
+    doc["name"]="iShares Core S&P 500 ETF source-description updated"
     changed=run(mirror=json.dumps(doc).encode(),sec=b)
     before=run(mirror=a,sec=b)
     assert changed["exact_mirror_original_json_sha256"]!=before["exact_mirror_original_json_sha256"]
