@@ -19,7 +19,6 @@ import fund100_v6_real_live_getonly_transition_readiness_v1_0 as four
 import fund100_v6_s1_live_risk_history_getonly_v1_0 as five
 import fund100_v6_s1_live_private_xle_activity_getonly_v1_0 as six
 import fund100_v6_s1_live_cashflow_risk_bounds_v1_0 as cashrisk
-import fund100_v7_x13_post_last_transfer_account_marks_v1_0 as x13
 import fund100_v6_s1_staged_controller_core_v1_0 as staged
 
 SCHEMA="FUND100_V6_S1_AUTHENTIC_CASHFLOW_TIMING_AND_NATIVE_NONE_SOURCE_V1"
@@ -166,18 +165,6 @@ def evaluate(*,account:dict,positions:list,orders:list,clock:dict,
     if (earlier.get("broker_get_requests")!=6 or earlier.get("broker_orders")!=0
         or earlier.get("live_trade_permitted") is not False):
         raise FlowTimingStop("Previous original six read-only checks changed")
-    # Additional private NO-TRADE segment isolation is computed on the
-    # SAME original seven source objects. It does not reinterpret the
-    # original full-account 6/20/35 hard-stop gate or authorize a writer.
-    postfunded=x13.inspect(
-        history=history,activities=activities,account=account,
-        observed_at_utc=observed_at_utc,
-        activity_query_after=six.ACTIVITY_PARAMS["after"])
-    if (postfunded["broker_gets"]!=0 or postfunded["broker_posts"]!=0
-        or postfunded["broker_orders"]!=0 or postfunded["live_authorized"]
-        or postfunded["prior_latched_account_risk_stop_cleared"]
-        or postfunded["risk_limits_cleared_for_next_order"]):
-        raise FlowTimingStop("Private post-funding diagnostic is not trading authority")
     timing=original_cashflow_source(activities)
     count_category=observed_cash_transfer_category(activities,timing)
     none=broker_native_none_source(history,native_none_history)
@@ -213,14 +200,6 @@ def evaluate(*,account:dict,positions:list,orders:list,clock:dict,
            bounded["initial_cashflow_booking_vs_first_funded_sample"],
        "broker_cashflow_types_none_pnl_comparison":none,
        "original_raw_equity_risk_status":earlier["original_raw_risk_history_result"],
-       "post_last_transfer_source_diagnostic":postfunded["status"],
-       "post_last_transfer_no_external_flow_mark_segment":
-           postfunded["clean_post_last_transfer_segment_observed"],
-       "post_last_transfer_breach_in_research_segment":
-           postfunded["observed_segment_high_risk_breach"],
-       "post_last_transfer_trade_clearance":False,
-       "post_last_transfer_actual_account_return_amount_published":False,
-       "post_last_transfer_original_account_stop_latched":True,
        "actual_cashflow_adjusted_dietz_returns_calculated":False,
        "broker_native_none_is_validated_true_strategy_return":False,
        # Sufficient strictly postfunded account returns are not a
