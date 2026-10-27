@@ -242,3 +242,76 @@ def test_sector_control_cannot_reselect_using_future_returns():
             ["secondary_same_sector_original_cohort"] !=
             after["costed_95pct_stocks_versus_95pct_spy"]["15"]
             ["secondary_same_sector_original_cohort"])
+
+
+def test_exact_sector_conditioned_rank_has_no_replacement_or_hindsight():
+    entry=pd.Series({symbol:100. for symbol in p4l.SECTORS})
+    exit_=entry.copy()
+    # Four technology names, choose two without replacement = six distinct
+    # sector-matched portfolios. The chosen pair is strictly strongest.
+    exit_["AAPL"]=120.
+    exit_["MSFT"]=110.
+    exit_["AVGO"]=90.
+    exit_["NVDA"]=80.
+    selected=["MSFT","AAPL"]
+    rank=m._sector_conditional_rank(selected,entry,exit_)
+    assert rank["selected_slots_by_sector"]=={"Technology":2}
+    assert rank["distinct_equal_weight_sector_matched_portfolios"]==6
+    assert rank["selected_portfolio_in_reference"]
+    assert rank["number_at_or_above_selected_including_ties"]==1
+    assert rank["number_strictly_above_selected"]==0
+    assert rank["upper_tail_fraction_including_ties"]==pytest.approx(1/6)
+    assert rank["not_an_independent_or_factor_neutral_significance_test"]
+    assert rank==m._sector_conditional_rank(list(reversed(selected)),entry,exit_)
+    # If every peer is tied, the upper-tail fraction must be ONE, not
+    # a misleading small p-value from arbitrary tie breaking.
+    ties=m._sector_conditional_rank(selected,entry,entry)
+    assert ties["number_at_or_above_selected_including_ties"]==6
+    assert ties["number_strictly_above_selected"]==0
+    assert ties["upper_tail_fraction_including_ties"]==1.
+
+
+def test_exact_sector_conditioned_rank_preserves_cross_sector_slot_counts():
+    entry=pd.Series({symbol:100. for symbol in p4l.SECTORS})
+    exit_=entry.copy()
+    rank=m._sector_conditional_rank(["AAPL","XOM"],entry,exit_)
+    # Technology has four companies, energy two. Both get one slot.
+    assert rank["selected_slots_by_sector"]=={"Energy":1,"Technology":1}
+    assert rank["distinct_equal_weight_sector_matched_portfolios"]==8
+    assert rank["upper_tail_fraction_including_ties"]==1.
+    with pytest.raises(m.ForwardStop):
+        m._sector_conditional_rank(["AAPL","AAPL"],entry,exit_)
+    with pytest.raises(m.ForwardStop):
+        m._sector_conditional_rank(["AAPL"],entry.drop("NVDA"),exit_)
+
+
+def test_sector_conditional_rank_is_preentry_fixed_and_never_a_live_signal():
+    waiting=run("2026-10-26",capture="2026-10-27T09:30:00Z")
+    assert waiting["secondary_exact_sector_conditional_selection_rank"] is None
+    first=run("2026-10-28",capture="2026-10-29T09:30:00Z")
+    rank=first["secondary_exact_sector_conditional_selection_rank"]
+    assert first["sector_conditional_rank_predeclared_before_entry"]
+    assert rank["membership_frozen_before_entry"]
+    assert rank["same_vintage_prices_for_all_reference_portfolios"]
+    assert rank["selected_portfolio_in_reference"]
+    assert 0<rank["upper_tail_fraction_including_ties"]<=1
+    assert rank["distinct_equal_weight_sector_matched_portfolios"]>=1
+    assert not first["eligible_to_rank_real_live_orders"]
+    assert first["broker_orders"]==0
+    original,old,later,ts=fixtures("2026-10-28")
+    base=m.evaluate(original_manifest=original,original_prices=old,
+                    later_prices=later,captured_utc=ts)
+    # Future returns may change the RANK but never the original choices,
+    # sector slot counts, or enumerated reference membership.
+    changed=later.copy()
+    unselected=next(s for s in p4l.SECTORS
+                    if s not in base["original_pretrade_selection"])
+    changed.loc["2026-10-28",unselected]*=1.10
+    after=m.evaluate(original_manifest=original,original_prices=old,
+                     later_prices=changed,captured_utc=ts)
+    assert base["original_pretrade_selection"]==after["original_pretrade_selection"]
+    a=base["secondary_exact_sector_conditional_selection_rank"]
+    b=after["secondary_exact_sector_conditional_selection_rank"]
+    assert a["selected_slots_by_sector"]==b["selected_slots_by_sector"]
+    assert a["distinct_equal_weight_sector_matched_portfolios"]==b[
+        "distinct_equal_weight_sector_matched_portfolios"]
