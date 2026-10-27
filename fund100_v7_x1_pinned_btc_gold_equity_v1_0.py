@@ -326,6 +326,54 @@ def paired_same_sleeve_active_risk(strategy:pd.Series, benchmark:pd.Series,
         "descriptive_not_factor_adjusted_or_predictive_alpha":True}
 
 
+
+def paired_sector_calendar_concentration(strategy:pd.Series, benchmark:pd.Series,
+                                         start:str=FIRST,end:str=LAST)->dict:
+    """Decompose same-sleeve sector/SPY net relative wealth by calendar year.
+
+    Uses original daily net NAV, including opening fees and rebalance costs.
+    Removing the best observed year is a *retrospective arithmetic diagnostic*,
+    NOT a tradable strategy, a prospective holdout, or an alpha estimate.
+    """
+    expected=xcals.get_calendar("XNYS").sessions_in_range(
+        pd.Timestamp(start),pd.Timestamp(end)).tz_localize(None)
+    if (not isinstance(strategy,pd.Series) or not isinstance(benchmark,pd.Series)
+        or len(expected)<80 or not strategy.index.equals(benchmark.index)
+        or not strategy.loc[start:end].index.equals(expected)
+        or not benchmark.loc[start:end].index.equals(expected)):
+        raise AllocationStop("Calendar concentration requires identical complete XNYS sessions")
+    a=strategy.loc[start:end].to_numpy(dtype=float)
+    b=benchmark.loc[start:end].to_numpy(dtype=float)
+    if (not np.isfinite(a).all() or not np.isfinite(b).all()
+        or (a<=0).any() or (b<=0).any()):
+        raise AllocationStop("Calendar concentration requires finite positive net wealth")
+    relative_log=np.log(a)-np.log(b)
+    # Include the opening cost differential in the first calendar year.
+    # All subsequent increments are exactly the change in relative log NAV.
+    increments=pd.Series(np.r_[relative_log[0],np.diff(relative_log)],index=expected)
+    yearly=increments.groupby(increments.index.year).sum()
+    terminal=float(relative_log[-1])
+    if abs(float(yearly.sum())-terminal)>1e-8:
+        raise AllocationStop("Calendar sector contribution does not reconcile to terminal wealth")
+    best=int(yearly.idxmax())
+    worst=int(yearly.idxmin())
+    return {
+        "terminal_relative_log_wealth_pct":round(100*terminal,7),
+        "calendar_year_relative_log_wealth_pct":{
+            str(int(year)):round(100*float(value),7)
+            for year,value in yearly.items()},
+        "positive_calendar_years":int((yearly>1e-12).sum()),
+        "negative_calendar_years":int((yearly < -1e-12).sum()),
+        "zero_calendar_years":int((yearly.abs()<=1e-12).sum()),
+        "best_calendar_year":str(best),
+        "worst_calendar_year":str(worst),
+        "relative_log_wealth_excluding_best_observed_year_pct":round(
+            100*(terminal-float(yearly.loc[best])),7),
+        "relative_log_wealth_excluding_worst_observed_year_pct":round(
+            100*(terminal-float(yearly.loc[worst])),7),
+        "first_and_last_calendar_years_may_be_partial":True,
+        "exclusion_is_post_hoc_noninvestable_not_out_of_sample_alpha":True}
+
 def year_log_contribution(navs:dict[str,pd.Series])->dict:
     base=navs["CASH_CONTROL_75"]
     result={}
@@ -401,7 +449,10 @@ def inspect(crypto:pd.DataFrame,etf:pd.DataFrame,rate:pd.DataFrame)->dict:
                        "summed_fractional_trade_fees_not_dollars":p["cost_fraction_nav_sum_not_dollar"],
                        "crypto_intra_month_target_cap_drift_days":p["crypto_target_exceeded_intramonth_days"]}
                     for k,p in positions.items()},
-                "calendar_year_relative_log_wealth":year_log_contribution(navs)}
+                "calendar_year_relative_log_wealth":year_log_contribution(navs),
+                "same_sleeve_SPY_calendar_year_concentration":{
+                    name:paired_sector_calendar_concentration(navs[name],matched_spy[name])
+                    for name in CANDIDATES}}
         studies[str(coin_cost)]=rate_scenarios
     return {
         "schema":SCHEMA,
@@ -423,6 +474,7 @@ def inspect(crypto:pd.DataFrame,etf:pd.DataFrame,rate:pd.DataFrame)->dict:
         "same_sleeve_SPY_reference_preserves_BTC_GLD_cash_weights":True,
         "same_sleeve_sector_effect_is_retrospective_not_predictive_alpha":True,
         "paired_active_risk_is_ex_post_not_factor_adjusted_alpha":True,
+        "calendar_year_sector_concentration_is_post_hoc_not_alpha":True,
         "fixed_candidate_basket_weights":{
             k:dict(zip((*SLEEVE_ASSETS,"CASH"),v))
             for k,v in CANDIDATES.items()},
