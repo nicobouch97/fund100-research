@@ -168,3 +168,23 @@ def test_previous_source_must_precede_current_and_follow_original(tmp_path):
             original_u3_dir=paths[0],pinned_first_sec_dir=paths[1],
             later_actual_sec_dir=paths[2],previous_successful_sec_dir=prior,
             previous_successful_main_run_id=40553150624)
+
+def test_previous_original_main_archive_before_upgrade_is_backward_compatible(tmp_path):
+    paths,prior=prior_successful_source(tmp_path)
+    f=prior/"cumulative-original-accession-delta.json"
+    report=json.loads(f.read_text())
+    for key in (
+        "previous_successful_daily_observer_artifact_compared",
+        "previous_successful_main_observer_run_id",
+        "previous_successful_observer_manifest_sha256",
+        "new_accessions_since_previous_successful_observer_count",
+        "accessions_absent_from_previous_successful_observer_NOT_trade_signals",
+        "previous_successful_observer_is_not_SEC_public_release_timestamp",
+    ):
+        report.pop(key)
+    f.write_text(json.dumps(report))
+    doc=u5.original_source_delta(
+        original_u3_dir=paths[0],pinned_first_sec_dir=paths[1],
+        later_actual_sec_dir=paths[2],previous_successful_sec_dir=prior,
+        previous_successful_main_run_id=40553150624)
+    assert doc["new_accessions_since_previous_successful_observer_count"]==100
