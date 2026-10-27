@@ -1,0 +1,43 @@
+name: Fund-100 V7 F1 Literature-First Factor Basket (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_f1_literature_factor_baseline_v1_0.py'
+      - 'test_fund100_v7_f1_literature_factor_baseline_v1_0.py'
+      - 'research_lab/V7_F1_LITERATURE_FIRST_EXECUTION_PRIORITY_2026_10_27.md'
+      - '.github/workflows/fund100-v7-f1-literature-factor-baseline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_f1_literature_factor_baseline_v1_0.py'
+      - 'test_fund100_v7_f1_literature_factor_baseline_v1_0.py'
+      - '.github/workflows/fund100-v7-f1-literature-factor-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixed-factor-basket-offline-controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify fixed factor portfolio and symmetric after-cost passive comparators
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m pytest -q \
+            test_fund100_v7_f1_literature_factor_baseline_v1_0.py \
+            test_fund100_v7_listed_factor_etf_returns_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import fund100_v7_f1_literature_factor_baseline_v1_0 as x
+          assert x.BROKER_GETS==x.BROKER_POSTS==x.BROKER_ORDERS==0
+          assert x.TRADING_AUTHORIZED is False and x.LIVE_AUTHORIZED is False
+          print("Original factor literature is not a broker authority or ETF alpha forecast.")
+          PY
