@@ -55,7 +55,7 @@ class _Text(HTMLParser):
         if self.skip==0:self.words.append(data)
 
 def _original_document(raw:bytes):
-    if type(raw) is not bytes or not 2000<=len(raw)<=MAX_SEC_BYTES:
+    if type(raw) is not bytes or not 650<=len(raw)<=MAX_SEC_BYTES:
         raise MergerEvidenceStop("Missing or unbounded fixed original SEC merger filing")
     try:
         decoded=raw.decode("utf-8")
