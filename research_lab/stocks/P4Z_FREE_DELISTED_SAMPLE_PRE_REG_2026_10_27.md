@@ -21,3 +21,34 @@ Original source: [HistoricalData.net stock sample](https://historicaldata.net/sa
 Four retrospectively chosen securities over six months do not make a historical investable universe, do not support a strategy backtest or prove alpha. Vendor adjustments can be revised; the sample does not prove historical issuer/share-class identities, point-in-time membership, corporate-action completeness, or the value of TWTR merger consideration. A full study still needs a representative **dated security master**, delisted-inclusive adjusted total-return panel, independently verified terminal outcomes and realistic costs. A paid archive is a separate operator purchasing decision, not authorised by this work.
 
 All original LIVE controls remain untouched: **USD 130.30 ceiling**, operator STOP, ENGAGED environment kill switch, HARD LOCKED writer and separate release approvals. No broker requests, funded orders, holdings changes, protected risk-control changes or private-state mutations.
+
+
+## 27 October 2026 follow-up — independently documented TWTR merger consideration
+
+The original P4Z sample deliberately leaves TWTR terminal cash proceeds unknown. A
+separate, **later** primary-source event document is now checked alongside the
+original vendor price series: [Twitter's October 2022 SEC Form 8-K](https://www.sec.gov/Archives/edgar/data/1418091/000119312522272772/d411753d8k.htm)
+(CIK 1418091; original accession 0001193125-22-272772). The filing reports
+that the merger became effective **27 October 2022**, ordinary TWTR shares
+(except specified excluded/appraisal categories) converted into a
+**contractual right to $54.20 cash without interest**, and NYSE trading was
+suspended before the **28 October 2022** open. The vendor file's
+31 October delisting *label* is not the same as suspension or the merger
+effective date.
+
+The audit checks issuer, common-share class, ticker/exchange, merger
+completion, amount and suspension from the original filing bytes. It
+preserves the source SHA256 and URL, but not the filing HTML in the
+published research artifact. The source acquisition must succeed with
+the configured SEC contact; missing/contradictory evidence fails closed.
+
+**Do not misclassify $54.20 as a verified broker deposit or as an
+investable after-close sale price.** The filing proves a contractual
+conversion right for eligible ordinary shares, not the payment date,
+investor-specific exceptions, tax, broker settlement or availability of
+cash for reinvestment. Accordingly, the existing fields for **actual
+terminal shareholder proceeds and post-delisting realised total return
+remain null**. The 8-K is subsequent event evidence and cannot be
+used as a trading signal at the 27 October close. This is one
+independently sourced corporate-action outcome, not a representative
+historical universe or proof of investment alpha.
