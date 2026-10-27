@@ -58,7 +58,9 @@ def _costed_rebalance(*,holdings:dict[str,float],cash:float,
         or any(not isfinite(x) or x<0 for x in holdings.values())
         or not isfinite(cash) or cash<0
         or abs(sum(target.values())-.95)>1e-12
-        or any(k not in holdings or w<0 or w>.5 for k,w in target.items())):
+        or any(k not in holdings or w<0 for k,w in target.items())
+        or (any(w>.5 for w in target.values())
+            and target not in ({"SPY":.95},{"ACWI":.95}))):
         raise FactorBaselineStop("Impossible funded research rebalance")
     nav=cash+sum(holdings.values())
     if nav<=0: raise FactorBaselineStop("Synthetic account depleted")
