@@ -341,7 +341,7 @@ import fund100_stock_historical_sec_form25_p4y_v1_0 as p4y
 
 def _form25_submission(accession, form_type, description="Common Stock",
                        header_cik=None):
-    cik_line = (f"CENTRAL INDEX KEY: {header_cik:010d}\\n"
+    cik_line = (f"CENTRAL INDEX KEY: {header_cik:010d}\n"
                 if header_cik is not None else "")
     tag = (f"<descriptionClassSecurity>{description}</descriptionClassSecurity>"
            if description is not None else "<other>Not a security title</other>")
