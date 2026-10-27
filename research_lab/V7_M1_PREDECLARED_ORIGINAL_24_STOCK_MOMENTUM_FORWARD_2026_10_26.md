@@ -85,3 +85,35 @@ A positive result is NOT independent alpha or permission to trade.
 
 No additional broker access, live asset, order, capital ceiling, operator
 STOP, environment kill-switch, or release-lock changes are made.
+
+
+## Additional fixed evaluation — 27 October 2026, BEFORE the first NYSE entry close
+
+The original picks, 95%-invested primary SPY comparison, pre-entry
+volatility-matched secondary comparison, and same-sector inclusive control
+remain unchanged. Before observing the first 27 October 2026 entry close,
+register a **descriptive exact sector-conditioned selection rank**.
+
+For each selected company, retain the original 24-issuer cohort's contemporary
+sector tag. Keep the number of selected slots per sector fixed. Enumerate
+every *distinct*, without-replacement combination of that number of companies
+from the same frozen sector roster. Give each company an equal initial dollar
+slot, with the same frozen entry and 21-session exit closes. Compare the
+original selected portfolio's arithmetic mean of individual gross growth
+ratios to this complete reference distribution. Report the number of
+sector-matched portfolios, the count with growth at or above the selected
+portfolio (including ties), and that count divided by the full enumeration.
+The observed selected combination must itself be present in the reference.
+There is no random seed, optimized threshold, resampling, changed selection,
+new capital sleeve or executable allocation. Intermediate rankings are
+descriptive only; the original fixed exit is the final assessment.
+
+**Interpretation restriction:** This conditional rank is NOT a valid
+independent significance test, predictive p-value or proof of factor-neutral
+alpha. The 24 names were selected from 2026 survivors, sector memberships
+are contemporary, firms are heterogeneous and correlated, and return
+observations come from revisable vendor-adjusted closes. A favourable rank
+cannot override the operator STOP, environment kill switch, existing LIVE
+release locks, capital ceiling or research-only classification. It is a
+predeclared sensitivity to whether original picks outperform other
+companies with the *same frozen sector slot counts*, not a new strategy.
