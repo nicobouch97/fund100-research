@@ -102,8 +102,29 @@ def original_source_delta(*,original_u3_dir:Path,
                 original_u3_dir=original_u3_dir,
                 pinned_first_sec_dir=pinned_first_sec_dir,
                 later_actual_sec_dir=previous_successful_sec_dir)
-            if archived!=recomputed:
+            # U5's original successful archive predates these new fields.
+            # Verify EVERY original report field exactly while accepting the
+            # new, independently non-trading observer-comparison metadata.
+            comparison_fields={
+                "previous_successful_daily_observer_artifact_compared",
+                "previous_successful_main_observer_run_id",
+                "previous_successful_observer_manifest_sha256",
+                "new_accessions_since_previous_successful_observer_count",
+                "accessions_absent_from_previous_successful_observer_NOT_trade_signals",
+                "previous_successful_observer_is_not_SEC_public_release_timestamp",
+            }
+            original_fields=set(recomputed)-comparison_fields
+            if (not isinstance(archived,dict)
+                or not original_fields<=set(archived)
+                or not set(archived)<=set(recomputed)
+                or any(archived[k]!=recomputed[k] for k in original_fields)):
                 raise NewSourceStop("Previous successful observer report does not replay")
+            if archived.get("previous_successful_daily_observer_artifact_compared",False):
+                prior_count=archived.get("new_accessions_since_previous_successful_observer_count")
+                prior_rows=archived.get("accessions_absent_from_previous_successful_observer_NOT_trade_signals")
+                if (type(prior_count) is not int or prior_count<0
+                    or not isinstance(prior_rows,list) or len(prior_rows)!=prior_count):
+                    raise NewSourceStop("Previous observer comparison metadata inconsistent")
             prior_keys={(r["cik"],r["accession"])
                         for r in prior_delta["candidate_first_delta_filings_not_trade_signals"]}
             now_keys={(r["sec_cik_10_digit"],r["original_sec_filing_accession"])
