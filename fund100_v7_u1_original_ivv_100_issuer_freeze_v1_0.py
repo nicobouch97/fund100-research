@@ -82,11 +82,20 @@ def _holdings(raw:bytes):
             if held_date is not None:
                 raise UniverseStop("Ambiguous provider holdings date")
             held_date=_source_day(clean[1])
-        needed={"Ticker","Name","Sector","Asset Class","Weight (%)"}
-        if needed<=set(clean):
+        # BlackRock's current IVV export labels the equity identifier
+        # "Issuer Ticker"; some earlier downloads use "Ticker". Accept
+        # exactly one documented spelling, never guess a column by position.
+        needed={"Name","Sector","Asset Class","Weight (%)"}
+        ticker_headers=[x for x in ("Ticker","Issuer Ticker") if x in clean]
+        if needed<=set(clean) and ticker_headers:
             if header is not None:
                 raise UniverseStop("Repeated holdings column header")
-            header=(i,{col:clean.index(col) for col in needed})
+            if len(ticker_headers)!=1 or any(clean.count(x)!=1 for x in
+                    (*needed,*ticker_headers)):
+                raise UniverseStop("Ambiguous original holdings columns")
+            cols={col:clean.index(col) for col in needed}
+            cols["Ticker"]=clean.index(ticker_headers[0])
+            header=(i,cols)
     if held_date is None or header is None:
         raise UniverseStop("No identifiable official IVV date/weight/asset class")
     start,cols=header
