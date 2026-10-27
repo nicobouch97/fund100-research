@@ -1,0 +1,79 @@
+name: Fund-100 V7 T1 Four-Asset 12-1 Trend Research (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_t1_crossasset_etf_trend_v1_0.py'
+      - 'test_fund100_v7_t1_crossasset_etf_trend_v1_0.py'
+      - 'research_lab/V7_T1_PREDECLARED_CROSS_ASSET_TREND_2026_10_27.md'
+      - '.github/workflows/fund100-v7-t1-crossasset-momentum.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_t1_crossasset_etf_trend_v1_0.py'
+      - 'test_fund100_v7_t1_crossasset_etf_trend_v1_0.py'
+      - '.github/workflows/fund100-v7-t1-crossasset-momentum.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preregistered-four-asset-trend-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install public research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify capital-conserved fees, NYSE source, momentum lag, and no brokerage
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python -m pytest -q test_fund100_v7_t1_crossasset_etf_trend_v1_0.py
+          python - <<'PY'
+          import fund100_v7_t1_crossasset_etf_trend_v1_0 as m
+          assert m.BROKER_GETS==m.BROKER_POSTS==m.BROKER_ORDERS==0
+          assert not m.TRADING_AUTHORIZED
+          assert set(m.ASSETS)=={'SPY','TLT','GLD','DBC'}
+          assert len(m.REGISTERED_WINDOWS)==4
+          PY
+      - name: Acquire new original ETF vendor bytes only on main
+        id: source
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: |
+          set -euo pipefail
+          python fund100_v7_t1_crossasset_etf_trend_v1_0.py \
+            --source-csv /tmp/fund100-t1-actual-price-source.csv \
+            --output /tmp/fund100-t1-costed-stress-report.json
+          python - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          import fund100_v7_t1_crossasset_etf_trend_v1_0 as m
+          raw=Path('/tmp/fund100-t1-actual-price-source.csv').read_bytes()
+          doc=json.loads(Path('/tmp/fund100-t1-costed-stress-report.json').read_text())
+          assert hashlib.sha256(raw).hexdigest()==doc['source_canonical_csv_sha256']
+          assert doc['schema']==m.SCHEMA
+          assert set(doc['fixed_era_results'])==set(m.REGISTERED_WINDOWS)
+          assert doc['real_broker_gets']==doc['real_broker_posts']==doc['real_broker_orders']==0
+          assert doc['trading_authorized'] is False
+          assert doc['current_live_capital_ceiling_usd']=='130.30'
+          assert doc['favorable_result_is_not_forward_alpha_qualification'] is True
+          PY
+          echo 'acquired=true' >> "$GITHUB_OUTPUT"
+      - name: Preserve original source plus full after-cost diagnostics
+        if: steps.source.outputs.acquired == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-t1-crossasset-real-12minus1-${{ github.run_id }}
+          path: |
+            /tmp/fund100-t1-actual-price-source.csv
+            /tmp/fund100-t1-costed-stress-report.json
+          retention-days: 90
+          if-no-files-found: error
