@@ -100,8 +100,9 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str,arm:str,bps:int)->dict:
     holdings={t:0. for t in factor.TICKERS}
     cash=100.
     nav_prev=100.
-    wealth=[]
-    rtn=[]
+    # Include the original 100-unit capital baseline so entry and exit
+    # transaction costs cannot disappear from measured drawdown.
+    wealth=[100.]
     fees=0.
     turnover=0.
     trades=0
@@ -124,8 +125,6 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str,arm:str,bps:int)->dict:
         nav=cash+sum(holdings.values())
         if nav<=0 or not isfinite(nav):
             raise FactorBaselineStop("Invalid modeled portfolio equity")
-        day=nav/nav_prev-1
-        if i>0:rtn.append(day)
         wealth.append(nav)
         nav_prev=nav
         qlast=_quarter(when)
@@ -139,11 +138,16 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str,arm:str,bps:int)->dict:
     if terminal<=0:raise FactorBaselineStop("Terminal liquidation fee depletes NAV")
     fees+=end_fee
     turnover+=sum(holdings.values())/100.
-    path=np.array(wealth+[terminal],dtype=float)
+    # Entry fees belong to the first modeled close; terminal liquidation
+    # belongs to the final close, NOT an invented extra market session.
+    # The terminal NAV replaces the pre-liquidation last-session mark.
+    wealth[-1]=terminal
+    path=np.array(wealth,dtype=float)
     years=(view.index[-1]-view.index[0]).days/365.25
     if years<=0:raise FactorBaselineStop("Invalid benchmark annualisation")
     dd=float(np.min(path/np.maximum.accumulate(path)-1))
-    vol=float(np.std(rtn,ddof=1)*sqrt(252))
+    net_daily=path[1:]/path[:-1]-1
+    vol=float(np.std(net_daily,ddof=1)*sqrt(252))
     return {
         "arm":arm,"start":start,"end":end,"cost_bps_each_side":bps,
         "opening_nav_units":100.,"closing_nav_after_terminal_sell":round(terminal,8),
@@ -156,6 +160,7 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str,arm:str,bps:int)->dict:
         "gross_turnover_of_initial_nav":round(turnover,8),
         "modeled_daily_high_risk_limit_breaches":risk_breaches,
         "cash_earnings_assumed":False,
+        "entry_and_terminal_fees_in_session_close_risk_path":True,
         "same_close_hypothetical_rebalance_execution_not_verified":True,
         "no_actual_orders":True
     }

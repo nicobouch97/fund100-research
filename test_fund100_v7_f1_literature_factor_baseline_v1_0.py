@@ -86,6 +86,26 @@ def test_more_expensive_trading_cannot_make_identical_price_path_more_wealthy(pr
                         bps=b)["closing_nav_after_terminal_sell"] for b in f1.COSTS]
     assert values[0]>values[1]>values[2]
 
+def test_flat_market_net_risk_counts_entry_and_terminal_costs(prices):
+    # Old risk path started AFTER the first purchase and appended terminal
+    # liquidation as a phantom extra session. That omitted the entry loss
+    # from max drawdown and daily volatility even though CAGR included it.
+    flat=prices.copy()
+    for ticker in source.TICKERS:
+        flat[ticker]=100.
+    _,start,end=f1.WINDOWS[0]
+    for arm in f1.ARMS:
+        result=f1.simulate(flat,start=start,end=end,arm=arm,bps=15)
+        expected=(1/(1+.95*.0015))*(1-.95*.0015)
+        assert result["closing_nav_after_terminal_sell"]==pytest.approx(
+            100*expected,abs=1e-6)
+        assert result["modeled_max_drawdown_pct"]==pytest.approx(
+            100*(expected-1),abs=1e-6)
+        assert result["annualized_volatility_pct"]>0
+        assert result["entry_and_terminal_fees_in_session_close_risk_path"]
+        assert result["no_actual_orders"]
+
+
 def test_factor_quarterly_rebalance_does_not_equal_simple_buy_hold(prices):
     _,start,end=f1.WINDOWS[2]
     active=f1.simulate(prices,start=start,end=end,arm=f1.ARMS[0],bps=15)
