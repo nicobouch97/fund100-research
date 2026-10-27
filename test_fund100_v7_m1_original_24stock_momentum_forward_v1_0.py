@@ -225,9 +225,9 @@ def test_sector_control_cannot_reselect_using_future_returns():
     # An unselected stock in the same sector as a picked stock moves
     # the comparator, but cannot change the original picks or weights.
     selected=before["original_pretrade_selection"]
-    sector=p4l.SECTORS[selected[0]]
     peer=next(s for s in p4l.SECTORS
-              if p4l.SECTORS[s]==sector and s not in selected)
+              if s not in selected and any(
+                  p4l.SECTORS[s]==p4l.SECTORS[p] for p in selected))
     changed.loc["2026-10-28",peer]*=1.03
     after=m.evaluate(original_manifest=original,original_prices=first,
                      later_prices=changed,captured_utc=ts)
