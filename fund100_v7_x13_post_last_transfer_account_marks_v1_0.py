@@ -64,7 +64,7 @@ def _status(reason,*,has_segment=False,observed_bucket=None,
         "clean_post_last_transfer_segment_observed":has_segment,
         "completed_post_transfer_interval_count_bucket":observed_bucket,
         "observed_segment_high_risk_breach":any_high_risk_breach,
-        "unfunded_and_external_flow_rows_excluded":True,
+        "unfunded_and_external_flow_rows_excluded":has_segment,
         "estimated_cashflow_timing_used":False,
         "date_only_cashflow_assumed_investable_or_profitable":False,
         "source_histories_are_revisable_and_one_month_only":True,
@@ -185,6 +185,21 @@ def inspect(*,history:dict,activities:list,account:dict,
         return _status("HOLD_GAP_OR_UNFUNDED_CLOSE_AFTER_CLEAN_INCEPTION")
     if len(segment)<MIN_POST_FLOW_MARKS:
         return _status("HOLD_INSUFFICIENT_POST_LAST_TRANSFER_HISTORY")
+    # Gaps in daily broker source would convert a multi-session move into
+    # an apparently less risky single period. Do not annualize such gaps.
+    # NYSE exchange holidays differ from generic Monday-Friday calendars.
+    try:
+        import exchange_calendars as xcals
+        import pandas as pd
+        observed=pd.DatetimeIndex([
+            datetime.fromtimestamp(t,timezone.utc).date()
+            for t in times[start:]])
+        expected=xcals.get_calendar("XNYS").sessions_in_range(
+            observed[0],observed[-1]).tz_localize(None).normalize()
+        if not observed.equals(expected):
+            return _status("HOLD_MISSING_OR_EXTRA_XNYS_DAILY_SESSIONS")
+    except (ValueError,TypeError,KeyError,OverflowError):
+        return _status("HOLD_UNVERIFIED_XNYS_SESSION_CALENDAR")
     returns=[segment[i]/segment[i-1]-Decimal(1)
              for i in range(1,len(segment))]
     if any(abs(r)>MAX_ABSOLUTE_DAILY_MARK for r in returns):
