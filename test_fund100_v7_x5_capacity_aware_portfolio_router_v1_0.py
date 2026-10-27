@@ -326,3 +326,55 @@ def test_conservative_fee_bound_preserves_no_trading_and_post_cost_equity():
     assert result["broker_gets"]==result["broker_posts"]==result["broker_orders"]==0
     assert result["current_LIVE_authorized_principal_USD"]=="130.30"
     assert not result["trading_authorized"]
+
+
+def test_fractional_cent_maximum_cannot_understate_ticket_count_or_fees():
+    # A $10.005 ticket cannot be sent as a whole-cent USD notional.
+    # $20.01 needs THREE tickets <= $10.00, not two $10.005 tickets.
+    spec=x5.sample_spec()
+    spec["XLK"]["maximum_ticket_usd"]="10.005"
+    result=plan("1000.00",spec=spec,positions={},cash="1000.00",
+                target={"XLK":"0.02001"})
+    ticket=result["estimated_trade_side_details"]["XLK_BUY"]
+    assert ticket["hypothetical_notional_usd"]=="20.01"
+    assert ticket["modeled_effective_max_ticket_after_daily_liquidity_usd"]=="10.00"
+    assert ticket["modelled_ticket_count"]==3
+    assert ticket["modeled_fee_per_ticket_rounded_up_usd"]=="0.06"
+    assert result["modeled_all_sides_fees_usd"]=="0.06"
+    assert result["model_net_cash_reserve_after_all_rebalances_usd"]=="979.93"
+    assert x5.fee_upper_by_ticket(
+        Decimal("20.01"),Decimal("10.005"),Decimal("15"),Decimal("1")
+    )==Decimal("0.06")
+    assert not result["trading_authorized"]
+
+
+def test_fractional_cent_minimum_ceil_blocks_impossible_ticket_partition():
+    # Two $10.01 minimum tickets require $20.02. A $20.01 order
+    # cannot be made executable by allowing $10.001 tickets.
+    spec=x5.sample_spec()
+    spec["XLK"]["minimum_notional_usd"]="10.001"
+    spec["XLK"]["maximum_ticket_usd"]="10.01"
+    result=plan("1000.00",spec=spec,positions={},cash="1000.00",
+                target={"XLK":"0.02001"})
+    warnings={w["reason"] for w in result["too_small_or_infeasible_target_warnings"]}
+    assert "MODELED_TICKET_SPLIT_VIOLATES_MINIMUM" in warnings
+    assert "XLK_BUY" not in result["estimated_trade_side_details"]
+    assert result["modeled_all_sides_fees_usd"]=="0.00"
+    assert result["model_net_cash_reserve_after_all_rebalances_usd"]=="1000.00"
+    assert not result["trading_authorized"]
+
+
+def test_no_whole_cent_ticket_between_venue_min_and_max_fails_closed():
+    for minimum,maximum in [("10.001","10.009"),("0.001","0.009")]:
+        spec=x5.sample_spec()
+        spec["XLK"]["minimum_notional_usd"]=minimum
+        spec["XLK"]["maximum_ticket_usd"]=maximum
+        with pytest.raises(x5.CapacityStop):
+            plan("1000.00",spec=spec,positions={},cash="1000.00",
+                 target={"XLK":"0.20"})
+    with pytest.raises(x5.CapacityStop):
+        x5.fee_upper_by_ticket(
+            Decimal("20.001"),Decimal("10.00"),Decimal("15"),Decimal("1"))
+    with pytest.raises(x5.CapacityStop):
+        x5.fee_upper_by_ticket(
+            Decimal("20.01"),Decimal("10.009"),Decimal("15"),Decimal("10.001"))

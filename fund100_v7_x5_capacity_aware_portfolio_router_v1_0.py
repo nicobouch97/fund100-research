@@ -58,12 +58,18 @@ def verify_spec(symbol,spec):
         raise CapacityStop("Unregistered synthetic asset symbol")
     if type(spec) is not dict or spec.get("asset_class") not in ASSET_CLASSES:
         raise CapacityStop("Unknown asset class for synthetic liquidity")
-    venue_min=num(spec.get("minimum_notional_usd"),"simulated order minimum",positive=True)
-    maximum=num(spec.get("maximum_ticket_usd"),"simulated single ticket cap",positive=True)
+    # Ticket notional is modeled in whole USD cents. A fractional-cent
+    # venue minimum rounds UP; a fractional-cent maximum rounds DOWN.
+    # Otherwise $10.005 can falsely fit two $10.005 tickets into $20.01,
+    # even though neither ticket is representable in cent-denominated USD.
+    venue_min=up(num(spec.get("minimum_notional_usd"),
+                     "simulated order minimum",positive=True))
+    maximum=down(num(spec.get("maximum_ticket_usd"),
+                     "simulated single ticket cap",positive=True))
     volume=num(spec.get("assumed_average_daily_volume_usd"),
                "UNVERIFIED daily liquidity scenario",positive=True)
     side=num(spec.get("modeled_side_cost_bps"),"modeled per-side fee")
-    if (venue_min>maximum or side>Decimal(2000)
+    if (maximum<=0 or venue_min>maximum or side>Decimal(2000)
         or spec.get("liquidity_source")!="INVENTED_STRESS_SCENARIO_NOT_MARKET_DATA"
         or spec.get("actual_customer_fractional_quantity_allowed_verified") is not False
         or spec.get("actual_client_order_minimum_verified") is not False
@@ -85,8 +91,12 @@ def fee_upper_by_ticket(amount,cap,bps,minimum=Decimal(0)):
     This is a hypothetical fixed-n bound, not a quote, an executable
     schedule, or a guarantee against additional real-world tickets.
     """
-    if amount<0 or cap<=0 or minimum<0 or minimum>cap or bps<0:
-        raise CapacityStop("Invalid fee model")
+    if amount<0 or cap<=0 or minimum<0 or bps<0 or amount!=down(amount):
+        raise CapacityStop("Invalid cent-denominated fee model")
+    cap=down(cap)
+    minimum=up(minimum)
+    if cap<=0 or minimum>cap:
+        raise CapacityStop("No cent-denominated ticket between venue limits")
     if amount==0 or bps==0:
         return Decimal(0)
     count=count_to_fit(amount,cap)
