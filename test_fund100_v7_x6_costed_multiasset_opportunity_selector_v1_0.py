@@ -75,7 +75,7 @@ def test_unfillable_ticket_split_cannot_be_ranked_as_profitable_switch():
 
 def test_cash_feasible_costed_opportunity_beats_higher_unsettled_forecast():
     # Synthetic $1,000 NAV: $900 is held and only $100 is settled.
-    # The larger paper edge needs a $500 BUY financed by unsettled SELLs.
+    # The larger paper edge needs a $450 BUY financed by unsettled SELLs.
     # A smaller positive, SELL-only de-risking opportunity is feasible
     # without those proceeds and should not be hidden by the deferred one.
     kwargs=dict(
@@ -86,7 +86,7 @@ def test_cash_feasible_costed_opportunity_beats_higher_unsettled_forecast():
         expected_returns_fraction={"XLK":"-0.10","XLE":"-0.10","IWM":"0.20"},
         forecast_horizon_sessions=21,
     )
-    deferred={"XLK":"0.10","XLE":"0.10","IWM":"0.50"}
+    deferred={"XLK":"0.10","XLE":"0.10","IWM":"0.45"}
     ready={"XLK":"0.40","XLE":"0.45"}
     result=x6.select(**kwargs,candidate_target_weights={
         "RESEARCH_HIGH_EDGE_DEFERRED":deferred,
