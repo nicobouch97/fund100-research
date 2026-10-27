@@ -4,6 +4,11 @@ on:
   workflow_dispatch:
 
   schedule:
+    # First next-UTC-day check: 00:37Z Tue-Sat is after the prior US
+    # trading session has closed (in both NYSE DST and standard time).
+    # The existing strict < today_utc original-close gate still excludes
+    # all current-UTC-date bars; retain morning/afternoon vendor fallbacks.
+    - cron: "37 0 * * 2-6"
     - cron: "37 10 * * 2-6"
     - cron: "37 13 * * 2-6"
 
