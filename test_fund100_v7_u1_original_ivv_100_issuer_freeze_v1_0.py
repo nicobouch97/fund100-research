@@ -131,3 +131,25 @@ def test_conflicting_ticker_cik_source_fails_instead_of_guessing():
                      "title":"Different Issuer Same Ticker"}
     with pytest.raises(u.UniverseStop,match="Ambiguous"):
         evaluate(hold=raw,sec=json.dumps(records).encode())
+
+
+def test_missing_highest_weight_sec_mapping_fails_to_invent_cik_or_reorder_peers():
+    raw,sec=fixtures()
+    records=json.loads(sec)
+    records["0"]["ticker"]="UNMATCHED"
+    result=evaluate(hold=raw,sec=json.dumps(records).encode())
+    ranked=[row["ticker"] for row in result["prospectively_frozen_100_unique_cik_roster"]]
+    assert "S000" not in ranked
+    assert ranked[0]=="S001"
+    assert ranked[9]=="S010"
+    assert ranked[-1]=="S100"
+    assert result["source_missing_tickers_count_before_top100_resolved"]==1
+    assert len(ranked)==len(set(ranked))==100
+
+def test_two_conflicting_fund_asof_headers_never_permit_discretionary_vintage_choice():
+    raw,sec=fixtures()
+    forged=raw.replace(
+        b'Fund Holdings as of,"Oct 23, 2026"',
+        b'Fund Holdings as of,"Oct 23, 2026"\nHoldings as of,"Oct 24, 2026"')
+    with pytest.raises(u.UniverseStop,match="Ambiguous"):
+        evaluate(hold=forged,sec=sec)
