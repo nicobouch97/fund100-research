@@ -131,8 +131,13 @@ def evaluate(frozen:dict,*,prices:pd.DataFrame|None,
     if prices is not None:
         if not rows:
             raise MarkStop("Do not fetch or attach price data for zero new events")
+        if type(later_price_acquired_utc) is not str:
+            raise MarkStop("Later price source must have original UTC acquisition")
         panel=_panel(prices,expected_symbols)
-        acquired=u6.stamp(later_price_acquired_utc)
+        try:
+            acquired=u6.stamp(later_price_acquired_utc)
+        except u6.ForwardAdmissionStop as exc:
+            raise MarkStop("Later price source timestamp invalid") from exc
         last=panel.index[-1].date()
         if (type(provider_reference) is not str or
             not 10<=len(provider_reference)<=240
