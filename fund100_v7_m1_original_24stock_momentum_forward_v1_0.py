@@ -369,58 +369,63 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
             periods=HOLD_SESSIONS
         sector_rank=(_sector_conditional_rank(selected,entry,end)
                      if periods>0 else None)
-        stock_growth=np.mean([float(end[s]/entry[s]) for s in selected])
-        spy_growth=float(end[p4l.BENCHMARK]/entry[p4l.BENCHMARK])
-        sector_growth=sum(weight*float(end[s]/entry[s])
-                          for s,weight in sector_control.items())
         by_cost={}
-        for bps in COST_BPS:
-            fee=bps/10000.
-            risky=95./(1+fee)
-            stock_final=INITIAL_CASH+risky*stock_growth*(1-fee)
-            passive_final=INITIAL_CASH+risky*spy_growth*(1-fee)
-            sector_final=INITIAL_CASH+risky*sector_growth*(1-fee)
-            by_cost[str(bps)]={
-                "equal_95pct_initial_cash_and_round_trip_costs":True,
-                "theoretical_stock_terminal_after_exit_fee_usd":round(stock_final,8),
-                "theoretical_spy_terminal_after_exit_fee_usd":round(passive_final,8),
-                "stock_minus_spy_net_percentage_points":round(stock_final-passive_final,8),
-                "entry_purchase_cost_usd":round(95.-risky,8),
-                "final_risky_exit_is_modeled_only":True,
-                "secondary_same_sector_original_cohort": {
-                    "sector_control_terminal_after_exit_fee_usd":round(sector_final,8),
-                    "selected_minus_same_sector_net_percentage_points":round(
-                        stock_final-sector_final,8),
-                    "same_95pct_initial_gross_and_both_sides_costed":True,
-                    "original_24_issuer_contemporary_sector_roster_only":True,
-                    "includes_original_selected_stocks_in_control":True,
-                    "not_independent_or_factor_neutral_alpha":True,
-                },
-            }
-            # Secondary, PREDECLARED before the first entry: compare the
-            # identical frozen picks with SPY at matched 126-return
-            # original-source volatility. No leverage, hindsight or
-            # change to the primary 95%-gross experiment.
-            if preentry_risk["status"]=="PREENTRY_RISK_MATCHED_NO_LEVERAGE_RESEARCH_ONLY":
-                sw=preentry_risk["stock_risky_fraction"]
-                bw=preentry_risk["spy_risky_fraction"]
-                stock_risky=100.*sw/(1+fee)
-                spy_risky=100.*bw/(1+fee)
-                stock_risk_final=100.*(1-sw)+stock_risky*stock_growth*(1-fee)
-                spy_risk_final=100.*(1-bw)+spy_risky*spy_growth*(1-fee)
-                by_cost[str(bps)]["secondary_preentry_volatility_matched"]= {
-                    "stock_risky_fraction":sw,
-                    "spy_risky_fraction":bw,
-                    "stock_final_after_costs_usd":round(stock_risk_final,8),
-                    "spy_final_after_costs_usd":round(spy_risk_final,8),
-                    "stock_minus_spy_net_percentage_points":round(
-                        stock_risk_final-spy_risk_final,8),
-                    "preentry_only_no_future_risk_fit":True,
-                    "not_a_factor_neutral_or_live_qualified_test":True,
+        if periods>0:
+            stock_growth=np.mean([float(end[s]/entry[s]) for s in selected])
+            spy_growth=float(end[p4l.BENCHMARK]/entry[p4l.BENCHMARK])
+            sector_growth=sum(weight*float(end[s]/entry[s])
+                              for s,weight in sector_control.items())
+            by_cost={}
+            for bps in COST_BPS:
+                fee=bps/10000.
+                risky=95./(1+fee)
+                stock_final=INITIAL_CASH+risky*stock_growth*(1-fee)
+                passive_final=INITIAL_CASH+risky*spy_growth*(1-fee)
+                sector_final=INITIAL_CASH+risky*sector_growth*(1-fee)
+                by_cost[str(bps)]={
+                    "equal_95pct_initial_cash_and_round_trip_costs":True,
+                    "theoretical_stock_terminal_after_exit_fee_usd":round(stock_final,8),
+                    "theoretical_spy_terminal_after_exit_fee_usd":round(passive_final,8),
+                    "stock_minus_spy_net_percentage_points":round(stock_final-passive_final,8),
+                    "entry_purchase_cost_usd":round(95.-risky,8),
+                    "final_risky_exit_is_modeled_only":True,
+                    "secondary_same_sector_original_cohort": {
+                        "sector_control_terminal_after_exit_fee_usd":round(sector_final,8),
+                        "selected_minus_same_sector_net_percentage_points":round(
+                            stock_final-sector_final,8),
+                        "same_95pct_initial_gross_and_both_sides_costed":True,
+                        "original_24_issuer_contemporary_sector_roster_only":True,
+                        "includes_original_selected_stocks_in_control":True,
+                        "not_independent_or_factor_neutral_alpha":True,
+                    },
                 }
-        stage=("COMPLETED_FROZEN_21_SESSION_FORWARD_MARK_NOT_ALPHA"
+                # Secondary, PREDECLARED before the first entry: compare the
+                # identical frozen picks with SPY at matched 126-return
+                # original-source volatility. No leverage, hindsight or
+                # change to the primary 95%-gross experiment.
+                if preentry_risk["status"]=="PREENTRY_RISK_MATCHED_NO_LEVERAGE_RESEARCH_ONLY":
+                    sw=preentry_risk["stock_risky_fraction"]
+                    bw=preentry_risk["spy_risky_fraction"]
+                    stock_risky=100.*sw/(1+fee)
+                    spy_risky=100.*bw/(1+fee)
+                    stock_risk_final=100.*(1-sw)+stock_risky*stock_growth*(1-fee)
+                    spy_risk_final=100.*(1-bw)+spy_risky*spy_growth*(1-fee)
+                    by_cost[str(bps)]["secondary_preentry_volatility_matched"]= {
+                        "stock_risky_fraction":sw,
+                        "spy_risky_fraction":bw,
+                        "stock_final_after_costs_usd":round(stock_risk_final,8),
+                        "spy_final_after_costs_usd":round(spy_risk_final,8),
+                        "stock_minus_spy_net_percentage_points":round(
+                            stock_risk_final-spy_risk_final,8),
+                        "preentry_only_no_future_risk_fit":True,
+                        "not_a_factor_neutral_or_live_qualified_test":True,
+                    }
+        stage=("ENTRY_CLOSE_OBSERVED_AWAITING_FIRST_FUTURE_MARK"
+               if periods==0 else
+               "COMPLETED_FROZEN_21_SESSION_FORWARD_MARK_NOT_ALPHA"
                if finished else "INTERIM_FOR_INFORMATION_NOT_QUALIFICATION")
-        provisional=by_cost["15"]["stock_minus_spy_net_percentage_points"]
+        provisional=(by_cost["15"]["stock_minus_spy_net_percentage_points"]
+                     if periods>0 else None)
     return {
         "schema":SCHEMA,
         "status":stage,
