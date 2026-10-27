@@ -151,7 +151,15 @@ def route(*,capital_nav_usd,prospective_cap_usd,settled_cash_usd,
         if tradable<minimum or tradable==0:
             if amount!=0:blocked.append({"symbol":k,"reason":"MODELED_NOTIONAL_BELOW_UNVERIFIED_MIN"})
             continue
-        minimum_tickets=count_to_fit(tradable,specs[k]["max_ticket"])
+        # A ticket also cannot exceed the model's per-symbol DAILY volume
+        # participation allowance. A single large ticket spread across
+        # several days is not an executable ticket. Model cent-denominated
+        # notional conservatively rather than rounding capacity upward.
+        day_cap=down(specs[k]["volume"]*PARTICIPATION)
+        ticket_cap=min(specs[k]["max_ticket"],day_cap)
+        if ticket_cap<minimum:
+            raise CapacityStop("Modeled daily liquidity below minimum ticket")
+        minimum_tickets=count_to_fit(tradable,ticket_cap)
         if tradable<Decimal(minimum_tickets)*minimum:
             # E.g. $15 cannot be split into $10-max, $10-min tickets.
             # Preserve the current holding/cash rather than pretending a
@@ -171,23 +179,26 @@ def route(*,capital_nav_usd,prospective_cap_usd,settled_cash_usd,
     for side,group in (("BUY",buys),("SELL",sells)):
         for symbol,amount in sorted(group.items()):
             data=specs[symbol]
-            tickets=count_to_fit(amount,data["max_ticket"])
+            per_day=data["volume"]*PARTICIPATION
+            ticket_cap=min(data["max_ticket"],down(per_day))
+            if ticket_cap<data["min"]:
+                raise CapacityStop("Modeled daily liquidity below minimum ticket")
+            tickets=count_to_fit(amount,ticket_cap)
             if tickets>MAX_TICKETS:raise CapacityStop("Beyond modeled order batching capacity")
             total_modeled_tickets+=tickets
             if total_modeled_tickets>MAX_TICKETS:
                 raise CapacityStop("Aggregate modeled tickets exceed bounded capacity")
-            per_day=data["volume"]*PARTICIPATION
-            if per_day<data["min"]:
-                raise CapacityStop("Modeled average daily liquidity below min ticket")
-            volume_days=count_to_fit(amount,per_day)
+            volume_days=count_to_fit(amount,down(per_day))
             ticket_days=int(ceil(tickets/MAX_TICKETS_PER_MODELED_DAY))
             days=max(volume_days,ticket_days)
             max_capacity_days=max(max_capacity_days,days)
-            cost=fee_upper_by_ticket(amount,data["max_ticket"],data["side"],data["min"])
+            cost=fee_upper_by_ticket(amount,ticket_cap,data["side"],data["min"])
             estimates[symbol+"_"+side]={
                 "symbol":symbol,"direction":side,
                 "hypothetical_notional_usd":nstr(amount),
                 "modelled_ticket_count":tickets,
+                "modeled_effective_max_ticket_after_daily_liquidity_usd":nstr(ticket_cap),
+                "modeled_daily_participation_cap_usd":nstr(down(per_day)),
                 "modelled_minimum_distinct_execution_days":days,
                 "modeled_fee_per_ticket_rounded_up_usd":nstr(cost),
                 "actual_order_quantity_and_client_id":None,
@@ -196,6 +207,9 @@ def route(*,capital_nav_usd,prospective_cap_usd,settled_cash_usd,
             all_side_fees+=cost
             if side=="BUY":combined_buy+=amount+cost
             else:combined_sell+=amount-cost
+    # Ticket count includes per-symbol daily liquidity, not only the venue
+    # max order. The overall days figure remains a LOWER BOUND, not an
+    # authenticated executable cross-symbol schedule.
     # Daily ticket capacity is SHARED across symbols and trade sides. The
     # maximum of per-symbol day counts alone can understate execution time.
     global_ticket_days=count_to_fit(Decimal(total_modeled_tickets),
@@ -255,6 +269,8 @@ def route(*,capital_nav_usd,prospective_cap_usd,settled_cash_usd,
         "maximum_modeled_capacity_days":max_capacity_days,
         "aggregate_modelled_ticket_count":total_modeled_tickets,
         "global_shared_ticket_capacity_minimum_days":global_ticket_days,
+        "modeled_days_are_lower_bound_not_feasible_joint_schedule":True,
+        "ticket_fees_include_per_asset_daily_participation_limit":True,
         "post_cost_model_nav_usd":nstr(post_cost_nav),
         "post_trade_holdings_include_untraded_dust":True,
         "max_daily_volume_participation_assumption":format(PARTICIPATION,"f"),
