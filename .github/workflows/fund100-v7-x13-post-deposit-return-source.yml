@@ -1,0 +1,55 @@
+name: Fund-100 V7 X13 Post-Deposit Private Return Source (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_x13_post_last_transfer_account_marks_v1_0.py'
+      - 'test_fund100_v7_x13_post_last_transfer_account_marks_v1_0.py'
+      - 'fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py'
+      - 'research_lab/V7_X13_MULTIPLE_DEPOSIT_PERFORMANCE_SOURCE_2026_10_27.md'
+      - '.github/workflows/fund100-v7-x13-post-deposit-return-source.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_x13_post_last_transfer_account_marks_v1_0.py'
+      - 'test_fund100_v7_x13_post_last_transfer_account_marks_v1_0.py'
+      - 'fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py'
+      - '.github/workflows/fund100-v7-x13-post-deposit-return-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fully-brokerless-cashflow-vintage-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install existing research and test dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Assert multi-deposit privacy, original seven-GET and original hard stop
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python -m pytest -q \
+            test_fund100_v7_x13_post_last_transfer_account_marks_v1_0.py \
+            test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py \
+            test_fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py
+          python - <<'PY'
+          import inspect
+          import fund100_v7_x13_post_last_transfer_account_marks_v1_0 as x
+          import fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 as seven
+          assert x.BROKER_GETS==x.BROKER_POSTS==x.BROKER_ORDERS==0
+          assert not x.LIVE_AUTHORIZED
+          assert len(seven.PATHS)==7
+          assert seven.PATHS[-2:] == (
+              '/v2/account/activities','/v2/account/portfolio/history')
+          assert 'post_last_transfer_source_diagnostic' in inspect.getsource(seven.evaluate)
+          PY
