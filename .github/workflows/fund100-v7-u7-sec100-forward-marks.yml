@@ -1,0 +1,45 @@
+name: Fund-100 V7 U7 SEC100 Two-Close Costed Forward Research (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_u7_sec100_two_close_costed_mark_v1_0.py'
+      - 'test_fund100_v7_u7_sec100_two_close_costed_mark_v1_0.py'
+      - 'fund100_v7_u6_sec100_causal_forward_admission_v1_0.py'
+      - '.github/workflows/fund100-v7-u7-sec100-forward-marks.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_u7_sec100_two_close_costed_mark_v1_0.py'
+      - 'test_fund100_v7_u7_sec100_two_close_costed_mark_v1_0.py'
+      - '.github/workflows/fund100-v7-u7-sec100-forward-marks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-costed-two-close-source-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test original-source forward chronology and after-cost SPY arithmetic
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m pytest -q \
+            test_fund100_v7_u7_sec100_two_close_costed_mark_v1_0.py \
+            test_fund100_v7_u6_sec100_causal_forward_admission_v1_0.py \
+            test_fund100_v7_u5_original_sec100_postbaseline_delta_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import fund100_v7_u7_sec100_two_close_costed_mark_v1_0 as x
+          assert x.BROKER_GETS==x.BROKER_POSTS==x.BROKER_ORDERS==0
+          assert x.COSTS==(5,15,35)
+          assert x.BENCHMARK=='SPY'
+          print('Prospective research only: no authenticated future events or funded orders asserted.')
+          PY
