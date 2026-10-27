@@ -96,3 +96,75 @@ def test_first_seen_status_does_not_claim_a_second_identical_capture_is_new(tmp_
     assert not doc["previous_successful_daily_observer_artifact_compared"]
     assert all("first_source_observed_after_baseline_utc" not in x
                for x in doc["candidate_accessions_absent_from_first_baseline_NOT_trade_signals"])
+
+def prior_successful_source(tmp_path,*,already_has_event=False):
+    """Two distinct authenticated SEC receipts, not a backdated news timestamp."""
+    paths=physical_sources(tmp_path,later_has_new=True)
+    previous,raw,_=snapshot(tmp_path,later=True,after=already_has_event)
+    previous["original_brokerless_sec_captured_end_utc"]="2026-10-28T16:05:00Z"
+    for row in previous["first_source_issuer_rows"]:
+        row["original_source_acquired_utc"]="2026-10-28T16:05:00Z"
+    previous_dir=tmp_path/"previous_successful"
+    write(previous_dir,previous,raw)
+    original=u5.original_source_delta(
+        original_u3_dir=paths[0],pinned_first_sec_dir=paths[1],
+        later_actual_sec_dir=previous_dir)
+    (previous_dir/"cumulative-original-accession-delta.json").write_text(
+        json.dumps(original))
+    return paths,previous_dir
+
+def test_previous_successful_source_proves_new_relative_to_last_success_only(tmp_path):
+    paths,prior=prior_successful_source(tmp_path)
+    doc=u5.original_source_delta(
+        original_u3_dir=paths[0],pinned_first_sec_dir=paths[1],
+        later_actual_sec_dir=paths[2],previous_successful_sec_dir=prior,
+        previous_successful_main_run_id=40553150624)
+    assert doc["cumulative_absent_from_FIRST_baseline_accessions_now_visible"]==100
+    assert doc["new_accessions_since_previous_successful_observer_count"]==100
+    assert doc["previous_successful_main_observer_run_id"]==40553150624
+    assert doc["previous_successful_daily_observer_artifact_compared"] is True
+    assert len(doc["accessions_absent_from_previous_successful_observer_NOT_trade_signals"])==100
+    assert not doc["newly_observed_TODAY_or_first_seen_in_this_run_proven"]
+    assert not doc["actual_original_SEC_public_dissemination_time_proven"]
+    assert not doc["measured_portfolio_alpha"]
+
+def test_repeated_successful_capture_has_zero_new_not_100(tmp_path):
+    paths,prior=prior_successful_source(tmp_path,already_has_event=True)
+    doc=u5.original_source_delta(
+        original_u3_dir=paths[0],pinned_first_sec_dir=paths[1],
+        later_actual_sec_dir=paths[2],previous_successful_sec_dir=prior,
+        previous_successful_main_run_id=40553150624)
+    assert doc["cumulative_absent_from_FIRST_baseline_accessions_now_visible"]==100
+    assert doc["new_accessions_since_previous_successful_observer_count"]==0
+    assert doc["accessions_absent_from_previous_successful_observer_NOT_trade_signals"]==[]
+
+def test_missing_or_modified_previous_successful_source_fails_closed(tmp_path):
+    paths,prior=prior_successful_source(tmp_path)
+    kwargs=dict(original_u3_dir=paths[0],pinned_first_sec_dir=paths[1],
+                later_actual_sec_dir=paths[2],
+                previous_successful_sec_dir=prior,
+                previous_successful_main_run_id=40553150624)
+    with pytest.raises(u5.NewSourceStop,match="paired"):
+        u5.original_source_delta(**{**kwargs,"previous_successful_main_run_id":None})
+    with pytest.raises(u5.NewSourceStop,match="paired"):
+        u5.original_source_delta(**{**kwargs,"previous_successful_sec_dir":None})
+    f=prior/"cumulative-original-accession-delta.json"
+    report=json.loads(f.read_text())
+    report["cumulative_absent_from_FIRST_baseline_accessions_now_visible"]=999
+    f.write_text(json.dumps(report))
+    with pytest.raises(u5.NewSourceStop,match="does not replay"):
+        u5.original_source_delta(**kwargs)
+
+def test_previous_source_must_precede_current_and_follow_original(tmp_path):
+    paths,prior=prior_successful_source(tmp_path)
+    manifest=prior/"manifest.json"
+    d=json.loads(manifest.read_text())
+    d["original_brokerless_sec_captured_end_utc"]="2026-10-29T17:05:00Z"
+    for row in d["first_source_issuer_rows"]:
+        row["original_source_acquired_utc"]="2026-10-29T17:05:00Z"
+    manifest.write_text(json.dumps(d))
+    with pytest.raises(u5.NewSourceStop):
+        u5.original_source_delta(
+            original_u3_dir=paths[0],pinned_first_sec_dir=paths[1],
+            later_actual_sec_dir=paths[2],previous_successful_sec_dir=prior,
+            previous_successful_main_run_id=40553150624)
