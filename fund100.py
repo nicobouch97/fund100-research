@@ -70,7 +70,10 @@ def download_prices(
         auto_adjust=True,
         repair=True,
         progress=False,
-        threads=True,
+        # Keep yfinance's SQLite-backed timezone/repair cache single-writer.
+        # Concurrent ticker workers caused the 2026-10-27 Forward Lab
+        # source fetch to fail closed with 'database is locked'.
+        threads=False,
         group_by="column",
         multi_level_index=True,
     )
