@@ -1,0 +1,93 @@
+name: Fund-100 V7 U1 Original 100-Issuer IVV and SEC Prospective Freeze (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_u1_original_ivv_100_issuer_freeze_v1_0.py'
+      - 'test_fund100_v7_u1_original_ivv_100_issuer_freeze_v1_0.py'
+      - 'research_lab/V7_U1_PREDECLARED_IVV100_SEC_UNIVERSE_2026_10_27.md'
+      - '.github/workflows/fund100-v7-u1-prospective-100-issuer-freeze.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_u1_original_ivv_100_issuer_freeze_v1_0.py'
+      - 'test_fund100_v7_u1_original_ivv_100_issuer_freeze_v1_0.py'
+      - '.github/workflows/fund100-v7-u1-prospective-100-issuer-freeze.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v7-u1-original-once-ivv100-sec-issuer-freeze
+  cancel-in-progress: false
+
+jobs:
+  preregistered-public-issuer-source-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify original S&P 500 equity issuer source parser and lock conditions
+        run: |
+          set -euo pipefail
+          python -m pip install pytest
+          python -m pytest -q test_fund100_v7_u1_original_ivv_100_issuer_freeze_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import fund100_v7_u1_original_ivv_100_issuer_freeze_v1_0 as u
+          assert u.TARGET_DISTINCT_CIKS==100
+          assert u.MIN_IVV_EQUITY_TICKERS==400
+          assert u.BROKER_GETS==u.BROKER_POSTS==u.BROKER_ORDERS==0
+          assert not u.LIVE_AUTHORIZED
+          PY
+
+  original-source-first-capture-on-main-only:
+    needs: preregistered-public-issuer-source-validation
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+      SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Original iShares holdings AND original SEC CIK map — same receipt run
+        run: |
+          set -euo pipefail
+          test -n "$SEC_USER_AGENT" || { echo 'Missing existing SEC source requester identity'; exit 1; }
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python fund100_v7_u1_original_ivv_100_issuer_freeze_v1_0.py \
+            --output-dir /tmp/fund100-u1-first-original-100-issuer
+          python - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          import fund100_v7_u1_original_ivv_100_issuer_freeze_v1_0 as u
+          root=Path('/tmp/fund100-u1-first-original-100-issuer')
+          manifest=json.loads((root/'prospective-100-issuer-manifest.json').read_text())
+          assert manifest['schema']==u.SCHEMA
+          assert len(manifest['prospectively_frozen_100_unique_cik_roster'])==100
+          assert (hashlib.sha256((root/'original-IVV-public-fund-holdings.csv').read_bytes())
+              .hexdigest()==manifest['original_provider_csv_sha256'])
+          assert (hashlib.sha256((root/'original-SEC-public-ticker-map.json').read_bytes())
+              .hexdigest()==manifest['original_sec_ticker_map_sha256'])
+          assert manifest['future_sec_events_or_returns_observed']==0
+          assert manifest['broker_gets']==manifest['broker_posts']==manifest['broker_orders']==0
+          assert manifest['live_authorized'] is False
+          assert manifest['trading_authorized'] is False
+          print('FIRST source capture of 100 unique SEC-resolved IVV issuers complete.')
+          print('No SEC price alpha yet. No broker and no release.')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-u1-first-original-IVV-100-issuer-${{ github.run_id }}
+          path: /tmp/fund100-u1-first-original-100-issuer/
+          retention-days: 90
+          if-no-files-found: error
