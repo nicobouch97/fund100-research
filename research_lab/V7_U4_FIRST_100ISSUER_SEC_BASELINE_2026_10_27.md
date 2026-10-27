@@ -1,0 +1,18 @@
+# U4 — original 100-issuer SEC Item 2.02 FIRST baseline
+
+**27 October 2026. Research baseline before any 100-issuer candidate evaluation.** The last source-backed U3 main run [40545345749](https://github.com/nicobouch97/fund100-research/actions/runs/40545345749) recorded **exactly 100 unique original SEC CIKs** using dated TickerInside IVV holdings (holdings as of 23 October) plus original SEC ticker mapping. Archived artifact ID **12752028069**, original name **fund100-v7-u3-first-dated-mirror-sec100-40545345749**. This is an issuer-**attributed third-party mirror**, not verified raw iShares source.
+
+## Fixed baseline contract
+
+- Download **only the specific first successful original U3 source artifact** from main. Recompute the 100-company identity list from the original mirror and original SEC raw bytes, verify exact U3 manifest/source hashes and disabled broker permissions, then preserve original cohort membership and order. Absolutely no future re-ranking by earnings, returns or company survival.
+- Use the existing official identified SEC requester and **one original official SEC submissions GET per distinct CIK**, 100 total, from exact approved https://data.sec.gov/submissions/CIK##########.json endpoints; require CIK identity and aligned original 8-K Item 2.02 arrays, ignore 8-K/A and unrelated filing form/items, and preserve the full raw source bytes **gzip compressed** with original uncompressed SHA256 and exact acquired UTC receipt for reproducibility. Rate limit to <10/second; fail rather than fabricate a missing filing.
+- Capture a full 100-issuer census as **the inaugural BASELINE**, never label filings already present at first capture as new event discoveries, surprise, predictive alpha, or buy signals. A 27 October date-only SEC filing is NOT proof of an intra-day first disclosure timestamp. An issuer report from before roster capture remains historical even if present in the first source.
+- The first completed green main job archive is the only source authority for subsequent surveillance. Distinguish a future original SEC accession **absent from baseline** from historic already observed accessions by independent dated source replay. An accession newly seen in a later capture can still be an SEC backfill or a first observation from our polling interval; call it a *new absence-to-presence observation*, not official dissemination timestamp, analyst surprise, or realized investment profit.
+- A later reader must also verify the exact raw SEC bytes, 100 identities, original U3 hashes and chronological receipt of the first baseline BEFORE computing a difference. Without a first verified baseline, no proof of new post-registered filings.
+- We **do not** yet provide an earnings entry strategy or measure future risk-adjusted performance. That will require fixed event eligibility, next completed price observations, 5/15/35bps costs, sector/SPY matched benchmarks and independent prospective outcomes. Testing with historic 2014–25 filings or today's top 100 survivor issuers would be invalid.
+
+## Provenance constraints
+
+Official SEC submissions raw JSON can be updated; first raw responses are archived and cannot silently be replaced with the second download. The SEC generic CIK filing date is insufficient to prove time of public availability or that a trade could execute after the release. External dividend/earnings estimates and total return price data are not included in U4.
+
+**LIVE unchanged:** Fund-100 original USD130.30 trial ceiling, HIGH 6% daily/20% DD/35% volatility policy, ACWI/EEM/XLE/XLV holdings, engaged operator STOP and GitHub environment kill; zero broker GET, POST, orders or new account funding authority. Paper and LIVE actions are not connected to U4.
