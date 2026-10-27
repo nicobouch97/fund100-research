@@ -71,3 +71,47 @@ def test_unfillable_ticket_split_cannot_be_ranked_as_profitable_switch():
                for w in candidate["capacity_and_risk_warnings"])
     assert result["preferred_research_candidate"] is None
     assert result["broker_orders"]==0 and not result["trading_authorized"]
+
+
+def test_cash_feasible_costed_opportunity_beats_higher_unsettled_forecast():
+    # Synthetic $1,000 NAV: $900 is held and only $100 is settled.
+    # The larger paper edge needs a $450 BUY financed by unsettled SELLs.
+    # A smaller positive, SELL-only de-risking opportunity is feasible
+    # without those proceeds and should not be hidden by the deferred one.
+    kwargs=dict(
+        capital_nav_usd="1000.00",prospective_cap_usd="1000.00",
+        settled_cash_usd="100.00",
+        current_holdings_usd={"XLK":"450.00","XLE":"450.00"},
+        asset_spec=x5.sample_spec(),
+        expected_returns_fraction={"XLK":"-0.10","XLE":"-0.10","IWM":"0.20"},
+        forecast_horizon_sessions=21,
+    )
+    deferred={"XLK":"0.10","XLE":"0.10","IWM":"0.45"}
+    ready={"XLK":"0.40","XLE":"0.45"}
+    result=x6.select(**kwargs,candidate_target_weights={
+        "RESEARCH_HIGH_EDGE_DEFERRED":deferred,
+        "RESEARCH_SMALL_EDGE_CASH_READY":ready,
+    })
+    outcomes=result["candidate_outcomes"]
+    assert outcomes["RESEARCH_HIGH_EDGE_DEFERRED"]["state"]==(
+        "RESEARCH_SWITCH_REQUIRES_FUTURE_SETTLEMENT")
+    assert outcomes["RESEARCH_SMALL_EDGE_CASH_READY"]["state"]==(
+        "RESEARCH_SWITCH_SYNTHETIC_CASH_SUFFICIENT")
+    assert Decimal(outcomes["RESEARCH_HIGH_EDGE_DEFERRED"][
+        "hypothetical_net_advantage_usd"])>Decimal(outcomes[
+        "RESEARCH_SMALL_EDGE_CASH_READY"]["hypothetical_net_advantage_usd"])
+    assert result["preferred_research_candidate"]=="RESEARCH_SMALL_EDGE_CASH_READY"
+    assert result["best_deferred_research_candidate"]=="RESEARCH_HIGH_EDGE_DEFERRED"
+    assert result["cash_feasible_candidates_ranked_before_deferred"]
+    assert result["cash_feasible_is_synthetic_not_authenticated_buying_power"]
+    assert not result["preferred_requires_future_settlement"]
+    assert result["broker_orders"]==0 and not result["trading_authorized"]
+
+    # Preserve existing contract: if no feasible positive edge exists,
+    # surface the deferred hypothesis, explicitly marked as unsettled.
+    only_deferred=x6.select(**kwargs,candidate_target_weights={
+        "RESEARCH_HIGH_EDGE_DEFERRED":deferred})
+    assert only_deferred["preferred_research_candidate"]=="RESEARCH_HIGH_EDGE_DEFERRED"
+    assert only_deferred["best_deferred_research_candidate"]=="RESEARCH_HIGH_EDGE_DEFERRED"
+    assert only_deferred["preferred_requires_future_settlement"]
+    assert only_deferred["broker_orders"]==0
