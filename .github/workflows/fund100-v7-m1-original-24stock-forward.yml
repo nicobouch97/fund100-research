@@ -5,6 +5,9 @@ on:
     paths:
       - 'fund100_v7_m1_original_24stock_momentum_forward_v1_0.py'
       - 'test_fund100_v7_m1_original_24stock_momentum_forward_v1_0.py'
+      - 'fund100_v7_m3_original_first_entry_vintage_lock_v1_0.py'
+      - 'test_fund100_v7_m3_original_first_entry_vintage_lock_v1_0.py'
+      - 'research_lab/V7_M3_PIN_FIRST_ACTUAL_OCT27_SOURCE_2026_10_27.md'
       - 'research_lab/V7_M1_PREDECLARED_ORIGINAL_24_STOCK_MOMENTUM_FORWARD_2026_10_26.md'
       - '.github/workflows/fund100-v7-m1-original-24stock-forward.yml'
   push:
@@ -49,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
-          python -m pytest -q test_fund100_v7_m1_original_24stock_momentum_forward_v1_0.py
+          python -m pytest -q test_fund100_v7_m1_original_24stock_momentum_forward_v1_0.py test_fund100_v7_m3_original_first_entry_vintage_lock_v1_0.py
           python - <<'PY'
           import fund100_v7_m1_original_24stock_momentum_forward_v1_0 as m
           assert m.ORIGINAL_RUN_ID==40368883430 and m.ORIGINAL_ARTIFACT_ID==12670273944
@@ -78,6 +81,7 @@ jobs:
           test -s /tmp/fund100-v7-m1-original/original-price-manifest.json
           test -s /tmp/fund100-v7-m1-original/original-24issuer-prices.csv
       - name: Calculate unchanged original picks only against the later original price vintage
+        id: observed
         run: |
           set -euo pipefail
           python fund100_v7_m1_original_24stock_momentum_forward_v1_0.py \
@@ -106,6 +110,76 @@ jobs:
           print('Final frozen comparison available:',doc['final_result_completed'])
           print('Latest verdict:',doc['status'])
           PY
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          source=Path('/tmp/fund100-v7-m1-observed/frozen-forward-stocks-versus-SPY.json')
+          result=json.loads(source.read_text())
+          state=result['status']
+          first=(state=='ENTRY_CLOSE_OBSERVED_AWAITING_FIRST_FUTURE_MARK'
+                 and result['completed_price_session']=='2026-10-27')
+          later=(state in ('INTERIM_FOR_INFORMATION_NOT_QUALIFICATION',
+                          'COMPLETED_FROZEN_21_SESSION_FORWARD_MARK_NOT_ALPHA')
+                 and result['observed_holding_intervals']>0)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output:
+              output.write(f'first_only={str(first).lower()}\n')
+              output.write(f'has_returns={str(later).lower()}\n')
+          PY
+      - name: Archive FIRST original Oct27 post-close quote BEFORE any forward exit prices
+        if: github.ref == 'refs/heads/main' && steps.observed.outputs.first_only == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-m3-first-entry-20261027
+          path: /tmp/fund100-v7-m1-observed/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Verify ALL later returns against earliest archived Oct27 first-entry vendor vintage
+        if: github.ref == 'refs/heads/main' && steps.observed.outputs.has_returns == 'true'
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPO/actions/artifacts?name=fund100-v7-m3-first-entry-20261027&per_page=100" \
+            > /tmp/fund100-v7-m3-first-entry-candidates.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path('/tmp/fund100-v7-m3-first-entry-candidates.json').read_text())
+          candidates=[
+              a for a in x.get('artifacts',[])
+              if a.get('name')=='fund100-v7-m3-first-entry-20261027'
+              and a.get('expired') is False
+              and a.get('workflow_run',{}).get('head_branch')=='main'
+              and a.get('created_at','')>='2026-10-27T20:00:00Z'
+          ]
+          if not candidates:
+              raise SystemExit('NO_SOURCE_PIN: no successful first-entry source artifact, no forward return')
+          # The FIRST eligible independently stored source becomes the immutable
+          # anchor. Never switch to a later better-looking source vintage.
+          earliest=min(candidates,key=lambda a:(a['created_at'],a['id']))
+          Path('/tmp/fund100-v7-m3-earliest-source-run').write_text(
+              str(earliest['workflow_run']['id']))
+          PY
+          ANCHOR_RUN="$(cat /tmp/fund100-v7-m3-earliest-source-run)"
+          gh api "repos/$GH_REPO/actions/runs/$ANCHOR_RUN" \
+             > /tmp/fund100-v7-m3-anchor-run.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          run=json.loads(Path('/tmp/fund100-v7-m3-anchor-run.json').read_text())
+          if (run.get('conclusion')!='success'
+              or run.get('status')!='completed'
+              or run.get('head_branch')!='main'
+              or not run.get('path','').endswith(
+                  '/fund100-v7-m1-original-24stock-forward.yml')):
+              raise SystemExit('UNQUALIFIED_SOURCE_RUN: first-entry anchor not original main M1')
+          PY
+          mkdir -p /tmp/fund100-v7-m3-earliest-first-entry
+          gh run download "$ANCHOR_RUN" --repo "$GH_REPO" \
+             -n fund100-v7-m3-first-entry-20261027 \
+             -D /tmp/fund100-v7-m3-earliest-first-entry
+          python fund100_v7_m3_original_first_entry_vintage_lock_v1_0.py \
+             --first-entry-dir /tmp/fund100-v7-m3-earliest-first-entry \
+             --latest-dir /tmp/fund100-v7-m1-observed \
+             --output /tmp/fund100-v7-m1-observed/source-first-entry-vintage-audit.json
       - uses: actions/upload-artifact@v4
         with:
           name: fund100-v7-m1-frozen-24issuer-21session-SPY-${{ github.run_id }}

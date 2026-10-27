@@ -1,0 +1,145 @@
+"""V7 M3: frozen initial 27 Oct stock entry receipt never silently rewritten.
+
+A 2026 Yahoo adjusted-history vendor may restate an earlier forward entry
+price after dividends, splits or revisions. Comparing every later exit bar
+to a silently revised "27 October" close misrepresents a prospective
+experiment. This verifier locks the first source record to a distinct
+immutable successful GitHub Actions artifact *before any later exit
+sessions are admitted*. If the original 27 October adjusted series
+changes at later acquisition, HOLD; do not synthesize stock returns.
+
+Pure public-data diagnostics; no API, broker, credentials, order authority.
+"""
+from __future__ import annotations
+from hashlib import sha256
+import json
+from pathlib import Path
+
+import pandas as pd
+
+import fund100_stock_broad_momentum_p4l_v1_0 as p4l
+import fund100_v7_m1_original_24stock_momentum_forward_v1_0 as m1
+
+SCHEMA="FUND100_V7_M3_IMMUTABLE_FIRST_ENTRY_VENDOR_VINTAGE_V1"
+FIRST_ENTRY_ARTIFACT_NAME="fund100-v7-m3-first-entry-20261027"
+ORIGINAL_ENTRY_SESSION=m1.ENTRY_SESSION
+BROKER_GETS=BROKER_POSTS=BROKER_ORDERS=0
+LIVE_AUTHORIZED=False
+
+class EntryAnchorStop(ValueError):pass
+
+def _canonical_prices(raw:pd.DataFrame)->pd.DataFrame:
+    try:
+        return p4l.validate_prices(raw)
+    except p4l.BroadStockStop as e:
+        raise EntryAnchorStop("Unverifiable original price schema") from e
+
+def _proof(r:dict,required_stage:str):
+    if (type(r) is not dict or r.get("schema")!=m1.SCHEMA
+        or r.get("status")!=required_stage
+        or r.get("original_fixed_run_id")!=m1.ORIGINAL_RUN_ID
+        or r.get("original_fixed_artifact_id")!=m1.ORIGINAL_ARTIFACT_ID
+        or r.get("frozen_entry_close_session")!=ORIGINAL_ENTRY_SESSION
+        or r.get("required_holding_intervals")!=m1.HOLD_SESSIONS
+        or r.get("signal_predictive_alpha_proven") is not False
+        or r.get("trading_authorized") is not False
+        or r.get("eligible_to_rank_real_live_orders") is not False
+        or r.get("broker_gets")!=0 or r.get("broker_posts")!=0
+        or r.get("broker_orders")!=0):
+        raise EntryAnchorStop("Unauthenticated M1 source provenance or trading boundary")
+    source=r.get("original_later_source_completed_nyse_close_evidence")
+    if (type(source) is not dict
+        or source.get("captured_after_exchange_close_plus_buffer") is not True
+        or source.get("post_close_source_buffer_minutes")!=90):
+        raise EntryAnchorStop("Missing independent post-close source proof")
+    return source
+
+def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
+           subsequent_report:dict,subsequent_prices:pd.DataFrame):
+    initial=_proof(initial_report,"ENTRY_CLOSE_OBSERVED_AWAITING_FIRST_FUTURE_MARK")
+    if (initial_report.get("observed_holding_intervals")!=0
+        or initial_report.get("completed_price_session")!=ORIGINAL_ENTRY_SESSION
+        or initial.get("last_vendor_session")!=ORIGINAL_ENTRY_SESSION
+        or initial_report.get("costed_95pct_stocks_versus_95pct_spy")!={}
+        or initial_report.get("final_result_completed") is not False):
+        raise EntryAnchorStop("Anchor is not first entry-only completed NYSE close")
+    stage=subsequent_report.get("status")
+    if stage not in (
+        "INTERIM_FOR_INFORMATION_NOT_QUALIFICATION",
+        "COMPLETED_FROZEN_21_SESSION_FORWARD_MARK_NOT_ALPHA"):
+        raise EntryAnchorStop("Later return horizon is not actually observed")
+    subsequent=_proof(subsequent_report,stage)
+    if (not 1<=subsequent_report.get("observed_holding_intervals",0)<=m1.HOLD_SESSIONS
+        or subsequent_report.get("completed_price_session")<=ORIGINAL_ENTRY_SESSION
+        or subsequent.get("last_vendor_session")!=
+           subsequent_report.get("completed_price_session")
+        or initial_report.get("original_24issuer_selection_price_sha256")!=
+           subsequent_report.get("original_24issuer_selection_price_sha256")
+        or initial_report.get("original_pretrade_selection")!=
+           subsequent_report.get("original_pretrade_selection")):
+        raise EntryAnchorStop("Later source changes original selection or duration")
+    original=_canonical_prices(initial_prices)
+    later=_canonical_prices(subsequent_prices)
+    date=pd.Timestamp(ORIGINAL_ENTRY_SESSION)
+    if (original.index[-1]!=date or date not in later.index
+        or original.index[0]!=later.index[0]
+        or subsequent_report["completed_price_session"]!=
+           later.index[-1].date().isoformat()):
+        raise EntryAnchorStop("Anchor price cutoff or later market session missing")
+    # The zero lookahead decision demands the very SAME originally
+    # published 26 share/benchmark prices on model entry day.
+    # P4L validates full input histories; compare the selected day's
+    # strictly numeric values at the original 10-decimal CSV precision.
+    first=original.loc[date]
+    current=later.loc[date]
+    modified=[ticker for ticker in first.index if
+              format(float(first[ticker]),".10f")!=
+              format(float(current[ticker]),".10f")]
+    if modified:
+        # Do not disclose ticker identities or financially sensitive source
+        # relationships in a rejected audit without authenticated account
+        # context. Caller keeps original pinned source and must HOLD.
+        raise EntryAnchorStop("Previously observed entry close was vendor-revised")
+    first_sha=sha256(("".join(
+        f"{k},{float(first[k]):.10f}\n" for k in sorted(first.index)
+        )).encode("ascii")).hexdigest()
+    return {
+        "schema":SCHEMA,
+        "status":"PINNED_2026_10_27_FIRST_ENTRY_SOURCE_STABLE_RESEARCH_ONLY",
+        "actual_anchor_price_vintage_sha256":first_sha,
+        "anchor_captured_utc":initial_report["later_price_observed_utc"],
+        "future_capture_utc":subsequent_report["later_price_observed_utc"],
+        "confirmed_frozen_preentry_stock_selection":True,
+        "entry_date_price_symbols_compared":len(first.index),
+        "anchor_source_stage_before_any_exit":"ENTRY_CLOSE_OBSERVED_AWAITING_FIRST_FUTURE_MARK",
+        "checked_later_complete_intervals":subsequent_report["observed_holding_intervals"],
+        "source_prices_are_vendor_adjusted_not_executable_fills":True,
+        "no_alpha_established":True,
+        "no_automatic_cashflow_or_corporate_action_repairs":True,
+        "original_live_ceiling_usd":"130.30",
+        "broker_gets":0,"broker_posts":0,"broker_orders":0,
+        "trading_authorized":False,
+    }
+
+def _csv(path:Path):
+    return _canonical_prices(pd.read_csv(path,parse_dates=["Date"]).set_index("Date"))
+
+def main():
+    import argparse
+    p=argparse.ArgumentParser()
+    p.add_argument("--first-entry-dir",type=Path,required=True)
+    p.add_argument("--latest-dir",type=Path,required=True)
+    p.add_argument("--output",type=Path,required=True)
+    a=p.parse_args()
+    result=verify(
+        initial_report=json.loads((a.first_entry_dir/
+            "frozen-forward-stocks-versus-SPY.json").read_text()),
+        initial_prices=_csv(a.first_entry_dir/"new-price-manifest.csv"),
+        subsequent_report=json.loads((a.latest_dir/
+            "frozen-forward-stocks-versus-SPY.json").read_text()),
+        subsequent_prices=_csv(a.latest_dir/"new-price-manifest.csv"))
+    a.output.write_text(json.dumps(result,sort_keys=True,indent=2)+"\n")
+    print(result["status"],"source price symbols:",result["entry_date_price_symbols_compared"])
+    print("Original model entry locked; NO BROKER and NO proven alpha.")
+
+if __name__=="__main__":main()
