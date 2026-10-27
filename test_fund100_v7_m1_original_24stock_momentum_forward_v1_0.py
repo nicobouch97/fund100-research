@@ -315,3 +315,85 @@ def test_sector_conditional_rank_is_preentry_fixed_and_never_a_live_signal():
     assert a["selected_slots_by_sector"]==b["selected_slots_by_sector"]
     assert a["distinct_equal_weight_sector_matched_portfolios"]==b[
         "distinct_equal_weight_sector_matched_portfolios"]
+
+
+def test_same_session_capture_only_after_true_nyse_close_and_90min_buffer():
+    from datetime import datetime,timezone,timedelta
+    # US summer and winter close times differ. Do not hardcode 20:00Z.
+    for day in ("2026-10-27","2026-11-02","2026-11-27"):
+        cal=xcals.get_calendar("XNYS")
+        official=cal.session_close(pd.Timestamp(day)).to_pydatetime()
+        for delta in (timedelta(minutes=-1),timedelta(minutes=89)):
+            with pytest.raises(m.ForwardStop):
+                m._source_close_qualified(
+                    last_session=day,capture=official+delta)
+        proof=m._source_close_qualified(
+            last_session=day,capture=official+timedelta(minutes=91))
+        assert proof["same_calendar_date_as_last_completed_session"]
+        assert proof["post_close_source_buffer_minutes"]==90
+        assert proof["vendor_adjusted_close_is_not_an_authenticated_auction_fill"]
+    with pytest.raises(m.ForwardStop):
+        m._source_close_qualified(
+            last_session="2026-10-31",
+            capture=datetime(2026,10,31,23,50,tzinfo=timezone.utc))
+
+def test_actual_first_model_entry_capture_has_zero_completed_return_intervals():
+    r=run("2026-10-27",capture="2026-10-27T23:45:00Z")
+    assert r["status"]=="ENTRY_CLOSE_OBSERVED_AWAITING_FIRST_FUTURE_MARK"
+    assert r["observed_holding_intervals"]==0
+    assert not r["costed_95pct_stocks_versus_95pct_spy"]
+    assert r["interim_excess_at_15bps_pp_not_alpha"] is None
+    proof=r["original_later_source_completed_nyse_close_evidence"]
+    assert proof["official_nyse_session_close_utc"]=="2026-10-27T20:00:00Z"
+    assert proof["same_calendar_date_as_last_completed_session"]
+    assert not r["final_result_completed"]
+    assert not r["signal_predictive_alpha_proven"]
+    assert r["broker_gets"]==r["broker_posts"]==r["broker_orders"]==0
+
+def test_incomplete_same_day_partial_prices_are_rejected_even_if_vendor_labels_date():
+    for stamp in ("2026-10-27T14:00:00Z",
+                  "2026-10-27T20:00:00Z",
+                  "2026-10-27T21:29:59Z"):
+        with pytest.raises(m.ForwardStop):
+            run("2026-10-27",capture=stamp)
+    # Fixed stock entry close and future interval cannot be scored before
+    # 2026-10-28's real close, even if 28 appears in a synthetic CSV.
+    with pytest.raises(m.ForwardStop):
+        run("2026-10-28",capture="2026-10-28T19:00:00Z")
+    r=run("2026-10-28",capture="2026-10-28T23:45:00Z")
+    assert r["observed_holding_intervals"]==1
+    assert r["status"]=="INTERIM_FOR_INFORMATION_NOT_QUALIFICATION"
+
+def test_dedicated_later_vendor_download_requests_today_without_changing_p4l(
+        monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    parent=price_panel("2026-10-27")
+    seen={}
+    def fake_download(**kw):
+        seen.update(kw)
+        return pd.concat({("Close",s):parent[s] for s in parent.columns},
+                         axis=1)
+    monkeypatch.setitem(sys.modules,"yfinance",
+                        SimpleNamespace(download=fake_download))
+    original_clock=m.datetime
+    class Captured(original_clock):
+        @classmethod
+        def now(cls,tz=None):
+            return original_clock(2026,10,27,23,45,tzinfo=timezone.utc)
+    monkeypatch.setattr(m,"datetime",Captured)
+    data=m._later_original_public_prices()
+    assert data.index[-1]==pd.Timestamp("2026-10-27")
+    assert set(data.columns)==set(parent.columns)
+    assert seen["start"]=="2025-10-01"
+    assert seen["end"]=="2026-10-28"
+    assert seen["auto_adjust"] is True
+    assert seen["actions"] is False
+    # On an in-session read the same vendor bar must fail closed.
+    class Premature(Captured):
+        @classmethod
+        def now(cls,tz=None):
+            return original_clock(2026,10,27,19,30,tzinfo=timezone.utc)
+    monkeypatch.setattr(m,"datetime",Premature)
+    with pytest.raises(m.ForwardStop):
+        m._later_original_public_prices()
