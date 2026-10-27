@@ -70,7 +70,7 @@ def test_source_weight_ranking_not_alphabetical_future_winner():
 def test_missing_provider_date_or_source_after_now_refused():
     raw,sec=fixtures()
     with pytest.raises(u.UniverseStop):
-        evaluate(hold=raw.replace(b"Fund Holdings as of","Unknown reported date"),sec=sec)
+        evaluate(hold=raw.replace(b"Fund Holdings as of",b"Unknown reported date"),sec=sec)
     with pytest.raises(u.UniverseStop):
         evaluate(hold=raw,sec=sec,now="2026-10-22T15:00:00Z")
     with pytest.raises(u.UniverseStop):
