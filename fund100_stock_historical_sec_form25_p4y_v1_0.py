@@ -144,6 +144,24 @@ def _issuer_cover_class(primary: str) -> str | None:
 
 
 
+def _sgml_header_ciks(raw: bytes) -> set[int]:
+    """CIKs independently present in the original SEC SGML header.
+
+    These may identify a filer, exchange or subject company; a match alone
+    does NOT prove the index CIK is the security's issuer. The separate
+    primary 25-NSE XML must still identify the issuer and exchange.
+    Missing or ambiguous header evidence must never qualify a linkage.
+    """
+    head = raw[:100_000].decode("latin-1")
+    sections = re.findall(r"<SEC-HEADER>(.*?)</SEC-HEADER>",
+                          head, re.IGNORECASE | re.DOTALL)
+    if len(sections) != 1:
+        return set()
+    values = re.findall(r"(?im)^\s*CENTRAL INDEX KEY:\s*([0-9]{1,10})\s*$",
+                        sections[0])
+    return {int(value) for value in values if int(value) > 0}
+
+
 def _nse_issuer_parties(primary: str, *, index_cik: int | None) -> dict:
     """Recover the SUBJECT issuer CIK, not just the exchange/index filer CIK.
 
@@ -222,6 +240,10 @@ def parse_original_submission(raw: bytes, *, accession: str, form_type: str,
         or re.search(r"ACCESSION NUMBER:\s*" + re.escape(accession) + r"\b", head, re.I) is None
         or re.search(r"CONFORMED SUBMISSION TYPE:\s*" + re.escape(form_type) + r"\s", head, re.I) is None):
         raise Form25SourceStop("Original Form 25 SGML accession/type not verified")
+    header_concordant = (index_cik is not None
+                         and index_cik in _sgml_header_ciks(raw))
+    source_identity = ({"original_sec_header_index_cik_concordant":
+                        header_concordant} if index_cik is not None else {})
     text = raw.decode("latin-1")
     # Ignore unrelated exhibits and embedded quotes in other SGML documents.
     documents = re.findall(
@@ -232,11 +254,14 @@ def parse_original_submission(raw: bytes, *, accession: str, form_type: str,
     descriptions = [
         re.sub(r"\s+", " ", unescape(value)).strip()
         for body in primary for value in CLASS_TAG.findall(body)]
-    parties = (_nse_issuer_parties(primary[0], index_cik=index_cik)
+    # An XML party agreeing with an index CIK is not enough: independently
+    # verify that same CIK occurs in the original SEC SGML header first.
+    parties = (_nse_issuer_parties(
+        primary[0], index_cik=index_cik if header_concordant else None)
                if len(primary) == 1 and form_type == "25-NSE" else {})
     if len(primary) != 1 or len(descriptions) > 1:
         return {"security_class_state": "NO_UNAMBIGUOUS_STRUCTURED_CLASS",
-                "security_class_description": None, **parties}
+                "security_class_description": None, **source_identity, **parties}
     if descriptions:
         description = descriptions[0]
         source = "ORIGINAL_XML_CLASS"
@@ -249,7 +274,7 @@ def parse_original_submission(raw: bytes, *, accession: str, form_type: str,
     if (not description or len(description) > 300
         or "<" in description or ">" in description):
         return {"security_class_state": "NO_UNAMBIGUOUS_STRUCTURED_CLASS",
-                "security_class_description": None, **parties}
+                "security_class_description": None, **source_identity, **parties}
     # An XML issuer identity must refer to the SAME security-class text.
     if (parties.get("nse_issuer_identity_state") ==
             "ORIGINAL_NSE_PARTIES_INDEX_CONCORDANT"
@@ -263,7 +288,7 @@ def parse_original_submission(raw: bytes, *, accession: str, form_type: str,
         state = "NO_UNAMBIGUOUS_STRUCTURED_CLASS"
     return {"security_class_state": state,
             "security_class_description": description,
-            "security_class_source": source, **parties}
+            "security_class_source": source, **source_identity, **parties}
 
 
 def _official_form25_get(url: str, agent: str) -> bytes:
@@ -362,6 +387,13 @@ def capture_original_sample(source_dir: Path, agent: str) -> dict:
         "unavailable_or_unverifiable_sources": sum(
             r["source_state"] != "ORIGINAL_SUBMISSION_VERIFIED" for r in observations),
         "security_class_review_states": dict(sorted(counts.items())),
+        "original_sec_header_index_cik_concordant_sources": sum(
+            r.get("original_sec_header_index_cik_concordant") is True
+            for r in observations),
+        "original_sec_header_index_cik_unverified_sources": sum(
+            r["source_state"] == "ORIGINAL_SUBMISSION_VERIFIED"
+            and r.get("original_sec_header_index_cik_concordant") is not True
+            for r in observations),
         "nse_verified_original_issuer_exchange_pairs": sum(
             r.get("nse_issuer_identity_state") ==
             "ORIGINAL_NSE_PARTIES_INDEX_CONCORDANT" for r in observations),
