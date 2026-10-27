@@ -380,7 +380,7 @@ def test_dedicated_later_vendor_download_requests_today_without_changing_p4l(
     class Captured(original_clock):
         @classmethod
         def now(cls,tz=None):
-            return original_clock(2026,10,27,23,45,tzinfo=timezone.utc)
+            return cls(2026,10,27,23,45,tzinfo=timezone.utc)
     monkeypatch.setattr(m,"datetime",Captured)
     data=m._later_original_public_prices()
     assert data.index[-1]==pd.Timestamp("2026-10-27")
@@ -393,7 +393,7 @@ def test_dedicated_later_vendor_download_requests_today_without_changing_p4l(
     class Premature(Captured):
         @classmethod
         def now(cls,tz=None):
-            return original_clock(2026,10,27,19,30,tzinfo=timezone.utc)
+            return cls(2026,10,27,19,30,tzinfo=timezone.utc)
     monkeypatch.setattr(m,"datetime",Premature)
     with pytest.raises(m.ForwardStop):
         m._later_original_public_prices()
