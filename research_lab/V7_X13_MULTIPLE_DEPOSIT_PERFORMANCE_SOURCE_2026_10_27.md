@@ -68,7 +68,20 @@ after a new deposit.
   and explicitly increased capital authorisation. Original pilot
   ceiling remains **USD130.30** until that occurs.
 
-This bounded capability belongs within the *existing* protected
-read-only seven-GET source path; there is no need to introduce a new
-credential-bearing workflow or clone the broker API code. Offline
-tests use fictitious numbers and test that private values never leak.
+**Protected source integration explicitly deferred.** The original
+seven-GET script is pinned by exact Git blob SHA in the LIVE static
+safety audit and separate scope tests. An initial attempt to add the
+new private, research-only status to that script correctly failed the
+protected-scope tests. The attempted change has been **fully reverted**.
+The original reviewed credential-bearing reader remains byte-identical
+at Git blob SHA `162b90ab620ab0708543f34e79bfd7cfdd64f053`.
+Do **not** update the protected pin merely to promote this experiment.
+
+X13 is now an **offline, brokerless research component only**. The
+existing seven-GET response shapes can be replayed in purely synthetic
+offline tests, but no live reader imports X13 and no new private GET is
+scheduled. A genuinely necessary future LIVE integration would need a
+distinct, independently audited versioned credential-scope proposal.
+The original existing production workflow and its full risk-stop
+behavior remain unchanged. Offline tests use fictitious numbers and
+test that private values never leak.
