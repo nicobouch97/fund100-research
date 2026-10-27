@@ -1,0 +1,69 @@
+name: Fund-100 P4Z Original Delisted Stock Sample Audit (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_stock_delisted_sample_p4z_v1_0.py'
+      - 'test_fund100_stock_delisted_sample_p4z_v1_0.py'
+      - 'research_lab/stocks/P4Z_FREE_DELISTED_SAMPLE_PRE_REG_2026_10_27.md'
+      - '.github/workflows/fund100-p4z-delisted-sample-source.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_stock_delisted_sample_p4z_v1_0.py'
+      - 'test_fund100_stock_delisted_sample_p4z_v1_0.py'
+      - 'research_lab/stocks/P4Z_FREE_DELISTED_SAMPLE_PRE_REG_2026_10_27.md'
+      - '.github/workflows/fund100-p4z-delisted-sample-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  original-delisted-sample-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test synthetic source and no-order invariants
+        run: |
+          set -euo pipefail
+          python -m pip install pytest
+          python -m pytest -q test_fund100_stock_delisted_sample_p4z_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Retrieve publicly offered free original stock sample
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fund100-p4z
+          curl --fail --location --silent --show-error --retry 2 --connect-timeout 15 --max-time 120 \
+            'https://historicaldata.net/file/stocks_sample_2022H2.zip' \
+            --output /tmp/fund100-p4z/free-original.zip
+      - name: Audit original daily listings and unresolved terminal proceeds
+        run: |
+          set -euo pipefail
+          python fund100_stock_delisted_sample_p4z_v1_0.py \
+            --source-zip /tmp/fund100-p4z/free-original.zip \
+            --output /tmp/fund100-p4z/source-audit.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/fund100-p4z/source-audit.json').read_text())
+          assert [x['daily_rows'] for x in r['listings']] == [127,127,127,83]
+          assert r['twtr_terminal_shareholder_proceeds_usd'] is None
+          assert r['twtr_post_delisting_total_return'] is None
+          assert r['historical_stock_alpha_backtest_eligible'] is False
+          assert r['broker_gets']==r['broker_posts']==r['broker_orders']==0
+          assert r['live_authorized'] is False and r['trading_authorized'] is False
+          print('Original free sample audited; unknown terminal outcome preserved.')
+          PY
+          rm -f /tmp/fund100-p4z/free-original.zip
+      - name: Archive audit hashes and aggregate diagnostics only (NO VENDOR CSV)
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-p4z-delisted-sample-audit-${{ github.run_id }}
+          path: /tmp/fund100-p4z/source-audit.json
+          retention-days: 90
+          if-no-files-found: error
