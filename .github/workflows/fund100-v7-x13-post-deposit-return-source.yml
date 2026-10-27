@@ -51,5 +51,11 @@ jobs:
           assert len(seven.PATHS)==7
           assert seven.PATHS[-2:] == (
               '/v2/account/activities','/v2/account/portfolio/history')
-          assert 'post_last_transfer_source_diagnostic' in inspect.getsource(seven.evaluate)
+          from pathlib import Path
+          import audit_fund100_live_boundary as audit
+          pinned='162b90ab620ab0708543f34e79bfd7cfdd64f053'
+          script=Path('fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py')
+          assert audit.git_blob_digest(script)==pinned
+          assert 'post_last_transfer_source_diagnostic' not in inspect.getsource(seven.evaluate)
+          print('Original credential-bearing seven-GET script remains EXACTLY unchanged.')
           PY
