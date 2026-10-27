@@ -395,5 +395,14 @@ def test_dedicated_later_vendor_download_requests_today_without_changing_p4l(
         def now(cls,tz=None):
             return cls(2026,10,27,19,30,tzinfo=timezone.utc)
     monkeypatch.setattr(m,"datetime",Premature)
+    before=m._later_original_public_prices()
+    assert before.index[-1]==pd.Timestamp("2026-10-26")
+    # A grotesquely distorted in-progress price must not poison
+    # completed-session attribution when the market is still open.
+    parent.loc["2026-10-27","AAPL"]*=9.
+    clipped=m._later_original_public_prices()
+    assert clipped.index[-1]==pd.Timestamp("2026-10-26")
+    assert clipped.loc["2026-10-26","AAPL"]==parent.loc["2026-10-26","AAPL"]
+    monkeypatch.setattr(m,"datetime",Captured)
     with pytest.raises(m.ForwardStop):
         m._later_original_public_prices()
