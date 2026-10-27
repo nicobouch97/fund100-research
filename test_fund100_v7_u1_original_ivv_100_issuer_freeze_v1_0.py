@@ -182,3 +182,18 @@ def test_duplicate_issuer_ticker_columns_are_rejected():
         b"Issuer Ticker,Issuer Ticker,Name,Sector,Asset Class,Weight (%),Market Value")
     with pytest.raises(u.UniverseStop,match="Ambiguous original holdings columns"):
         evaluate(hold=duplicated,sec=sec)
+
+
+def test_credentialless_provider_layout_probe_never_exposes_issuer_constituents():
+    raw,_=fixtures()
+    result=u.original_layout_diagnostic(raw)
+    assert result["schema"]=="FUND100_U2_PUBLIC_ORIGINAL_IVV_COLUMN_LAYOUT_ONLY"
+    assert result["original_csv_row_count"]>400
+    assert result["source_constituent_data_redistributed"] is False
+    assert result["broker_gets"]==result["broker_posts"]==result["broker_orders"]==0
+    formatted=json.dumps(result)
+    assert "Issuer 200" not in formatted
+    assert "S000" not in formatted
+    assert "Market Value" not in formatted
+    assert any("Ticker" in x["matching_public_column_labels"]
+               for x in result["candidate_metadata_and_header_rows"])
