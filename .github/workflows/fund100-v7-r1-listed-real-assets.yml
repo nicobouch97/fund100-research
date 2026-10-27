@@ -1,0 +1,63 @@
+name: Fund-100 V7 R1 Real Listed Assets Source Study (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_r1_listed_real_assets_v1_0.py'
+      - 'test_fund100_v7_r1_listed_real_assets_v1_0.py'
+      - '.github/workflows/fund100-v7-r1-listed-real-assets.yml'
+      - 'research_lab/V7_R1_REAL_LISTED_ASSETS_PREDECLARED_2026_10_27.md'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_r1_listed_real_assets_v1_0.py'
+      - 'test_fund100_v7_r1_listed_real_assets_v1_0.py'
+      - '.github/workflows/fund100-v7-r1-listed-real-assets.yml'
+      - 'research_lab/V7_R1_REAL_LISTED_ASSETS_PREDECLARED_2026_10_27.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-backed-real-asset-research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install existing research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify preregistered research and no-order invariants
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v7_r1_listed_real_assets_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Fetch actual original ETF vendor adjusted-close source and evaluate
+        run: |
+          set -euo pipefail
+          python fund100_v7_r1_listed_real_assets_v1_0.py --output-dir /tmp/fund100-v7-r1
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          root=Path('/tmp/fund100-v7-r1')
+          report=json.loads((root/'real-assets-costed-research.json').read_text())
+          raw=(root/'original-adjusted-real-assets.csv').read_bytes()
+          assert hashlib.sha256(raw).hexdigest()==report['source_csv_sha256']
+          assert report['last_close']=='2026-10-23'
+          assert report['source_tickers']==['VNQ','IGF','SPY','ACWI']
+          assert report['broker_gets']==report['broker_posts']==report['broker_orders']==0
+          assert report['trading_authorized'] is False and report['live_authorized'] is False
+          for era in report['fixed_eras']:
+              print('NET R1 15bps',era,report['results']['15']['eras'][era]['rotation_minus_static_real_assets_net_cagr_pp'])
+          print('RESEARCH VERDICT',report['fixed_15bps_era_verdict'])
+          PY
+      - name: Preserve source bytes and complete model results
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-r1-real-assets-source-${{ github.run_id }}
+          path: /tmp/fund100-v7-r1/
+          retention-days: 90
+          if-no-files-found: error
