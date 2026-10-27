@@ -26,7 +26,9 @@ class NewSourceStop(ValueError):pass
 
 def original_source_delta(*,original_u3_dir:Path,
                           pinned_first_sec_dir:Path,
-                          later_actual_sec_dir:Path)->dict:
+                          later_actual_sec_dir:Path,
+                          previous_successful_sec_dir:Path|None=None,
+                          previous_successful_main_run_id:int|None=None)->dict:
     try:
         original=u4.verify(
             u3_dir=original_u3_dir,report_dir=pinned_first_sec_dir)
@@ -70,6 +72,78 @@ def original_source_delta(*,original_u3_dir:Path,
         raise NewSourceStop("Duplicated original SEC accessions in delta")
     if len(outcome)!=assessment["candidate_first_delta_count"]:
         raise NewSourceStop("Source delta count mismatch")
+    # Distinguish cumulative additions from accessions absent in the immediately
+    # preceding successful, archived main observer. Never infer public release
+    # time or a first-ever source observation from this pair of captures.
+    if (previous_successful_sec_dir is None)!=(previous_successful_main_run_id is None):
+        raise NewSourceStop("Previous SEC archive and its verified main run ID must be paired")
+    new_since_previous=None
+    previous_manifest_sha=None
+    if previous_successful_sec_dir is not None:
+        if (type(previous_successful_main_run_id) is not int
+            or previous_successful_main_run_id<=0
+            or previous_successful_main_run_id in (PINNED_U3_MAIN_RUN_ID,
+                                                    PINNED_U4_MAIN_RUN_ID)):
+            raise NewSourceStop("Previous successful observer main run ID invalid")
+        try:
+            previous=u4.verify(u3_dir=original_u3_dir,
+                               report_dir=previous_successful_sec_dir)
+            prior_delta=u4.compare(baseline=original,later=previous)
+            u4.compare(baseline=previous,later=later)
+            if not (original["original_brokerless_sec_captured_end_utc"] <
+                    previous["original_brokerless_sec_captured_end_utc"] <
+                    later["original_brokerless_sec_captured_end_utc"]):
+                raise NewSourceStop("Previous observer not strictly between baseline and current")
+            # Check that the previous successful workflow actually archived
+            # the same original baseline-derived cumulative report.
+            archived=json.loads((previous_successful_sec_dir/
+                "cumulative-original-accession-delta.json").read_bytes())
+            recomputed=original_source_delta(
+                original_u3_dir=original_u3_dir,
+                pinned_first_sec_dir=pinned_first_sec_dir,
+                later_actual_sec_dir=previous_successful_sec_dir)
+            # U5's original successful archive predates these new fields.
+            # Verify EVERY original report field exactly while accepting the
+            # new, independently non-trading observer-comparison metadata.
+            comparison_fields={
+                "previous_successful_daily_observer_artifact_compared",
+                "previous_successful_main_observer_run_id",
+                "previous_successful_observer_manifest_sha256",
+                "new_accessions_since_previous_successful_observer_count",
+                "accessions_absent_from_previous_successful_observer_NOT_trade_signals",
+                "previous_successful_observer_is_not_SEC_public_release_timestamp",
+            }
+            original_fields=set(recomputed)-comparison_fields
+            if (not isinstance(archived,dict)
+                or not original_fields<=set(archived)
+                or not set(archived)<=set(recomputed)
+                or any(archived[k]!=recomputed[k] for k in original_fields)):
+                raise NewSourceStop("Previous successful observer report does not replay")
+            if archived.get("previous_successful_daily_observer_artifact_compared",False):
+                prior_count=archived.get("new_accessions_since_previous_successful_observer_count")
+                prior_rows=archived.get("accessions_absent_from_previous_successful_observer_NOT_trade_signals")
+                if (type(prior_count) is not int or prior_count<0
+                    or not isinstance(prior_rows,list) or len(prior_rows)!=prior_count):
+                    raise NewSourceStop("Previous observer comparison metadata inconsistent")
+            prior_keys={(r["cik"],r["accession"])
+                        for r in prior_delta["candidate_first_delta_filings_not_trade_signals"]}
+            now_keys={(r["sec_cik_10_digit"],r["original_sec_filing_accession"])
+                      for r in outcome}
+            if not prior_keys<=now_keys:
+                raise NewSourceStop("Previously observed candidate accession disappeared")
+            new_since_previous=[
+                {**r,"first_seen_since_previous_successful_source_only":True}
+                for r in outcome
+                if (r["sec_cik_10_digit"],r["original_sec_filing_accession"])
+                   not in prior_keys
+            ]
+            previous_manifest_sha=sha256(
+                (previous_successful_sec_dir/"manifest.json").read_bytes()).hexdigest()
+        except NewSourceStop:
+            raise
+        except (u4.BaselineStop,KeyError,ValueError,TypeError,OSError,EOFError,
+                zlib.error,json.JSONDecodeError) as exc:
+            raise NewSourceStop("Previous successful SEC archive failed original replay") from exc
     latest_raw=(later_actual_sec_dir/"manifest.json").read_bytes()
     first_raw=(pinned_first_sec_dir/"manifest.json").read_bytes()
     return {
@@ -92,7 +166,15 @@ def original_source_delta(*,original_u3_dir:Path,
         "candidate_accessions_absent_from_first_baseline_NOT_trade_signals":
             outcome,
         "newly_observed_TODAY_or_first_seen_in_this_run_proven":False,
-        "previous_successful_daily_observer_artifact_compared":False,
+        "previous_successful_daily_observer_artifact_compared":
+            previous_successful_sec_dir is not None,
+        "previous_successful_main_observer_run_id":previous_successful_main_run_id,
+        "previous_successful_observer_manifest_sha256":previous_manifest_sha,
+        "new_accessions_since_previous_successful_observer_count":
+            None if new_since_previous is None else len(new_since_previous),
+        "accessions_absent_from_previous_successful_observer_NOT_trade_signals":
+            new_since_previous,
+        "previous_successful_observer_is_not_SEC_public_release_timestamp":True,
         "actual_original_SEC_public_dissemination_time_proven":False,
         "SEC_filing_date_is_not_economic_intraday_timestamp":True,
         "this_is_a_watch_population_not_an_investment_strategy":True,
@@ -112,6 +194,8 @@ def main():
     p.add_argument("--original-u3",type=Path,required=True)
     p.add_argument("--original-first-sec",type=Path,required=True)
     p.add_argument("--later-sec",type=Path,required=True)
+    p.add_argument("--previous-successful-sec",type=Path)
+    p.add_argument("--previous-successful-main-run-id",type=int)
     p.add_argument("--output",type=Path,required=True)
     args=p.parse_args()
     if args.output.exists():
@@ -119,13 +203,17 @@ def main():
     doc=original_source_delta(
         original_u3_dir=args.original_u3,
         pinned_first_sec_dir=args.original_first_sec,
-        later_actual_sec_dir=args.later_sec)
+        later_actual_sec_dir=args.later_sec,
+        previous_successful_sec_dir=args.previous_successful_sec,
+        previous_successful_main_run_id=args.previous_successful_main_run_id)
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps(doc,sort_keys=True,indent=2)+"\n")
     print("Original verified 100 CIKs:",doc["exact_preselected_100_SEC_CIK_sources_verified"])
     print("PREEXISTING baseline 8-K filings:",doc["known_filings_present_in_baseline"])
     print("CUMULATIVE after-baseline absent original accessions:",
           doc["cumulative_absent_from_FIRST_baseline_accessions_now_visible"])
+    print("New since previous successful source (null if unverified):",
+          doc["new_accessions_since_previous_successful_observer_count"])
     print("Not a same-day first dissemination time. NOT proven alpha. NO BROKER.")
 
 if __name__=="__main__":main()
