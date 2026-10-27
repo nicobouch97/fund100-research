@@ -14,6 +14,10 @@ on:
       - 'test_fund100_v7_m1_original_24stock_momentum_forward_v1_0.py'
       - '.github/workflows/fund100-v7-m1-original-24stock-forward.yml'
   schedule:
+    # New prospective bar as soon as 23:45Z source window clears the
+    # latest completed NYSE session close plus the 90-minute guard.
+    # Retain following morning as a vendor-lag fallback; no history fit.
+    - cron: '45 23 * * 1-5'
     - cron: '35 12 * * 1-5'
   workflow_dispatch:
 
@@ -50,6 +54,7 @@ jobs:
           import fund100_v7_m1_original_24stock_momentum_forward_v1_0 as m
           assert m.ORIGINAL_RUN_ID==40368883430 and m.ORIGINAL_ARTIFACT_ID==12670273944
           assert m.ENTRY_SESSION=='2026-10-27' and m.HOLD_SESSIONS==21
+          assert m.SAME_SESSION_SOURCE_POST_CLOSE_BUFFER_MINUTES==90
           assert m.BROKER_GETS==m.BROKER_POSTS==m.BROKER_ORDERS==0
           assert not m.LIVE_AUTHORIZED
           PY
@@ -89,6 +94,11 @@ jobs:
           assert doc['original_fixed_run_id']==m.ORIGINAL_RUN_ID
           assert doc['frozen_entry_close_session']==m.ENTRY_SESSION
           assert doc['required_holding_intervals']==m.HOLD_SESSIONS
+          assert doc['original_later_source_completed_nyse_close_evidence'][
+              'captured_after_exchange_close_plus_buffer'] is True
+          if doc['observed_holding_intervals']==0:
+              assert not doc['costed_95pct_stocks_versus_95pct_spy']
+              assert doc['interim_excess_at_15bps_pp_not_alpha'] is None
           assert doc['broker_gets']==doc['broker_posts']==doc['broker_orders']==0
           assert doc['trading_authorized'] is False
           assert doc['signal_predictive_alpha_proven'] is False
