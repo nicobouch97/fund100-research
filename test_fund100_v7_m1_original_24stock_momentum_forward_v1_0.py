@@ -174,3 +174,71 @@ def test_flat_preentry_risk_does_not_fabricate_risk_matched_alpha():
     with pytest.raises(m.ForwardStop):
         m.evaluate(original_manifest=original,original_prices=first,
                    later_prices=later,captured_utc=ts)
+
+
+def test_sector_control_preserves_frozen_selected_sector_exposures():
+    original,first,later,ts=fixtures("2026-10-28")
+    result=m.evaluate(original_manifest=original,original_prices=first,
+                      later_prices=later,captured_utc=ts)
+    weights=result["secondary_frozen_sector_control_weights"]
+    selected=result["original_pretrade_selection"]
+    assert result["secondary_frozen_sector_control_known_before_entry"]
+    assert result["secondary_sector_control_contains_selected_names"]
+    assert set(weights)<=set(p4l.SECTORS)
+    assert sum(weights.values())==pytest.approx(1.,abs=1e-10)
+    for sector in set(p4l.SECTORS.values()):
+        expected=sum(p4l.SECTORS[s]==sector for s in selected)/len(selected)
+        observed=sum(w for s,w in weights.items() if p4l.SECTORS[s]==sector)
+        assert observed==pytest.approx(expected,abs=1e-10)
+    # Even a single-member sector cannot introduce a new instrument.
+    assert m._frozen_sector_control(["NEE"])=={"NEE":1.}
+    assert m._frozen_sector_control(["XOM","CVX"])=={"CVX":.5,"XOM":.5}
+
+
+def test_same_sector_control_costs_and_entry_exit_match_original_picks():
+    original,first,later,ts=fixtures("2026-10-28")
+    result=m.evaluate(original_manifest=original,original_prices=first,
+                      later_prices=later,captured_utc=ts)
+    entry=later.loc[m.ENTRY_SESSION]
+    end=later.loc["2026-10-28"]
+    weights=result["secondary_frozen_sector_control_weights"]
+    growth=sum(w*end[s]/entry[s] for s,w in weights.items())
+    for bps in ("5","15","35"):
+        item=result["costed_95pct_stocks_versus_95pct_spy"][bps]
+        sector=item["secondary_same_sector_original_cohort"]
+        fee=int(bps)/10000.
+        expected=5+95/(1+fee)*growth*(1-fee)
+        assert sector["sector_control_terminal_after_exit_fee_usd"]==pytest.approx(
+            expected,abs=1e-8)
+        assert sector["selected_minus_same_sector_net_percentage_points"]==pytest.approx(
+            item["theoretical_stock_terminal_after_exit_fee_usd"]-expected,abs=1e-8)
+        assert sector["same_95pct_initial_gross_and_both_sides_costed"]
+        assert sector["includes_original_selected_stocks_in_control"]
+        assert sector["not_independent_or_factor_neutral_alpha"]
+
+
+def test_sector_control_cannot_reselect_using_future_returns():
+    original,first,later,ts=fixtures("2026-10-28")
+    before=m.evaluate(original_manifest=original,original_prices=first,
+                      later_prices=later,captured_utc=ts)
+    changed=later.copy()
+    # An unselected stock in the same sector as a picked stock moves
+    # the comparator, but cannot change the original picks or weights.
+    selected=before["original_pretrade_selection"]
+    peer=next(s for s in p4l.SECTORS
+              if s not in selected and any(
+                  p4l.SECTORS[s]==p4l.SECTORS[p] for p in selected))
+    changed.loc["2026-10-28",peer]*=1.03
+    after=m.evaluate(original_manifest=original,original_prices=first,
+                     later_prices=changed,captured_utc=ts)
+    assert before["original_pretrade_selection"]==after["original_pretrade_selection"]
+    assert (before["secondary_frozen_sector_control_weights"]==
+            after["secondary_frozen_sector_control_weights"])
+    assert (before["costed_95pct_stocks_versus_95pct_spy"]["15"]
+            ["stock_minus_spy_net_percentage_points"]==
+            after["costed_95pct_stocks_versus_95pct_spy"]["15"]
+            ["stock_minus_spy_net_percentage_points"])
+    assert (before["costed_95pct_stocks_versus_95pct_spy"]["15"]
+            ["secondary_same_sector_original_cohort"] !=
+            after["costed_95pct_stocks_versus_95pct_spy"]["15"]
+            ["secondary_same_sector_original_cohort"])

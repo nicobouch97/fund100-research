@@ -57,3 +57,31 @@ account actual source verification, full after-cost portfolio risk
 and authorized standing mandate. STOP, kill switch, four current
 V5 ETFs and original USD130.30 principal ceiling remain unchanged;
 zero broker requests or orders occur.
+
+## 27 October 2026 pre-entry secondary sector-matched comparison
+
+**Registered before the 27 October NYSE entry close.** The original
+watchlist, entry, exit, cost scenarios, primary 95%-invested SPY comparison
+and pre-entry volatility-matched comparator remain unchanged.
+
+The additional **descriptive** control uses only the 24 issuer symbols and
+their frozen contemporary sector labels. For every selected stock slot,
+allocate that slot equally across *all* members of the same sector in
+the original 24-issuer roster; aggregate duplicate sectors. Freeze those
+weights before the first entry. Buy the control at the same 27 October
+close, hold without rebalancing for the same 21 NYSE intervals, and charge
+the same 5/15/35 bps each side, with 95% risky and 5% zero-return cash.
+
+This addresses a real confound: beating SPY could reflect sector allocation
+rather than momentum-based stock selection **within** those sectors. The
+secondary same-sector result isolates that descriptive distinction while
+preserving the original primary experiment. The control intentionally
+includes selected stocks among its sector members; a sector with only one
+cohort name necessarily matches that stock exactly. It is neither a
+separate independent peer cohort nor a sector-neutral factor model.
+The roster is survivor-selected in 2026, uses contemporary classifications
+and later vendor-adjusted prices, and is not a valid 2017 security master.
+A positive result is NOT independent alpha or permission to trade.
+
+No additional broker access, live asset, order, capital ceiling, operator
+STOP, environment kill-switch, or release-lock changes are made.
