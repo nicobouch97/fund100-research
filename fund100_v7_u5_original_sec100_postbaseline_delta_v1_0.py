@@ -9,6 +9,7 @@ or first observation in this particular run (later rescans can repeat).
 from __future__ import annotations
 import argparse
 import json
+import zlib
 from pathlib import Path
 from hashlib import sha256
 
@@ -32,7 +33,7 @@ def original_source_delta(*,original_u3_dir:Path,
         later=u4.verify(
             u3_dir=original_u3_dir,report_dir=later_actual_sec_dir)
         assessment=u4.compare(baseline=original,later=later)
-    except (u4.BaselineStop,KeyError,ValueError,TypeError,OSError) as exc:
+    except (u4.BaselineStop,KeyError,ValueError,TypeError,OSError,EOFError,zlib.error) as exc:
         raise NewSourceStop("Original 100-issuer sources failed replay or chronology") from exc
     if (original.get("source_count")!=100 or later.get("source_count")!=100
         or original.get("original_u3_artifact_id")!=u4.ORIGINAL_U3_ARTIFACT_ID
