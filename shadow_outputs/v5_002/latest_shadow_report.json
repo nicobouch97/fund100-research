@@ -1,17 +1,17 @@
 {
-  "generated_utc": "2026-10-24T17:20:26.645952+00:00",
+  "generated_utc": "2026-10-27T16:29:57.204287+00:00",
   "strategy": "V5-002_SHADOW",
   "manifest_hash": "852a1563f236b964974b44c4cea0895c50e880bb304ae62ae5c650c61f483c10",
   "shadow_baseline": "2026-10-01",
   "first_eligible_forward_date": "2026-10-02",
-  "last_processed_date": "2026-10-23",
-  "new_sessions_appended": 0,
-  "paper_nav_gbp": 98.97785919268306,
-  "benchmark_nav_gbp": 97.75083225241585,
-  "relative_wealth_vs_acwi": 0.012552598397308046,
+  "last_processed_date": "2026-10-26",
+  "new_sessions_appended": 1,
+  "paper_nav_gbp": 99.54949021880033,
+  "benchmark_nav_gbp": 98.42309397165702,
+  "relative_wealth_vs_acwi": 0.011444430384068838,
   "cumulative_turnover": 0.0,
   "cumulative_cost_gbp": 0.0,
   "emergency_signals": 0,
   "emergency_executions": 0,
-  "market_revision_records_detected": 2
+  "market_revision_records_detected": 3
 }
