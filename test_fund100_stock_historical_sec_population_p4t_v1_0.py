@@ -645,7 +645,8 @@ def test_form25_nse_issuer_identity_abstains_on_unreconciled_xml(invalid):
         xml = "<!DOCTYPE notificationOfRemoval [<!ENTITY x 'Common Stock'>]>" + xml
     else:
         xml = xml.replace("</notificationOfRemoval>", "")
-    raw = _form25_submission(accession, "25-NSE", None).replace(
+    raw = _form25_submission(accession, "25-NSE", None,
+                             header_cik=9009).replace(
         b"<other>Not a security title</other>", xml.encode())
     out = p4y.parse_original_submission(
         raw, accession=accession, form_type="25-NSE", index_cik=9009)
