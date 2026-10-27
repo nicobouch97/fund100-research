@@ -86,8 +86,8 @@ def _costed_rebalance(*,holdings:dict[str,float],cash:float,
     return desired,new_cash,fee,traded
 
 def simulate(prices:pd.DataFrame,*,start:str,end:str,arm:str,bps:int)->dict:
-    if (start,end) not in {(a,b) for _,a,b in (*WINDOWS,DESCRIPTIVE)}
-        or arm not in ARMS or type(bps) is not int or bps not in COSTS:
+    if ((start,end) not in {(a,b) for _,a,b in (*WINDOWS,DESCRIPTIVE)}
+        or arm not in ARMS or type(bps) is not int or bps not in COSTS):
         raise FactorBaselineStop("Unregistered strategy, era or cost stress")
     data=factor.validate_prices(prices)
     view=data.loc[start:end]
