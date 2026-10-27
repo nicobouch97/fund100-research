@@ -12,7 +12,10 @@ live execution, a licensed market feed or brokerage permission.
 """
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime, timezone
+from itertools import combinations, product
+from math import prod
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -124,6 +127,76 @@ def _frozen_sector_control(selected:list[str])->dict[str,float]:
     return dict(sorted(weights.items()))
 
 
+def _sector_conditional_rank(selected:list[str],entry:pd.Series,end:pd.Series)->dict:
+    """Exact frozen-sector peer assignment reference distribution.
+
+    Hold the ORIGINAL selected number of slots in each contemporary sector
+    fixed, enumerate distinct without-replacement assignments from all 24
+    original cohort names, and compare equal-dollar terminal gross growth.
+    This is a descriptive conditional rank, NOT an alpha p-value: the cohort
+    is survivor-selected and stocks within sectors are not exchangeable.
+    No optimization, resampling seed or later-price-driven membership.
+    """
+    if (type(selected) is not list or not 1<=len(selected)<=p4l.MAX_NAMES
+        or len(set(selected))!=len(selected)
+        or any(s not in p4l.SECTORS for s in selected)):
+        raise ForwardStop("Unverified frozen sector-conditional selection")
+    counts=Counter(p4l.SECTORS[s] for s in selected)
+    assignments=[]
+    for sector,n in sorted(counts.items()):
+        peers=sorted(s for s,v in p4l.SECTORS.items() if v==sector)
+        if n>len(peers):
+            raise ForwardStop("Frozen sector count exceeds original cohort")
+        assignments.append(tuple(combinations(peers,n)))
+    possible=prod(len(choices) for choices in assignments)
+    if not 1<=possible<=200000:
+        raise ForwardStop("Sector reference distribution exceeds bounded enumeration")
+    needed=set(p4l.SECTORS)
+    if (not isinstance(entry,pd.Series) or not isinstance(end,pd.Series)
+        or not needed<=set(entry.index) or not needed<=set(end.index)):
+        raise ForwardStop("Original sector reference prices incomplete")
+    growth={}
+    for symbol in needed:
+        a=float(entry[symbol])
+        b=float(end[symbol])
+        if not np.isfinite(a) or not np.isfinite(b) or a<=0 or b<=0:
+            raise ForwardStop("Invalid same-vintage sector reference price")
+        growth[symbol]=b/a
+    chosen=tuple(sorted(selected))
+    observed=sum(growth[s] for s in chosen)/len(chosen)
+    at_or_above=0
+    strictly_above=0
+    observed_present=False
+    lowest=float("inf")
+    highest=float("-inf")
+    for slots in product(*assignments):
+        portfolio=tuple(sorted(s for group in slots for s in group))
+        value=sum(growth[s] for s in portfolio)/len(chosen)
+        if portfolio==chosen:
+            observed_present=True
+        at_or_above+=value>=observed-1e-12
+        strictly_above+=value>observed+1e-12
+        lowest=min(lowest,value)
+        highest=max(highest,value)
+    if not observed_present:
+        raise ForwardStop("Original picks excluded from frozen sector reference")
+    return {
+        "status":"DESCRIPTIVE_EXACT_WITHIN_2026_SECTORS_NOT_ALPHA",
+        "selected_slots_by_sector":dict(sorted(counts.items())),
+        "distinct_equal_weight_sector_matched_portfolios":possible,
+        "selected_portfolio_in_reference":True,
+        "selected_mean_gross_growth":round(observed,12),
+        "number_at_or_above_selected_including_ties":at_or_above,
+        "number_strictly_above_selected":strictly_above,
+        "upper_tail_fraction_including_ties":round(at_or_above/possible,12),
+        "reference_minimum_mean_gross_growth":round(lowest,12),
+        "reference_maximum_mean_gross_growth":round(highest,12),
+        "membership_frozen_before_entry":True,
+        "same_vintage_prices_for_all_reference_portfolios":True,
+        "not_an_independent_or_factor_neutral_significance_test":True,
+    }
+
+
 def _frozen_preentry_risk(original_prices:pd.DataFrame, selected:list[str])->dict:
     """One pre-entry 126-return risk estimate; no later vendor prices.
 
@@ -200,6 +273,7 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
         periods=0
         provisional=None
         by_cost={}
+        sector_rank=None
     else:
         if pd.Timestamp(ENTRY_SESSION) not in data.index:
             raise ForwardStop("Actual predeclared entry close missing")
@@ -212,6 +286,8 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
             # Explicitly truncate to the 21-session exit date.
             interval=data.loc[ENTRY_SESSION:final]
             periods=HOLD_SESSIONS
+        sector_rank=(_sector_conditional_rank(selected,entry,end)
+                     if periods>0 else None)
         stock_growth=np.mean([float(end[s]/entry[s]) for s in selected])
         spy_growth=float(end[p4l.BENCHMARK]/entry[p4l.BENCHMARK])
         sector_growth=sum(weight*float(end[s]/entry[s])
@@ -280,6 +356,8 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
         "secondary_frozen_sector_control_known_before_entry":True,
         "secondary_sector_control_contains_selected_names":True,
         "secondary_frozen_preentry_volatility_match":preentry_risk,
+        "secondary_exact_sector_conditional_selection_rank":sector_rank,
+        "sector_conditional_rank_predeclared_before_entry":True,
         "frozen_entry_close_session":ENTRY_SESSION,
         "fixed_exit_close_session":final.date().isoformat(),
         "completed_price_session":last,
