@@ -13,7 +13,7 @@ live execution, a licensed market feed or brokerage permission.
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from itertools import combinations, product
 from math import prod
 from hashlib import sha256
@@ -38,6 +38,7 @@ INITIAL_CASH=5.
 INITIAL_NAV=100.
 BROKER_GETS=BROKER_POSTS=BROKER_ORDERS=0
 LIVE_AUTHORIZED=False
+SAME_SESSION_SOURCE_POST_CLOSE_BUFFER_MINUTES=90
 
 class ForwardStop(ValueError):pass
 
@@ -60,6 +61,108 @@ def _calendar(first,last):
         ).tz_localize(None).normalize()
     except Exception as exc:
         raise ForwardStop("NYSE session calendar unavailable") from exc
+
+def _source_close_qualified(*,last_session:str,capture:datetime)->dict:
+    """Only use an actual completed NYSE session, not an intraday partial bar.
+
+    Both an exchange-calendar close and a full extra 90 minutes must have
+    elapsed. A date label alone is NOT proof that a vendor's OHLC was its
+    final original consolidated close; the resulting research still
+    disclaims independent exchange/quote or fill authentication.
+    """
+    if not isinstance(capture,datetime) or capture.tzinfo is None:
+        raise ForwardStop("Source capture must be timezone-aware")
+    try:
+        date=pd.Timestamp(last_session)
+        cal=xcals.get_calendar("XNYS")
+        if date.tz is not None or not cal.is_session(date):
+            raise ForwardStop("Latest vendor session is not NYSE trading day")
+        actual_close=cal.session_close(date).to_pydatetime()
+    except ForwardStop:
+        raise
+    except Exception as exc:
+        raise ForwardStop("Unable to verify genuine last NYSE close") from exc
+    earliest=actual_close+timedelta(
+        minutes=SAME_SESSION_SOURCE_POST_CLOSE_BUFFER_MINUTES)
+    if capture<earliest or (capture.date()-date.date()).days>5:
+        raise ForwardStop("Current or later vendor bar not safely completed")
+    return {
+        "last_vendor_session":last_session,
+        "official_nyse_session_close_utc":
+            actual_close.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "post_close_source_buffer_minutes":
+            SAME_SESSION_SOURCE_POST_CLOSE_BUFFER_MINUTES,
+        "captured_after_exchange_close_plus_buffer":True,
+        "same_calendar_date_as_last_completed_session":
+            capture.date()==date.date(),
+        "vendor_adjusted_close_is_not_an_authenticated_auction_fill":True,
+    }
+
+
+def _later_original_public_prices()->pd.DataFrame:
+    """Dedicated FOLLOW-UP fetch: request today's price only to check it.
+
+    P4L's original selection downloader continues to EXCLUDE TODAY,
+    preserving the previous, hashed pre-entry selection and other research.
+    An incomplete or preclose current-day vendor bar fails the independent
+    close clock in evaluate; never reinterpret it as a final fill.
+    """
+    import yfinance as yf
+    now=datetime.now(timezone.utc)
+    symbols=sorted(set(p4l.SECTORS)|{p4l.BENCHMARK,p4l.CASH_REFERENCE})
+    # yfinance end is exclusive. The follow-up observer deliberately
+    # requests today, then refuses to score any unclosed source session.
+    raw=yf.download(
+        tickers=symbols,start="2025-10-01",
+        end=(now.date()+timedelta(days=1)).isoformat(),
+        interval="1d",auto_adjust=True,actions=False,
+        progress=False,threads=False)
+    if not isinstance(raw,pd.DataFrame) or raw.empty:
+        raise ForwardStop("Later public price source unavailable")
+    if not isinstance(raw.columns,pd.MultiIndex):
+        raise ForwardStop("Unexpected later price vendor schema")
+    extracted={}
+    for symbol in symbols:
+        for key in (("Close",symbol),(symbol,"Close")):
+            if key in raw.columns:
+                extracted[symbol]=raw[key]
+                break
+        if symbol not in extracted:
+            raise ForwardStop("Later source missing a frozen issuer")
+    data=pd.DataFrame(extracted)
+    if data.index.tz is not None:
+        data.index=data.index.tz_convert("UTC").tz_localize(None).normalize()
+    else:
+        data.index=data.index.normalize()
+    # Yahoo may expose a TODAY row while NYSE is actively trading.
+    # Such a price is neither a final auction print nor a usable
+    # forward model exit. Drop ONLY today's incomplete row; NEVER
+    # silently skip an older missing exchange session or stale history.
+    if len(data) and data.index[-1].date()==now.date():
+        try:
+            market=xcals.get_calendar("XNYS")
+            last_day=data.index[-1]
+            if not market.is_session(last_day):
+                raise ForwardStop("Unexpected current-date nontrading source bar")
+            admissible_after=market.session_close(last_day).to_pydatetime()+timedelta(
+                minutes=SAME_SESSION_SOURCE_POST_CLOSE_BUFFER_MINUTES)
+        except ForwardStop:
+            raise
+        except Exception as exc:
+            raise ForwardStop("Cannot establish current NYSE source closure") from exc
+        if now<admissible_after:
+            data=data.iloc[:-1]
+    if data.empty:
+        raise ForwardStop("No completed market bar after excluding partial today")
+    try:
+        validated=p4l.validate_prices(data)
+        p4l.p4g.verify_original_nyse_source_sessions(validated.index)
+    except (p4l.BroadStockStop,p4l.p4g.P4GStop) as exc:
+        raise ForwardStop("Missing or invalid NYSE source price session") from exc
+    _source_close_qualified(
+        last_session=validated.index[-1].date().isoformat(),capture=now)
+    return validated
+
 
 def _original(original:dict, original_prices:pd.DataFrame)->list[str]:
     if (not isinstance(original,dict)
@@ -252,9 +355,7 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
     except p4l.BroadStockStop as exc:
         raise ForwardStop("Later original public stock close history invalid") from exc
     last=data.index[-1].date().isoformat()
-    if (capture.date()<=data.index[-1].date()
-        or (capture.date()-data.index[-1].date()).days>5):
-        raise ForwardStop("Future-dated, same-date or stale later vendor close")
+    source_close=_source_close_qualified(last_session=last,capture=capture)
     if capture<=_timestamp(original_manifest["source_acquired_at_utc"]):
         raise ForwardStop("Later market source is not independent in time")
     if data.index[0]>original_prices.index[0] or data.index[0]>pd.Timestamp(ORIGINAL_LAST_SESSION):
@@ -288,58 +389,63 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
             periods=HOLD_SESSIONS
         sector_rank=(_sector_conditional_rank(selected,entry,end)
                      if periods>0 else None)
-        stock_growth=np.mean([float(end[s]/entry[s]) for s in selected])
-        spy_growth=float(end[p4l.BENCHMARK]/entry[p4l.BENCHMARK])
-        sector_growth=sum(weight*float(end[s]/entry[s])
-                          for s,weight in sector_control.items())
         by_cost={}
-        for bps in COST_BPS:
-            fee=bps/10000.
-            risky=95./(1+fee)
-            stock_final=INITIAL_CASH+risky*stock_growth*(1-fee)
-            passive_final=INITIAL_CASH+risky*spy_growth*(1-fee)
-            sector_final=INITIAL_CASH+risky*sector_growth*(1-fee)
-            by_cost[str(bps)]={
-                "equal_95pct_initial_cash_and_round_trip_costs":True,
-                "theoretical_stock_terminal_after_exit_fee_usd":round(stock_final,8),
-                "theoretical_spy_terminal_after_exit_fee_usd":round(passive_final,8),
-                "stock_minus_spy_net_percentage_points":round(stock_final-passive_final,8),
-                "entry_purchase_cost_usd":round(95.-risky,8),
-                "final_risky_exit_is_modeled_only":True,
-                "secondary_same_sector_original_cohort": {
-                    "sector_control_terminal_after_exit_fee_usd":round(sector_final,8),
-                    "selected_minus_same_sector_net_percentage_points":round(
-                        stock_final-sector_final,8),
-                    "same_95pct_initial_gross_and_both_sides_costed":True,
-                    "original_24_issuer_contemporary_sector_roster_only":True,
-                    "includes_original_selected_stocks_in_control":True,
-                    "not_independent_or_factor_neutral_alpha":True,
-                },
-            }
-            # Secondary, PREDECLARED before the first entry: compare the
-            # identical frozen picks with SPY at matched 126-return
-            # original-source volatility. No leverage, hindsight or
-            # change to the primary 95%-gross experiment.
-            if preentry_risk["status"]=="PREENTRY_RISK_MATCHED_NO_LEVERAGE_RESEARCH_ONLY":
-                sw=preentry_risk["stock_risky_fraction"]
-                bw=preentry_risk["spy_risky_fraction"]
-                stock_risky=100.*sw/(1+fee)
-                spy_risky=100.*bw/(1+fee)
-                stock_risk_final=100.*(1-sw)+stock_risky*stock_growth*(1-fee)
-                spy_risk_final=100.*(1-bw)+spy_risky*spy_growth*(1-fee)
-                by_cost[str(bps)]["secondary_preentry_volatility_matched"]= {
-                    "stock_risky_fraction":sw,
-                    "spy_risky_fraction":bw,
-                    "stock_final_after_costs_usd":round(stock_risk_final,8),
-                    "spy_final_after_costs_usd":round(spy_risk_final,8),
-                    "stock_minus_spy_net_percentage_points":round(
-                        stock_risk_final-spy_risk_final,8),
-                    "preentry_only_no_future_risk_fit":True,
-                    "not_a_factor_neutral_or_live_qualified_test":True,
+        if periods>0:
+            stock_growth=np.mean([float(end[s]/entry[s]) for s in selected])
+            spy_growth=float(end[p4l.BENCHMARK]/entry[p4l.BENCHMARK])
+            sector_growth=sum(weight*float(end[s]/entry[s])
+                              for s,weight in sector_control.items())
+            by_cost={}
+            for bps in COST_BPS:
+                fee=bps/10000.
+                risky=95./(1+fee)
+                stock_final=INITIAL_CASH+risky*stock_growth*(1-fee)
+                passive_final=INITIAL_CASH+risky*spy_growth*(1-fee)
+                sector_final=INITIAL_CASH+risky*sector_growth*(1-fee)
+                by_cost[str(bps)]={
+                    "equal_95pct_initial_cash_and_round_trip_costs":True,
+                    "theoretical_stock_terminal_after_exit_fee_usd":round(stock_final,8),
+                    "theoretical_spy_terminal_after_exit_fee_usd":round(passive_final,8),
+                    "stock_minus_spy_net_percentage_points":round(stock_final-passive_final,8),
+                    "entry_purchase_cost_usd":round(95.-risky,8),
+                    "final_risky_exit_is_modeled_only":True,
+                    "secondary_same_sector_original_cohort": {
+                        "sector_control_terminal_after_exit_fee_usd":round(sector_final,8),
+                        "selected_minus_same_sector_net_percentage_points":round(
+                            stock_final-sector_final,8),
+                        "same_95pct_initial_gross_and_both_sides_costed":True,
+                        "original_24_issuer_contemporary_sector_roster_only":True,
+                        "includes_original_selected_stocks_in_control":True,
+                        "not_independent_or_factor_neutral_alpha":True,
+                    },
                 }
-        stage=("COMPLETED_FROZEN_21_SESSION_FORWARD_MARK_NOT_ALPHA"
+                # Secondary, PREDECLARED before the first entry: compare the
+                # identical frozen picks with SPY at matched 126-return
+                # original-source volatility. No leverage, hindsight or
+                # change to the primary 95%-gross experiment.
+                if preentry_risk["status"]=="PREENTRY_RISK_MATCHED_NO_LEVERAGE_RESEARCH_ONLY":
+                    sw=preentry_risk["stock_risky_fraction"]
+                    bw=preentry_risk["spy_risky_fraction"]
+                    stock_risky=100.*sw/(1+fee)
+                    spy_risky=100.*bw/(1+fee)
+                    stock_risk_final=100.*(1-sw)+stock_risky*stock_growth*(1-fee)
+                    spy_risk_final=100.*(1-bw)+spy_risky*spy_growth*(1-fee)
+                    by_cost[str(bps)]["secondary_preentry_volatility_matched"]= {
+                        "stock_risky_fraction":sw,
+                        "spy_risky_fraction":bw,
+                        "stock_final_after_costs_usd":round(stock_risk_final,8),
+                        "spy_final_after_costs_usd":round(spy_risk_final,8),
+                        "stock_minus_spy_net_percentage_points":round(
+                            stock_risk_final-spy_risk_final,8),
+                        "preentry_only_no_future_risk_fit":True,
+                        "not_a_factor_neutral_or_live_qualified_test":True,
+                    }
+        stage=("ENTRY_CLOSE_OBSERVED_AWAITING_FIRST_FUTURE_MARK"
+               if periods==0 else
+               "COMPLETED_FROZEN_21_SESSION_FORWARD_MARK_NOT_ALPHA"
                if finished else "INTERIM_FOR_INFORMATION_NOT_QUALIFICATION")
-        provisional=by_cost["15"]["stock_minus_spy_net_percentage_points"]
+        provisional=(by_cost["15"]["stock_minus_spy_net_percentage_points"]
+                     if periods>0 else None)
     return {
         "schema":SCHEMA,
         "status":stage,
@@ -362,6 +468,7 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
         "fixed_exit_close_session":final.date().isoformat(),
         "completed_price_session":last,
         "later_price_observed_utc":captured_utc,
+        "original_later_source_completed_nyse_close_evidence":source_close,
         "observed_holding_intervals":periods,
         "required_holding_intervals":HOLD_SESSIONS,
         "final_result_completed":finished if last>=ENTRY_SESSION else False,
@@ -390,7 +497,7 @@ def main():
     original_prices=p4l.validate_prices(pd.read_csv(
         a.original_dir/"original-24issuer-prices.csv",parse_dates=["Date"]
     ).set_index("Date"))
-    new_prices=p4l.public_prices()
+    new_prices=_later_original_public_prices()
     acquired=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     result=evaluate(original_manifest=original,original_prices=original_prices,
                     later_prices=new_prices,captured_utc=acquired)
