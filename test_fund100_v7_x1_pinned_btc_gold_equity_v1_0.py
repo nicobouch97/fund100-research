@@ -298,3 +298,66 @@ def test_paired_active_risk_rejects_missing_sessions_and_invalid_wealth():
     with pytest.raises(x1.AllocationStop,match="identical complete"):
         x1.paired_same_sleeve_active_risk(
             path,path,"2020-01-02","2020-01-03")
+
+
+def test_paired_sector_calendar_concentration_exact_year_reconciliation_and_best_year():
+    idx=xcals.get_calendar("XNYS").sessions_in_range(
+        pd.Timestamp(x1.FIRST),pd.Timestamp(x1.LAST)).tz_localize(None)
+    passive=pd.Series(np.ones(len(idx)),index=idx)
+    # One prespecified artificial winning year, with its level carried
+    # forward rather than spuriously reversing at the next year boundary.
+    daily=np.where(idx.year==2021,.0002,0.)
+    sector=pd.Series(np.exp(np.cumsum(daily)),index=idx)
+    r=x1.paired_sector_calendar_concentration(sector,passive)
+    years=r["calendar_year_relative_log_wealth_pct"]
+    assert set(years)==set(map(str,range(2020,2027)))
+    assert r["best_calendar_year"]=="2021"
+    assert r["positive_calendar_years"]==1
+    assert r["negative_calendar_years"]==0
+    assert sum(years.values())==pytest.approx(
+        r["terminal_relative_log_wealth_pct"],abs=1e-5)
+    assert r["relative_log_wealth_excluding_best_observed_year_pct"]==pytest.approx(
+        0.,abs=1e-6)
+    assert r["exclusion_is_post_hoc_noninvestable_not_out_of_sample_alpha"]
+    parity=x1.paired_sector_calendar_concentration(passive,passive)
+    assert parity["terminal_relative_log_wealth_pct"]==0
+    assert parity["positive_calendar_years"]==0
+    assert parity["zero_calendar_years"]==7
+
+
+def test_paired_sector_calendar_concentration_rejects_incomplete_or_bad_wealth():
+    idx=xcals.get_calendar("XNYS").sessions_in_range(
+        pd.Timestamp(x1.FIRST),pd.Timestamp(x1.LAST)).tz_localize(None)
+    path=pd.Series(np.ones(len(idx)),index=idx)
+    with pytest.raises(x1.AllocationStop,match="identical complete"):
+        x1.paired_sector_calendar_concentration(path.drop(idx[100]),path)
+    with pytest.raises(x1.AllocationStop,match="identical complete"):
+        x1.paired_sector_calendar_concentration(path,path.iloc[:-1])
+    invalid=path.copy()
+    invalid.iloc[30]=np.nan
+    with pytest.raises(x1.AllocationStop,match="finite positive"):
+        x1.paired_sector_calendar_concentration(invalid,path)
+    invalid.iloc[30]=0
+    with pytest.raises(x1.AllocationStop,match="finite positive"):
+        x1.paired_sector_calendar_concentration(invalid,path)
+
+
+def test_original_study_reports_costed_same_sleeve_calendar_year_concentration():
+    btc,etf,rate=fixture()
+    report=x1.inspect(btc,etf,rate)
+    assert report["calendar_year_sector_concentration_is_post_hoc_not_alpha"]
+    for scenarios in report["results"].values():
+        for study in scenarios.values():
+            rows=study["same_sleeve_SPY_calendar_year_concentration"]
+            assert set(rows)==set(x1.CANDIDATES)
+            for name,diagnostic in rows.items():
+                assert sum(diagnostic["calendar_year_relative_log_wealth_pct"].values()
+                           )==pytest.approx(
+                    diagnostic["terminal_relative_log_wealth_pct"],abs=1e-5)
+                # All synthetic sector and SPY returns are identical.
+                assert diagnostic["terminal_relative_log_wealth_pct"]==pytest.approx(
+                    0.,abs=1e-6)
+                assert diagnostic["zero_calendar_years"]==7
+                assert diagnostic["exclusion_is_post_hoc_noninvestable_not_out_of_sample_alpha"]
+    assert report["broker_gets"]==report["broker_posts"]==report["broker_orders"]==0
+    assert not report["trading_authorized"]
