@@ -5,6 +5,8 @@ on:
     paths:
       - 'fund100_v7_u5_original_sec100_postbaseline_delta_v1_0.py'
       - 'test_fund100_v7_u5_original_sec100_postbaseline_delta_v1_0.py'
+      - 'fund100_v7_u6_sec100_causal_forward_admission_v1_0.py'
+      - 'test_fund100_v7_u6_sec100_causal_forward_admission_v1_0.py'
       - 'research_lab/V7_U5_POSTBASELINE_ORIGINAL_SEC100_CUMULATIVE_WATCH_2026_10_27.md'
       - '.github/workflows/fund100-v7-u5-original-sec100-watch.yml'
   push:
@@ -12,6 +14,8 @@ on:
     paths:
       - 'fund100_v7_u5_original_sec100_postbaseline_delta_v1_0.py'
       - 'test_fund100_v7_u5_original_sec100_postbaseline_delta_v1_0.py'
+      - 'fund100_v7_u6_sec100_causal_forward_admission_v1_0.py'
+      - 'test_fund100_v7_u6_sec100_causal_forward_admission_v1_0.py'
       - '.github/workflows/fund100-v7-u5-original-sec100-watch.yml'
   schedule:
     - cron: '45 23 * * 1-5'
@@ -39,6 +43,7 @@ jobs:
           set -euo pipefail
           python -m pip install -r requirements.txt
           python -m pytest -q \
+            test_fund100_v7_u6_sec100_causal_forward_admission_v1_0.py \
             test_fund100_v7_u5_original_sec100_postbaseline_delta_v1_0.py \
             test_fund100_v7_u4_100issuer_original_sec_baseline_v1_0.py
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
@@ -159,6 +164,12 @@ jobs:
             --later-sec /tmp/fund100-u5-later-original-sec100 \
             "${PREVIOUS_ARGS[@]}" \
             --output /tmp/fund100-u5-later-original-sec100/cumulative-original-accession-delta.json
+          python fund100_v7_u6_sec100_causal_forward_admission_v1_0.py \
+            --original-u3 /tmp/fund100-u5-first-u3 \
+            --original-first-sec /tmp/fund100-u5-first-u4 \
+            --later-sec /tmp/fund100-u5-later-original-sec100 \
+            "${PREVIOUS_ARGS[@]}" \
+            --output /tmp/fund100-u5-later-original-sec100/prospective-first-eligible-event-closes.json
           python - <<'PY'
           import json
           from pathlib import Path
@@ -174,6 +185,15 @@ jobs:
           assert doc['measured_portfolio_alpha'] is False
           assert doc['broker_gets']==doc['broker_posts']==doc['broker_orders']==0
           assert doc['trading_authorized'] is False and doc['live_authorized'] is False
+          entry=json.loads(Path('/tmp/fund100-u5-later-original-sec100/prospective-first-eligible-event-closes.json').read_text())
+          assert entry['schema']=='FUND100_V7_U6_SEC100_CONSECUTIVE_SOURCE_FROZEN_FORWARD_CLOSES_V1'
+          assert entry['forward_price_mark_count']==0 and entry['future_return_measurement'] is None
+          assert entry['broker_gets']==entry['broker_posts']==entry['broker_orders']==0
+          assert entry['trading_authorized'] is False and entry['live_authorized'] is False
+          if doc['previous_successful_daily_observer_artifact_compared']:
+              assert entry['new_accessions_relative_to_preceding_successful_observer']==doc['new_accessions_since_previous_successful_observer_count']
+          else:
+              assert entry['new_accessions_relative_to_preceding_successful_observer'] is None
           PY
       - name: Archive original current SEC100 source and source-qualified cumulative event research
         uses: actions/upload-artifact@v4
