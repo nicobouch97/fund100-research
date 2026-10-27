@@ -23,6 +23,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  original-provider-layout-pr-only-no-credentials:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Inspect only public original provider header structure and hash
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python fund100_v7_u1_original_ivv_100_issuer_freeze_v1_0.py \
+            --inspect-provider-layout
+
   preregistered-public-issuer-source-validation:
     runs-on: ubuntu-latest
     timeout-minutes: 8
