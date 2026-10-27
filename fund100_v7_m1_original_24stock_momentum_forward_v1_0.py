@@ -100,6 +100,30 @@ def _original(original:dict, original_prices:pd.DataFrame)->list[str]:
     return names
 
 
+def _frozen_sector_control(selected:list[str])->dict[str,float]:
+    """Frozen 2026 sector exposure, not a hindsight-fitted stock selection.
+
+    For each original selected stock slot, spread that slot equally over
+    ALL members of its contemporary sector in the original 24-issuer cohort.
+    Including selected names is deliberate: this is a broad same-sector
+    exposure control, NOT an independent unselected-peer portfolio.
+    """
+    if (type(selected) is not list or not selected or len(set(selected))!=len(selected)
+        or any(s not in p4l.SECTORS for s in selected)):
+        raise ForwardStop("Unverified original sector-matched selection")
+    weights:dict[str,float]={}
+    for picked in selected:
+        peers=sorted(s for s,sector in p4l.SECTORS.items()
+                     if sector==p4l.SECTORS[picked])
+        if not peers:
+            raise ForwardStop("Original sector control has no constituents")
+        for symbol in peers:
+            weights[symbol]=weights.get(symbol,0.)+1./(len(selected)*len(peers))
+    if abs(sum(weights.values())-1.)>1e-12:
+        raise ForwardStop("Original sector-matched control does not reconcile")
+    return dict(sorted(weights.items()))
+
+
 def _frozen_preentry_risk(original_prices:pd.DataFrame, selected:list[str])->dict:
     """One pre-entry 126-return risk estimate; no later vendor prices.
 
@@ -148,6 +172,7 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
              later_prices:pd.DataFrame,captured_utc:str):
     selected=_original(original_manifest,original_prices)
     preentry_risk=_frozen_preentry_risk(original_prices,selected)
+    sector_control=_frozen_sector_control(selected)
     capture=_timestamp(captured_utc)
     try:
         data=p4l.validate_prices(later_prices)
@@ -189,12 +214,15 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
             periods=HOLD_SESSIONS
         stock_growth=np.mean([float(end[s]/entry[s]) for s in selected])
         spy_growth=float(end[p4l.BENCHMARK]/entry[p4l.BENCHMARK])
+        sector_growth=sum(weight*float(end[s]/entry[s])
+                          for s,weight in sector_control.items())
         by_cost={}
         for bps in COST_BPS:
             fee=bps/10000.
             risky=95./(1+fee)
             stock_final=INITIAL_CASH+risky*stock_growth*(1-fee)
             passive_final=INITIAL_CASH+risky*spy_growth*(1-fee)
+            sector_final=INITIAL_CASH+risky*sector_growth*(1-fee)
             by_cost[str(bps)]={
                 "equal_95pct_initial_cash_and_round_trip_costs":True,
                 "theoretical_stock_terminal_after_exit_fee_usd":round(stock_final,8),
@@ -202,6 +230,15 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
                 "stock_minus_spy_net_percentage_points":round(stock_final-passive_final,8),
                 "entry_purchase_cost_usd":round(95.-risky,8),
                 "final_risky_exit_is_modeled_only":True,
+                "secondary_same_sector_original_cohort": {
+                    "sector_control_terminal_after_exit_fee_usd":round(sector_final,8),
+                    "selected_minus_same_sector_net_percentage_points":round(
+                        stock_final-sector_final,8),
+                    "same_95pct_initial_gross_and_both_sides_costed":True,
+                    "original_24_issuer_contemporary_sector_roster_only":True,
+                    "includes_original_selected_stocks_in_control":True,
+                    "not_independent_or_factor_neutral_alpha":True,
+                },
             }
             # Secondary, PREDECLARED before the first entry: compare the
             # identical frozen picks with SPY at matched 126-return
@@ -237,6 +274,11 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
         "original_source_observed_utc":original_manifest["source_acquired_at_utc"],
         "original_pretrade_selection":selected,
         "original_selection_size":len(selected),
+        "secondary_frozen_sector_control_weights": {
+            s:round(weight,12) for s,weight in sector_control.items()
+        },
+        "secondary_frozen_sector_control_known_before_entry":True,
+        "secondary_sector_control_contains_selected_names":True,
         "secondary_frozen_preentry_volatility_match":preentry_risk,
         "frozen_entry_close_session":ENTRY_SESSION,
         "fixed_exit_close_session":final.date().isoformat(),
