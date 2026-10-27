@@ -78,9 +78,9 @@ def test_sales_do_not_increase_current_buy_cash_until_settled():
     assert ready["actual_positions_traded"] is False
     assert not ready["live_authorized"]
 
-def test_per_order_round_up_is_conservative_for_ticket_splitting():
+def test_per_order_round_up_bounds_any_minimum_ticket_partition():
     fee=x5.fee_upper_by_ticket(Decimal("25.00"),Decimal("10"),Decimal("15"))
-    assert fee==Decimal("0.05") # each $10 order 2 cents, final $5 1 cent
+    assert fee==Decimal("0.06") # three $8.33-ish tickets each round to 2 cents
     assert x5.count_to_fit(Decimal("25"),Decimal("10"))==3
     assert x5.fee_upper_by_ticket(Decimal("0"),Decimal("10"),Decimal("15"))==0
     with pytest.raises(x5.CapacityStop):
@@ -259,11 +259,11 @@ def test_daily_volume_cap_limits_individual_tickets_and_rounding_costs():
     assert order["modeled_effective_max_ticket_after_daily_liquidity_usd"]=="10.50"
     assert order["modelled_ticket_count"]==3
     assert order["modelled_minimum_distinct_execution_days"]>=3
-    # Three valid tickets ($10.50, $9.51, $1.00) incur 5c of
-    # per-ticket rounded fees, versus 4c if incorrectly counted as one.
-    assert order["modeled_fee_per_ticket_rounded_up_usd"]=="0.05"
+    # Packing ($10.50, $9.51, $1.00) costs 5c, but three roughly
+    # equal valid tickets each round to 2c. Bound the unknown split at 6c.
+    assert order["modeled_fee_per_ticket_rounded_up_usd"]=="0.06"
     assert result["aggregate_modelled_ticket_count"]==3
-    assert result["modeled_all_sides_fees_usd"]=="0.05"
+    assert result["modeled_all_sides_fees_usd"]=="0.06"
     assert result["ticket_fees_include_per_asset_daily_participation_limit"]
     assert result["modeled_days_are_lower_bound_not_feasible_joint_schedule"]
     assert not result["trading_authorized"]
@@ -291,3 +291,38 @@ def test_daily_participation_below_minimum_ticket_fails_closed():
     with pytest.raises(x5.CapacityStop,match="daily liquidity below minimum ticket"):
         plan("1000.00",spec=spec,positions={},cash="1000.00",
              target={"XLK":"0.20"})
+
+
+def test_fee_bound_covers_multiple_valid_partitions_not_only_max_first():
+    def rounded_fees(parts, bps):
+        return sum((x5.up(Decimal(part)*Decimal(bps)/Decimal("10000"))
+                    for part in parts), Decimal("0"))
+    # Both plans use the MINIMUM three tickets, each <= $10 and >= $1.
+    # The old max-first fee estimator reported 5c, understating the
+    # equally split feasible plan by 1c.
+    bound=x5.fee_upper_by_ticket(
+        Decimal("25"),Decimal("10"),Decimal("15"),Decimal("1"))
+    assert rounded_fees(["10","10","5"],"15")==Decimal("0.05")
+    assert rounded_fees(["8.33","8.33","8.34"],"15")==Decimal("0.06")
+    assert bound==Decimal("0.06")
+    # Liquidity-constrained example: three separate <=$10.50/day tickets.
+    daily_bound=x5.fee_upper_by_ticket(
+        Decimal("21.01"),Decimal("10.50"),Decimal("15"),Decimal("1"))
+    assert rounded_fees(["10.50","9.51","1.00"],"15")==Decimal("0.05")
+    assert rounded_fees(["7.00","7.00","7.01"],"15")==Decimal("0.06")
+    assert daily_bound==Decimal("0.06")
+    assert x5.fee_upper_by_ticket(
+        Decimal("21.01"),Decimal("10.50"),Decimal("0"),Decimal("1"))==0
+
+
+def test_conservative_fee_bound_preserves_no_trading_and_post_cost_equity():
+    spec=x5.sample_spec()
+    spec["XLK"]["assumed_average_daily_volume_usd"]="2100"
+    result=plan("1000.00",spec=spec,positions={},cash="1000.00",
+                target={"XLK":"0.02101"})
+    assert result["modeled_all_sides_fees_usd"]=="0.06"
+    assert result["post_cost_model_nav_usd"]=="999.94"
+    assert result["model_net_cash_reserve_after_all_rebalances_usd"]=="978.93"
+    assert result["broker_gets"]==result["broker_posts"]==result["broker_orders"]==0
+    assert result["current_LIVE_authorized_principal_USD"]=="130.30"
+    assert not result["trading_authorized"]
