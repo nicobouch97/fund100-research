@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -42,7 +43,9 @@ def load_config(
 # ================================================================
 
 def download_prices(
-    cfg: dict
+    cfg: dict,
+    *,
+    require_observed_closes_from: str | None = None,
 ) -> Tuple[pd.DataFrame, pd.Series]:
 
     dcfg = cfg["data"]
@@ -127,6 +130,47 @@ def download_prices(
             "Missing required symbols: "
             f"{sorted(missing)}"
         )
+
+    # The original historical study may use short, explicitly bounded
+    # forward fills. A PROSPECTIVE close-to-close ledger must never
+    # silently treat such an imputation as an observed stock, benchmark
+    # or FX close. Exclude the still-incomplete current UTC day, just
+    # as the Forward Lab does. This is an opt-in integrity gate and
+    # does not alter the frozen historical strategy or other callers.
+    if require_observed_closes_from is not None:
+        value = require_observed_closes_from
+        if type(value) is not str:
+            raise ValueError("Invalid original-close cutoff")
+        try:
+            cutoff = datetime.strptime(value, "%Y-%m-%d")
+        except ValueError as exc:
+            raise ValueError("Invalid original-close cutoff") from exc
+        if cutoff.strftime("%Y-%m-%d") != value:
+            raise ValueError("Invalid original-close cutoff")
+        today_utc = pd.Timestamp(datetime.now(timezone.utc).date())
+        completed = close.loc[
+            (close.index >= pd.Timestamp(cutoff))
+            & (close.index < today_utc)
+        ]
+        # FX-only observations on US-market holidays are not equity
+        # sessions. But if any listed asset or ACWI traded, all
+        # constituent and FX closes must be original observations.
+        active = completed.loc[
+            completed[universe + [benchmark_ticker]]
+            .notna().any(axis=1)
+        ]
+        required_columns = list(dict.fromkeys(
+            universe + [benchmark_ticker, fx_ticker]
+        ))
+        missing_raw = active[required_columns].isna()
+        if missing_raw.to_numpy().any():
+            date, symbol = next(iter(missing_raw.stack()[
+                lambda s: s
+            ].index))
+            raise RuntimeError(
+                "Missing original completed forward close: "
+                f"{date.date()} {symbol}; refusing imputed return"
+            )
 
     # Only use days on which ACWI traded.
     benchmark_mask = (

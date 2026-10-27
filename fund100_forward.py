@@ -471,7 +471,8 @@ def load_completed_market_data(
 
     prices, benchmark = (
         download_prices(
-            cfg
+            cfg,
+            require_observed_closes_from=str(HISTORICAL_CUTOFF.date()),
         )
     )
 
