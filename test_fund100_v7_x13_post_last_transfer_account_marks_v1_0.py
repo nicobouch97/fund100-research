@@ -125,3 +125,27 @@ def test_private_values_never_leak_to_report_and_no_live_api():
     assert out["private_gross_growth_factor"] is None
     assert x.LIVE_AUTHORIZED is False
     assert x.BROKER_GETS==x.BROKER_POSTS==x.BROKER_ORDERS==0
+
+
+def test_intervening_berkshire_exchange_session_must_not_be_silently_skipped():
+    h,a,acct=scenario()
+    day=datetime(2026,10,20,tzinfo=timezone.utc)
+    idx=h["timestamp"].index(int(day.timestamp()))
+    h["timestamp"].pop(idx)
+    h["equity"].pop(idx)
+    # Reconcile last brokerage close despite a strategically missing day.
+    out=x.inspect(history=h,activities=a,account=acct,
+                  observed_at_utc=NOW)
+    assert out["status"]=="HOLD_MISSING_OR_EXTRA_XNYS_DAILY_SESSIONS"
+    assert not out["clean_post_last_transfer_segment_observed"]
+
+def test_weekend_account_mark_cannot_be_misrepresented_as_nyse_daily_return():
+    h,a,acct=scenario()
+    # Replace 2026-10-19 with Saturday 17 Oct to keep monotone timestamps.
+    day=datetime(2026,10,19,tzinfo=timezone.utc)
+    idx=h["timestamp"].index(int(day.timestamp()))
+    h["timestamp"][idx]=int(datetime(2026,10,17,tzinfo=timezone.utc).timestamp())
+    out=x.inspect(history=h,activities=a,account=acct,
+                  observed_at_utc=NOW)
+    assert out["status"]=="HOLD_MISSING_OR_EXTRA_XNYS_DAILY_SESSIONS"
+    assert out["observed_segment_high_risk_breach"] is None
