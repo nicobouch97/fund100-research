@@ -1,0 +1,86 @@
+name: Fund-100 P4AA Official SEC TWTR Merger Right (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_stock_twtr_merger_terminal_p4aa_v1_0.py'
+      - 'test_fund100_stock_twtr_merger_terminal_p4aa_v1_0.py'
+      - 'research_lab/stocks/P4AA_SEC_TWTR_OFFICIAL_MERGER_RIGHT_2026_10_27.md'
+      - '.github/workflows/fund100-p4aa-original-twtr-merger-cash-right.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_stock_twtr_merger_terminal_p4aa_v1_0.py'
+      - 'test_fund100_stock_twtr_merger_terminal_p4aa_v1_0.py'
+      - '.github/workflows/fund100-p4aa-original-twtr-merger-cash-right.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-document-and-settlement-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline tests of 2022 legal right vs fictional settlement
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python -m pip install pytest
+          python -m pytest -q test_fund100_stock_twtr_merger_terminal_p4aa_v1_0.py test_fund100_stock_delisted_sample_p4z_v1_0.py
+          python - <<'PY'
+          import fund100_stock_twtr_merger_terminal_p4aa_v1_0 as p
+          assert p.BROKER_GETS==p.BROKER_POSTS==p.BROKER_ORDERS==0
+          assert not p.LIVE_AUTHORIZED
+          assert p.ORIGINAL_SEC_ACCESSION=='0001193125-22-272772'
+          PY
+      - name: Obtain exact original free ZIP and SEC 2022 Form 8-K on main only
+        id: capture
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SEC_USER_AGENT" ]; then
+            echo 'SOURCE_BLOCKED_OFFICIAL_SEC_CONTACT_NOT_CONFIGURED'
+            echo 'captured=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p /tmp/fund100-p4aa
+          curl --fail --location --silent --show-error \
+            --max-time 35 --max-filesize 16000000 \
+            'https://historicaldata.net/file/stocks_sample_2022H2.zip' \
+            --output /tmp/fund100-p4aa/original_vendor.zip
+          python fund100_stock_twtr_merger_terminal_p4aa_v1_0.py \
+            --original-vendor-zip /tmp/fund100-p4aa/original_vendor.zip \
+            --output /tmp/fund100-p4aa/original-sec-merger-reconciliation.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import fund100_stock_twtr_merger_terminal_p4aa_v1_0 as p
+          d=json.loads(Path('/tmp/fund100-p4aa/original-sec-merger-reconciliation.json').read_text())
+          assert d['schema']==p.SCHEMA
+          assert d['per_eligible_common_share_merger_entitlement_usd']=='54.20'
+          assert d['shareholder_settled_cash_available_date_utc'] is None
+          assert not d['historical_strategy_alpha_test_eligible']
+          assert not d['trading_authorized']
+          assert d['broker_gets']==d['broker_posts']==d['broker_orders']==0
+          PY
+          rm -f /tmp/fund100-p4aa/original_vendor.zip
+          echo 'captured=true' >> "$GITHUB_OUTPUT"
+      - name: Upload only tiny legal-merger audit JSON, NEVER licensed vendor prices
+        if: steps.capture.outputs.captured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-p4aa-original-twtr-sec-cash-right-${{ github.run_id }}
+          path: /tmp/fund100-p4aa/original-sec-merger-reconciliation.json
+          retention-days: 90
+          if-no-files-found: error
