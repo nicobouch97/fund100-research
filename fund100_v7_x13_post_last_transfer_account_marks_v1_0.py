@@ -170,6 +170,10 @@ def inspect(*,history:dict,activities:list,account:dict,
             return _status("HOLD_CASH_BOOKING_DATE_OUTSIDE_SOURCE")
         last_booking=max(last_booking,day)
         transfer_count+=1
+    # A source page containing only dividends/fees cannot establish a
+    # post-transfer window. Do not label its NAV marks as transfer-clean.
+    if transfer_count==0:
+        return _status("HOLD_NO_VERIFIED_EXTERNAL_CASHFLOW_IN_SOURCE")
     # The last deposit's DATE may mean booking or settlement, not intraday
     # receipt. Drop the booking day and whole next calendar day, then take
     # the first fully observed broker DAILY equity close after that.
