@@ -65,6 +65,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install SEC source reader's existing project dependencies
+        run: python -m pip install -r requirements.txt
       - name: Download only pin 12752028069 from first immutable source artifact
         run: |
           set -euo pipefail
