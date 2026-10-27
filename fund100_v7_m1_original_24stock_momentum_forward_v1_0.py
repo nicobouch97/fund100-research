@@ -134,6 +134,26 @@ def _later_original_public_prices()->pd.DataFrame:
         data.index=data.index.tz_convert("UTC").tz_localize(None).normalize()
     else:
         data.index=data.index.normalize()
+    # Yahoo may expose a TODAY row while NYSE is actively trading.
+    # Such a price is neither a final auction print nor a usable
+    # forward model exit. Drop ONLY today's incomplete row; NEVER
+    # silently skip an older missing exchange session or stale history.
+    if len(data) and data.index[-1].date()==now.date():
+        try:
+            market=xcals.get_calendar("XNYS")
+            last_day=data.index[-1]
+            if not market.is_session(last_day):
+                raise ForwardStop("Unexpected current-date nontrading source bar")
+            admissible_after=market.session_close(last_day).to_pydatetime()+timedelta(
+                minutes=SAME_SESSION_SOURCE_POST_CLOSE_BUFFER_MINUTES)
+        except ForwardStop:
+            raise
+        except Exception as exc:
+            raise ForwardStop("Cannot establish current NYSE source closure") from exc
+        if now<admissible_after:
+            data=data.iloc[:-1]
+    if data.empty:
+        raise ForwardStop("No completed market bar after excluding partial today")
     try:
         validated=p4l.validate_prices(data)
         p4l.p4g.verify_original_nyse_source_sessions(validated.index)
