@@ -52,7 +52,7 @@ def test_modified_original_sec_json_rejected_even_if_manifest_retained(tmp_path)
     sources=physical_sources(tmp_path)
     target=next((sources[2]/"raw").iterdir())
     target.write_bytes(target.read_bytes()[:-15]+b"MODIFIED ORIGINAL")
-    with pytest.raises(u5.NewSourceStop,match="original"):
+    with pytest.raises(u5.NewSourceStop,match="Original 100-issuer sources failed replay"):
         run(sources)
 
 def test_original_baseline_replaced_or_missing_rejected(tmp_path):
