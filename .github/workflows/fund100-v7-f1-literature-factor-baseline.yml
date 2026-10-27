@@ -1,0 +1,82 @@
+name: Fund-100 V7 F1 Literature-First Factor Basket (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_f1_literature_factor_baseline_v1_0.py'
+      - 'test_fund100_v7_f1_literature_factor_baseline_v1_0.py'
+      - 'research_lab/V7_F1_LITERATURE_FIRST_EXECUTION_PRIORITY_2026_10_27.md'
+      - '.github/workflows/fund100-v7-f1-literature-factor-baseline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_f1_literature_factor_baseline_v1_0.py'
+      - 'test_fund100_v7_f1_literature_factor_baseline_v1_0.py'
+      - '.github/workflows/fund100-v7-f1-literature-factor-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixed-factor-basket-offline-controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify fixed factor portfolio and symmetric after-cost passive comparators
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m pytest -q \
+            test_fund100_v7_f1_literature_factor_baseline_v1_0.py \
+            test_fund100_v7_listed_factor_etf_returns_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import fund100_v7_f1_literature_factor_baseline_v1_0 as x
+          assert x.BROKER_GETS==x.BROKER_POSTS==x.BROKER_ORDERS==0
+          assert x.TRADING_AUTHORIZED is False and x.LIVE_AUTHORIZED is False
+          print("Original factor literature is not a broker authority or ETF alpha forecast.")
+          PY
+
+  original-listed-factor-history-on-main-merge:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch ONE public original factor ETF history and compute the pre-fixed four-arm comparison
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python fund100_v7_f1_literature_factor_baseline_v1_0.py \
+            --output-dir /tmp/fund100-v7-f1-original-factor-baseline
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import fund100_v7_f1_literature_factor_baseline_v1_0 as f1
+          root=Path('/tmp/fund100-v7-f1-original-factor-baseline')
+          x=json.loads((root/'fixed-factor-paired-benchmark-return-study.json').read_text())
+          assert x['schema']==f1.SCHEMA
+          assert x['expected_alpha_proven'] is False
+          assert x['prospective_return_forecast_available'] is False
+          assert x['trading_authorized'] is False and x['live_authorized'] is False
+          assert x['broker_gets']==x['broker_posts']==x['broker_orders']==0
+          assert set(x['historical_hypothetical_comparisons']) == (
+            {name for name,_,_ in (*f1.WINDOWS,f1.DESCRIPTIVE)})
+          print('Archived source-original historical factor vs passive controls. NO orders.')
+          PY
+      - name: Archive original four-ETF source and fixed, after-cost historical comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-f1-once-original-factor-basket-${{ github.run_id }}
+          path: /tmp/fund100-v7-f1-original-factor-baseline/
+          retention-days: 90
+          if-no-files-found: error
