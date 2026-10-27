@@ -1,0 +1,119 @@
+name: Fund-100 V7 U4 First Original SEC 100-Issuer Earnings Baseline (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v7_u4_100issuer_original_sec_baseline_v1_0.py'
+      - 'test_fund100_v7_u4_100issuer_original_sec_baseline_v1_0.py'
+      - 'research_lab/V7_U4_FIRST_100ISSUER_SEC_BASELINE_2026_10_27.md'
+      - '.github/workflows/fund100-v7-u4-first-sec100-baseline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v7_u4_100issuer_original_sec_baseline_v1_0.py'
+      - 'test_fund100_v7_u4_100issuer_original_sec_baseline_v1_0.py'
+      - '.github/workflows/fund100-v7-u4-first-sec100-baseline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: fund100-v7-u4-original-100issuer-sec-first-baseline
+  cancel-in-progress: false
+
+jobs:
+  full-original-sec-source-contract-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 11
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify first-baseline never classifies preexisting SEC filings as alpha
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m pytest -q \
+            test_fund100_v7_u4_100issuer_original_sec_baseline_v1_0.py \
+            test_fund100_v7_u3_dated_issuer_mirror_sec100_v1_0.py \
+            test_fund100_v7_e6_24issuer_sec_earnings_capture_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import fund100_v7_u4_100issuer_original_sec_baseline_v1_0 as m
+          assert m.ORIGINAL_U3_RUN_ID==40545345749
+          assert m.ORIGINAL_U3_ARTIFACT_ID==12752028069
+          assert m.COUNT==100
+          assert m.BROKER_GETS==m.BROKER_POSTS==m.BROKER_ORDERS==0
+          assert not m.LIVE_ENABLED
+          PY
+
+  capture-first-100-original-sec-records:
+    needs: full-original-sec-source-contract-test
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 26
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download only pin 12752028069 from first immutable source artifact
+        run: |
+          set -euo pipefail
+          test -n "$SEC_USER_AGENT" || { echo 'No original authenticated SEC requester identity'; exit 1; }
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/40545345749" \
+            > /tmp/fund100-u4-source-main-run.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('/tmp/fund100-u4-source-main-run.json').read_text())
+          assert d['conclusion']=='success' and d['status']=='completed'
+          assert d['head_branch']=='main'
+          assert d['path'].endswith('/fund100-v7-u3-dated-issuer-mirror-sec100.yml')
+          PY
+          mkdir -p /tmp/fund100-u4-exact-first-u3
+          gh run download 40545345749 --repo "$GITHUB_REPOSITORY" \
+            -n fund100-v7-u3-first-dated-mirror-sec100-40545345749 \
+            -D /tmp/fund100-u4-exact-first-u3
+          python - <<'PY'
+          from pathlib import Path
+          import fund100_v7_u4_100issuer_original_sec_baseline_v1_0 as m
+          doc,roster=m.original_issuer_roster(Path('/tmp/fund100-u4-exact-first-u3'))
+          assert len(roster)==100
+          assert doc['source_is_direct_official_ishares_file'] is False
+          print('100 fixed original U3 identities verified, 0 future observed earnings events.')
+          PY
+      - name: Capture original 100 SEC CIK filings as baseline only
+        run: |
+          set -euo pipefail
+          python fund100_v7_u4_100issuer_original_sec_baseline_v1_0.py \
+            --u3-source-dir /tmp/fund100-u4-exact-first-u3 \
+            --output-dir /tmp/fund100-u4-first-100-sec-source
+          python - <<'PY'
+          from pathlib import Path
+          import fund100_v7_u4_100issuer_original_sec_baseline_v1_0 as m
+          result=m.verify(
+              u3_dir=Path('/tmp/fund100-u4-exact-first-u3'),
+              report_dir=Path('/tmp/fund100-u4-first-100-sec-source'))
+          assert result['source_count']==100
+          assert result['first_new_postbaseline_sec_event_count']==0
+          assert result['observed_future_aftercost_returns']==0
+          assert result['baseline_filing_accessions_all_preexisting'] is True
+          assert result['broker_gets']==result['broker_posts']==result['broker_orders']==0
+          assert result['trading_authorized'] is False
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-u4-first-100-sec-original-baseline-${{ github.run_id }}
+          path: /tmp/fund100-u4-first-100-sec-source/
+          retention-days: 90
+          if-no-files-found: error
