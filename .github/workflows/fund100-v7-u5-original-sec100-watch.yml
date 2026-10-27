@@ -103,16 +103,61 @@ jobs:
           assert prior['broker_gets']==prior['broker_posts']==prior['broker_orders']==0
           print('Original first 100 CIK official SEC source verified; historical events NOT re-promoted.')
           PY
+      - name: Verify latest previous successful main observer archive if retained
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/fund100-v7-u5-original-sec100-watch.yml/runs?branch=main&status=success&per_page=20" > /tmp/u5-prior-runs.json
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          runs=json.loads(Path('/tmp/u5-prior-runs.json').read_text())['workflow_runs']
+          current=int(os.environ['GITHUB_RUN_ID'])
+          prior=[r for r in runs if r['id']!=current
+                 and r['status']=='completed' and r['conclusion']=='success'
+                 and r['head_branch']=='main'
+                 and r['event'] in ('push','schedule','workflow_dispatch')
+                 and r['path'].endswith('/fund100-v7-u5-original-sec100-watch.yml')]
+          latest=max(prior,key=lambda r:(r['created_at'],r['id'])) if prior else None
+          Path('/tmp/u5-prior-success-id').write_text(str(latest['id']) if latest else '')
+          print('Prior successful main source run:',latest['id'] if latest else 'NONE')
+          PY
+          prior="$(cat /tmp/u5-prior-success-id)"
+          if [ -n "$prior" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$prior/artifacts" > /tmp/u5-prior-artifacts.json
+            PRIOR="$prior" python - <<'PY'
+          import json,os
+          from pathlib import Path
+          run=os.environ['PRIOR']
+          name=f'fund100-v7-u5-100issuer-original-delta-{run}'
+          artifacts=json.loads(Path('/tmp/u5-prior-artifacts.json').read_text())['artifacts']
+          valid=any(a['name']==name and not a['expired'] for a in artifacts)
+          if not valid:
+              Path('/tmp/u5-prior-success-id').write_text('')
+              print('Previous archive unavailable: no newly-observed claim allowed')
+          PY
+            if [ -s /tmp/u5-prior-success-id ]; then
+              mkdir -p /tmp/fund100-u5-prior-success
+              gh run download "$prior" --repo "$GITHUB_REPOSITORY" \
+                -n "fund100-v7-u5-100issuer-original-delta-$prior" \
+                -D /tmp/fund100-u5-prior-success
+            fi
+          fi
       - name: Acquire future official SEC 100 issuers and compute CUMULATIVE set difference
         run: |
           set -euo pipefail
           python fund100_v7_u4_100issuer_original_sec_baseline_v1_0.py \
             --u3-source-dir /tmp/fund100-u5-first-u3 \
             --output-dir /tmp/fund100-u5-later-original-sec100
+          PREVIOUS_ARGS=()
+          if [ -s /tmp/u5-prior-success-id ]; then
+            PREVIOUS_ARGS=(--previous-successful-sec /tmp/fund100-u5-prior-success
+              --previous-successful-main-run-id "$(cat /tmp/u5-prior-success-id)")
+          fi
           python fund100_v7_u5_original_sec100_postbaseline_delta_v1_0.py \
             --original-u3 /tmp/fund100-u5-first-u3 \
             --original-first-sec /tmp/fund100-u5-first-u4 \
             --later-sec /tmp/fund100-u5-later-original-sec100 \
+            "${PREVIOUS_ARGS[@]}" \
             --output /tmp/fund100-u5-later-original-sec100/cumulative-original-accession-delta.json
           python - <<'PY'
           import json
@@ -121,6 +166,11 @@ jobs:
           assert doc['schema']=='FUND100_V7_U5_ORIGINAL_SEC100_CUMULATIVE_POSTBASELINE_CENSUS_V1'
           assert doc['exact_preselected_100_SEC_CIK_sources_verified']
           assert doc['newly_observed_TODAY_or_first_seen_in_this_run_proven'] is False
+          if doc['previous_successful_daily_observer_artifact_compared']:
+              assert type(doc['new_accessions_since_previous_successful_observer_count']) is int
+              assert doc['new_accessions_since_previous_successful_observer_count'] >= 0
+          else:
+              assert doc['new_accessions_since_previous_successful_observer_count'] is None
           assert doc['measured_portfolio_alpha'] is False
           assert doc['broker_gets']==doc['broker_posts']==doc['broker_orders']==0
           assert doc['trading_authorized'] is False and doc['live_authorized'] is False
