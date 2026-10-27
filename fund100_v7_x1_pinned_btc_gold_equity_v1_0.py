@@ -472,6 +472,13 @@ def main():
     print("BTC_5_GOLD_5 versus same BTC/gold/cash with SPY instead of sector ETFs:",
           "net CAGR pp",selected["minus_same_sleeve_SPY_net_cagr_pp"],
           "drawdown pp",selected["minus_same_sleeve_SPY_drawdown_pp"])
+    active=selected["paired_same_sleeve_SPY_active_risk"]
+    print("BTC_5_GOLD_5 same-sleeve SPY active-risk diagnostic:",
+          "annualized log active pct",active["annualized_active_log_return_pct"],
+          "tracking error pct",active["annualized_tracking_error_pct"],
+          "information ratio",active["active_information_ratio"],
+          "relative max drawdown pct",active["worst_relative_wealth_drawdown_pct"],
+          "ex-post matched-sleeve beta",active["ex_post_net_return_beta_to_same_sleeve_SPY"])
     print("Research only: no BTC trading eligibility or future alpha certified.")
 
 if __name__=="__main__":
