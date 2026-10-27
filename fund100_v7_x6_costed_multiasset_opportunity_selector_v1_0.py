@@ -102,15 +102,27 @@ def select(*,capital_nav_usd,prospective_cap_usd,settled_cash_usd,
         }
         if state.startswith("RESEARCH_SWITCH_"):
             eligible.append(name)
+    # A larger synthetic forecast cannot turn unsettled sale proceeds into
+    # buying power. Prefer a cash-feasible costed opportunity when one exists,
+    # but retain the best deferred candidate for transparent research review.
+    # Both classes remain UNQUALIFIED hypotheses, never executable intents.
     eligible.sort(key=lambda n:(
         -Decimal(outcomes[n]["hypothetical_net_advantage_usd"]),
         Decimal(outcomes[n]["gross_model_turnover_usd"]),n))
-    winner=eligible[0] if eligible else None
+    cash_feasible=[n for n in eligible if
+                   outcomes[n]["state"]=="RESEARCH_SWITCH_SYNTHETIC_CASH_SUFFICIENT"]
+    deferred=[n for n in eligible if
+              outcomes[n]["state"]=="RESEARCH_SWITCH_REQUIRES_FUTURE_SETTLEMENT"]
+    winner=(cash_feasible or deferred or [None])[0]
+    best_deferred=deferred[0] if deferred else None
     return {
         "schema":SCHEMA,
         "status":"HOLD_NO_COSTED_FEASIBLE_OPPORTUNITY" if winner is None
                  else "PREFERRED_UNQUALIFIED_RESEARCH_SWITCH_NO_TRADE",
         "preferred_research_candidate":winner,
+        "best_deferred_research_candidate":best_deferred,
+        "cash_feasible_candidates_ranked_before_deferred":True,
+        "cash_feasible_is_synthetic_not_authenticated_buying_power":True,
         "preferred_requires_future_settlement":(
             outcomes[winner]["state"]=="RESEARCH_SWITCH_REQUIRES_FUTURE_SETTLEMENT"
             if winner else False),
