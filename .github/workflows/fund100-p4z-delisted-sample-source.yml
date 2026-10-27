@@ -41,17 +41,38 @@ jobs:
           curl --fail --location --silent --show-error --retry 2 --connect-timeout 15 --max-time 120 \
             'https://historicaldata.net/file/stocks_sample_2022H2.zip' \
             --output /tmp/fund100-p4z/free-original.zip
+      - name: Retrieve Twitter original SEC merger completion filing
+        env:
+          SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SEC_USER_AGENT}" ]; then
+            echo "SOURCE_BLOCKED: SEC contact missing; cannot verify merger."
+            exit 1
+          fi
+          curl --fail --location --silent --show-error --retry 2 \
+            --connect-timeout 15 --max-time 120 \
+            --user-agent "${SEC_USER_AGENT}" \
+            'https://www.sec.gov/Archives/edgar/data/1418091/000119312522272772/d411753d8k.htm' \
+            --output /tmp/fund100-p4z/twtr-original-sec-8k.htm
       - name: Audit original daily listings and unresolved terminal proceeds
         run: |
           set -euo pipefail
           python fund100_stock_delisted_sample_p4z_v1_0.py \
             --source-zip /tmp/fund100-p4z/free-original.zip \
+            --sec-merger-filing /tmp/fund100-p4z/twtr-original-sec-8k.htm \
             --output /tmp/fund100-p4z/source-audit.json
           python - <<'PY'
           import json
           from pathlib import Path
           r=json.loads(Path('/tmp/fund100-p4z/source-audit.json').read_text())
           assert [x['daily_rows'] for x in r['listings']] == [127,127,127,83]
+          assert r['twtr_sec_verified_contractual_cash_consideration_usd'] == 54.20
+          assert r['twtr_sec_merger_effective_date'] == '2022-10-27'
+          assert r['twtr_sec_nyse_trading_suspended_before_open'] == '2022-10-28'
+          assert r['sec_contractual_right_not_proof_of_actual_cash_settlement']
+          assert r['sec_later_filing_not_a_signal_at_2022_10_27_close']
+          assert len(r['sec_original_filing_sha256']) == 64
           assert r['twtr_terminal_shareholder_proceeds_usd'] is None
           assert r['twtr_post_delisting_total_return'] is None
           assert r['historical_stock_alpha_backtest_eligible'] is False
@@ -59,7 +80,7 @@ jobs:
           assert r['live_authorized'] is False and r['trading_authorized'] is False
           print('Original free sample audited; unknown terminal outcome preserved.')
           PY
-          rm -f /tmp/fund100-p4z/free-original.zip
+          rm -f /tmp/fund100-p4z/free-original.zip /tmp/fund100-p4z/twtr-original-sec-8k.htm
       - name: Archive audit hashes and aggregate diagnostics only (NO VENDOR CSV)
         uses: actions/upload-artifact@v4
         with:
