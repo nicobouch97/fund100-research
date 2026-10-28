@@ -15,7 +15,9 @@ SHA="c"*40
 def env():
     return {
       "GITHUB_ACTIONS":"true","GITHUB_REPOSITORY":"nicobouch97/fund100-research",
-      "GITHUB_REF":"refs/heads/main","GITHUB_EVENT_NAME":"push",
+      "GITHUB_REF":"refs/heads/main","GITHUB_EVENT_NAME":"workflow_dispatch",
+      "GITHUB_ACTOR":"nicobouch97",
+      "FUND100_PRIVATE_WRITE_PROBE_CONFIRM":p.CONFIRMATION,
       "GITHUB_RUN_ATTEMPT":"1","GITHUB_RUN_ID":RUN,"GITHUB_SHA":SHA,
       "FUND100_BROKER_KILL_SWITCH":"ENGAGED","FUND100_RISK_LEVEL":"HIGH",
       "FUND100_PRIVATE_STATE_READ_TOKEN":"dummy-read-private-principal",
@@ -52,25 +54,27 @@ class FakeGithub:
         if method=="GET" and self.created is None:
             assert allow_absent
             return {"sha":"existing"} if self.preexisting else None
+        if method=="GET" and self.created is not None and allow_absent:
+            return {"type":"file","path":p.PATH,"sha":sha(self.created)}
         if method=="PUT":
             assert self.created is None
             assert not allow_absent and type(raw) is bytes
             data=json.loads(raw)
             assert data["branch"]=="main"
             assert "sha" not in data
-            assert "audit" in p.PREFIX
+            assert p.PATH.startswith("audit/")
             self.created=__import__("base64").b64decode(data["content"])
             assert json.loads(self.created)["signed_order_ledger_modified"] is False
             assert json.loads(self.created)["original_owner_claim_modified"] is False
             if self.put_fail:raise p.ProbeStop("lost acknowledgement; no retry")
             return {
-                "content":{"path":p.PREFIX+RUN+".json",
+                "content":{"path":p.PATH,
                            "sha":"0"*40 if self.ack_mismatch else sha(self.created)},
                 "commit":{"sha":"e"*40},
             }
         assert method=="GET" and not allow_absent
         return {
-            "type":"file","path":p.PREFIX+RUN+".json",
+            "type":"file","path":p.PATH,
             "sha":sha(self.created),"encoding":"base64",
             "content":b64encode(b"CORRUPT" if self.read_fail else self.created).decode(),
         }
@@ -102,7 +106,9 @@ def test_exactly_one_nontrading_audit_put_with_independent_readback(ctx):
 
 @pytest.mark.parametrize("key,bad",[
     ("GITHUB_ACTIONS","false"),("GITHUB_REPOSITORY","attacker/repo"),
-    ("GITHUB_REF","refs/heads/feature"),("GITHUB_EVENT_NAME","workflow_dispatch"),
+    ("GITHUB_REF","refs/heads/feature"),("GITHUB_EVENT_NAME","push"),
+    ("GITHUB_ACTOR","attacker"),
+    ("FUND100_PRIVATE_WRITE_PROBE_CONFIRM","UNAUTHORISED"),
     ("GITHUB_RUN_ATTEMPT","2"),("GITHUB_RUN_ID","../../state"),
     ("GITHUB_RUN_ID","0"),("GITHUB_SHA","unreviewed"),
     ("FUND100_BROKER_KILL_SWITCH","DISENGAGED"),("FUND100_RISK_LEVEL","LOW"),
@@ -151,6 +157,32 @@ def test_ambiguous_write_or_readback_holds_permanently_without_retry(ctx,fault):
     assert f.calls in (["GET","PUT"],["GET","PUT","GET"])
     assert f.calls.count("PUT")==1
 
+def test_separate_confirmed_dispatch_cannot_create_second_private_audit_file(ctx):
+    _,f=ctx
+    first=p.run_once()
+    assert first["private_audit_file_created"] is True
+    with pytest.raises(p.ProbeStop,match="already exists"):
+        p.run_once()
+    assert f.calls==["GET","PUT","GET","GET"]
+    assert f.calls.count("PUT")==1
+
+
+def test_no_merge_on_main_automatic_private_write_possible():
+    workflow=Path(".github/workflows/fund100-v6-s1-first-private-write-scope-once.yml").read_text()
+    assert "  push:" not in workflow and "  schedule:" not in workflow
+    assert "  workflow_run:" not in workflow
+    assert "  workflow_dispatch:" in workflow
+    assert "  pull_request:" in workflow
+    assert "github.event_name == 'workflow_dispatch'" in workflow
+    assert "github.actor == 'nicobouch97'" in workflow
+    assert "inputs.confirmation == 'AUTHORIZE_ONE_NONTRADING_PRIVATE_AUDIT_WRITE'" in workflow
+    assert "FUND100_PRIVATE_WRITE_PROBE_CONFIRM: ${{ inputs.confirmation }}" in workflow
+    assert "GITHUB_TOKEN: ${{ github.token }}" in workflow
+    assert "ALPACA_LIVE_KEY" not in workflow and "ALPACA_LIVE_SECRET" not in workflow
+    assert "contents: write" not in workflow
+    assert workflow.count("environment: fund100-live-broker")==1
+
+
 def test_helper_uses_fixed_private_audit_get_put_and_bounded_response():
     class Response:
         status=200
@@ -163,11 +195,11 @@ def test_helper_uses_fixed_private_audit_get_put_and_bounded_response():
         assert req.get_method()=="GET"
         assert req.full_url==p.API+p.PREFIX+RUN+".json?ref=main"
         assert req.get_header("Authorization")=="Bearer dummy-read-private-principal"
-        return Response({"type":"file","path":p.PREFIX+RUN+".json"})
+        return Response({"type":"file","path":p.PATH})
     result=p._request(method="GET",run_id=RUN,
         token="dummy-read-private-principal",transport=sender)
     assert result["type"]=="file"
-    assert result["path"]==p.PREFIX+RUN+".json"
+    assert result["path"]==p.PATH
     with pytest.raises(p.ProbeStop):
         p._request(method="PUT",run_id="../../state",
             token="dummy-write-private-principal",raw=b"{}",transport=sender)
