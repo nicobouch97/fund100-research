@@ -520,3 +520,27 @@ def test_source_bound_github_status_cannot_mark_skipped_protected_main_as_pass()
     assert "NOT a live-readiness PASS" in verdict
     assert "ALPACA_LIVE_KEY" not in verdict
     assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in verdict
+
+
+def test_hmac_handoff_discards_pr_upstream_at_github_event_filter():
+    """GitHub workflow_run must only trigger from authentic main-branch runs.
+
+    Its own pull_request event remains available for unprivileged unit tests.
+    Main eligibility is rechecked after dispatch by the protected reader.
+    """
+    from pathlib import Path
+    source=Path(".github/workflows/fund100-v6-s1-two-principal-readonly-handoff.yml").read_text()
+    before=source.split("permissions:",1)[0]
+    assert "  pull_request:" in before
+    assert "  workflow_run:" in before
+    trigger=before.split("  workflow_run:",1)[1]
+    assert "branches: [main]" in trigger
+    assert "types: [completed]" in trigger
+    assert "Fund-100 V6-S1 LIVE Funding Timing and NONE History Seven GET (NO ORDERS)" in trigger
+    assert "Fund-100 V6-S1 REAL LIVE Original Client-ID GET only (NO ORDERS)" in trigger
+    assert "head_branch == 'main'" in source
+    assert "verify_any_source(" in source
+    assert "source-bound-protected-verdict:" in source
+    assert 'test "$PROTECTED_RESULT" = "success"' in source
+    assert "ALPACA_LIVE_KEY" not in source
+    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in source

@@ -17,6 +17,10 @@ on:
       - "Fund-100 V6-S1 REAL LIVE Original Client-ID GET only (NO ORDERS)"
       - "Fund-100 V6-S1 LIVE Funding Timing and NONE History Seven GET (NO ORDERS)"
     types: [completed]
+    # The upstream REAL broker reader must run on main. PR source jobs are
+    # offline fixtures, not eligible brokerage readiness and should not
+    # spawn another apparently green downstream run.
+    branches: [main]
 
 permissions:
   contents: read
