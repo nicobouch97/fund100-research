@@ -512,6 +512,42 @@ def test_recurring_broker_proof_never_has_network_or_private_write_capability():
         assert dangerous not in code
 
 
+def test_full_existing_inventory_exit_over_65_reconciles_offline_only():
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture(side="sell")
+    fixture["before_positions"] = {"SPY": "1.25", "XLE": "0.5"}
+    fixture["after_positions"] = {"XLE": "0.5"}
+    for row in fixture["fill_pages"][0]:
+        row["price"] = "80"  # 1.25 * $80 = $100, but it closes risk
+    result = broker_proof.assess(
+        private_signed_journal_source=signed_source, **context, **fixture)
+    assert result["synthetic_full_existing_position_exit_exception_applied"] is True
+    assert result["original_65usd_order_notional_ceiling_checked"] is True
+    assert result["real_broker_receipt_source_authenticated"] is False
+    assert result["future_order_authorized"] is False
+
+
+@pytest.mark.parametrize("side", ["buy", "sell"])
+def test_over_65_new_buy_or_partial_sell_cannot_use_full_exit_exception(side):
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture(side=side)
+    for row in fixture["fill_pages"][0]:
+        row["price"] = "80"  # $100 of filled notional
+    with pytest.raises(broker_proof.BrokerProofStop, match="65 limit"):
+        broker_proof.assess(
+            private_signed_journal_source=signed_source, **context, **fixture)
+
+
+def test_full_existing_inventory_exit_under_65_does_not_fake_exception():
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture(side="sell")
+    fixture["before_positions"] = {"SPY": "1.25", "XLE": "0.5"}
+    fixture["after_positions"] = {"XLE": "0.5"}
+    result = broker_proof.assess(
+        private_signed_journal_source=signed_source, **context, **fixture)
+    assert result["synthetic_full_existing_position_exit_exception_applied"] is False
+    assert result["next_live_order_authorized"] is False
+
 def test_broker_shaped_receipt_cannot_predate_signed_event_signal():
     signed_source, context = replay_source_and_context()
     fixture = recurring_broker_fixture()

@@ -181,8 +181,6 @@ def assess(*, private_signed_journal_source, genesis_sha256, account_binding_sha
                 raise BrokerProofStop("Final FILL not the complete order")
     if not final_seen or cumulative != qty or not seen:
         raise BrokerProofStop("Missing final complete order FILL")
-    if notional > MAX_ORIGINAL_PILOT_ORDER_USD:
-        raise BrokerProofStop("Original pilot per-order notional ceiling exceeded")
     before = _positions(before_positions)
     after = _positions(after_positions)
     ticker = closed_order["symbol"]
@@ -193,6 +191,19 @@ def assess(*, private_signed_journal_source, genesis_sha256, account_binding_sha
         or {k:v for k,v in before.items() if k != ticker}
            != {k:v for k,v in after.items() if k != ticker}):
         raise BrokerProofStop("Changed or unreconciled post-fill portfolio holdings")
+    # The $65 limit is a maximum NEW investment order, not a prohibition
+    # against reducing risk by closing an already-owned >$65 position.
+    # Preserve the conservative $65 ceiling for all buys and partial sells;
+    # a larger sell is structurally admissible ONLY when it liquidates
+    # the entire pre-existing quantity and leaves no residual inventory.
+    # This is still synthetic reconciliation, NEVER a trade permit.
+    full_inventory_exit = (
+        closed_order["side"] == "sell" and old == qty and new == 0
+    )
+    if notional > MAX_ORIGINAL_PILOT_ORDER_USD and not full_inventory_exit:
+        raise BrokerProofStop(
+            "New order or partial sell exceeds original pilot $65 limit"
+        )
     return {
         "schema": SCHEMA,
         "status": "SYNTHETIC_RECEIPT_FILL_AND_PORTFOLIO_REPLAY_MATCH_ONLY",
@@ -200,6 +211,8 @@ def assess(*, private_signed_journal_source, genesis_sha256, account_binding_sha
         "filled_order_and_complete_FILLS_structurally_matched": True,
         "all_remaining_positions_unchanged_in_fixture": True,
         "original_65usd_order_notional_ceiling_checked": True,
+        "synthetic_full_existing_position_exit_exception_applied":
+            full_inventory_exit and notional > MAX_ORIGINAL_PILOT_ORDER_USD,
         "real_broker_receipt_source_authenticated": False,
         "real_private_journal_antirollback_verified": False,
         "broker_cash_and_settlement_verified": False,
