@@ -1,6 +1,7 @@
 """Offline exact Git Contents/HMAC/at-most-once recurring journal tests."""
 from base64 import b64encode, b64decode
 from copy import deepcopy
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -546,3 +547,37 @@ def test_full_existing_inventory_exit_under_65_does_not_fake_exception():
         private_signed_journal_source=signed_source, **context, **fixture)
     assert result["synthetic_full_existing_position_exit_exception_applied"] is False
     assert result["next_live_order_authorized"] is False
+
+def test_broker_shaped_receipt_cannot_predate_signed_event_signal():
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture()
+    # The fill math, order ID and subsequent completion remain consistent.
+    # Only the submitted order time predates the HMAC-bound event signal.
+    fixture["closed_order"]["submitted_at"] = "2026-10-28T10:19:59Z"
+    with pytest.raises(broker_proof.BrokerProofStop, match="predates signed signal"):
+        broker_proof.assess(
+            private_signed_journal_source=signed_source, **context, **fixture)
+
+
+def test_broker_shaped_future_observation_is_not_completed_evidence(monkeypatch):
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture()
+    monkeypatch.setattr(
+        broker_proof, "_now_utc",
+        lambda: datetime(2026, 10, 28, 15, 2, 59, tzinfo=timezone.utc))
+    with pytest.raises(broker_proof.BrokerProofStop, match="Future-dated"):
+        broker_proof.assess(
+            private_signed_journal_source=signed_source, **context, **fixture)
+
+
+def test_broker_shaped_receipt_accepts_completed_causal_clock_only(monkeypatch):
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture()
+    monkeypatch.setattr(
+        broker_proof, "_now_utc",
+        lambda: datetime(2026, 10, 28, 15, 3, 0, tzinfo=timezone.utc))
+    result = broker_proof.assess(
+        private_signed_journal_source=signed_source, **context, **fixture)
+    assert result["real_broker_receipt_source_authenticated"] is False
+    assert result["next_live_order_authorized"] is False
+    assert result["broker_gets"] == result["broker_posts"] == 0
