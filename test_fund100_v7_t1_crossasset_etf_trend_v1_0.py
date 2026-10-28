@@ -1,4 +1,6 @@
 """V7 T1 deterministic source/causality/cost/cap/no-broker tests."""
+from datetime import datetime, timezone
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -137,6 +139,20 @@ def test_source_gaps_nans_hindsight_windows_and_instrument_additions_refused():
     with pytest.raises(t.CrossAssetTrendStop):
         t.simulate(df,start="2014-01-02",end="2016-12-30",
                    side_bps=0,strategy="CROSS_ASSET_12_1")
+
+def test_future_dated_vendor_receipt_rejected_against_actual_utc_clock(monkeypatch):
+    # The price panel is otherwise valid, the date is within the allowed
+    # five-day source freshness window, and the claimed receipt is T+1.
+    # It must NOT pass if the stated acquisition has not actually occurred.
+    df=sample()
+    monkeypatch.setattr(t,"_now_utc",lambda:datetime(
+        2026,10,27,11,0,0,tzinfo=timezone.utc))
+    with pytest.raises(t.CrossAssetTrendStop,match="Stale or future-dated"):
+        t.analyze(df,"2026-10-28T09:00:00Z")
+    accepted=t.analyze(df,"2026-10-27T11:00:00Z")
+    assert accepted["trading_authorized"] is False
+    assert accepted["real_broker_orders"]==0
+
 
 def test_frozen_research_report_labels_not_forward_alpha_or_trade():
     df=sample()
