@@ -135,3 +135,19 @@ def test_original_raw_u5_sources_replayed_by_entry_function(monkeypatch):
     got=u7.evaluate(original,prices=None)
     assert got["priced_two_close_exposures"]==0
     assert called[0]["previous_main_id"]==40560695303
+
+def test_first_authentic_sec100_followup_is_main_only_and_read_only():
+    from pathlib import Path
+    text=Path(".github/workflows/fund100-v7-u7-sec100-forward-marks.yml").read_text()
+    assert "if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'" in text
+    assert "permissions:\\n  contents: read\\n  actions: read" in text
+    assert "cancel-in-progress: false" in text
+    assert "FUND100_BROKER_KILL_SWITCH: ENGAGED" in text
+    assert "FUND100_LIVE_WRITE_MODE: DISABLED" in text
+    for run in ("40545345749", "40550119246", "40563410754", "40621873197"):
+        assert run in text
+    assert "--previous-successful-main-run-id 40563410754" in text
+    assert "fund100_v7_u7_sec100_two_close_costed_mark_v1_0.py" in text
+    assert "actions/upload-artifact@v4" in text
+    assert "if-no-files-found: error" in text
+    assert "git push" not in text and "alpaca" not in text.lower()
