@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 from hashlib import sha256
 import json
-from math import isfinite
+from math import isfinite, sqrt
 from pathlib import Path
 
 import exchange_calendars as xcals
@@ -22,6 +22,9 @@ import fund100_stock_forward_source_selector_p4w_v1_0 as p4w
 
 SCHEMA="FUND100_P4X_ORIGINAL_FROZEN_STOCK_CHALLENGER_AFTER_COST_VERDICT_V1"
 SIDE_COST_BPS=(5,15,35)
+# Stress the selected three-stock basket's execution *relative* to one SPY ETF.
+# Identical percentage fees for both portfolios cannot reveal this hurdle.
+EXTRA_SELECTED_SIDE_BPS=(0,10,25,50)
 # This is not a LIVE launch gate. The threshold only changes the *description*
 # of a very small sample, never makes the strategy statistically proven.
 MIN_SESSIONS_FOR_DESCRIPTIVE_TREND=21
@@ -53,6 +56,19 @@ def _pct(x:object)->float:
 def _net(gross_pct:float,side_bps:int)->float:
     fee=side_bps/10000
     return 100*((1+gross_pct/100)*(1-fee)**2-1)
+
+
+def _extra_selected_side_bps_to_tie_spy(selected_gross_pct:float,
+                                        spy_gross_pct:float,
+                                        spy_side_bps:int)->float:
+    """Signed extra basket-side bps that would exactly tie costed SPY.
+
+    Negative means the basket needs cheaper execution than SPY. A tie
+    requiring a negative absolute basket fee is not economically feasible.
+    This is an analytic hurdle, NOT an observed broker spread or fill.
+    """
+    ratio=(1+spy_gross_pct/100)/(1+selected_gross_pct/100)
+    return 10000*(1-(1-spy_side_bps/10000)*sqrt(ratio))-spy_side_bps
 
 
 def _eq(a:float,b:float,*,tol:float=0.000003)->bool:
@@ -165,6 +181,14 @@ def analyze(report:dict)->dict:
         if any(last_nets[n] is not None and net>=last_nets[n]
                for n,net in (("selected",selected),("spy",spy),("equal_six",six))):
             raise ScorecardStop("Larger identical-side trade costs increased net return")
+        spy_gross=reference_gross["spy"]
+        extra_to_tie=_extra_selected_side_bps_to_tie_spy(gross,spy_gross,cost)
+        # Differential execution cost matters even when identical-side
+        # 5/15/35 bp comparisons all have the same relative winner.
+        stress={str(extra):round(_net(gross,cost+extra)-spy,6)
+                for extra in EXTRA_SELECTED_SIDE_BPS}
+        if not _eq(stress["0"],delta_spy):
+            raise ScorecardStop("Differential-cost baseline failed reconciliation")
         gross_reference=gross
         last_nets.update(selected=selected,spy=spy,equal_six=six)
         comparison[str(cost)]={
@@ -174,6 +198,10 @@ def analyze(report:dict)->dict:
             "frozen_six_net_return_pct":round(six,6),
             "selected_minus_spy_net_pp":round(delta_spy,6),
             "selected_minus_frozen_six_net_pp":round(delta_six,6),
+            "selected_minus_spy_gross_pp":round(gross-spy_gross,6),
+            "extra_selected_side_bps_to_tie_spy":round(extra_to_tie,3),
+            "tie_feasible_with_nonnegative_selected_side_cost":cost+extra_to_tie>=0,
+            "spy_relative_extra_selected_side_cost_stress_pp":stress,
             "beat_spy":delta_spy>0,
             "beat_frozen_six":delta_six>0,
         }
@@ -197,6 +225,10 @@ def analyze(report:dict)->dict:
         "original_fixed_source_sha256":p4i.ORIGINAL_JSON_SHA,
         "later_source_sha256":digest,
         "after_both_side_costs":comparison,
+        "extra_selected_side_cost_stress_bps_predeclared":list(EXTRA_SELECTED_SIDE_BPS),
+        "same_percentage_fees_do_not_test_differential_execution_costs":True,
+        "differential_cost_hurdle_not_an_observed_broker_quote":True,
+        "three_stock_tickets_vs_one_spy_ticket_fixed_fees_not_modelled":True,
         "observed_spy_relative_verdict":status,
         "one_fixed_lookback_and_single_revisable_vendor_vintage":True,
         "hypothetical_closing_prices_not_verified_broker_fills":True,
