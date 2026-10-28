@@ -389,3 +389,123 @@ def test_synthetic_reconciliation_never_skips_possible_post_or_forges_ledger():
     with pytest.raises(journal.JournalStop):
         journal.plan_reserve(
             reserved, broker_fixture=fixture, **CONTEXT)
+
+
+# Broker-shaped proof is a separate OFFLINE structural checker, not a real
+# Alpaca authenticated adapter or an authorisation for further orders.
+import fund100_v6_recurring_broker_fill_proof_offline_v1_0 as broker_proof
+
+
+def recurring_broker_fixture(*, side="buy"):
+    order_id = "11111111-1111-4111-8111-111111111111"
+    now = "2026-10-28T15:00:00Z"
+    later = "2026-10-28T15:02:00Z"
+    receipt = {
+        "id": order_id, "client_order_id": journal.client_id(EVENT),
+        "symbol": "SPY", "side": side, "status": "filled",
+        "type": "market", "time_in_force": "day",
+        "qty": "1.25", "filled_qty": "1.25",
+        "submitted_at": now, "filled_at": later,
+    }
+    fills = [[
+        {"id": "a", "order_id": order_id, "activity_type": "FILL",
+         "symbol": "SPY", "side": side, "type": "partial_fill",
+         "qty": "0.5", "cum_qty": "0.5", "leaves_qty": "0.75",
+         "price": "12", "transaction_time": "2026-10-28T15:01:00Z"},
+        {"id": "b", "order_id": order_id, "activity_type": "FILL",
+         "symbol": "SPY", "side": side, "type": "fill",
+         "qty": "0.75", "cum_qty": "1.25", "leaves_qty": "0",
+         "price": "12", "transaction_time": later},
+    ]]
+    before = {"SPY": "2", "XLE": "0.5"}
+    after = {"SPY": "3.25" if side == "buy" else "0.75", "XLE": "0.5"}
+    return {
+        "closed_order": receipt, "fill_pages": fills,
+        "before_positions": before, "after_positions": after,
+        "open_orders": [], "observed_at_utc": "2026-10-28T15:03:00Z",
+    }
+
+
+def replay_source_and_context():
+    reserved = next_source(journal.plan_reserve(genesis_source(), **CONTEXT))
+    possible = next_source(journal.plan_possible_post(reserved, **CONTEXT))
+    return possible, dict(
+        genesis_sha256=GENESIS, account_binding_sha256=ACCOUNT, key=KEY,
+        event_id=EVENT, strategy_id=CONTEXT["strategy_id"],
+        signal_time_utc=CONTEXT["signal_time_utc"],
+        signal_sha256=SIGNAL, strategy_release_sha256=MODEL,
+        standing_mandate_sha256=MANDATE, intent_sha256=INTENT,
+    )
+
+
+@pytest.mark.parametrize("side", ["buy", "sell"])
+def test_recurring_actual_broker_shaped_fill_math_is_offline_only(side):
+    signed_source, context = replay_source_and_context()
+    result = broker_proof.assess(
+        private_signed_journal_source=signed_source,
+        **context, **recurring_broker_fixture(side=side))
+    assert result["filled_order_and_complete_FILLS_structurally_matched"] is True
+    assert result["real_broker_receipt_source_authenticated"] is False
+    assert result["real_private_journal_antirollback_verified"] is False
+    assert result["broker_cash_and_settlement_verified"] is False
+    assert result["next_live_order_authorized"] is False
+    assert result["broker_gets"] == result["broker_posts"] == result["private_writes"] == 0
+
+
+@pytest.mark.parametrize("path,bad", [
+    ("closed_order.status", "partially_filled"),
+    ("closed_order.client_order_id", "an-unrelated-client"),
+    ("closed_order.filled_qty", "1.2"),
+    ("closed_order.qty", "1.3"),
+    ("closed_order.id", "not-uuid"),
+    ("closed_order.submitted_at", "2026-10-28T15:05:00Z"),
+    ("closed_order.filled_at", "2026-10-28T14:00:00Z"),
+    ("closed_order.symbol", "XLE"),
+    ("closed_order.type", "limit"),
+    ("fill_pages.0.0.id", "b"),
+    ("fill_pages.0.0.order_id", "33333333-3333-4333-8333-333333333333"),
+    ("fill_pages.0.0.cum_qty", "0.49"),
+    ("fill_pages.0.1.leaves_qty", "0.01"),
+    ("fill_pages.0.1.type", "partial_fill"),
+    ("fill_pages.0.1.price", "1000"),
+    ("fill_pages.0.1.transaction_time", "2026-10-28T16:00:00Z"),
+    ("before_positions.XLE", "0.4"),
+    ("after_positions.SPY", "3.20"),
+    ("after_positions.XLE", "0.6"),
+    ("open_orders", [{"status": "open"}]),
+])
+def test_recurring_broker_structural_mismatch_never_advances(path, bad):
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture()
+    target = fixture
+    names = path.split(".")
+    for key in names[:-1]:
+        target = target[int(key)] if key.isdigit() else target[key]
+    if names[-1].isdigit():
+        target[int(names[-1])] = bad
+    else:
+        target[names[-1]] = bad
+    with pytest.raises(broker_proof.BrokerProofStop):
+        broker_proof.assess(
+            private_signed_journal_source=signed_source, **context, **fixture)
+
+
+def test_nonpossible_post_cannot_be_reconciled_as_filled_broker_event():
+    start = genesis_source()
+    reserved = next_source(journal.plan_reserve(start, **CONTEXT))
+    _, context = replay_source_and_context()
+    for invalid_source in (start, reserved):
+        with pytest.raises(broker_proof.BrokerProofStop):
+            broker_proof.assess(
+                private_signed_journal_source=invalid_source,
+                **context, **recurring_broker_fixture())
+
+
+def test_recurring_broker_proof_never_has_network_or_private_write_capability():
+    code = Path(broker_proof.__file__).read_text()
+    assert broker_proof.TRADING_AUTHORIZED is False
+    assert broker_proof.BROKER_GETS == broker_proof.BROKER_POSTS == broker_proof.PRIVATE_WRITES == 0
+    for dangerous in ("urlopen(", "import requests", "ALPACA_LIVE_KEY",
+                      "ALPACA_LIVE_SECRET", "method=\"POST\"",
+                      "method=\"PUT\""):
+        assert dangerous not in code
