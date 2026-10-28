@@ -133,7 +133,6 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
     nav=100.
     peak=100.
     path=[100.]
-    daily=[]
     turnover=0.
     fees=0.
     trade_dates=0
@@ -169,7 +168,6 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
                                  "hypothetical_positions":winners,
                                  "same_close_idealized_fee_charged":True})
         day=nav/pre-1 if j else nav/100.-1
-        if j>0:daily.append(day)
         path.append(nav)
         peak=max(peak,nav)
         gross=float(sum(positions))/nav
@@ -177,7 +175,6 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
         if max(weights)>.50+1e-10:risk_breach["single_50pct"]+=1
         if gross>.95+1e-10:risk_breach["gross_95pct"]+=1
         if cash/nav<.05-1e-10:risk_breach["cash_below_5pct"]+=1
-        if day<=-.06:risk_breach["account_day_below_minus_6pct"]+=1
         last_session=current
     # Fixed model closing sale for ALL candidates; no actual order or fill.
     terminal_fee=float(sum(positions))*fee
@@ -195,6 +192,10 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
         raise CrossAssetTrendStop("Fee-inclusive market-session risk path invalid")
     max_dd=float(np.min(series/np.maximum.accumulate(series)-1))
     v=float(np.std(costed_daily,ddof=1)*sqrt(252))
+    # Include final liquidation fees when counting threshold breaches;
+    # the pre-liquidation daily mark could otherwise miss a true breach.
+    risk_breach["account_day_below_minus_6pct"]=int(
+        np.count_nonzero(costed_daily<=-.06))
     return {
         "first_source_session":view.index[0].date().isoformat(),
         "last_source_session":view.index[-1].date().isoformat(),
