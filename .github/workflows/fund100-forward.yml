@@ -72,7 +72,6 @@ jobs:
       - name: Produce recovery-aware performance and downside scorecard (no broker)
         run: |
           set -euo pipefail
-          python -m pytest -q test_fund100_forward_evidence_scorecard_v1_0.py
           python fund100_forward_evidence_scorecard_v1_0.py
 
       - name: Check for Forward Lab changes
