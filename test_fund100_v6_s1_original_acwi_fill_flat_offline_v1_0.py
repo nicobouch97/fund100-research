@@ -263,11 +263,29 @@ def test_query_window_and_observation_chronology_fails_closed():
             run(**changed)
 
 
-def test_highest_one_order_65_usd_cap_refuses_overpriced_fake_execution():
+def test_completed_original_acwi_inventory_exit_above_65_is_reconciled_not_a_new_order():
+    from decimal import Decimal
     a=base()
-    a["fill_pages"][0][0]["price"]="1000000"
-    with pytest.raises(m.FillFlatStop,match="Incomplete activity"):
-        m.assess(**a)
+    qty=Decimal(a["signed_prepost_sources"]["original_qty"])
+    # This SELL consumes the entire original bound holding. Its proceeds
+    # may exceed the new BUY order limit without granting fresh exposure.
+    price=(Decimal("80")/qty).quantize(Decimal("0.01"))
+    a["fill_pages"][0][0]["price"]=format(price,"f")
+    assert qty*price>Decimal("65")
+    report=m.assess(**a)
+    assert report["stage"]=="SYNTHETIC_ACWI_SELL_RECEIPT_FILLS_AND_FLAT_STRUCTURALLY_MATCH"
+    assert report["actual_sale_proceeds_settled"] is False
+    assert report["next_legacy_sell_authorized"] is False
+    assert report["live_buy_authorized"] is False
+    assert report["broker_POSTs"]==report["private_Git_writes"]==0
+
+
+def test_fill_price_and_qty_still_require_positive_realistic_decimal_evidence():
+    for price in ("0","NaN","-1"):
+        a=base()
+        a["fill_pages"][0][0]["price"]=price
+        with pytest.raises(m.FillFlatStop):
+            m.assess(**a)
 
 
 @pytest.mark.parametrize("which,change",[
@@ -293,7 +311,8 @@ def test_historical_wrong_qty_cannot_be_supplied_by_fake_signed_data():
 
 
 def test_only_original_pinned_stopped_contract_and_zero_network_capabilities():
-    assert m.MAX_FIRST_ORDER_GROSS_USD==65
+    assert m.ORIGINAL_FULL_INVENTORY_EXIT_NOT_SUBJECT_TO_NEW_ORDER_CAP is True
+    assert "MAX_FIRST_ORDER_GROSS_USD" not in Path(m.__file__).read_text()
     assert not m.LIVE_BROKER_REQUESTS_RELEASED
     assert not m.PRIVATE_LEDGER_ADVANCES_RELEASED
     assert not m.NEXT_SELL_OR_BUY_RELEASED
