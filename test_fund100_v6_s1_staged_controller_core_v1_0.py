@@ -330,11 +330,17 @@ def test_forged_malformed_or_nonfake_snapshot_fails_closed(changes):
     with pytest.raises(c.TransitionStop):
         c.assess(snap=x,now_utc=NOW)
 
-def test_fake_client_ids_cannot_pass_original_live_writer_namespace():
-    for sym in c.UNIVERSE:
-        for side in ("buy","sell"):
-            assert c.candidate_id(sym,side).startswith("SIM-")
-            assert not c.candidate_id(sym,side).startswith("f100live-")
+def test_signed_original_sell_ids_are_reused_but_buy_ids_stay_fake():
+    for sym in c.OLD:
+        cid=c.candidate_id(sym,"sell")
+        assert cid==c.original_cas.CLIENT_IDS[sym]
+        assert not cid.startswith("SIM-")
+    for sym in c.BUYS:
+        cid=c.candidate_id(sym,"buy")
+        assert cid.startswith("SIM-")
+        assert not cid.startswith("f100v6s1-")
+    assert c.TRANSPORT_RELEASED is False
+    assert c.PUBLIC_EXECUTION_ENABLED is False
 
 def test_actual_live_transport_is_permanently_disconnected():
     assert c.TRANSPORT_RELEASED is False
