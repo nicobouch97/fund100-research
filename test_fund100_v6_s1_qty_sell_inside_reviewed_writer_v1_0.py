@@ -32,7 +32,8 @@ def fake_FUTURE_risk_V2_release_only_in_credentialless_test(monkeypatch):
             "sell_only_original_legacy_ACWI":True,
             "buy_authorized":False,
             "capital_ceiling_usd":"130.30",
-            "max_single_sell_notional_usd":"65.00",
+            "full_original_acwi_exit_bounded_by_authenticated_inventory":True,
+            "maximum_new_order_notional_usd":"65.00",
             "orders_submitted_here":0,
             "settled_cash_verified":False,
             "broker_post_attempts":0,
@@ -343,7 +344,8 @@ def test_final_writer_broker_risk_source_unavailable_blocks_any_post(monkeypatch
     ("sell_only_original_legacy_ACWI",False),
     ("buy_authorized",True),
     ("capital_ceiling_usd","999.00"),
-    ("max_single_sell_notional_usd","130.30"),
+    ("maximum_new_order_notional_usd","130.30"),
+    ("full_original_acwi_exit_bounded_by_authenticated_inventory",False),
     ("orders_submitted_here",1),
     ("settled_cash_verified",True),
 ])
@@ -362,7 +364,8 @@ def test_final_writer_rejects_incomplete_or_stale_same_process_broker_risk(
             "sell_only_original_legacy_ACWI":True,
             "buy_authorized":False,
             "capital_ceiling_usd":"130.30",
-            "max_single_sell_notional_usd":"65.00",
+            "full_original_acwi_exit_bounded_by_authenticated_inventory":True,
+            "maximum_new_order_notional_usd":"65.00",
             "orders_submitted_here":0,
             "settled_cash_verified":False,
             "broker_post_attempts":0,
@@ -378,7 +381,7 @@ def test_final_writer_rejects_incomplete_or_stale_same_process_broker_risk(
 
 @pytest.mark.parametrize("missing",[
     "sell_only_original_legacy_ACWI","buy_authorized","capital_ceiling_usd",
-    "max_single_sell_notional_usd","orders_submitted_here","settled_cash_verified",
+    "full_original_acwi_exit_bounded_by_authenticated_inventory","maximum_new_order_notional_usd","orders_submitted_here","settled_cash_verified",
 ])
 def test_final_writer_rejects_missing_original_active_high_sell_scope_before_any_post(
         monkeypatch,missing):
@@ -395,7 +398,8 @@ def test_final_writer_rejects_missing_original_active_high_sell_scope_before_any
             "sell_only_original_legacy_ACWI":True,
             "buy_authorized":False,
             "capital_ceiling_usd":"130.30",
-            "max_single_sell_notional_usd":"65.00",
+            "full_original_acwi_exit_bounded_by_authenticated_inventory":True,
+            "maximum_new_order_notional_usd":"65.00",
             "orders_submitted_here":0,
             "settled_cash_verified":False,
             "broker_post_attempts":0,
