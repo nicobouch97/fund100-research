@@ -6,6 +6,7 @@ import inspect
 
 import pytest
 import exchange_calendars as xcals
+import pandas as pd
 
 import fund100_stock_forward_permanent_anchor_p4i_v1_0 as p4i
 import fund100_stock_forward_corporate_action_bridge_p4v_v1_0 as p4v
@@ -93,7 +94,9 @@ def test_qualified_source_costed_verdict_is_research_only(qualified):
     assert r["hypothetical_closing_prices_not_verified_broker_fills"]
 
 
-def test_not_every_good_forward_window_is_promotable():
+def test_not_every_good_forward_window_is_promotable(monkeypatch):
+    # Simulate a later evaluation clock, never waive production chronology.
+    monkeypatch.setattr(p4x,"_now_utc",lambda:pd.Timestamp("2027-07-01T12:00:00Z"))
     x=sourced(observations=63,selected_gross=6.0,spy_gross=2.0)
     x["post_freeze_exit_observation_session"]=(
         xcals.get_calendar("XNYS")
@@ -167,6 +170,25 @@ def test_reported_session_count_must_match_real_nyse_trading_dates():
     r["post_freeze_exit_observation_session"]="2026-10-26"
     with pytest.raises(p4x.ScorecardStop,match="NYSE"):
         p4x.analyze(r)
+
+
+def test_future_calendar_session_is_not_an_observed_market_return(monkeypatch):
+    x=sourced(observations=7)
+    x["post_freeze_exit_observation_session"]="2026-10-28"
+    monkeypatch.setattr(p4x,"_now_utc",lambda:pd.Timestamp("2026-10-28T13:00:00Z"))
+    with pytest.raises(p4x.ScorecardStop,match="has not completed"):
+        p4x.analyze(x)
+
+
+def test_claimed_close_requires_market_close_and_publication_buffer(monkeypatch):
+    x=sourced()
+    # On 27 October 2026, NYSE closes at 20:00 UTC (US daylight time).
+    for asof in ("2026-10-27T19:59:59Z","2026-10-27T20:14:59Z"):
+        monkeypatch.setattr(p4x,"_now_utc",lambda t=asof:pd.Timestamp(t))
+        with pytest.raises(p4x.ScorecardStop,match="has not completed"):
+            p4x.analyze(x)
+    monkeypatch.setattr(p4x,"_now_utc",lambda:pd.Timestamp("2026-10-27T20:15:00Z"))
+    assert p4x.analyze(x)["completed_forward_return_intervals"]==6
 
 
 def test_missing_cost_scenario_cannot_hide_high_cost_failure():
