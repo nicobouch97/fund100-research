@@ -114,7 +114,8 @@ def test_active_high_exact_real_get_path_yields_only_sell_scope(monkeypatch):
     assert got["same_process_real_broker_gets"]==7
     assert got["sell_only_original_legacy_ACWI"] is True
     assert got["buy_authorized"] is False
-    assert got["max_single_sell_notional_usd"]=="65.00"
+    assert got["full_original_acwi_exit_bounded_by_authenticated_inventory"] is True
+    assert got["maximum_new_order_notional_usd"]=="65.00"
     assert got["capital_ceiling_usd"]=="130.30"
     assert got["broker_post_attempts"]==0
     assert s["reads"]==7 and s["operator_gets"]==2
