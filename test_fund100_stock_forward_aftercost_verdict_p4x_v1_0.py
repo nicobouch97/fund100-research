@@ -143,6 +143,25 @@ def test_costed_or_relative_performance_tampering_rejected(cost,field,bad):
         p4x.analyze(r)
 
 
+@pytest.mark.parametrize("benchmark,delta_field",[
+    ("spy","selected_minus_spy_net_percentage_points"),
+    ("equal_six","selected_minus_equal_six_net_percentage_points"),
+])
+def test_benchmark_cost_scenarios_must_share_one_underlying_gross_return(
+        benchmark,delta_field):
+    # This tampering still leaves the 5/15/35 bp benchmark returns monotonic
+    # and keeps the selected-minus-benchmark arithmetic internally consistent.
+    # The implied *gross* benchmark return at 15 bp must nevertheless agree
+    # with the independent 5 and 35 bp cost scenarios.
+    r=sourced()
+    row=r["costed_return_scenarios"]["15"]
+    key=f"{benchmark}_net_return_pct"
+    row[key]=round(row[key]-0.1,6)
+    row[delta_field]=round(row["selected_net_return_pct"]-row[key],6)
+    with pytest.raises(p4x.ScorecardStop,match="Benchmark cost scenarios"):
+        p4x.analyze(r)
+
+
 def test_reported_session_count_must_match_real_nyse_trading_dates():
     r=sourced()
     r["post_freeze_exit_observation_session"]="2026-10-26"
