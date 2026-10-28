@@ -283,3 +283,109 @@ def test_no_real_network_entrypoint_or_broker_secret_in_code():
         "fund100_live_bootstrap",
     ):
         assert blocked not in s
+
+
+def simulated_filled_fixture(*, event_id=EVENT):
+    return {
+        "mode": journal.SYNTHETIC_FIXTURE_MODE,
+        "client_order_id": journal.client_id(event_id),
+        "source_authenticated_live": False,
+        "order_status": "filled",
+        "symbol": "SPY", "side": "buy",
+        "order_quantity": "1.25", "filled_quantity": "1.25",
+        "position_before_quantity": "0", "position_after_quantity": "1.25",
+        "fills": [
+            {"symbol": "SPY", "side": "buy", "qty": "0.50"},
+            {"symbol": "SPY", "side": "buy", "qty": "0.75"},
+        ],
+        "open_orders": [],
+    }
+
+
+def test_recurring_second_event_can_be_planned_after_synthetic_completion_only():
+    reserved = next_source(journal.plan_reserve(genesis_source(), **CONTEXT))
+    marked = next_source(journal.plan_possible_post(reserved, **CONTEXT))
+    assert journal.plan_reserve(marked, **dict(
+        CONTEXT, event_id=NEXT, signal_time_utc="2026-10-28T10:21:00Z",
+    ))["commit"] is None
+    completed_plan = journal.plan_simulated_reconcile(
+        marked, broker_fixture=simulated_filled_fixture(), **CONTEXT)
+    assert completed_plan["status"] == "OFFLINE_SYNTHETIC_RECONCILIATION_CAS_NO_ORDER_AUTHORITY"
+    assert completed_plan["broker_order_authorized"] is False
+    assert completed_plan["actual_broker_reconciliation_authenticated"] is False
+    completed = next_source(completed_plan)
+    _, doc = journal.read_github_source(
+        completed, genesis_sha256=GENESIS, account_binding_sha256=ACCOUNT,
+        key=KEY)
+    assert doc["sequence"] == 3
+    assert doc["events"][EVENT]["stage"] == journal.SIMULATED
+    assert len(doc["events"][EVENT]["synthetic_reconciliation_sha256"]) == 64
+    assert journal.plan_possible_post(completed, **CONTEXT)["commit"] is None
+    assert journal.plan_simulated_reconcile(
+        completed, broker_fixture=simulated_filled_fixture(), **CONTEXT)["commit"] is None
+    assert journal.plan_reserve(completed, **CONTEXT)["commit"] is None
+    newer = dict(CONTEXT, event_id=NEXT,
+                 signal_time_utc="2026-10-28T10:21:00Z")
+    next_plan = journal.plan_reserve(completed, **newer)
+    assert next_plan["commit"] is not None
+    next_state = next_source(next_plan)
+    _, doc2 = journal.read_github_source(
+        next_state, genesis_sha256=GENESIS,
+        account_binding_sha256=ACCOUNT, key=KEY)
+    assert doc2["sequence"] == 4
+    assert doc2["events"][EVENT]["stage"] == journal.SIMULATED
+    assert doc2["events"][NEXT]["stage"] == "RESERVED_NO_ORDER"
+    assert journal.verify_remote_cas(
+        next_plan, next_state, genesis_sha256=GENESIS,
+        account_binding_sha256=ACCOUNT, key=KEY)["broker_order_authorized"] is False
+
+
+@pytest.mark.parametrize("changes", [
+    {"mode": "LIVE"},
+    {"source_authenticated_live": True},
+    {"order_status": "partially_filled"},
+    {"client_order_id": "different"},
+    {"open_orders": [{"id": "still-open"}]},
+    {"order_quantity": "1.5"},
+    {"filled_quantity": "1.20"},
+    {"position_after_quantity": "1.2"},
+    {"position_before_quantity": "0.25"},
+    {"fills": [{"symbol": "SPY", "side": "buy", "qty": "1.24"}]},
+    {"fills": [{"symbol": "XLE", "side": "buy", "qty": "1.25"}]},
+    {"fills": []},
+    {"side": "sell"},
+    {"order_quantity": "nan"},
+    {"position_after_quantity": "-1"},
+])
+def test_no_synthetic_cas_on_ambiguous_or_mismatched_broker_fixture(changes):
+    reserved = next_source(journal.plan_reserve(genesis_source(), **CONTEXT))
+    marked = next_source(journal.plan_possible_post(reserved, **CONTEXT))
+    fixture = simulated_filled_fixture()
+    fixture.update(changes)
+    with pytest.raises(journal.JournalStop):
+        journal.plan_simulated_reconcile(
+            marked, broker_fixture=fixture, **CONTEXT)
+    assert journal.plan_reserve(
+        marked, **dict(CONTEXT, event_id=NEXT,
+                       signal_time_utc="2026-10-28T10:21:00Z"))["commit"] is None
+
+
+def test_synthetic_reconciliation_never_skips_possible_post_or_forges_ledger():
+    start = genesis_source()
+    fixture = simulated_filled_fixture()
+    assert journal.plan_simulated_reconcile(
+        start, broker_fixture=fixture, **CONTEXT)["commit"] is None
+    reserved = next_source(journal.plan_reserve(start, **CONTEXT))
+    assert journal.plan_simulated_reconcile(
+        reserved, broker_fixture=fixture, **CONTEXT)["commit"] is None
+    forged = json.loads(b64decode(reserved["content"]))
+    forged.pop("signature")
+    forged["events"][EVENT]["stage"] = journal.SIMULATED
+    forged["sequence"] = 3
+    with pytest.raises(journal.JournalStop):
+        journal.read_github_source(
+            source(signed(forged)), genesis_sha256=GENESIS,
+            account_binding_sha256=ACCOUNT, key=KEY)
+    with pytest.raises(journal.JournalStop):
+        journal.plan_reserve(
+            reserved, broker_fixture=fixture, **CONTEXT)
