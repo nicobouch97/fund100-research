@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from base64 import b64decode, b64encode
 from copy import deepcopy
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import hmac
 import json
@@ -30,7 +31,10 @@ MAX_SOURCE_BYTES = 90000
 NO_REMOTE_WRITES = True
 NO_BROKER_TRANSPORT = True
 TRADING_AUTHORIZED = False
-STATES = ("RESERVED_NO_ORDER", "POST_MAY_HAVE_BEEN_SENT")
+STATES = ("RESERVED_NO_ORDER", "POST_MAY_HAVE_BEEN_SENT",
+          "SIMULATED_FILLED_AND_ACCOUNT_RECONCILED")
+SIMULATED = STATES[2]
+SYNTHETIC_FIXTURE_MODE = "SYNTHETIC_BROKER_REPLAY_NEVER_AUTHENTIC_LIVE"
 
 class JournalStop(ValueError):
     pass
@@ -104,7 +108,7 @@ def _verify_body(body, *, genesis_sha256, account_binding_sha256, key):
         or obj["account_binding"] != _hex(account_binding_sha256, 64, "expected binding")):
         raise JournalStop("Wrong journal namespace or funded broker identity")
     seq = obj["sequence"]
-    if type(seq) is not int or seq < 0 or seq > 2 * MAX_EVENTS:
+    if type(seq) is not int or seq < 0 or seq > 3 * MAX_EVENTS:
         raise JournalStop("Recurring journal sequence outside limits")
     if seq == 0:
         if obj["prior_document_sha"] is not None or obj["events"]:
@@ -115,18 +119,24 @@ def _verify_body(body, *, genesis_sha256, account_binding_sha256, key):
     if type(entries) is not dict or len(entries) > MAX_EVENTS:
         raise JournalStop("Unbounded or invalid recurring journal")
     lower_bound = len(entries)
-    upper_bound = len(entries) * 2
+    upper_bound = len(entries) * 3
     if not lower_bound <= seq <= upper_bound:
         raise JournalStop("Inconsistent event count and signed journal sequence")
     expected_seq = 0
     for eid, item in entries.items():
         if type(eid) is not str or re.fullmatch(r"V6EV-[0-9a-f]{40}", eid) is None:
             raise JournalStop("Recurring journal reused a non-V6 event identity")
-        if type(item) is not dict or set(item) != {
-            "strategy_release_sha256", "mandate_sha256", "signal_sha256",
-            "intent_sha256", "stage", "client_order_id",
-        }:
+        fields = {"strategy_release_sha256", "mandate_sha256", "signal_sha256",
+                  "intent_sha256", "stage", "client_order_id"}
+        if type(item) is not dict or item.get("stage") not in STATES:
             raise JournalStop("Malformed recurring attempt record")
+        if item["stage"] == SIMULATED:
+            fields.add("synthetic_reconciliation_sha256")
+        if set(item) != fields:
+            raise JournalStop("Malformed recurring attempt record")
+        if item["stage"] == SIMULATED:
+            _hex(item["synthetic_reconciliation_sha256"], 64,
+                 "synthetic reconciliation fixture commitment")
         for name in ("strategy_release_sha256", "mandate_sha256",
                      "signal_sha256", "intent_sha256"):
             _hex(item[name], 64, name)
@@ -134,7 +144,8 @@ def _verify_body(body, *, genesis_sha256, account_binding_sha256, key):
             raise JournalStop("Unknown or unsafe recurring order state")
         if item["client_order_id"] != client_id(eid):
             raise JournalStop("Recurring order client ID disagrees with event")
-        expected_seq += 1 + (item["stage"] == "POST_MAY_HAVE_BEEN_SENT")
+        expected_seq += (1 + (item["stage"] != "RESERVED_NO_ORDER")
+                         + (item["stage"] == SIMULATED))
     if expected_seq != seq:
         raise JournalStop("Possible duplicate event transition or invalid sequence")
     # An authenticated document must never claim two unresolved possible
@@ -177,10 +188,65 @@ def read_github_source(source, *, genesis_sha256, account_binding_sha256, key):
     )
 
 
+def _synthetic_reconciliation(fixture, event_id):
+    """Validate deliberately UNAUTHENTICATED broker replay quantities only.
+
+    Live use requires separately authenticated current broker orders, FILLs,
+    account cash/positions and durable external anti-rollback source.
+    """
+    expected = {"mode", "client_order_id", "source_authenticated_live",
+                "order_status", "symbol", "side", "order_quantity",
+                "filled_quantity", "position_before_quantity",
+                "position_after_quantity", "fills", "open_orders"}
+    if (type(fixture) is not dict or set(fixture) != expected
+        or fixture["mode"] != SYNTHETIC_FIXTURE_MODE
+        or fixture["source_authenticated_live"] is not False
+        or fixture["client_order_id"] != client_id(event_id)
+        or fixture["order_status"] != "filled"
+        or fixture["side"] not in ("buy", "sell")
+        or type(fixture["symbol"]) is not str
+        or re.fullmatch(r"[A-Z][A-Z0-9.]{0,10}", fixture["symbol"]) is None
+        or type(fixture["open_orders"]) is not list or fixture["open_orders"]
+        or type(fixture["fills"]) is not list
+        or not 1 <= len(fixture["fills"]) <= 100):
+        raise JournalStop("Missing or unsafe synthetic completed-order fixture")
+
+    def qty(raw, label, *, permit_zero=False):
+        if (type(raw) is not str
+            or re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?", raw) is None):
+            raise JournalStop("Invalid synthetic " + label)
+        try:
+            value = Decimal(raw)
+        except InvalidOperation:
+            raise JournalStop("Invalid synthetic decimal " + label) from None
+        if not value.is_finite() or value > 1000000 or (value == 0 and not permit_zero):
+            raise JournalStop("Invalid synthetic amount " + label)
+        return value
+
+    wanted = qty(fixture["order_quantity"], "ordered quantity")
+    executed = qty(fixture["filled_quantity"], "executed quantity")
+    before = qty(fixture["position_before_quantity"], "pre-position", permit_zero=True)
+    after = qty(fixture["position_after_quantity"], "post-position", permit_zero=True)
+    if wanted != executed:
+        raise JournalStop("Synthetic order not fully filled")
+    total = Decimal(0)
+    for part in fixture["fills"]:
+        if (type(part) is not dict or set(part) != {"symbol", "side", "qty"}
+            or part["symbol"] != fixture["symbol"]
+            or part["side"] != fixture["side"]):
+            raise JournalStop("Synthetic FILL not linked to order")
+        total += qty(part["qty"], "FILL quantity")
+    if total != executed:
+        raise JournalStop("Synthetic FILL sum incomplete or double counted")
+    if (after-before if fixture["side"] == "buy" else before-after) != executed:
+        raise JournalStop("Synthetic post-position not consistent with fills")
+    return sha256(_canon(fixture)).hexdigest()
+
+
 def _proposal(source, *, event_id, strategy_id, signal_time_utc,
               signal_sha256, strategy_release_sha256,
               standing_mandate_sha256, intent_sha256, genesis_sha256,
-              account_binding_sha256, key, action):
+              account_binding_sha256, key, action, broker_fixture=None):
     # The caller-supplied hashes identify a potential event; they DO NOT
     # authenticate a signal, deployed strategy, economic edge or GO mandate.
     for name, v in (("strategy_release_sha256", strategy_release_sha256),
@@ -208,6 +274,8 @@ def _proposal(source, *, event_id, strategy_id, signal_time_utc,
     entries = current["events"]
     existing = entries.get(event_id)
     if action == "reserve":
+        if broker_fixture is not None:
+            raise JournalStop("Reservation cannot accept synthetic broker proof")
         if existing is not None:
             return {"status": "HOLD_EVENT_ALREADY_RESERVED_NEVER_RECREATE",
                     "commit": None, "broker_order_authorized": False}
@@ -228,6 +296,8 @@ def _proposal(source, *, event_id, strategy_id, signal_time_utc,
         }
         target = "OFFLINE_NEW_EVENT_RESERVATION_CAS_ONLY"
     elif action == "possible_post":
+        if broker_fixture is not None:
+            raise JournalStop("Possible-send cannot accept broker-completion fixture")
         if existing is None:
             raise JournalStop("Cannot enter possible-send stage without reservation")
         if existing["stage"] != "RESERVED_NO_ORDER":
@@ -248,6 +318,20 @@ def _proposal(source, *, event_id, strategy_id, signal_time_utc,
             raise JournalStop("Attempt changed original source, mandate or order intent")
         record = dict(existing, stage="POST_MAY_HAVE_BEEN_SENT")
         target = "OFFLINE_POSSIBLE_SEND_PREPOST_CAS_NO_RESEND"
+    elif action == "synthetic_reconcile":
+        if existing is None or existing["stage"] != "POST_MAY_HAVE_BEEN_SENT":
+            return {"status": "HOLD_NO_UNRESOLVED_POSSIBLE_SEND_TO_RECONCILE",
+                    "commit": None, "broker_order_authorized": False}
+        if any(existing[name] != value for name, value in (
+            ("signal_sha256", signal_sha256),
+            ("strategy_release_sha256", strategy_release_sha256),
+            ("mandate_sha256", standing_mandate_sha256),
+            ("intent_sha256", intent_sha256))):
+            raise JournalStop("Synthetic reconciliation changed frozen event")
+        proof_hash = _synthetic_reconciliation(broker_fixture, event_id)
+        record = dict(existing, stage=SIMULATED,
+                      synthetic_reconciliation_sha256=proof_hash)
+        target = "OFFLINE_SYNTHETIC_RECONCILIATION_CAS_NO_ORDER_AUTHORITY"
     else:
         raise JournalStop("Unknown recurring event transition")
     nextstate = deepcopy(current)
@@ -267,6 +351,7 @@ def _proposal(source, *, event_id, strategy_id, signal_time_utc,
         "broker_order_authorized": False,
         "real_git_writes": 0, "real_broker_posts": 0,
         "external_immutable_anchor_verified": False,
+        "actual_broker_reconciliation_authenticated": False,
     }
 
 
@@ -276,6 +361,12 @@ def plan_reserve(source, **kwargs):
 
 def plan_possible_post(source, **kwargs):
     return _proposal(source, action="possible_post", **kwargs)
+
+
+def plan_simulated_reconcile(source, *, broker_fixture, **kwargs):
+    """Only replay a synthetic completed order; never verify actual broker."""
+    return _proposal(source, action="synthetic_reconcile",
+                     broker_fixture=broker_fixture, **kwargs)
 
 
 def verify_remote_cas(plan, observed_source, *, genesis_sha256,
