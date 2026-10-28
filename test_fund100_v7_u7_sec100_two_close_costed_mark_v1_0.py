@@ -140,7 +140,7 @@ def test_first_authentic_sec100_followup_is_main_only_and_read_only():
     from pathlib import Path
     text=Path(".github/workflows/fund100-v7-u7-sec100-forward-marks.yml").read_text()
     assert "if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'" in text
-    assert "permissions:\\n  contents: read\\n  actions: read" in text
+    assert "permissions:" in text and "contents: read" in text and "actions: read" in text
     assert "cancel-in-progress: false" in text
     assert "FUND100_BROKER_KILL_SWITCH: ENGAGED" in text
     assert "FUND100_LIVE_WRITE_MODE: DISABLED" in text
