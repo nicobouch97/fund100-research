@@ -33,7 +33,10 @@ NEXT = identity.key(
     standing_mandate_sha256=MANDATE,
 )
 CONTEXT = {
-    "event_id": EVENT, "signal_sha256": SIGNAL,
+    "event_id": EVENT,
+    "strategy_id": "V6_S1_CONCENTRATED_ETF",
+    "signal_time_utc": "2026-10-28T10:20:00Z",
+    "signal_sha256": SIGNAL,
     "strategy_release_sha256": MODEL,
     "standing_mandate_sha256": MANDATE,
     "intent_sha256": INTENT,
@@ -123,8 +126,15 @@ def test_one_event_reserve_then_possible_post_then_same_id_permanently_holds():
         account_binding_sha256=ACCOUNT, key=KEY,
     )["broker_order_authorized"] is False
     assert journal.plan_possible_post(marked, **CONTEXT)["commit"] is None
-    assert journal.plan_reserve(marked, **dict(CONTEXT, event_id=NEXT))[
+    assert journal.plan_reserve(marked, **dict(
+        CONTEXT, event_id=NEXT, signal_time_utc="2026-10-28T10:21:00Z"))[
         "status"] == "HOLD_PREVIOUS_EVENT_MAY_HAVE_SENT_ORDER"
+
+def test_event_id_cannot_be_detached_from_signal_release_or_mandate():
+    with pytest.raises(journal.JournalStop):
+        journal.plan_reserve(genesis_source(), **dict(CONTEXT, event_id=NEXT))
+    with pytest.raises(journal.JournalStop):
+        journal.plan_reserve(genesis_source(), **dict(CONTEXT, signal_sha256="9" * 64))
 
 def test_prepost_needs_reservation_and_unmodified_source():
     with pytest.raises(journal.JournalStop):
