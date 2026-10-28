@@ -114,7 +114,8 @@ def test_active_high_exact_real_get_path_yields_only_sell_scope(monkeypatch):
     assert got["same_process_real_broker_gets"]==7
     assert got["sell_only_original_legacy_ACWI"] is True
     assert got["buy_authorized"] is False
-    assert got["max_single_sell_notional_usd"]=="65.00"
+    assert got["full_original_acwi_exit_bounded_by_authenticated_inventory"] is True
+    assert got["maximum_new_order_notional_usd"]=="65.00"
     assert got["capital_ceiling_usd"]=="130.30"
     assert got["broker_post_attempts"]==0
     assert s["reads"]==7 and s["operator_gets"]==2
@@ -209,6 +210,28 @@ def test_risk_break_cannot_authorize_sell(monkeypatch,risk):
         active.inspect_active_original_acwi_sell(
             original_qty=QTY,key=KEY,secret=SECRET)
     assert s["reads"]==7
+
+
+
+def test_full_existing_acwi_inventory_exit_can_exceed_new_order_65_without_expanding_exposure(monkeypatch):
+    """Original bootstrap ACWI was > $65; an authenticated full exit is not a new buy."""
+    def owned_inventory(docs):
+        docs[0].update(cash="10.00",equity="120.00",last_equity="120.00")
+        docs[1][0].update(current_price="80.00",market_value="80.00")
+        # Existing other three $10 holdings remain as original; $10 cash and
+        # $80 ACWI + $30 other gross = $120 original broker account equity.
+    state,_=mock_sources(monkeypatch,mutations=owned_inventory)
+    got=active.inspect_active_original_acwi_sell(
+        original_qty=QTY,key=KEY,secret=SECRET)
+    assert state["reads"]==7
+    assert got["full_original_acwi_exit_bounded_by_authenticated_inventory"] is True
+    assert got["maximum_new_order_notional_usd"]=="65.00"
+    assert got["capital_ceiling_usd"]=="130.30"
+    assert got["sell_only_original_legacy_ACWI"] is True
+    assert got["buy_authorized"] is False
+    assert got["orders_submitted_here"]==got["broker_post_attempts"]==0
+    assert "80.00" not in str(got)
+    assert active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is True  # test fixture only
 
 def test_live_source_cannot_send_broker_order_and_original_hist_evidence_is_unchanged():
     from pathlib import Path
