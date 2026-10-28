@@ -125,9 +125,28 @@ def assess(*, private_signed_journal_source, genesis_sha256, account_binding_sha
         or re.fullmatch(r"[A-Z][A-Z0-9.]{0,10}", closed_order["symbol"]) is None):
         raise BrokerProofStop("Unlinked or non-final recurring broker receipt")
     order_id = _uuid(closed_order.get("id"))
-    qty = _number(closed_order.get("qty"), "order quantity")
-    if _number(closed_order.get("filled_qty"), "filled order quantity") != qty:
-        raise BrokerProofStop("Partial or inconsistent order")
+    # Alpaca dollar-notional fractional orders return qty=null even when
+    # status=filled. Their *filled_qty* is the realized share quantity.
+    # Accept ONLY an actual USD-notional BUY with exactly one sizing mode:
+    # notional BUY or quantity BUY/SELL. Keep all source data UNTRUSTED.
+    filled_qty = _number(closed_order.get("filled_qty"), "filled order quantity")
+    raw_qty = closed_order.get("qty")
+    raw_notional = closed_order.get("notional")
+    is_notional_buy = raw_qty is None and raw_notional is not None
+    if is_notional_buy:
+        if closed_order["side"] != "buy":
+            raise BrokerProofStop("Notional SELL requires independent quantity proof")
+        requested_notional = _number(raw_notional, "requested USD notional")
+        if requested_notional > MAX_ORIGINAL_PILOT_ORDER_USD:
+            raise BrokerProofStop("Original pilot $65 notional order ceiling exceeded")
+        qty = filled_qty
+    else:
+        if raw_qty is None or raw_notional is not None:
+            raise BrokerProofStop("Order has missing or conflicting sizing modes")
+        qty = _number(raw_qty, "order quantity")
+        if filled_qty != qty:
+            raise BrokerProofStop("Partial or inconsistent order")
+        requested_notional = None
     submitted = _time(closed_order.get("submitted_at"))
     finished = _time(closed_order.get("filled_at"))
     observed = _time(observed_at_utc)
@@ -181,6 +200,11 @@ def assess(*, private_signed_journal_source, genesis_sha256, account_binding_sha
                 raise BrokerProofStop("Final FILL not the complete order")
     if not final_seen or cumulative != qty or not seen:
         raise BrokerProofStop("Missing final complete order FILL")
+    # A notional BUY must not consume more than the requested dollars
+    # beyond one cent of possible price/quantity representation rounding.
+    # The actual filled notional is still independently capped at $65.
+    if requested_notional is not None and notional > requested_notional + Decimal("0.01"):
+        raise BrokerProofStop("Notional BUY fill exceeds submitted dollar order")
     before = _positions(before_positions)
     after = _positions(after_positions)
     ticker = closed_order["symbol"]
@@ -211,6 +235,7 @@ def assess(*, private_signed_journal_source, genesis_sha256, account_binding_sha
         "filled_order_and_complete_FILLS_structurally_matched": True,
         "all_remaining_positions_unchanged_in_fixture": True,
         "original_65usd_order_notional_ceiling_checked": True,
+        "synthetic_alpaca_notional_buy_with_null_qty_validated": is_notional_buy,
         "synthetic_full_existing_position_exit_exception_applied":
             full_inventory_exit and notional > MAX_ORIGINAL_PILOT_ORDER_USD,
         "real_broker_receipt_source_authenticated": False,
