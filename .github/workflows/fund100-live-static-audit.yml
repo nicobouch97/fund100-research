@@ -73,6 +73,11 @@ on:
       # are reviewed with the same full LIVE safety audit on PR and main.
       - "fund100_v6_s1_first_execution_principals_getonly_v1_0.py"
       - "test_fund100_v6_s1_first_execution_principals_getonly_v1_0.py"
+      # Protected private production write capability proof is audit-file only;
+      # full safety audit on PR and main before any genuine scoped Git PUT.
+      - "fund100_v6_s1_private_write_permission_probe_once_v1_0.py"
+      - "test_fund100_v6_s1_private_write_permission_probe_once_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-first-private-write-scope-once.yml"
       - "test_fund100_v6_s1_original_first_acwi_funded_workflow_blueprint_v1_0.py"
       - "test_fund100_v6_s1_original_first_funded_entry_to_chain_offline_v1_0.py"
       - "release_candidates/fund100-v6-s1-original-first-acwi-funded-once.REVIEW-ONLY.yml"
@@ -257,6 +262,11 @@ on:
       # are reviewed with the same full LIVE safety audit on PR and main.
       - "fund100_v6_s1_first_execution_principals_getonly_v1_0.py"
       - "test_fund100_v6_s1_first_execution_principals_getonly_v1_0.py"
+      # Protected private production write capability proof is audit-file only;
+      # full safety audit on PR and main before any genuine scoped Git PUT.
+      - "fund100_v6_s1_private_write_permission_probe_once_v1_0.py"
+      - "test_fund100_v6_s1_private_write_permission_probe_once_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-first-private-write-scope-once.yml"
       - "test_fund100_v6_s1_original_first_acwi_funded_workflow_blueprint_v1_0.py"
       - "test_fund100_v6_s1_original_first_funded_entry_to_chain_offline_v1_0.py"
       - "release_candidates/fund100-v6-s1-original-first-acwi-funded-once.REVIEW-ONLY.yml"
