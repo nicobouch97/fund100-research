@@ -574,7 +574,12 @@ def approved_scoped_live_script(
             "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py":
                 "134bcd824759904e817f71e5168769c3d7f6004d",
             "fund100_v6_s1_staged_controller_core_v1_0.py":
-                "f84a1638b2eae47a14f01569eebacd78ba458cf7",
+                "640066fddb56c1d8a6cd19d7377147dc426329ec",
+            # The staged core now obtains immutable original ACWI/EEM/XLV
+            # SELL client IDs from the separately signed private CAS module.
+            # Pin that new transitive source before granting seven-GET creds.
+            "fund100_v6_s1_private_git_cas_protocol_v1_0.py":
+                "9b9f8917faa21b4157600ac642f80595445a7276",
             "fund100_live_portfolio_risk_v1_0.py":
                 PINNED_PRODUCTION_PORTFOLIO_MODULE,
             "fund100_live_operator_control_v1_0.py":
