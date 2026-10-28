@@ -13,6 +13,9 @@ on:
       # Shared market-data changes affect frozen forward research and deserve the full audit.
       - "fund100.py"
       - "test_fund100.py"
+      # Frozen prospective ledger changes must pass the full LIVE static audit.
+      - "fund100_forward.py"
+      - "test_fund100_forward_complete_nyse_sessions.py"
       - "test_fund100_alpaca_live_*.py"
       - "test_fund100_alpaca_paper_*.py"
       - "test_fund100_live_*.py"
@@ -170,6 +173,9 @@ on:
       # Shared market-data changes affect frozen forward research and deserve the full audit.
       - "fund100.py"
       - "test_fund100.py"
+      # Frozen prospective ledger changes must pass the full LIVE static audit.
+      - "fund100_forward.py"
+      - "test_fund100_forward_complete_nyse_sessions.py"
       - "test_fund100_alpaca_live_*.py"
       - "test_fund100_alpaca_paper_*.py"
       - "test_fund100_live_*.py"
