@@ -94,6 +94,42 @@ def test_qualified_source_costed_verdict_is_research_only(qualified):
     assert r["hypothetical_closing_prices_not_verified_broker_fills"]
 
 
+
+def test_spy_relative_differential_cost_stress_is_not_redundant_same_fee_test():
+    result=p4x.analyze(sourced(selected_gross=0.4,spy_gross=0.3))
+    assert result["extra_selected_side_cost_stress_bps_predeclared"]==[0,10,25,50]
+    assert result["same_percentage_fees_do_not_test_differential_execution_costs"]
+    assert result["differential_cost_hurdle_not_an_observed_broker_quote"]
+    assert result["three_stock_tickets_vs_one_spy_ticket_fixed_fees_not_modelled"]
+    for cost in p4x.SIDE_COST_BPS:
+        row=result["after_both_side_costs"][str(cost)]
+        stress=row["spy_relative_extra_selected_side_cost_stress_pp"]
+        assert stress["0"]==row["selected_minus_spy_net_pp"]
+        assert stress["0"]>0 and stress["50"]<0
+        assert all(stress[str(a)]>stress[str(b)]
+                   for a,b in zip(p4x.EXTRA_SELECTED_SIDE_BPS,
+                                  p4x.EXTRA_SELECTED_SIDE_BPS[1:]))
+        assert 0<row["extra_selected_side_bps_to_tie_spy"]<50
+        assert row["tie_feasible_with_nonnegative_selected_side_cost"]
+
+
+def test_break_even_spy_cost_hurdle_reconciles_exact_gross_return():
+    gross=1.0
+    benchmark=0.9
+    for side in p4x.SIDE_COST_BPS:
+        extra=p4x._extra_selected_side_bps_to_tie_spy(gross,benchmark,side)
+        assert abs(p4x._net(gross,side+extra)-p4x._net(benchmark,side))<1e-9
+
+
+def test_negative_gross_edge_can_require_impossible_negative_execution_cost():
+    result=p4x.analyze(sourced(selected_gross=-0.3,spy_gross=0.2))
+    row=result["after_both_side_costs"]["5"]
+    assert row["extra_selected_side_bps_to_tie_spy"]< -5
+    assert row["tie_feasible_with_nonnegative_selected_side_cost"] is False
+    assert row["spy_relative_extra_selected_side_cost_stress_pp"]["50"]<(
+        row["selected_minus_spy_net_pp"])
+
+
 def test_not_every_good_forward_window_is_promotable(monkeypatch):
     # Simulate a later evaluation clock, never waive production chronology.
     monkeypatch.setattr(p4x,"_now_utc",lambda:pd.Timestamp("2027-07-01T12:00:00Z"))
