@@ -339,7 +339,7 @@ def main()->None:
                 })
                 a.quarantine_output.parent.mkdir(parents=True,exist_ok=True)
                 a.quarantine_output.write_text(
-                    json.dumps(diagnostic,sort_keys=True,indent=2,allow_nan=False)+"\\n")
+                    json.dumps(diagnostic,sort_keys=True,indent=2,allow_nan=False)+"\n")
                 print("P4I SOURCE QUARANTINED:",
                       diagnostic["material_symbols"],
                       "MAX_RELATIVE",diagnostic.get("max_abs_relative_revision"),
