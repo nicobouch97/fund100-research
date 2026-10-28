@@ -138,6 +138,7 @@ jobs:
             --original-csv /tmp/fund100-p4i-original/fund100-p4g-original-prices.csv \
             --followup-json /tmp/fund100-p4i-followup/fund100-p4g-snapshot.json \
             --followup-csv /tmp/fund100-p4i-followup/fund100-p4g-original-prices.csv \
+            --quarantine-output /tmp/fund100-p4i-source-quarantine.json \
             --output /tmp/fund100-p4i-anchored-prospective-result.json
           python - <<'PY'
           import json
@@ -157,6 +158,14 @@ jobs:
           assert not r["trading_authorized"]
           print("Original archived 17 October signal anchored indefinitely; no trading.")
           PY
+      - name: Preserve rejected original-vintage change evidence (no strategy returns)
+        if: failure() && steps.followup.outputs.eligible == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-p4i-source-revision-quarantine
+          path: /tmp/fund100-p4i-source-quarantine.json
+          retention-days: 90
+          if-no-files-found: warn
       - name: Preserve real post-freeze source hash and only observed forward results
         if: steps.followup.outputs.eligible == 'true'
         uses: actions/upload-artifact@v4
