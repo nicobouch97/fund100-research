@@ -132,7 +132,7 @@ def test_no_cashflow_before_settlement_even_with_high_expected_upside():
     assert z["state"]=="HYPOTHETICAL_SWITCH_SELL_SETTLEMENT_REQUIRED"
     assert z["future_sell_proceeds_assumed_spendable"] is False
 
-def test_single_order_above_65_is_not_silently_authorized():
+def test_full_existing_80usd_sell_can_be_modeled_but_never_live_authorized():
     c=case()
     c["snapshot"].update({
         "equity_usd":"125.00","cash_usd":"45.00",
@@ -140,8 +140,11 @@ def test_single_order_above_65_is_not_silently_authorized():
     c["target_weights"]={"XLK":"0.49"}
     c["expected_returns"]={"ACWI":"0.00","XLK":"0.40"}
     z=run(c)
-    assert z["state"]=="HOLD_SWITCH_EXCEEDS_SINGLE_ORDER_CAP"
+    assert z["state"]=="HYPOTHETICAL_SWITCH_SELL_SETTLEMENT_REQUIRED"
     assert z["hypothetical_sell_usd_by_symbol"]["ACWI"]=="80.00"
+    assert z["hypothetical_full_existing_exits_usd_by_symbol"]=={"ACWI":"80.00"}
+    assert z["new_buys_and_partial_sells_respect_65usd_cap"] is True
+    assert z["future_sell_proceeds_assumed_spendable"] is False
     assert z["live_order_submission_authorized"] is False
 
 def test_account_growth_cannot_increase_investable_base_above_original_130_30():
@@ -411,3 +414,69 @@ def test_research_only_never_connects_broker_or_secret_or_sends():
                    "git push","method=\"POST\"","import os",
                    "def main("):
         assert banned not in s
+
+
+def test_full_inventory_100usd_exit_and_two_capped_buys_still_waits_for_settlement():
+    c=case()
+    c["snapshot"].update({
+        "equity_usd":"130.30", "cash_usd":"30.30",
+        "settled_cash_usd":"30.30", "positions_usd":{"ACWI":"100.00"},
+    })
+    c["target_weights"]={"XLK":"0.40","XLE":"0.40"}
+    c["expected_returns"]={"ACWI":"-0.10","XLK":"0.30","XLE":"0.30"}
+    z=run(c)
+    assert z["state"]=="HYPOTHETICAL_SWITCH_SELL_SETTLEMENT_REQUIRED"
+    assert z["hypothetical_sell_usd_by_symbol"]=={"ACWI":"100.00"}
+    assert z["hypothetical_full_existing_exits_usd_by_symbol"]=={"ACWI":"100.00"}
+    assert z["hypothetical_buy_usd_by_symbol"]=={"XLE":"52.12","XLK":"52.12"}
+    assert z["new_buys_and_partial_sells_respect_65usd_cap"] is True
+    assert z["hypothetical_post_trade_risk_within_limits"] is True
+    assert z["future_sell_proceeds_assumed_spendable"] is False
+    assert z["source_strategy_promoted"] is False
+    assert z["real_broker_gets"]==z["real_broker_posts"]==0
+
+
+def test_over_65usd_partial_disposal_remains_hard_cap_hold():
+    c=case()
+    c["snapshot"].update({
+        "equity_usd":"130.00","cash_usd":"30.00",
+        "settled_cash_usd":"30.00", "positions_usd":{"ACWI":"100.00"},
+    })
+    c["target_weights"]={"ACWI":"0.10","XLK":"0.35","XLE":"0.35"}
+    c["expected_returns"]={
+        "ACWI":"-0.15","XLK":"0.40","XLE":"0.40",
+    }
+    z=run(c)
+    assert z["hypothetical_sell_usd_by_symbol"]=={"ACWI":"87.00"}
+    assert z["hypothetical_full_existing_exits_usd_by_symbol"]=={}
+    assert z["hypothetical_post_trade_risk_within_limits"] is True
+    assert z["new_buys_and_partial_sells_respect_65usd_cap"] is False
+    assert z["state"]=="HOLD_SWITCH_EXCEEDS_SINGLE_ORDER_CAP"
+    assert z["live_order_submission_authorized"] is False
+
+
+def test_select_alternative_does_not_reject_all_full_existing_position_exits():
+    c=case()
+    c["snapshot"].update({
+        "equity_usd":"130.30","cash_usd":"30.30",
+        "settled_cash_usd":"30.30","positions_usd":{"ACWI":"100.00"},
+    })
+    z=m.select_research_alternative(
+        snapshot=c["snapshot"],
+        candidate_targets={
+            "RESEARCH_LIQUIDATE":{"XLK":"0.40","XLE":"0.40"},
+            "RESEARCH_KEEP":{"ACWI":"0.49"},
+        },
+        expected_returns={"ACWI":"-0.20","XLK":"0.30","XLE":"0.30"},
+        round_trip_side_cost_bps="15",
+        forecast_uncertainty_bps="50",
+        minimum_net_advantage_usd="0.50",
+    )
+    assert z["research_preferred_candidate_id"]=="RESEARCH_LIQUIDATE"
+    assert z["candidate_outcomes"]["RESEARCH_LIQUIDATE"]["state"]==(
+        "HYPOTHETICAL_SWITCH_SELL_SETTLEMENT_REQUIRED"
+    )
+    assert z["preferred_hypothetical_economics"][
+        "hypothetical_full_existing_exits_usd_by_symbol"
+    ]=={"ACWI":"100.00"}
+    assert z["live_order_submission_authorized"] is False
