@@ -107,8 +107,18 @@ def screen(*,snapshot:dict,now_utc:str,buy_symbol:str,
     observed=_clock(snapshot.get("observed_at_utc"),"broker account snapshot")
     if not 0<=(now-observed).total_seconds()<=300:
         return _hold("HOLD_STALE_OR_FUTURE_ACCOUNT_SOURCE")
+    # Capital ceiling is maximum *authorised original contribution*,
+    # never a claim that every actual funded account deposited exactly
+    # $130.30. The complete activity ledger must still prove one deposit.
+    try:
+        initial_deposit=_usd(
+            snapshot.get("original_deposit_total_usd"),
+            "original single deposit",nonzero=True)
+    except TradingCashStop:
+        return _hold("HOLD_INVALID_OR_EXCESS_INITIAL_PILOT_FUNDING")
+    if initial_deposit>CAP:
+        return _hold("HOLD_INVALID_OR_EXCESS_INITIAL_PILOT_FUNDING")
     if (snapshot.get("original_deposit_events")!=1
-        or snapshot.get("original_deposit_total_usd")!="130.30"
         or snapshot.get("all_order_pages_complete") is not True
         or snapshot.get("all_fill_pages_complete") is not True
         or snapshot.get("all_nontrade_activity_pages_complete") is not True
@@ -124,9 +134,25 @@ def screen(*,snapshot:dict,now_utc:str,buy_symbol:str,
     if (account.get("status")!="ACTIVE"
         or account.get("trading_blocked") is not False
         or account.get("account_blocked") is not False
-        or account.get("multiplier")!="1"
-        or account.get("pending_transfer_in") not in (None,"0","0.00")
-        or account.get("pending_transfer_out") not in (None,"0","0.00")):
+        or account.get("multiplier")!="1"):
+        return _hold("HOLD_ACCOUNT_NOT_UNLEVERAGED_ACTIVE_OR_PENDING_TRANSFER")
+    # Trading account snapshots may omit pending-transfer fields; in that
+    # case the separately required complete nontrade activity source must
+    # prove zero unreconciled external cashflows. If fields are provided,
+    # reject any nonzero, malformed or negative transfer rather than
+    # treating strings like "0.0000" or JSON integer zero as a transfer.
+    try:
+        pending=[]
+        for name in ("pending_transfer_in","pending_transfer_out"):
+            raw=account.get(name)
+            if raw is None:
+                continue
+            if type(raw) not in (str,int,Decimal):
+                raise TradingCashStop("Malformed pending transfer type")
+            pending.append(_usd(str(raw),name))
+        if any(x!=0 for x in pending):
+            return _hold("HOLD_ACCOUNT_NOT_UNLEVERAGED_ACTIVE_OR_PENDING_TRANSFER")
+    except TradingCashStop:
         return _hold("HOLD_ACCOUNT_NOT_UNLEVERAGED_ACTIVE_OR_PENDING_TRANSFER")
     if set(positions)!={"XLE"}:
         return _hold("HOLD_LEGACY_NOT_FLAT_OR_XLE_NOT_RETAINED")
