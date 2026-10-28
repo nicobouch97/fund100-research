@@ -142,6 +142,10 @@ on:
       # Costed factor benchmark risk accounting must pass the full LIVE audit.
       - "fund100_v7_f1_literature_factor_baseline_v1_0.py"
       - "test_fund100_v7_f1_literature_factor_baseline_v1_0.py"
+      # Cross-asset trend cost and market-session risk accounting is reviewed
+      # by the complete LIVE static audit before research changes merge.
+      - "fund100_v7_t1_crossasset_etf_trend_v1_0.py"
+      - "test_fund100_v7_t1_crossasset_etf_trend_v1_0.py"
       - "fund100_v7_pinned_etf_monthly_switch_v1_0.py"
       - "test_fund100_v7_pinned_etf_monthly_switch_v1_0.py"
       - "fund100_stock_quality_momentum_p4g_v1_0.py"
@@ -324,6 +328,10 @@ on:
       # Costed factor benchmark risk accounting must pass the full LIVE audit.
       - "fund100_v7_f1_literature_factor_baseline_v1_0.py"
       - "test_fund100_v7_f1_literature_factor_baseline_v1_0.py"
+      # Cross-asset trend cost and market-session risk accounting is reviewed
+      # by the complete LIVE static audit before research changes merge.
+      - "fund100_v7_t1_crossasset_etf_trend_v1_0.py"
+      - "test_fund100_v7_t1_crossasset_etf_trend_v1_0.py"
       - "fund100_v7_pinned_etf_monthly_switch_v1_0.py"
       - "test_fund100_v7_pinned_etf_monthly_switch_v1_0.py"
       - "fund100_stock_quality_momentum_p4g_v1_0.py"
