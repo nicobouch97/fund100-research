@@ -69,6 +69,11 @@ jobs:
           set -euo pipefail
           python fund100_forward_v1_1.py
 
+      - name: Produce recovery-aware performance and downside scorecard (no broker)
+        run: |
+          set -euo pipefail
+          python fund100_forward_evidence_scorecard_v1_0.py
+
       - name: Check for Forward Lab changes
         id: forward_check
         shell: bash

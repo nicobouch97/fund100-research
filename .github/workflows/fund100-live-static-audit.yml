@@ -16,6 +16,8 @@ on:
       # Frozen prospective ledger changes must pass the full LIVE static audit.
       - "fund100_forward.py"
       - "test_fund100_forward_complete_nyse_sessions.py"
+      - "fund100_forward_evidence_scorecard_v1_0.py"
+      - "test_fund100_forward_evidence_scorecard_v1_0.py"
       - "test_fund100_alpaca_live_*.py"
       - "test_fund100_alpaca_paper_*.py"
       - "test_fund100_live_*.py"
@@ -176,6 +178,8 @@ on:
       # Frozen prospective ledger changes must pass the full LIVE static audit.
       - "fund100_forward.py"
       - "test_fund100_forward_complete_nyse_sessions.py"
+      - "fund100_forward_evidence_scorecard_v1_0.py"
+      - "test_fund100_forward_evidence_scorecard_v1_0.py"
       - "test_fund100_alpaca_live_*.py"
       - "test_fund100_alpaca_paper_*.py"
       - "test_fund100_live_*.py"
