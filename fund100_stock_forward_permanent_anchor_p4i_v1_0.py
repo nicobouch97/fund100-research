@@ -109,6 +109,7 @@ def material_overlap_diagnostic(original:pd.DataFrame,later:pd.DataFrame)->dict:
         "broker_orders":0,
         "paper_authorized":False,
         "live_authorized":False,
+        "material_symbols":[],
         "per_symbol":[],
     }
     if (original.empty or not original.index.is_unique
