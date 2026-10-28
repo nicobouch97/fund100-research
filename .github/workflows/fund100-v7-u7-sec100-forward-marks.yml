@@ -13,10 +13,20 @@ on:
       - 'fund100_v7_u7_sec100_two_close_costed_mark_v1_0.py'
       - 'test_fund100_v7_u7_sec100_two_close_costed_mark_v1_0.py'
       - '.github/workflows/fund100-v7-u7-sec100-forward-marks.yml'
+  # First genuine two-accession SEC100 source capture now exists on main.
+  # Observe future NYSE closes without treating filing dates as entry dates.
+  schedule:
+    - cron: '53 0 * * 2-6'
+    - cron: '53 13 * * 2-6'
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
+
+concurrency:
+  group: fund100-v7-u7-first-authentic-sec100-cohort
+  cancel-in-progress: false
 
 jobs:
   offline-costed-two-close-source-replay:
@@ -43,3 +53,102 @@ jobs:
           assert x.BENCHMARK=='SPY'
           print('Prospective research only: no authenticated future events or funded orders asserted.')
           PY
+
+  first-authentic-sec100-source-relative-forward:
+    needs: offline-costed-two-close-source-replay
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install existing source/market research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Authenticate immutable original SEC100 source runs before prices
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          import fund100_v7_u7_sec100_two_close_costed_mark_v1_0 as u7
+          assert u7.BROKER_GETS == u7.BROKER_POSTS == u7.BROKER_ORDERS == 0
+          assert u7.COSTS == (5, 15, 35) and u7.BENCHMARK == 'SPY'
+          PY
+          mkdir -p /tmp/u7-original-u3 /tmp/u7-original-u4 /tmp/u7-previous-u5 /tmp/u7-first-new-u5
+          for spec in \
+            "40545345749:fund100-v7-u3-dated-issuer-mirror-sec100.yml" \
+            "40550119246:fund100-v7-u4-first-sec100-baseline.yml" \
+            "40563410754:fund100-v7-u5-original-sec100-watch.yml" \
+            "40621873197:fund100-v7-u5-original-sec100-watch.yml"; do
+            run="${spec%%:*}"
+            workflow="${spec#*:}"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" > "/tmp/u7-run-$run.json"
+            RUN="$run" EXPECTED_WORKFLOW="$workflow" python - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads(Path('/tmp/u7-run-'+os.environ['RUN']+'.json').read_text())
+          assert r['status']=='completed' and r['conclusion']=='success'
+          assert r['head_branch']=='main'
+          assert r['path'].endswith('/'+os.environ['EXPECTED_WORKFLOW'])
+          assert r['event'] in ('push','schedule','workflow_dispatch')
+          PY
+          done
+          gh run download 40545345749 --repo "$GITHUB_REPOSITORY" \
+            -n fund100-v7-u3-first-dated-mirror-sec100-40545345749 -D /tmp/u7-original-u3
+          gh run download 40550119246 --repo "$GITHUB_REPOSITORY" \
+            -n fund100-v7-u4-first-100-sec-original-baseline-40550119246 -D /tmp/u7-original-u4
+          gh run download 40563410754 --repo "$GITHUB_REPOSITORY" \
+            -n fund100-v7-u5-100issuer-original-delta-40563410754 -D /tmp/u7-previous-u5
+          gh run download 40621873197 --repo "$GITHUB_REPOSITORY" \
+            -n fund100-v7-u5-100issuer-original-delta-40621873197 -D /tmp/u7-first-new-u5
+          python - <<'PY'
+          from pathlib import Path
+          import fund100_v7_u6_sec100_causal_forward_admission_v1_0 as u6
+          frozen=u6.freeze_from_sources(
+              original_u3=Path('/tmp/u7-original-u3'),
+              original_first_sec=Path('/tmp/u7-original-u4'),
+              later_sec=Path('/tmp/u7-first-new-u5'),
+              previous_sec=Path('/tmp/u7-previous-u5'),
+              previous_main_id=40563410754)
+          assert frozen['new_accessions_relative_to_preceding_successful_observer']==2
+          assert frozen['distinct_model_exposures']==2
+          assert frozen['previous_main_observer_run']==40563410754
+          assert frozen['broker_orders']==0 and frozen['trading_authorized'] is False
+          print('First authentic source-relative SEC100 cohort replayed: two distinct exposures.')
+          PY
+      - name: Independently acquire later completed closes and cost-match SPY
+        run: |
+          set -euo pipefail
+          python fund100_v7_u7_sec100_two_close_costed_mark_v1_0.py \
+            --original-u3 /tmp/u7-original-u3 \
+            --original-first-sec /tmp/u7-original-u4 \
+            --later-sec /tmp/u7-first-new-u5 \
+            --previous-successful-sec /tmp/u7-previous-u5 \
+            --previous-successful-main-run-id 40563410754 \
+            --output-dir /tmp/u7-first-authentic-source-relative-marks
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result=json.loads(Path(
+              '/tmp/u7-first-authentic-source-relative-marks/costed-source-dated-two-close-marks.json'
+          ).read_text())
+          assert result['unique_model_exposures']==2
+          assert result['priced_two_close_exposures']+result['pending_two_close_exposures']==2
+          assert result['statistically_proven_alpha'] is False
+          assert result['broker_gets']==result['broker_posts']==result['broker_orders']==0
+          assert result['trading_authorized'] is False and result['live_authorized'] is False
+          print('First genuine SEC100 source cohort: priced',
+                result['priced_two_close_exposures'],'pending',result['pending_two_close_exposures'])
+          PY
+      - name: Archive independently acquired original market-price vintage and costed results
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-u7-first-authentic-sec100-two-close-${{ github.run_id }}
+          path: /tmp/u7-first-authentic-source-relative-marks/
+          retention-days: 90
+          if-no-files-found: error
