@@ -66,6 +66,36 @@ def test_same_asset_passive_four_vs_standalone_spy_friction_distinguished():
     assert r["net_annualized_return_pct"]!=s["net_annualized_return_pct"]
     assert r["original_high_risk_breach_sessions"]["single_50pct"]==0
 
+def test_flat_market_fee_risk_uses_actual_entry_and_exit_sessions():
+    # No price movement: risk comes ONLY from entry and terminal liquidation.
+    # Previously annualized volatility was zero because both fees were
+    # excluded from daily returns, and the terminal fee was appended as an
+    # invented extra market observation.
+    df=sample(short=True)
+    df.loc[:,list(t.ASSETS)]=100.
+    first="2014-01-02"
+    last="2016-12-30"
+    result=t.simulate(df,start=first,end=last,
+                      side_bps=15,strategy="STATIC_SPY")
+    n=len(df.loc[first:last])
+    entry,holdings,cash,fee,turnover=t._reweight(
+        100.,np.zeros(4),np.array([.95,0.,0.,0.,.05]),.0015)
+    terminal=entry-.0015*sum(holdings)
+    expected_daily=np.r_[entry/100.-1.,np.zeros(n-2),terminal/entry-1.]
+    assert result["risk_path_observed_session_count"]==n
+    assert result["risk_path_includes_entry_and_exit_fees_on_actual_close_sessions"]
+    assert result["net_total_return_pct"]==pytest.approx(terminal-100,abs=1e-6)
+    assert result["max_drawdown_pct"]==pytest.approx(
+        100*(terminal/100.-1.),abs=1e-6)
+    assert result["annualized_volatility_fraction"]==pytest.approx(
+        np.std(expected_daily,ddof=1)*np.sqrt(252),abs=1e-8)
+    assert result["annualized_volatility_fraction"]>0
+    assert result["worst_modeled_session_return_including_fees_pct"]==pytest.approx(
+        100*min(expected_daily),abs=1e-6)
+    assert result["worst_close_to_close_return_pct"]==(
+        result["worst_modeled_session_return_including_fees_pct"])
+
+
 def test_fee_stress_reduces_total_net_returns():
     df=sample(short=True)
     lo=t.simulate(df,start="2014-01-02",end="2016-12-30",
