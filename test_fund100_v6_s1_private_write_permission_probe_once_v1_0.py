@@ -193,7 +193,7 @@ def test_helper_uses_fixed_private_audit_get_put_and_bounded_response():
     def sender(req,timeout):
         assert timeout==12
         assert req.get_method()=="GET"
-        assert req.full_url==p.API+p.PREFIX+RUN+".json?ref=main"
+        assert req.full_url==p.API+p.PATH+"?ref=main"
         assert req.get_header("Authorization")=="Bearer dummy-read-private-principal"
         return Response({"type":"file","path":p.PATH})
     result=p._request(method="GET",run_id=RUN,
