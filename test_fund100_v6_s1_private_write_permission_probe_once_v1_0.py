@@ -151,7 +151,7 @@ def test_ambiguous_write_or_readback_holds_permanently_without_retry(ctx,fault):
     assert f.calls in (["GET","PUT"],["GET","PUT","GET"])
     assert f.calls.count("PUT")==1
 
-def test_helper_uses_fixed_private_audit_get_put_and_bounded_response(ctx,monkeypatch):
+def test_helper_uses_fixed_private_audit_get_put_and_bounded_response():
     class Response:
         status=200
         def __init__(self,doc):self.buf=BytesIO(json.dumps(doc).encode())
@@ -179,7 +179,7 @@ def test_helper_uses_fixed_private_audit_get_put_and_bounded_response(ctx,monkey
         p._request(method="GET",run_id=RUN,
             token="dummy-read-private-principal",raw=b"{}",transport=sender)
 
-def test_only_404_before_first_put_is_tolerated(ctx):
+def test_only_404_before_first_put_is_tolerated():
     def missing(req,timeout):
         raise HTTPError(req.full_url,404,"Not found",{},None)
     assert p._request(method="GET",run_id=RUN,
