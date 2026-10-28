@@ -62,6 +62,9 @@ def source(monkeypatch):
         lambda **kwargs:events.append(("self",kwargs["token"])) or True)
     monkeypatch.setattr(scope,"_public_issue_get",
         lambda **kwargs:events.append(("issue",kwargs["token"])) or True)
+    monkeypatch.setattr(scope,"_repository_push_metadata",
+        lambda **kwargs:events.append(("repo_permission",kwargs["expected_name"])) or
+            "PUSH_INDICATED_NOT_ENDPOINT_WRITE_PROOF")
     return events
 
 def test_five_original_distinct_principals_authenticated_get_no_writes(e,source):
@@ -72,12 +75,15 @@ def test_five_original_distinct_principals_authenticated_get_no_writes(e,source)
     assert result["private_write_permission_confirmed"] is False
     assert result["public_issue_write_permission_confirmed"] is False
     assert result["public_release_write_permission_confirmed"] is False
+    assert result["private_candidate_repository_push_metadata"]=="PUSH_INDICATED_NOT_ENDPOINT_WRITE_PROOF"
+    assert result["release_candidate_repository_push_metadata"]=="PUSH_INDICATED_NOT_ENDPOINT_WRITE_PROOF"
+    assert result["positive_push_metadata_is_proof_of_release_or_git_contents_write"] is False
     assert result["funded_order_authorized"] is False
     assert (result["signed_state_mutations"]==result["public_release_mutations"]==
             result["public_issue_mutations"]==result["broker_orders"]==0)
     assert [kind for kind,_ in source]==[
         "owner","owner","ledger","ledger",
-        "public","self","public","issue"]
+        "public","self","public","issue","repo_permission","repo_permission"]
 
 @pytest.mark.parametrize("key,bad",[
     ("GITHUB_EVENT_NAME","pull_request"),
@@ -106,7 +112,7 @@ def test_manual_recheck_uses_same_no_mutation_principal_contract(e,source):
     result=scope.inspect(environ=e)
     assert result["funded_order_authorized"] is False
     assert result["broker_orders"]==0
-    assert len(source)==8
+    assert len(source)==10
 
 
 def test_reports_every_missing_secret_name_in_single_protected_attempt(e,source):
@@ -151,7 +157,77 @@ def test_first_acwi_change_blocks_original_principal_admission(e,source,monkeypa
         monkeypatch.setattr(scope.publication,"_request",altered)
     with pytest.raises(scope.PrincipalStop):
         scope.inspect(environ=e)
-    assert all(t[0] in ("owner","ledger","public","self","issue") for t in source)
+    assert all(t[0] in ("owner","ledger","public","self","issue","repo_permission") for t in source)
+
+
+def test_coarse_github_repository_push_denial_fails_closed_but_is_not_mutation(e,source,monkeypatch):
+    for denied in ("nicobouch97/fund100-state-private","nicobouch97/fund100-research"):
+        def permission(**kwargs):
+            return "PUSH_DENIED" if kwargs["expected_name"]==denied else "UNDETERMINED"
+        monkeypatch.setattr(scope,"_repository_push_metadata",permission)
+        with pytest.raises(scope.PrincipalStop,match="PUSH_DENIED"):
+            scope.inspect(environ=e)
+
+
+def test_unreported_repository_permission_is_unknown_never_write_proof(e,source,monkeypatch):
+    monkeypatch.setattr(scope,"_repository_push_metadata",lambda **kwargs:"UNDETERMINED")
+    report=scope.inspect(environ=e)
+    assert report["private_candidate_repository_push_metadata"]=="UNDETERMINED"
+    assert report["release_candidate_repository_push_metadata"]=="UNDETERMINED"
+    assert report["private_write_permission_confirmed"] is False
+    assert report["public_release_write_permission_confirmed"] is False
+    assert report["funded_order_authorized"] is False
+
+
+def test_repository_permission_GET_is_read_only_bounded_and_not_write_certification(e,source):
+    from io import BytesIO
+    import json
+    class Response:
+        status=200
+        def __init__(self,body):self.raw=BytesIO(body)
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def read(self,*args):return self.raw.read(*args)
+    captured=[]
+    def t(req,timeout):
+        captured.append(req)
+        assert timeout==12
+        assert req.get_method()=="GET"
+        assert req.full_url==scope.PRIVATE_REPO_URL
+        return Response(json.dumps({
+            "full_name":"nicobouch97/fund100-state-private",
+            "permissions":{"push":True}}).encode())
+    a=scope._repository_push_metadata(
+        url=scope.PRIVATE_REPO_URL,
+        expected_name="nicobouch97/fund100-state-private",
+        token=e["FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"],transport=t)
+    assert a=="PUSH_INDICATED_NOT_ENDPOINT_WRITE_PROOF"
+    assert len(captured)==1
+    # No token, account value or actual permission claim appears in the returned report.
+    assert e["FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"] not in a
+    def denied(req,timeout):
+        return Response(json.dumps({
+            "full_name":"nicobouch97/fund100-state-private",
+            "permissions":{"push":False}}).encode())
+    assert scope._repository_push_metadata(
+        url=scope.PRIVATE_REPO_URL,
+        expected_name="nicobouch97/fund100-state-private",
+        token=e["FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"],
+        transport=denied)=="PUSH_DENIED"
+    def omitted(req,timeout):
+        return Response(json.dumps({
+            "full_name":"nicobouch97/fund100-state-private"}).encode())
+    assert scope._repository_push_metadata(
+        url=scope.PRIVATE_REPO_URL,
+        expected_name="nicobouch97/fund100-state-private",
+        token=e["FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"],
+        transport=omitted)=="UNDETERMINED"
+    with pytest.raises(scope.PrincipalStop):
+        scope._repository_push_metadata(
+            url="https://api.github.com/repos/attacker/repo",
+            expected_name="nicobouch97/fund100-state-private",
+            token=e["FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"],
+            transport=t)
 
 def test_source_has_no_http_mutation_and_no_alpaca_credentials():
     s=Path(scope.__file__).read_text()
