@@ -213,7 +213,7 @@ def _synthetic_reconciliation(fixture, event_id):
 
     def qty(raw, label, *, permit_zero=False):
         if (type(raw) is not str
-            or re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\\.[0-9]{1,9})?", raw) is None):
+            or re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\.[0-9]{1,9})?", raw) is None):
             raise JournalStop("Invalid synthetic " + label)
         try:
             value = Decimal(raw)
