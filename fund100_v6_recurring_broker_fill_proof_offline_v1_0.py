@@ -55,6 +55,11 @@ def _time(value):
     return dt
 
 
+def _now_utc():
+    """Independent observation clock; test seam, not a caller receipt."""
+    return datetime.now(timezone.utc)
+
+
 def _uuid(value):
     if type(value) is not str:
         raise BrokerProofStop("Broker order UUID missing")
@@ -128,6 +133,12 @@ def assess(*, private_signed_journal_source, genesis_sha256, account_binding_sha
     observed = _time(observed_at_utc)
     if not submitted <= finished <= observed:
         raise BrokerProofStop("Source observation precedes order completion")
+    # A signed event cannot explain an order already sent before its signal.
+    # Nor can a caller-provided future observation prove a completed fill.
+    if submitted < _time(signal_time_utc):
+        raise BrokerProofStop("Broker order predates signed signal")
+    if observed > _now_utc():
+        raise BrokerProofStop("Future-dated broker observation is not yet evidence")
     if (type(fill_pages) is not list or not 1 <= len(fill_pages) <= MAX_PAGES
         or any(type(page) is not list for page in fill_pages)
         or any(len(page) != MAX_PAGE for page in fill_pages[:-1])
