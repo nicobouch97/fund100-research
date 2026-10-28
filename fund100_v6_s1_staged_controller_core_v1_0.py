@@ -11,6 +11,7 @@ from decimal import Decimal, ROUND_DOWN, InvalidOperation
 from hashlib import sha256
 
 import fund100_v6_s1_low_churn_migration_v2_0 as previous
+import fund100_v6_s1_private_git_cas_protocol_v1_0 as original_cas
 
 SCHEMA="FUND100_V6_S1_FAKE_BROKER_ORDER_CONTROLLER_SNAPSHOT_V1"
 RESULT_SCHEMA="FUND100_V6_S1_STAGED_CONTROLLER_RESEARCH_ONLY_V1"
@@ -57,8 +58,23 @@ def amount(raw,label,*,positive=False):
     return v
 
 def candidate_id(symbol,side):
+    """Original legacy SELLs reuse signed private CAS client IDs, not fake IDs.
+
+    A genuine original ACWI/EEM/XLV filled receipt cannot be reconciled if
+    this staged controller expects unrelated synthetic client identities.
+    BUY identity remains unmistakably SIMulated: no LIVE BUY transport.
+    """
     if symbol not in UNIVERSE or side not in {"buy","sell"}:
         raise TransitionStop("Unknown client-order identity")
+    if side=="sell":
+        if symbol not in OLD or tuple(original_cas.LEGACY)!=OLD:
+            raise TransitionStop("No original signed legacy SELL client ID")
+        cid=original_cas.CLIENT_IDS.get(symbol)
+        if type(cid) is not str or not cid.startswith("f100v6s1-") or not cid.endswith("-s"):
+            raise TransitionStop("Original signed legacy SELL identity changed")
+        return cid
+    if symbol not in BUYS:
+        raise TransitionStop("No synthetic BUY outside approved ETF set")
     h=sha256((MIGRATION+"|"+side+"|"+symbol).encode()).hexdigest()[:20]
     return "SIM-v6s1-"+h+"-"+side[0]
 

@@ -32,7 +32,11 @@ def assert_no_broker(r):
     assert not r["observed_broker_state_authenticated"]
     if r["candidate_instruction"]:
         assert r["candidate_instruction"]["executable"] is False
-        assert r["candidate_instruction"]["client_order_id"].startswith("SIM-v6s1-")
+        intent=r["candidate_instruction"]
+        if intent["side"]=="sell":
+            assert intent["client_order_id"]==c.original_cas.CLIENT_IDS[intent["symbol"]]
+        else:
+            assert intent["client_order_id"].startswith("SIM-v6s1-")
 
 def sell_fill(x,sym):
     r=c.assess(snap=x,now_utc=NOW)
@@ -71,6 +75,45 @@ def test_original_v5_overweight_acwi_can_be_risk_reducing_sell_candidate():
     assert r["candidate_instruction"]["symbol"]=="ACWI"
     assert r["xle_original_overlap_retained"]
     assert_no_broker(r)
+
+def test_original_three_legacy_sell_ids_are_identical_to_signed_private_cas():
+    assert tuple(c.original_cas.LEGACY)==c.OLD
+    for symbol in c.OLD:
+        assert c.candidate_id(symbol,"sell")==c.original_cas.CLIENT_IDS[symbol]
+        assert c.candidate_id(symbol,"sell").startswith("f100v6s1-")
+    for symbol in c.BUYS:
+        assert c.candidate_id(symbol,"buy").startswith("SIM-v6s1-")
+    for invalid in ("XLK","IWM"):
+        with pytest.raises(c.TransitionStop):
+            c.candidate_id(invalid,"sell")
+    for invalid in ("ACWI","EEM","XLV"):
+        with pytest.raises(c.TransitionStop):
+            c.candidate_id(invalid,"buy")
+
+
+def test_real_original_acwi_signed_fill_and_flat_source_advances_to_eem_no_resell():
+    x=fixture()
+    original_acwi=c.original_cas.CLIENT_IDS["ACWI"]
+    x["cash_usd"]="89.30"
+    x["positions"].pop("ACWI")
+    x["order_history"][original_acwi]={
+        "symbol":"ACWI","side":"sell","qty":"0.89","status":"filled"}
+    evidence=c.assess(snap=x,now_utc=NOW)
+    assert evidence["stage"]=="SYNTHETIC_CANDIDATE_LEGACY_SELL_NO_TRANSPORT"
+    assert evidence["candidate_instruction"]["symbol"]=="EEM"
+    assert evidence["candidate_instruction"]["client_order_id"]==c.original_cas.CLIENT_IDS["EEM"]
+    assert_no_broker(evidence)
+
+
+def test_fake_or_forged_original_acwi_id_cannot_count_as_reconciled_fill():
+    x=fixture()
+    x["cash_usd"]="89.30"
+    x["positions"].pop("ACWI")
+    x["order_history"]["SIM-v6s1-fake-s"]={
+        "symbol":"ACWI","side":"sell","qty":"0.89","status":"filled"}
+    with pytest.raises(c.TransitionStop,match="client ID"):
+        c.assess(snap=x,now_utc=NOW)
+
 
 def test_restart_preserves_same_client_id_and_never_orders_again():
     x=fixture()
@@ -287,11 +330,17 @@ def test_forged_malformed_or_nonfake_snapshot_fails_closed(changes):
     with pytest.raises(c.TransitionStop):
         c.assess(snap=x,now_utc=NOW)
 
-def test_fake_client_ids_cannot_pass_original_live_writer_namespace():
-    for sym in c.UNIVERSE:
-        for side in ("buy","sell"):
-            assert c.candidate_id(sym,side).startswith("SIM-")
-            assert not c.candidate_id(sym,side).startswith("f100live-")
+def test_signed_original_sell_ids_are_reused_but_buy_ids_stay_fake():
+    for sym in c.OLD:
+        cid=c.candidate_id(sym,"sell")
+        assert cid==c.original_cas.CLIENT_IDS[sym]
+        assert not cid.startswith("SIM-")
+    for sym in c.BUYS:
+        cid=c.candidate_id(sym,"buy")
+        assert cid.startswith("SIM-")
+        assert not cid.startswith("f100v6s1-")
+    assert c.TRANSPORT_RELEASED is False
+    assert c.PUBLIC_EXECUTION_ENABLED is False
 
 def test_actual_live_transport_is_permanently_disconnected():
     assert c.TRANSPORT_RELEASED is False
