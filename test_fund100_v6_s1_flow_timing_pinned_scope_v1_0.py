@@ -48,6 +48,7 @@ def test_scheduled_job_or_any_write_mode_not_approved():
     "fund100_live_operator_control_v1_0.py",
     "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py",
     "fund100_v6_s1_staged_controller_core_v1_0.py",
+    "fund100_v6_s1_private_git_cas_protocol_v1_0.py",
 ])
 def test_changed_reader_or_original_dependencies_revokes_access(monkeypatch,name):
     orig=audit.git_blob_digest
