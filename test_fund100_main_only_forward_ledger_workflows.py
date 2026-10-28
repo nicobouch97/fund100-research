@@ -101,3 +101,16 @@ def test_forward_source_repairs_get_authentic_main_branch_rerun_without_loop():
         "git push origin HEAD:main",
     ):
         assert command in commands
+
+
+def test_forward_rerun_workflow_changes_require_full_live_static_audit():
+    audit = yaml.safe_load(
+        (ROOT / ".github/workflows/fund100-live-static-audit.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    triggers = audit.get("on", audit.get(True))
+    for event in ("push", "pull_request"):
+        paths = triggers[event]["paths"]
+        assert ".github/workflows/fund100-forward.yml" in paths
+        assert "test_fund100_main_only_forward_ledger_workflows.py" in paths
