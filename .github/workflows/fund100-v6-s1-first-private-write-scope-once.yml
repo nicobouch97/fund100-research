@@ -1,0 +1,106 @@
+name: Fund-100 V6-S1 First PRIVATE WRITE Scope Probe (AUDIT ONLY; NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_private_write_permission_probe_once_v1_0.py"
+      - "test_fund100_v6_s1_private_write_permission_probe_once_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-first-private-write-scope-once.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v6_s1_private_write_permission_probe_once_v1_0.py"
+      - "test_fund100_v6_s1_private_write_permission_probe_once_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-first-private-write-scope-once.yml"
+
+# DO NOT grant public-repo mutation rights to GITHUB_TOKEN; the isolated
+# private Contents(write) candidate is used only inside the protected step.
+permissions:
+  contents: read
+  issues: read
+
+# Exact same writer mutex as reviewed first LIVE ACWI order blueprint.
+concurrency:
+  group: fund100-v5-002-live-production
+  cancel-in-progress: false
+
+jobs:
+  credentialless-private-write-scope-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test exactly one private audit file PUT, independent read and STOP gates
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_s1_private_write_permission_probe_once_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'Offline: only fake one-shot audit PUT; NO credential, broker or real mutation.'
+
+  protected-main-first-private-write-once:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    needs: credentialless-private-write-scope-tests
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 8
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Protected main STOP and no old V5 or V6 trading authority
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_EVENT_NAME" = 'push'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          test "$FUND100_RISK_LEVEL" = 'HIGH'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          grep -Eq '"first_original_acwi_sell_enabled": false' fund100_v6_s1_operator_control.json
+          python - <<'PY'
+          import fund100_v6_s1_private_write_permission_probe_once_v1_0 as p
+          assert p.PRIVATE_REPO == 'nicobouch97/fund100-state-private'
+          assert p.PREFIX.startswith('audit/')
+          assert p.MAX_ONE_REAL_PUT == 1
+          assert p.LIVE_BROKER_CALLS_PERMITTED is False
+          assert p.SIGNATURE_LEDGER_WRITES_PERMITTED is False
+          assert p.PUBLIC_ISSUE_OR_RELEASE_WRITES_PERMITTED is False
+          assert p.LIVE_TRADING_AUTHORIZED is False
+          print('Original STOP + private audit path scope PASS.')
+          PY
+      - name: One harmless PRIVATE audit Contents PUT and independent signed-principal GET
+        # NO Alpaca keys, public issue write, Release write operation or
+        # private signed ledger/owner CAS mutation; one write outside state/.
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}
+          FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -B fund100_v6_s1_private_write_permission_probe_once_v1_0.py
+      - name: Confirm broker kill and old/new original operator remain stopped
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'Private audit path WRITE scoped and read back; LIVE trading STILL STOP.'
