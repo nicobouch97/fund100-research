@@ -287,7 +287,8 @@ def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
             or ready.get("sell_only_original_legacy_ACWI") is not True
             or ready.get("buy_authorized") is not False
             or ready.get("capital_ceiling_usd")!="130.30"
-            or ready.get("max_single_sell_notional_usd")!="65.00"
+            or ready.get("full_original_acwi_exit_bounded_by_authenticated_inventory") is not True
+            or ready.get("maximum_new_order_notional_usd")!="65.00"
             or ready.get("orders_submitted_here")!=0
             or ready.get("settled_cash_verified") is not False
             or ready.get("broker_post_attempts")!=0):
