@@ -146,13 +146,28 @@ def evaluate(*,snapshot:dict,target_weights:dict,expected_returns:dict,
         and post_cash>=post_equity-post_deployable*MAX_GROSS
         and all(v<=post_deployable*MAX_SYMBOL for v in post_positions.values())
     )
+    # A full disposal of an EXISTING holding can be larger than the $65
+    # ceiling for new orders: it removes inventory rather than acquiring
+    # risk. Partial disposals and every purchase remain bounded at $65.
+    # This only classifies hypothetical, untrusted cash exposures; a
+    # real writer must separately authenticate held share quantities and
+    # cap/order authorisation at execution time.
+    full_existing_exits={
+        s:value for s,value in sells.items()
+        if value==observed[s] and post_positions[s]==0
+    }
+    over_cap_new_or_partial=(
+        any(value>MAX_ORDER for value in buys.values())
+        or any(value>MAX_ORDER and s not in full_existing_exits
+               for s,value in sells.items())
+    )
     if not post_risk_ok:
         state="HOLD_POST_TRADE_RISK_LIMIT_BREACH"
     elif not sells and not buys:
         state="HOLD_NO_MATERIAL_DIFFERENCE"
     elif net<=required:
         state="HOLD_INSUFFICIENT_COSTED_NET_ADVANTAGE"
-    elif any(v>MAX_ORDER for v in list(sells.values())+list(buys.values())):
+    elif over_cap_new_or_partial:
         state="HOLD_SWITCH_EXCEEDS_SINGLE_ORDER_CAP"
     elif settled_buy_cash_required>settled:
         state="HYPOTHETICAL_SWITCH_SELL_SETTLEMENT_REQUIRED"
@@ -170,6 +185,11 @@ def evaluate(*,snapshot:dict,target_weights:dict,expected_returns:dict,
         "live_order_submission_authorized":False,
         "hypothetical_sell_usd_by_symbol":{s:cashfmt(v) for s,v in sells.items()},
         "hypothetical_buy_usd_by_symbol":{s:cashfmt(v) for s,v in buys.items()},
+        "hypothetical_full_existing_exits_usd_by_symbol":{
+            s:cashfmt(value) for s,value in full_existing_exits.items()
+        },
+        "new_buys_and_partial_sells_respect_65usd_cap":
+            not over_cap_new_or_partial,
         "expected_gross_opportunity_advantage_usd":cashfmt(gain),
         "both_sides_transaction_cost_usd":cashfmt(cost),
         "additional_forecast_uncertainty_reserve_usd":cashfmt(penalty),
