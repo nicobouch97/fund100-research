@@ -1,6 +1,7 @@
 """One non-trading protected private Git Contents(write) permission probe.
 
-Creates exactly ONE NEW audit/ path in fund100-state-private, never touches
+Creates exactly ONE global fixed audit/ path in fund100-state-private,
+only after a separately confirmed owner workflow_dispatch. Never touches
 signed state, release objects, public issues, Alpaca or financial credentials.
 Protected main-only push, first run_attempt, stopped V6 and broker kill ENGAGED.
 A 404-before/one PUT/independent private READ-after protocol: NO retry after
@@ -23,7 +24,8 @@ import fund100_v6_s1_first_execution_principals_getonly_v1_0 as original
 SCHEMA="FUND100_V6_S1_FIRST_PRIVATE_CONTENTS_WRITE_PERMISSION_PROBE_NONTRADING_V1"
 PRIVATE_REPO="nicobouch97/fund100-state-private"
 API="https://api.github.com/repos/"+PRIVATE_REPO+"/contents/"
-PREFIX="audit/fund100_v6_s1_first_acwi_private_write_probe_"
+PATH="audit/fund100_v6_s1_first_acwi_private_write_probe_ONCE.json"
+CONFIRMATION="AUTHORIZE_ONE_NONTRADING_PRIVATE_AUDIT_WRITE"
 MAX_BYTES=16_000
 MAX_ONE_REAL_PUT=1
 LIVE_BROKER_CALLS_PERMITTED=False
@@ -41,7 +43,9 @@ def _context(e):
     if (e.get("GITHUB_ACTIONS")!="true"
         or e.get("GITHUB_REPOSITORY")!="nicobouch97/fund100-research"
         or e.get("GITHUB_REF")!="refs/heads/main"
-        or e.get("GITHUB_EVENT_NAME")!="push"
+        or e.get("GITHUB_EVENT_NAME")!="workflow_dispatch"
+        or e.get("GITHUB_ACTOR")!="nicobouch97"
+        or e.get("FUND100_PRIVATE_WRITE_PROBE_CONFIRM")!=CONFIRMATION
         or e.get("GITHUB_RUN_ATTEMPT")!="1"
         or e.get("FUND100_BROKER_KILL_SWITCH")!="ENGAGED"
         or e.get("FUND100_RISK_LEVEL")!="HIGH"
@@ -74,7 +78,7 @@ def _request(*,method,run_id,token,raw=None,transport=None,allow_absent=False):
         or (method=="PUT" and (type(raw) is not bytes or len(raw)>MAX_BYTES))
         or (method=="PUT" and allow_absent)):
         raise ProbeStop("Only exact original audit GET and one bounded PUT allowed")
-    path=PREFIX+run_id+".json"
+    path=PATH
     url=API+path+("?ref=main" if method=="GET" else "")
     headers={
         "Accept":"application/vnd.github+json",
@@ -124,7 +128,9 @@ def run_once():
         or proof.get("broker_orders")!=0
         or proof.get("funded_order_authorized") is not False):
         raise ProbeStop("Original private signed state or token readiness HOLD")
-    # Failure in the read-before-PUT is a HOLD; never overwrite any path.
+    # Fixed global audit pathname prevents any second authorised dispatch
+    # from silently starting a NEW write with a distinct Actions run ID.
+    # Failure in read-before-PUT is a HOLD; never overwrite any path.
     if _request(method="GET",run_id=run,token=read,allow_absent=True) is not None:
         raise ProbeStop("Audit probe path already exists; NEVER create twice")
     document={
@@ -137,7 +143,7 @@ def run_once():
         "broker_orders_sent":0,
     }
     content=(json.dumps(document,sort_keys=True,separators=(",",":"))+"\n").encode("ascii")
-    path=PREFIX+run+".json"
+    path=PATH
     commit=json.dumps({
         "message":"Nontrading permission probe: verify private Contents(write) once",
         "branch":"main","content":b64encode(content).decode("ascii"),
