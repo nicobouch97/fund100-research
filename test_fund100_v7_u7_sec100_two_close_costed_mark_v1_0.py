@@ -1,5 +1,6 @@
 """U7 negative/causal two-close mark regression. No network or broker."""
 from copy import deepcopy
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -8,6 +9,12 @@ import pytest
 import fund100_v7_u6_sec100_causal_forward_admission_v1_0 as u6
 import fund100_v7_u7_sec100_two_close_costed_mark_v1_0 as u7
 from test_fund100_v7_u6_sec100_causal_forward_admission_v1_0 import report,new_row
+
+@pytest.fixture(autouse=True)
+def completed_fixture_observation_clock(monkeypatch):
+    """Synthetic October/November future receipts are tested after their dates."""
+    monkeypatch.setattr(u7,"_now_utc",lambda:datetime(2026,11,5,12,tzinfo=timezone.utc))
+
 
 def frozen(*rows):
     return u6.freeze_verified_delta(report(rows=list(rows)))
@@ -110,6 +117,33 @@ def test_no_same_day_or_early_price_vintage_lookahead():
             u7.evaluate(frozen(new_row()),prices=panel(),
                 later_price_acquired_utc=when,
                 provider_reference="invalid source timestamp independent observation")
+
+
+def test_future_dated_market_source_cannot_turn_unobserved_closes_into_returns(monkeypatch):
+    # The panel and receipt are internally chronological, but the purported
+    # market source cannot exist on the actual observation date.
+    monkeypatch.setattr(u7,"_now_utc",lambda:datetime(2026,10,28,14,tzinfo=timezone.utc))
+    with pytest.raises(u7.MarkStop,match="receipt lies in the future"):
+        u7.evaluate(frozen(new_row()),prices=panel(),
+            later_price_acquired_utc="2026-10-30T19:00:00Z",
+            provider_reference="fabricated future vendor receipt")
+
+
+def test_future_dated_sec_capture_rejected_even_without_market_prices(monkeypatch):
+    # A genuine archive replay normally supplies this receipt. Structural
+    # callers must still not accept a purported source capture in the future.
+    monkeypatch.setattr(u7,"_now_utc",lambda:datetime(2026,10,27,18,tzinfo=timezone.utc))
+    with pytest.raises(u7.MarkStop,match="cohort capture lies in the future"):
+        u7.evaluate(frozen(new_row()),prices=None)
+
+
+def test_real_clock_after_source_receipts_preserves_pending_and_priced_marks(monkeypatch):
+    monkeypatch.setattr(u7,"_now_utc",lambda:datetime(2026,10,30,20,tzinfo=timezone.utc))
+    out=u7.evaluate(frozen(new_row()),prices=panel(),
+        later_price_acquired_utc="2026-10-30T19:00:00Z",
+        provider_reference="completed later source acquired before the actual clock")
+    assert out["priced_two_close_exposures"]==1
+    assert out["broker_posts"]==out["broker_orders"]==0
 
 def test_zero_source_does_not_accept_prices_for_spurious_universe():
     with pytest.raises(u7.MarkStop):
