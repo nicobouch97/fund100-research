@@ -4,6 +4,8 @@ A newly observed accession is admitted ONLY by independent U5 original SEC
 replay and previously archived successful source, as frozen by U6. Neither
 the SEC filing date nor a later price-series revision can select an entry.
 No broker connectivity, trading signals, order rights or proven alpha.
+RSP is a post-freeze equal-weight S&P 500 control, not an ex-ante signal,
+a sector-matched control, or independent proof of alpha.
 """
 from __future__ import annotations
 
@@ -22,6 +24,7 @@ import fund100_v7_u6_sec100_causal_forward_admission_v1_0 as u6
 SCHEMA="FUND100_V7_U7_COSTED_100_SEC_SOURCE_FORWARD_TWO_CLOSE_MARKS_V1"
 COSTS=(5,15,35)
 BENCHMARK="SPY"
+EQUAL_WEIGHT_BENCHMARK="RSP"
 MAX_EXPOSURES=100
 BROKER_GETS=BROKER_POSTS=BROKER_ORDERS=0
 
@@ -109,7 +112,7 @@ def evaluate(frozen:dict,*,prices:pd.DataFrame|None,
     elif type(n) is not int or n!=len(accessions):
         raise MarkStop("New accession census disagrees with original source")
     seen=set()
-    expected_symbols={BENCHMARK}
+    expected_symbols={BENCHMARK,EQUAL_WEIGHT_BENCHMARK}
     for entry in rows:
         if not isinstance(entry,dict):
             raise MarkStop("Malformed frozen entry")
@@ -167,6 +170,7 @@ def evaluate(frozen:dict,*,prices:pd.DataFrame|None,
     # Never report an apparently successful subset while other names are pending.
     observed_stock_factors=[]
     observed_spy_factors=[]
+    observed_rsp_factors=[]
     for entry in rows:
         copy={
             "ticker":entry["ticker"],
@@ -175,8 +179,11 @@ def evaluate(frozen:dict,*,prices:pd.DataFrame|None,
             "original_earnings_accessions":entry["accessions"],
             "stock_two_close_gross_return":None,
             "spy_two_close_gross_return":None,
+            "rsp_two_close_gross_return":None,
             "stock_net_minus_spy_net_percentage_points":None,
+            "stock_net_minus_rsp_net_percentage_points":None,
             "stock_net_minus_gross_spy_percentage_points":None,
+            "stock_net_minus_gross_rsp_percentage_points":None,
             "status":"WAITING_FOR_INDEPENDENT_FUTURE_COMPLETED_PRICE_SOURCE",
             "broker_order":None}
         first,last=map(pd.Timestamp,(entry["entry_close"],entry["exit_close"]))
@@ -185,18 +192,26 @@ def evaluate(frozen:dict,*,prices:pd.DataFrame|None,
             sym=entry["ticker"]
             gross=float(panel.loc[last,sym]/panel.loc[first,sym])
             benchmark=float(panel.loc[last,BENCHMARK]/panel.loc[first,BENCHMARK])
-            if not (isfinite(gross) and isfinite(benchmark) and gross>0 and benchmark>0):
+            rsp=float(panel.loc[last,EQUAL_WEIGHT_BENCHMARK]/panel.loc[first,EQUAL_WEIGHT_BENCHMARK])
+            if not (isfinite(gross) and isfinite(benchmark) and isfinite(rsp)
+                    and gross>0 and benchmark>0 and rsp>0):
                 raise MarkStop("Nonfinite source-relative independent returns")
             observed_stock_factors.append(gross)
             observed_spy_factors.append(benchmark)
+            observed_rsp_factors.append(rsp)
             copy.update({
                 "status":"TWO_COMPLETED_CLOSES_COSTED_DESCRIPTIVE_NOT_ALPHA",
                 "stock_two_close_gross_return":round(gross-1,10),
                 "spy_two_close_gross_return":round(benchmark-1,10),
+                "rsp_two_close_gross_return":round(rsp-1,10),
                 "stock_net_minus_spy_net_percentage_points":{
                     str(b):round(100*(gross-benchmark)*(1-b/10000)**2,9) for b in COSTS},
+                "stock_net_minus_rsp_net_percentage_points":{
+                    str(b):round(100*(gross-rsp)*(1-b/10000)**2,9) for b in COSTS},
                 "stock_net_minus_gross_spy_percentage_points":{
-                    str(b):round(100*(gross*(1-b/10000)**2-benchmark),9) for b in COSTS}
+                    str(b):round(100*(gross*(1-b/10000)**2-benchmark),9) for b in COSTS},
+                "stock_net_minus_gross_rsp_percentage_points":{
+                    str(b):round(100*(gross*(1-b/10000)**2-rsp),9) for b in COSTS}
             })
             observed+=1
         else:
@@ -206,22 +221,32 @@ def evaluate(frozen:dict,*,prices:pd.DataFrame|None,
     if rows and observed==len(rows):
         if (len(observed_stock_factors)!=len(rows)
             or len(observed_spy_factors)!=len(rows)
-            or max(observed_spy_factors)-min(observed_spy_factors)>1e-12):
+            or len(observed_rsp_factors)!=len(rows)
+            or max(observed_spy_factors)-min(observed_spy_factors)>1e-12
+            or max(observed_rsp_factors)-min(observed_rsp_factors)>1e-12):
             raise MarkStop("Complete cohort has inconsistent common SPY observation")
         # All rows have the same source-frozen entry/exit sessions, and each
         # distinct ticker gets one unit of notional regardless of SEC filings.
         stock_factor=sum(observed_stock_factors)/len(rows)
         spy_factor=observed_spy_factors[0]
+        rsp_factor=observed_rsp_factors[0]
         complete_cohort={
             "status":"COMPLETE_EQUAL_WEIGHT_SOURCE_COHORT_DESCRIPTIVE_NOT_ALPHA",
             "distinct_equal_weight_stock_exposures":len(rows),
             "equal_weight_stock_gross_return":round(stock_factor-1,10),
             "matched_spy_gross_return":round(spy_factor-1,10),
+            "matched_rsp_gross_return":round(rsp_factor-1,10),
             "equal_weight_stock_net_minus_costed_spy_percentage_points":{
                 str(b):round(100*(stock_factor-spy_factor)*(1-b/10000)**2,9)
                 for b in COSTS},
+            "equal_weight_stock_net_minus_costed_rsp_percentage_points":{
+                str(b):round(100*(stock_factor-rsp_factor)*(1-b/10000)**2,9)
+                for b in COSTS},
             "equal_weight_stock_net_minus_gross_spy_percentage_points":{
                 str(b):round(100*(stock_factor*(1-b/10000)**2-spy_factor),9)
+                for b in COSTS},
+            "equal_weight_stock_net_minus_gross_rsp_percentage_points":{
+                str(b):round(100*(stock_factor*(1-b/10000)**2-rsp_factor),9)
                 for b in COSTS},
             "equal_weight_is_hypothetical_not_verified_close_auction_fills":True,
             "one_position_per_distinct_ticker_not_per_filing":True,
@@ -245,6 +270,9 @@ def evaluate(frozen:dict,*,prices:pd.DataFrame|None,
         "partial_or_zero_cohort_never_reweighted_into_a_return":True,
         "costs_bps_per_side_stock_and_spy":list(COSTS),
         "matched_SPY_roundtrip_costed":True,
+        "matched_RSP_equal_weight_roundtrip_costed":True,
+        "RSP_is_listed_equal_weight_SP500_not_stock_sector_matched":True,
+        "RSP_diagnostic_added_after_original_source_freeze_not_predeclared_alpha":True,
         "separately_stock_vs_gross_untraded_SPY_reported":True,
         "same_later_revisable_vendor_vintage_for_stock_and_SPY":panel is not None,
         "close_prices_are_not_exchange_auction_fills":True,
@@ -259,7 +287,8 @@ def evaluate(frozen:dict,*,prices:pd.DataFrame|None,
 
 def public_original_prices(symbols:set[str])->pd.DataFrame:
     """Source is a revision-prone vendor; preserve exact downloaded CSV."""
-    if not symbols or BENCHMARK not in symbols or len(symbols)>MAX_EXPOSURES+1:
+    if (not symbols or not {BENCHMARK,EQUAL_WEIGHT_BENCHMARK}<=symbols
+        or len(symbols)>MAX_EXPOSURES+2):
         raise MarkStop("Unbounded or unqualified research price roster")
     import yfinance as yf
     now=datetime.now(timezone.utc)
@@ -306,7 +335,8 @@ def main():
     price=None
     provider=None
     if refs:
-        price=public_original_prices({BENCHMARK}|{r["ticker"] for r in refs})
+        price=public_original_prices({BENCHMARK,EQUAL_WEIGHT_BENCHMARK}|
+                                     {r["ticker"] for r in refs})
         acquired=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         provider="independent revisable public yfinance adjusted closes received "+acquired
     result=evaluate(frozen,prices=price,

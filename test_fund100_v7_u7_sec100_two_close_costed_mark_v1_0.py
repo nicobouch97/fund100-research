@@ -19,10 +19,12 @@ def completed_fixture_observation_clock(monkeypatch):
 def frozen(*rows):
     return u6.freeze_verified_delta(report(rows=list(rows)))
 
-def panel(*,aapl=(100.0,110.0),spy=(200.0,204.0),
+def panel(*,aapl=(100.0,110.0),spy=(200.0,204.0),rsp=None,
           dates=("2026-10-28","2026-10-29")):
+    if rsp is None:
+        rsp=tuple(150.0*(1+.01*i) for i in range(len(dates)))
     return pd.DataFrame(
-        {"AAPL":aapl,"SPY":spy},index=pd.to_datetime(list(dates)))
+        {"AAPL":aapl,"SPY":spy,"RSP":rsp},index=pd.to_datetime(list(dates)))
 
 def test_latest_true_sec100_zero_exposure_requires_no_price_download():
     result=u7.evaluate(frozen(),prices=None)
@@ -51,6 +53,9 @@ def test_source_first_and_independently_later_close_mark_has_costed_spy():
     assert r["frozen_exit_close"]=="2026-10-29"
     assert r["stock_two_close_gross_return"]==pytest.approx(.1)
     assert r["spy_two_close_gross_return"]==pytest.approx(.02)
+    assert r["rsp_two_close_gross_return"]==pytest.approx(.01)
+    assert r["stock_net_minus_rsp_net_percentage_points"]["15"] == pytest.approx(
+        100*(1.1-1.01)*(1-0.0015)**2,abs=1e-8)
     assert r["stock_net_minus_spy_net_percentage_points"]["15"] == pytest.approx(
         100*(1.1-1.02)*(1-0.0015)**2,abs=1e-8)
     assert r["stock_net_minus_gross_spy_percentage_points"]["15"] == pytest.approx(
@@ -75,10 +80,13 @@ def test_two_distinct_source_frozen_stocks_form_one_equal_weight_costed_cohort()
     assert c["distinct_equal_weight_stock_exposures"]==2
     assert c["equal_weight_stock_gross_return"]==pytest.approx(.04)
     assert c["matched_spy_gross_return"]==pytest.approx(.02)
+    assert c["matched_rsp_gross_return"]==pytest.approx(.01)
     for b in u7.COSTS:
         fee=(1-b/10000)**2
         assert c["equal_weight_stock_net_minus_costed_spy_percentage_points"][str(b)] == pytest.approx(
             100*(1.04-1.02)*fee,abs=1e-8)
+        assert c["equal_weight_stock_net_minus_costed_rsp_percentage_points"][str(b)] == pytest.approx(
+            100*(1.04-1.01)*fee,abs=1e-8)
         assert c["equal_weight_stock_net_minus_gross_spy_percentage_points"][str(b)] == pytest.approx(
             100*(1.04*fee-1.02),abs=1e-8)
     assert out["statistically_proven_alpha"] is False
@@ -105,6 +113,7 @@ def test_multiple_filings_of_one_ticker_do_not_overweight_cohort():
     assert c["distinct_equal_weight_stock_exposures"]==1
     assert c["equal_weight_stock_gross_return"]==pytest.approx(.10)
     assert c["matched_spy_gross_return"]==pytest.approx(.02)
+    assert c["matched_rsp_gross_return"]==pytest.approx(.01)
 
 
 def test_future_closes_not_available_stays_pending():
@@ -148,6 +157,7 @@ def test_tampered_original_source_or_selected_entry_cannot_mark(mutate):
 
 @pytest.mark.parametrize("frame",[
     panel().drop(columns=["SPY"]),
+    panel().drop(columns=["RSP"]),
     panel(aapl=(100.,np.nan)),
     panel(aapl=(100.,160.)),
     panel(dates=("2026-10-28","2026-10-30")),
