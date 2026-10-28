@@ -146,7 +146,6 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
             prev=panel.iloc[last_session].to_numpy(dtype=float)
             move=bar.to_numpy(dtype=float)/prev
             positions*=move
-        pre=nav
         nav=float(cash+sum(positions))
         month_first=j==0 or timestamp.month!=view.index[j-1].month or timestamp.year!=view.index[j-1].year
         if (j==0 or (strategy=="CROSS_ASSET_12_1" and month_first)):
@@ -167,7 +166,6 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
                                      panel.index[current-1].date().isoformat(),
                                  "hypothetical_positions":winners,
                                  "same_close_idealized_fee_charged":True})
-        day=nav/pre-1 if j else nav/100.-1
         path.append(nav)
         peak=max(peak,nav)
         gross=float(sum(positions))/nav
