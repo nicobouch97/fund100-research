@@ -91,6 +91,71 @@ def verify_first_archive(anchor:dict,original_json:Path,original_csv:Path)->dict
 MAX_ORIGINAL_VINTAGE_RELATIVE_JITTER=5e-7
 
 
+
+def material_overlap_diagnostic(original:pd.DataFrame,later:pd.DataFrame)->dict:
+    """Observe source revisions; NEVER certify a dividend or admit a return.
+
+    Both inputs must already originate from validated snapshot archives.  The
+    only purpose is to make a fail-closed P4I result actionable when an
+    adjustment provider rebases historical prices after an ex-dividend date.
+    A uniform multiplier is an unverified *candidate*, not a source waiver.
+    """
+    out={
+        "schema":"FUND100_P4I_MATERIAL_OVERLAP_QUARANTINE_V1",
+        "status":"BLOCKED_UNVERIFIED_HISTORICAL_SOURCE_REVISION",
+        "original_history_rewritten":False,
+        "forward_return_authorized":False,
+        "corporate_action_independently_verified":False,
+        "broker_orders":0,
+        "paper_authorized":False,
+        "live_authorized":False,
+        "per_symbol":[],
+    }
+    if (original.empty or not original.index.is_unique
+        or not original.index.is_monotonic_increasing
+        or not later.index.is_unique or not later.index.is_monotonic_increasing
+        or not original.index.equals(later.index)
+        or list(original.columns)!=list(later.columns)):
+        out["status"]="BLOCKED_SOURCE_SHAPE_MISMATCH"
+        return out
+    try:
+        a=original.to_numpy(dtype=float)
+        b=later.to_numpy(dtype=float)
+    except (ValueError,TypeError):
+        out["status"]="BLOCKED_INVALID_SOURCE_PRICES"
+        return out
+    if (not np.isfinite(a).all() or not np.isfinite(b).all()
+        or (a<=0).any() or (b<=0).any()):
+        out["status"]="BLOCKED_INVALID_SOURCE_PRICES"
+        return out
+    d=b/a-1.
+    threshold=MAX_ORIGINAL_VINTAGE_RELATIVE_JITTER
+    out["overlapping_market_sessions"]=int(len(original))
+    out["max_abs_relative_revision"]=float(np.abs(d).max())
+    out["material_symbols"]=[]
+    for col,symbol in enumerate(original.columns):
+        values=d[:,col]
+        positions=np.flatnonzero(np.abs(values)>threshold)
+        if len(positions):
+            out["material_symbols"].append(str(symbol))
+        out["per_symbol"].append({
+            "symbol":str(symbol),
+            "material_changed_sessions":int(len(positions)),
+            "max_abs_relative_revision":float(np.abs(values).max()),
+            "first_material_session":(
+                original.index[int(positions[0])].date().isoformat()
+                if len(positions) else None),
+            "latest_material_session":(
+                original.index[int(positions[-1])].date().isoformat()
+                if len(positions) else None),
+            "relative_revision_range":float(values.max()-values.min()),
+            "uniform_rebase_candidate_not_verified_corporate_action":bool(
+                len(positions)==len(values)
+                and values.max()-values.min()<=threshold),
+        })
+    return out
+
+
 def reconcile_original_vintage(anchor:dict,original:pd.DataFrame,
                                later:pd.DataFrame)->tuple[pd.DataFrame,float]:
     """Keep SHA-pinned original historic prices; append ONLY new source rows.
@@ -121,7 +186,11 @@ def reconcile_original_vintage(anchor:dict,original:pd.DataFrame,
         raise AnchorStop("FAIL_CLOSED_SOURCE_REVISION: source equity price not positive/finite.")
     maximum=float(np.abs(second/first-1).max())
     if maximum>MAX_ORIGINAL_VINTAGE_RELATIVE_JITTER:
-        raise AnchorStop("FAIL_CLOSED_SOURCE_REVISION: real historical vendor restatement.")
+        diagnosis=material_overlap_diagnostic(historic,overlap)
+        raise AnchorStop("FAIL_CLOSED_SOURCE_REVISION: material historical vendor restatement; "
+                         +"symbols="+",".join(diagnosis["material_symbols"])
+                         +"; max_relative="+format(maximum,".9g")
+                         +"; no forward returns released.")
     # NEW series' pre-freeze portion is NEVER used to calculate return.
     post=later.loc[later.index>cutoff]
     joined=pd.concat([historic,post],axis=0)
@@ -236,6 +305,7 @@ def main()->None:
     p.add_argument("--followup-json",type=Path)
     p.add_argument("--followup-csv",type=Path)
     p.add_argument("--output",type=Path,required=True)
+    p.add_argument("--quarantine-output",type=Path)
     a=p.parse_args()
     if bool(a.original_json)!=bool(a.original_csv):
         raise AnchorStop("Must supply both original source files, or neither.")
@@ -244,8 +314,37 @@ def main()->None:
         if not (a.followup_json and a.followup_csv
                 and a.original_json and a.original_csv):
             raise AnchorStop("Forward calculation requires original plus later authenticated archives.")
-        out=evaluate(a.anchor,a.followup_json,a.followup_csv,
-                     original_json=a.original_json,original_csv=a.original_csv)
+        try:
+            out=evaluate(a.anchor,a.followup_json,a.followup_csv,
+                         original_json=a.original_json,original_csv=a.original_csv)
+        except AnchorStop as exc:
+            if (a.quarantine_output is not None
+                and "FAIL_CLOSED_SOURCE_REVISION" in str(exc)):
+                # Re-verify both archives; the rejected, never-released price
+                # comparison is diagnostic evidence, not a permitted return.
+                verify_first_archive(anchor,a.original_json,a.original_csv)
+                _,original_frame,_=p4h.read_snapshot(a.original_json,a.original_csv)
+                follow,follow_frame,follow_sha=p4h.read_snapshot(
+                    a.followup_json,a.followup_csv)
+                cutoff=pd.Timestamp(anchor["frozen_asof_completed_market_session"])
+                diagnostic=material_overlap_diagnostic(
+                    original_frame.loc[:cutoff],follow_frame.loc[:cutoff])
+                diagnostic.update({
+                    "original_anchor_sha256":anchor_sha,
+                    "original_source_sha256":anchor["original_p4g_json_sha256"],
+                    "followup_source_sha256":follow_sha,
+                    "followup_asof_completed_session":follow["asof_completed_session"],
+                    "forward_return_observations_released":0,
+                    "failure_reason":str(exc),
+                })
+                a.quarantine_output.parent.mkdir(parents=True,exist_ok=True)
+                a.quarantine_output.write_text(
+                    json.dumps(diagnostic,sort_keys=True,indent=2,allow_nan=False)+"\\n")
+                print("P4I SOURCE QUARANTINED:",
+                      diagnostic["material_symbols"],
+                      "MAX_RELATIVE",diagnostic.get("max_abs_relative_revision"),
+                      "NO RETURN / NO ORDER",flush=True)
+            raise
     elif a.original_json:
         out={
             "schema":SCHEMA,
