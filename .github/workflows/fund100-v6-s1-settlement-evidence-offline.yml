@@ -6,6 +6,8 @@ on:
       - "research_lab/V6_S1_PRIVATE_SETTLED_PROCEEDS_RECONCILIATION_PRE_REG_2026_10_20.md"
       - "fund100_v6_s1_settled_sale_cash_source_gate_v1_0.py"
       - "test_fund100_v6_s1_settled_sale_cash_source_gate_v1_0.py"
+      - "fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0.py"
+      - "test_fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0.py"
       - ".github/workflows/fund100-v6-s1-settlement-evidence-offline.yml"
   workflow_dispatch:
 
@@ -27,6 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest -q test_fund100_v6_s1_settled_sale_cash_source_gate_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0.py
           python -m pytest -q test_fund100_v6_s1_independent_high_exante_policy_v1_0.py
           python -m pytest -q test_fund100_v6_s1_frac_live_sell_writer_candidate_v1_0.py
       - name: Assert no secret broker transport or LIVE order release
@@ -38,6 +41,9 @@ jobs:
           import fund100_v6_s1_settled_sale_cash_source_gate_v1_0 as gate
           assert not gate.RELEASE_LIVE_BUY
           assert gate.MODE=='INVENTED_SETTLEMENT_AND_ACCOUNT_FIXTURES_ONLY'
+          import fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0 as trading
+          assert trading.LIVE_BUY_RELEASED is False
+          assert trading.MODE=='INJECTED_UNAUTHENTICATED_TRADING_API_FIXTURES_ONLY'
           s=Path(gate.__file__).read_text()
           assert 'urlopen(' not in s and 'method="POST"' not in s
           print("V6 settlement source fixture ONLY. No broker data/credentials or orders.")
