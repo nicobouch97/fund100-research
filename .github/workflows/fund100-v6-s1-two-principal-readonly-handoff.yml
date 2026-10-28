@@ -224,3 +224,39 @@ jobs:
           set -euo pipefail
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
           echo 'Source-bound cross-principal READ ONLY. Current trade release DISABLED.'
+
+  # An upstream workflow_run can finish green from PR-only OFFLINE fixtures
+  # while the protected account/private HMAC job was intentionally SKIPPED.
+  # For a *qualifying* main-branch source, failure or skip of that protected
+  # job must make this entire handoff workflow RED, never apparent success.
+  # This reporter has zero secrets, broker access or private Git write rights.
+  source-bound-protected-verdict:
+    if: always() && github.event_name == 'workflow_run'
+    needs:
+      - offline-source-run-contract
+      - protected-fresh-broker-then-independent-private-HMAC
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - name: Distinguish PR-only source checks from real protected HMAC readiness
+        env:
+          UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          UPSTREAM_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          OFFLINE_RESULT: ${{ needs.offline-source-run-contract.result }}
+          PROTECTED_RESULT: ${{ needs.protected-fresh-broker-then-independent-private-HMAC.result }}
+        run: |
+          set -euo pipefail
+          test "$OFFLINE_RESULT" = "success"
+          if [[ "$UPSTREAM_EVENT" == "pull_request" ]]; then
+            test "$PROTECTED_RESULT" = "skipped"
+            echo 'PR_ONLY_OFFLINE_SOURCE: protected LIVE/private HMAC job NOT RUN; NOT a live-readiness PASS.'
+          elif [[ "$UPSTREAM_BRANCH" == "main" && "$UPSTREAM_CONCLUSION" == "success" ]]; then
+            test "$PROTECTED_RESULT" = "success"
+            echo 'ELIGIBLE_MAIN_SOURCE: protected authenticated broker+HMAC job actually completed; NO ORDERS.'
+          else
+            test "$PROTECTED_RESULT" = "skipped"
+            echo 'INELIGIBLE_SOURCE: broker/private source was NOT authenticated; no trading authority.'
+          fi
