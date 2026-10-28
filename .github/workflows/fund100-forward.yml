@@ -111,6 +111,7 @@ jobs:
           git diff --stat -- forward_outputs/ || true
 
       - name: Commit Forward Lab state
+        id: forward_commit
         if: steps.forward_check.outputs.forward_changed == 'true'
         shell: bash
         run: |
@@ -119,17 +120,63 @@ jobs:
           git config user.name "fund100-forward-bot"
           git config user.email "fund100-forward-bot@users.noreply.github.com"
 
-          git add forward_outputs/
-
-          if git diff --cached --quiet; then
-            echo "Nothing staged."
-            exit 0
-          fi
-
+          # The workflow can start on an older main while a reviewed PR or
+          # another ledger writer advances main. Never rebase or force-push
+          # stale computed output onto a newer ledger. Re-run the complete
+          # immutable-ledger validation and calculation on that newer HEAD.
+          BASE_SHA="$(git rev-parse HEAD)"
           RUN_DATE="$(date -u +'%Y-%m-%d')"
 
-          git commit -m "Forward Lab v1.1 update ${RUN_DATE}"
-          git push origin HEAD:main
+          for attempt in 1 2 3; do
+            git add forward_outputs/
+
+            if git diff --cached --quiet; then
+              echo "No new Forward Lab output after latest-main validation."
+              echo "forward_published=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            git commit -m "Forward Lab v1.1 update ${RUN_DATE}"
+
+            if git push origin HEAD:main; then
+              echo "forward_published=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            # A push can fail because main moved or because permissions
+            # changed. Only retry a verified fast-forward advancement.
+            git fetch origin main
+            NEW_MAIN_SHA="$(git rev-parse origin/main)"
+
+            if [ "$NEW_MAIN_SHA" = "$BASE_SHA" ]; then
+              echo "Push failed without an upstream change; refusing retry."
+              exit 1
+            fi
+
+            if ! git merge-base --is-ancestor "$BASE_SHA" "$NEW_MAIN_SHA"; then
+              echo "Main was rewritten; refusing to publish stale evidence."
+              exit 1
+            fi
+
+            if [ "$attempt" -eq 3 ]; then
+              echo "Main advanced during all three bounded attempts."
+              exit 1
+            fi
+
+            echo "Main advanced; revalidating from current main (attempt ${attempt})."
+            git reset --hard "$NEW_MAIN_SHA"
+            # Remove only untracked generated output from the stale run.
+            git clean -fd -- forward_outputs/
+            BASE_SHA="$NEW_MAIN_SHA"
+
+            # A concurrent main commit may have changed the model or its
+            # ledger. Test and recompute from the current committed state.
+            pytest -q
+            python fund100_forward_v1_1.py
+            python fund100_forward_evidence_scorecard_v1_0.py
+          done
+
+          exit 1
 
       - name: Final status
         run: |
@@ -137,8 +184,8 @@ jobs:
           echo "FUND-100 FORWARD LAB v1.1 COMPLETE"
           echo "========================================"
 
-          if [ "${{ steps.forward_check.outputs.forward_changed }}" = "true" ]; then
+          if [ "${{ steps.forward_commit.outputs.forward_published }}" = "true" ]; then
             echo "Forward Lab state was updated and committed."
           else
-            echo "No permanent state change was required."
+            echo "No new Forward Lab state was published."
           fi

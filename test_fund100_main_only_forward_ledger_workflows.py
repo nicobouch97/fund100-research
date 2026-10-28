@@ -115,3 +115,98 @@ def test_forward_rerun_workflow_changes_require_full_live_static_audit():
         assert ".github/workflows/fund100-forward.yml" in paths
         assert "fund100_forward_v1_1.py" in paths
         assert "test_fund100_main_only_forward_ledger_workflows.py" in paths
+
+
+def test_forward_publish_race_recomputes_from_new_main(tmp_path):
+    """Real local Git race: stale output must never overwrite newer evidence.
+
+    The workflow script runs against a bare local remote with two clones.
+    No network, market data or broker access is involved; the engine and
+    pytest commands are replaced by explicit, deterministic test stubs.
+    """
+    import os
+    import subprocess
+
+    def git(*args, cwd=None):
+        return subprocess.run(
+            ["git", *map(str, args)], cwd=cwd, check=True,
+            text=True, capture_output=True,
+        ).stdout.strip()
+
+    remote = tmp_path / "remote.git"
+    worker = tmp_path / "worker"
+    contender = tmp_path / "contender"
+    git("init", "--bare", "--initial-branch=main", remote)
+    git("clone", remote, worker)
+    git("checkout", "-B", "main", cwd=worker)
+    git("config", "user.name", "test", cwd=worker)
+    git("config", "user.email", "test@example.invalid", cwd=worker)
+    output_dir = worker / "forward_outputs"
+    output_dir.mkdir()
+    (output_dir / "ledger.txt").write_text("baseline\n")
+    git("add", "forward_outputs", cwd=worker)
+    git("commit", "-m", "baseline", cwd=worker)
+    git("push", "-u", "origin", "main", cwd=worker)
+
+    git("clone", remote, contender)
+    git("config", "user.name", "test", cwd=contender)
+    git("config", "user.email", "test@example.invalid", cwd=contender)
+    (contender / "forward_outputs" / "ledger.txt").write_text(
+        "baseline\nconcurrent\n"
+    )
+    git("add", "forward_outputs", cwd=contender)
+    git("commit", "-m", "concurrent ledger advance", cwd=contender)
+    git("push", "origin", "HEAD:main", cwd=contender)
+
+    # The worker computed an obsolete result before seeing the new main.
+    (output_dir / "ledger.txt").write_text("baseline\nstale\n")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "pytest").write_text(
+        "#!/bin/sh\nprintf 'tested\n' > .replay-tests-ran\n"
+    )
+    (bin_dir / "python").write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in\n"
+        "  fund100_forward_v1_1.py) printf 'replayed\n' >> forward_outputs/ledger.txt ;;\n"
+        "  fund100_forward_evidence_scorecard_v1_0.py) printf 'scorecard\n' > forward_outputs/scorecard.txt ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n"
+    )
+    for tool in ("pytest", "python"):
+        (bin_dir / tool).chmod(0o755)
+
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/fund100-forward.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    step = next(
+        s for s in workflow["jobs"]["forward-lab"]["steps"]
+        if s["name"] == "Commit Forward Lab state"
+    )
+    assert step["id"] == "forward_commit"
+    script = step["run"]
+    assert "git push --force" not in script
+    assert "git pull --rebase" not in script
+    assert "for attempt in 1 2 3" in script
+
+    github_output = tmp_path / "github_output"
+    env = dict(os.environ)
+    env["GITHUB_OUTPUT"] = str(github_output)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    result = subprocess.run(
+        ["bash", "-e", "-c", script],
+        cwd=worker, env=env, text=True, capture_output=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert github_output.read_text().strip() == "forward_published=true"
+    assert (worker / ".replay-tests-ran").read_text().strip() == "tested"
+
+    # A successful replay is derived from the concurrent ledger, never
+    # from the stale worker output, and has no duplicate original rows.
+    git("fetch", "origin", "main", cwd=worker)
+    actual = git("show", "origin/main:forward_outputs/ledger.txt", cwd=worker)
+    assert actual.splitlines() == ["baseline", "concurrent", "replayed"]
+    assert git("show", "origin/main:forward_outputs/scorecard.txt", cwd=worker) == "scorecard"
