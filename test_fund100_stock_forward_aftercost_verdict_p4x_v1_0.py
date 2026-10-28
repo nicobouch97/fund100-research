@@ -5,6 +5,7 @@ from copy import deepcopy
 import inspect
 
 import pytest
+import exchange_calendars as xcals
 
 import fund100_stock_forward_permanent_anchor_p4i_v1_0 as p4i
 import fund100_stock_forward_corporate_action_bridge_p4v_v1_0 as p4v
@@ -93,7 +94,12 @@ def test_qualified_source_costed_verdict_is_research_only(qualified):
 
 
 def test_not_every_good_forward_window_is_promotable():
-    r=p4x.analyze(sourced(observations=63,selected_gross=6.0,spy_gross=2.0))
+    x=sourced(observations=63,selected_gross=6.0,spy_gross=2.0)
+    x["post_freeze_exit_observation_session"]=(
+        xcals.get_calendar("XNYS")
+        .sessions_in_range("2026-10-19","2027-06-30")[63]
+        .date().isoformat())
+    r=p4x.analyze(x)
     assert r["observed_spy_relative_verdict"]=="OUTPERFORMED_SPY_IN_ALL_MODELED_COST_SCENARIOS"
     assert r["research_sample_status"]=="LONGER_DESCRIPTIVE_OBSERVATION_NOT_INDEPENDENT_ALPHA"
     assert r["cannot_promote_strategies_or_change_existing_holdings"]
@@ -134,6 +140,13 @@ def test_costed_or_relative_performance_tampering_rejected(cost,field,bad):
     r=sourced()
     r["costed_return_scenarios"][cost][field]=bad
     with pytest.raises(p4x.ScorecardStop):
+        p4x.analyze(r)
+
+
+def test_reported_session_count_must_match_real_nyse_trading_dates():
+    r=sourced()
+    r["post_freeze_exit_observation_session"]="2026-10-26"
+    with pytest.raises(p4x.ScorecardStop,match="NYSE"):
         p4x.analyze(r)
 
 
