@@ -502,3 +502,21 @@ def test_protected_job_only_hands_redacted_trusted_booleans_to_owner_fence_step(
     assert "ALPACA_LIVE_KEY" not in wf and "ALPACA_LIVE_SECRET" not in wf
     assert "real_broker_POSTs" in wf and "real_private_Git_PUTs" in wf
     assert "external_immutable_head_anchor_verified" in wf
+
+
+def test_source_bound_github_status_cannot_mark_skipped_protected_main_as_pass():
+    """Green pull-request fixture jobs do not assert real LIVE/private source."""
+    from pathlib import Path
+    source=Path(".github/workflows/fund100-v6-s1-two-principal-readonly-handoff.yml").read_text()
+    assert "source-bound-protected-verdict:" in source
+    verdict=source.split("  source-bound-protected-verdict:",1)[1]
+    assert "if: always() && github.event_name == 'workflow_run'" in verdict
+    assert "protected-fresh-broker-then-independent-private-HMAC" in verdict
+    assert "UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}" in verdict
+    assert 'if [[ "$UPSTREAM_EVENT" == "pull_request" ]]; then' in verdict
+    assert 'test "$PROTECTED_RESULT" = "skipped"' in verdict
+    assert 'elif [[ "$UPSTREAM_BRANCH" == "main" && "$UPSTREAM_CONCLUSION" == "success" ]]; then' in verdict
+    assert 'test "$PROTECTED_RESULT" = "success"' in verdict
+    assert "NOT a live-readiness PASS" in verdict
+    assert "ALPACA_LIVE_KEY" not in verdict
+    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in verdict
