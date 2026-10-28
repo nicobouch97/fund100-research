@@ -549,9 +549,19 @@ def test_actual_protected_writer_groups_would_satisfy_new_guard_if_fixed():
             )
 
     report = scan_workflow_sources(sources)
-    assert len(report.credential_workflows) == len(CREDENTIAL_SCRIPT_BY_WORKFLOW)
-    assert set(report.credential_workflows) == set(CREDENTIAL_SCRIPT_BY_WORKFLOW)
-    assert report.passed, report.problems
+    # The original 13 are NOT a complete account credential inventory.
+    # Newer READ-only/cancel workflows legitimately reference the secrets;
+    # the old scanner must *flag*, never silently bless, unknown consumers.
+    assert set(CREDENTIAL_SCRIPT_BY_WORKFLOW).issubset(
+        set(report.credential_workflows)
+    )
+    extra = set(report.credential_workflows) - set(CREDENTIAL_SCRIPT_BY_WORKFLOW)
+    assert extra, "Historical 13-workflow inventory unexpectedly became complete"
+    assert not report.passed
+    assert any(
+        "unrecognised LIVE credential workflow" in problem
+        for problem in report.problems
+    )
 
 def test_live_order_writers_require_exact_main_job_guard():
     for writer in sorted(LIVE_ORDER_WRITER_WORKFLOWS):
