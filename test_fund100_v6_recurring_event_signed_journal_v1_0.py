@@ -581,3 +581,72 @@ def test_broker_shaped_receipt_accepts_completed_causal_clock_only(monkeypatch):
     assert result["real_broker_receipt_source_authenticated"] is False
     assert result["next_live_order_authorized"] is False
     assert result["broker_gets"] == result["broker_posts"] == 0
+
+
+def test_alpaca_usd_notional_filled_buy_null_qty_reconciles_offline_only():
+    """Documented /v2/orders: qty=null when a USD notional is supplied."""
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture()
+    fixture["closed_order"]["qty"] = None
+    fixture["closed_order"]["notional"] = "15.00"
+    result = broker_proof.assess(
+        private_signed_journal_source=signed_source, **context, **fixture)
+    assert result["synthetic_alpaca_notional_buy_with_null_qty_validated"] is True
+    assert result["filled_order_and_complete_FILLS_structurally_matched"] is True
+    assert result["original_65usd_order_notional_ceiling_checked"] is True
+    assert result["real_broker_receipt_source_authenticated"] is False
+    assert result["next_live_order_authorized"] is False
+    assert result["broker_gets"] == result["broker_posts"] == result["private_writes"] == 0
+
+
+@pytest.mark.parametrize("qty,notional,side", [
+    (None, None, "buy"),           # absent USD intent AND no shares
+    ("1.25", "15.00", "buy"),   # mutually exclusive Alpaca sizing modes
+    (None, "65.01", "buy"),     # requested USD notional above pilot cap
+    (None, "66.00", "buy"),     # requested USD notional above pilot cap
+    (None, "15.00", "sell"),    # do not infer full sell from dollars
+    (None, "NaN", "buy"),       # non-canonical / nonfinite amount
+    (None, "1e2", "buy"),       # no scientific-notation sized buys
+    (None, "0", "buy"),         # nonpositive order
+    (None, " 15.00", "buy"),    # no untrusted whitespace
+])
+def test_invalid_alpaca_notional_buy_modes_remain_blocked(qty, notional, side):
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture(side=side)
+    fixture["closed_order"]["qty"] = qty
+    fixture["closed_order"]["notional"] = notional
+    with pytest.raises(broker_proof.BrokerProofStop):
+        broker_proof.assess(
+            private_signed_journal_source=signed_source, **context, **fixture)
+
+
+def test_notional_buy_must_not_fill_more_dollars_than_broker_requested():
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture()
+    fixture["closed_order"]["qty"] = None
+    fixture["closed_order"]["notional"] = "14.50"  # FILLs total $15.00
+    with pytest.raises(broker_proof.BrokerProofStop, match="exceeds submitted dollar"):
+        broker_proof.assess(
+            private_signed_journal_source=signed_source, **context, **fixture)
+
+
+def test_notional_buy_fill_over_65_still_rejected_with_full_sell_exception():
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture()
+    fixture["closed_order"]["qty"] = None
+    fixture["closed_order"]["notional"] = "65.00"
+    for row in fixture["fill_pages"][0]:
+        row["price"] = "53"  # Filled USD = 66.25, no BUY exemption
+    with pytest.raises(broker_proof.BrokerProofStop):
+        broker_proof.assess(
+            private_signed_journal_source=signed_source, **context, **fixture)
+
+
+def test_explicit_share_sized_buy_must_have_null_notional():
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture()
+    fixture["closed_order"]["notional"] = None
+    result = broker_proof.assess(
+        private_signed_journal_source=signed_source, **context, **fixture)
+    assert result["synthetic_alpaca_notional_buy_with_null_qty_validated"] is False
+    assert result["next_live_order_authorized"] is False
