@@ -122,6 +122,11 @@ def analyze(report:dict)->dict:
         raise ScorecardStop("Missing complete predeclared 5/15/35bps cost comparisons")
     comparison={}
     gross_reference=None
+    # The upstream source reports benchmark net returns but not their gross
+    # counterparts. Reverse the identical two-sided cost formula for each
+    # scenario and require the implied *same* underlying benchmark return.
+    # Monotonic net returns alone would not catch a corrupted SPY comparator.
+    reference_gross={"spy":None,"equal_six":None}
     last_nets={name:None for name in ("selected","spy","equal_six")}
     for cost in SIDE_COST_BPS:
         row=scenarios[str(cost)]
@@ -139,6 +144,12 @@ def analyze(report:dict)->dict:
             or (gross_reference is not None and not _eq(gross,gross_reference, tol=1e-8))
             or row.get("hypothetical_open_and_close_both_modelled") is not True):
             raise ScorecardStop("After-cost return arithmetic or source model inconsistent")
+        for name,net in (("spy",spy),("equal_six",six)):
+            implied_gross=100*((1+net/100)/(1-cost/10000)**2-1)
+            previous=reference_gross[name]
+            if previous is not None and not _eq(implied_gross,previous):
+                raise ScorecardStop("Benchmark cost scenarios imply inconsistent gross returns")
+            reference_gross[name]=implied_gross
         if any(last_nets[n] is not None and net>=last_nets[n]
                for n,net in (("selected",selected),("spy",spy),("equal_six",six))):
             raise ScorecardStop("Larger identical-side trade costs increased net return")
