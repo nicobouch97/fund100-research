@@ -24,14 +24,14 @@ def valid():
     )
     return report, account
 
-def run(report=None, account=None, known=None, **overrides):
+def run(report=None, account=None, known="__default__", **overrides):
     a, b = valid()
     data = dict(META)
     data.update(overrides)
     return join.evaluate(
         report=a if report is None else report,
         synthetic_account=b if account is None else account,
-        observed_prior_event_ids=set() if known is None else known,
+        observed_prior_event_ids=set() if known == "__default__" else known,
         **data,
     )
 
