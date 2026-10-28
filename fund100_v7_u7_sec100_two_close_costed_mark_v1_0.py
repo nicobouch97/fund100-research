@@ -163,6 +163,10 @@ def evaluate(frozen:dict,*,prices:pd.DataFrame|None,
     result_rows=[]
     observed=0
     pending=0
+    # Retain unrounded ratios for an equally weighted *complete* frozen cohort.
+    # Never report an apparently successful subset while other names are pending.
+    observed_stock_factors=[]
+    observed_spy_factors=[]
     for entry in rows:
         copy={
             "ticker":entry["ticker"],
@@ -183,6 +187,8 @@ def evaluate(frozen:dict,*,prices:pd.DataFrame|None,
             benchmark=float(panel.loc[last,BENCHMARK]/panel.loc[first,BENCHMARK])
             if not (isfinite(gross) and isfinite(benchmark) and gross>0 and benchmark>0):
                 raise MarkStop("Nonfinite source-relative independent returns")
+            observed_stock_factors.append(gross)
+            observed_spy_factors.append(benchmark)
             copy.update({
                 "status":"TWO_COMPLETED_CLOSES_COSTED_DESCRIPTIVE_NOT_ALPHA",
                 "stock_two_close_gross_return":round(gross-1,10),
@@ -196,6 +202,30 @@ def evaluate(frozen:dict,*,prices:pd.DataFrame|None,
         else:
             pending+=1
         result_rows.append(copy)
+    complete_cohort=None
+    if rows and observed==len(rows):
+        if (len(observed_stock_factors)!=len(rows)
+            or len(observed_spy_factors)!=len(rows)
+            or max(observed_spy_factors)-min(observed_spy_factors)>1e-12):
+            raise MarkStop("Complete cohort has inconsistent common SPY observation")
+        # All rows have the same source-frozen entry/exit sessions, and each
+        # distinct ticker gets one unit of notional regardless of SEC filings.
+        stock_factor=sum(observed_stock_factors)/len(rows)
+        spy_factor=observed_spy_factors[0]
+        complete_cohort={
+            "status":"COMPLETE_EQUAL_WEIGHT_SOURCE_COHORT_DESCRIPTIVE_NOT_ALPHA",
+            "distinct_equal_weight_stock_exposures":len(rows),
+            "equal_weight_stock_gross_return":round(stock_factor-1,10),
+            "matched_spy_gross_return":round(spy_factor-1,10),
+            "equal_weight_stock_net_minus_costed_spy_percentage_points":{
+                str(b):round(100*(stock_factor-spy_factor)*(1-b/10000)**2,9)
+                for b in COSTS},
+            "equal_weight_stock_net_minus_gross_spy_percentage_points":{
+                str(b):round(100*(stock_factor*(1-b/10000)**2-spy_factor),9)
+                for b in COSTS},
+            "equal_weight_is_hypothetical_not_verified_close_auction_fills":True,
+            "one_position_per_distinct_ticker_not_per_filing":True,
+        }
     return {
         "schema":SCHEMA,
         "status":("NO_SOURCE_QUALIFIED_NEW_EVENTS" if not rows
@@ -211,6 +241,8 @@ def evaluate(frozen:dict,*,prices:pd.DataFrame|None,
         "unique_model_exposures":len(rows),
         "priced_two_close_exposures":observed,
         "pending_two_close_exposures":pending,
+        "complete_equal_weight_cohort_vs_spy":complete_cohort,
+        "partial_or_zero_cohort_never_reweighted_into_a_return":True,
         "costs_bps_per_side_stock_and_spy":list(COSTS),
         "matched_SPY_roundtrip_costed":True,
         "separately_stock_vs_gross_untraded_SPY_reported":True,
