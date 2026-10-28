@@ -233,3 +233,49 @@ def test_forward_only_path_requires_original_source_pair():
     assert params["original_json"].default is inspect.Parameter.empty
     assert params["original_csv"].default is inspect.Parameter.empty
     assert p4i.MAX_ORIGINAL_VINTAGE_RELATIVE_JITTER==5e-7
+
+
+def test_quarantine_classifies_uniform_historical_rebase_but_never_permits_return():
+    original=artificial_price_data("2026-10-16")
+    later=original.copy()
+    later["PG"]*=1-0.0065765  # synthetic, NOT a verified dividend event
+    audit=p4i.material_overlap_diagnostic(original,later)
+    assert audit["status"]=="BLOCKED_UNVERIFIED_HISTORICAL_SOURCE_REVISION"
+    assert audit["material_symbols"]==["PG"]
+    pg=next(row for row in audit["per_symbol"] if row["symbol"]=="PG")
+    assert pg["material_changed_sessions"]==len(original)
+    assert pg["uniform_rebase_candidate_not_verified_corporate_action"]
+    assert 0.0065<audit["max_abs_relative_revision"]<0.0067
+    assert audit["original_history_rewritten"] is False
+    assert audit["forward_return_authorized"] is False
+    assert audit["corporate_action_independently_verified"] is False
+    assert audit["broker_orders"]==0 and not audit["live_authorized"]
+    with pytest.raises(p4i.AnchorStop,match="symbols=PG"):
+        p4i.reconcile_original_vintage(anchor_for_synthetic(original),
+                                      original,later)
+
+
+def test_quarantine_does_not_call_single_row_tamper_a_uniform_rebase():
+    original=artificial_price_data("2026-10-16")
+    later=original.copy()
+    later.loc["2026-08-10","MSFT"]*=1.001
+    audit=p4i.material_overlap_diagnostic(original,later)
+    assert audit["material_symbols"]==["MSFT"]
+    msft=next(row for row in audit["per_symbol"] if row["symbol"]=="MSFT")
+    assert msft["material_changed_sessions"]==1
+    assert msft["first_material_session"]=="2026-08-10"
+    assert not msft["uniform_rebase_candidate_not_verified_corporate_action"]
+    with pytest.raises(p4i.AnchorStop,match="FAIL_CLOSED_SOURCE_REVISION"):
+        p4i.reconcile_original_vintage(anchor_for_synthetic(original),
+                                      original,later)
+
+
+def test_quarantine_malformed_shape_and_nonfinite_price_do_not_appear_corporate_action():
+    original=artificial_price_data("2026-10-16")
+    assert p4i.material_overlap_diagnostic(
+        original,original.drop(original.index[-1]))["status"]=="BLOCKED_SOURCE_SHAPE_MISMATCH"
+    later=original.copy()
+    later.loc["2026-10-16","PG"]=float("nan")
+    d=p4i.material_overlap_diagnostic(original,later)
+    assert d["status"]=="BLOCKED_INVALID_SOURCE_PRICES"
+    assert not d["forward_return_authorized"] and d["broker_orders"]==0
