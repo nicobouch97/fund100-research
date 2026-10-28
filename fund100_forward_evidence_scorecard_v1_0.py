@@ -122,6 +122,15 @@ def analyze(ledger: pd.DataFrame, manifest: dict) -> dict:
         bench_arr = np.asarray(bench)
         nav_returns = nav_arr[1:] / nav_arr[:-1] - 1
         bench_returns = bench_arr[1:] / bench_arr[:-1] - 1
+        # Log-relative wealth contributions are additive across the exact
+        # chronological ledger, even when forward and outage-recovery
+        # observations alternate. Never compound a discontinuous subset as
+        # if its dates were consecutive, or call it an investable return.
+        active_log = np.log1p(nav_returns) - np.log1p(bench_returns)
+        forward_mask = np.asarray(types[1:]) == "FORWARD"
+        recovered_mask = np.asarray(types[1:]) == "RECOVERED_AFTER_OUTAGE"
+        if not np.all(forward_mask | recovered_mask):
+            raise ScorecardStop("Unknown nonbaseline observation provenance")
         summaries[name] = {
             "first_date": str(dates.iloc[0].date()),
             "last_completed_date": str(dates.iloc[-1].date()),
@@ -139,6 +148,16 @@ def analyze(ledger: pd.DataFrame, manifest: dict) -> dict:
             "descriptive_annualized_active_tracking_error_pct": (
                 None if (v := _annualized_std(nav_returns - bench_returns)) is None else round(v, 8)),
             "positive_daily_active_return_intervals": int(np.sum(nav_returns > bench_returns)),
+            "strict_forward_positive_active_intervals": int(
+                np.sum((nav_returns > bench_returns) & forward_mask)),
+            "recovered_positive_active_intervals": int(
+                np.sum((nav_returns > bench_returns) & recovered_mask)),
+            "total_active_log_relative_wealth_contribution_pp": round(
+                100 * float(np.sum(active_log)), 8),
+            "strict_forward_active_log_relative_wealth_contribution_pp": round(
+                100 * float(np.sum(active_log[forward_mask])), 8),
+            "recovered_active_log_relative_wealth_contribution_pp": round(
+                100 * float(np.sum(active_log[recovered_mask])), 8),
             "strategy_trade_intervals": sum(t > 1e-12 for t in turnover[1:]),
             "cumulative_ledger_turnover_fraction": round(sum(turnover[1:]), 10),
             "cumulative_modeled_cost_ledger_units": round(sum(fees[1:]), 10),
@@ -154,6 +173,7 @@ def analyze(ledger: pd.DataFrame, manifest: dict) -> dict:
         "historical_cutoff": str(base.HISTORICAL_CUTOFF.date()),
         "models": summaries,
         "recovered_rows_are_not_pristine_forward_evidence": True,
+        "active_log_contributions_are_additive_not_subset_backtest_returns": True,
         "risk_statistics_are_descriptive_not_significance_tests": True,
         "model_selection_or_strategy_promotion_authorized": False,
         "vendor_adjusted_prices_not_broker_fills": True,
