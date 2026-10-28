@@ -8,6 +8,8 @@ on:
       - "fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
       - "fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py"
       - "fund100_stock_forward_source_selector_p4w_v1_0.py"
+      - "fund100_stock_forward_aftercost_verdict_p4x_v1_0.py"
+      - "test_fund100_stock_forward_aftercost_verdict_p4x_v1_0.py"
       - "test_fund100_stock_forward_source_selector_p4w_v1_0.py"
       - "test_fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py"
       - "test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
@@ -19,6 +21,8 @@ on:
       - "fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
       - "fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py"
       - "fund100_stock_forward_source_selector_p4w_v1_0.py"
+      - "fund100_stock_forward_aftercost_verdict_p4x_v1_0.py"
+      - "test_fund100_stock_forward_aftercost_verdict_p4x_v1_0.py"
       - "test_fund100_stock_forward_source_selector_p4w_v1_0.py"
       - "test_fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py"
       - "test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
@@ -58,7 +62,8 @@ jobs:
             test_fund100_stock_forward_return_ledger_p4h_v1_0.py \
             test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py \
             test_fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py \
-            test_fund100_stock_forward_source_selector_p4w_v1_0.py
+            test_fund100_stock_forward_source_selector_p4w_v1_0.py \
+            test_fund100_stock_forward_aftercost_verdict_p4x_v1_0.py
       - name: Confirm P4I source anchor permanently pins actual 17 Oct observation
         run: |
           set -euo pipefail
@@ -167,6 +172,22 @@ jobs:
           assert not x['live_authorized'] and x['broker_orders']==0
           print('REAL FIXED SOURCE SELECTION: known PG dividend only; NO BROKER')
           PY
+          python fund100_stock_forward_aftercost_verdict_p4x_v1_0.py \
+            --qualified-report /tmp/fund100-p4w-real-20261028-source-selected.json \
+            --output /tmp/fund100-p4x-real-20261028-aftercost-verdict.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          a=json.loads(Path('/tmp/fund100-p4x-real-20261028-aftercost-verdict.json').read_text())
+          assert a['completed_forward_return_intervals']==6
+          assert a['source_validation_method']=='KNOWN_PG_OCT23_DIVIDEND_BRIDGE_P4V'
+          assert a['research_sample_status']=='VERY_SHORT_OBSERVATION_WINDOW'
+          assert a['observed_spy_relative_verdict']=='UNDERPERFORMED_OR_TIED_SPY_IN_ALL_MODELED_COST_SCENARIOS'
+          assert a['after_both_side_costs']['35']['selected_minus_spy_net_pp'] < 0
+          assert a['broker_post_requests']==a['broker_orders']==0
+          assert not a['strategy_approved_for_live']
+          print('Original real 28 Oct costed SPY challenge: underperformed, NOT alpha')
+          PY
       - name: Locate newest successful post-anchor real P4G source snapshot
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         id: followup
@@ -240,6 +261,24 @@ jobs:
                 "; no alpha proof or broker orders.")
 
           PY
+      - name: Evaluate observed forward stock strategy versus SPY after both-side costs (NO BROKER)
+        if: steps.followup.outputs.eligible == 'true'
+        run: |
+          set -euo pipefail
+          python fund100_stock_forward_aftercost_verdict_p4x_v1_0.py \
+            --qualified-report /tmp/fund100-p4i-anchored-prospective-result.json \
+            --output /tmp/fund100-p4x-aftercost-forward-verdict.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          v=json.loads(Path('/tmp/fund100-p4x-aftercost-forward-verdict.json').read_text())
+          assert v['completed_forward_return_intervals'] >= 1
+          assert v['frozen_selection']==['MSFT','KO','PG']
+          assert set(v['after_both_side_costs'])=={'5','15','35'}
+          assert not v['strategy_approved_for_live']
+          assert v['broker_orders']==v['broker_post_requests']==0
+          print('Forward research SPY challenge:',v['observed_spy_relative_verdict'])
+          PY
       - name: Preserve rejected original-vintage change evidence (no strategy returns)
         if: failure() && steps.followup.outputs.eligible == 'true'
         uses: actions/upload-artifact@v4
@@ -253,6 +292,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fund100-p4i-permanent-anchor-real-forward-return-evidence
-          path: /tmp/fund100-p4i-anchored-prospective-result.json
+          path: |
+            /tmp/fund100-p4i-anchored-prospective-result.json
+            /tmp/fund100-p4x-aftercost-forward-verdict.json
           retention-days: 90
           if-no-files-found: error
