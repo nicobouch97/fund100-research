@@ -171,7 +171,8 @@ def read_github_source(source, *, genesis_sha256, account_binding_sha256, key):
     )
 
 
-def _proposal(source, *, event_id, signal_sha256, strategy_release_sha256,
+def _proposal(source, *, event_id, strategy_id, signal_time_utc,
+              signal_sha256, strategy_release_sha256,
               standing_mandate_sha256, intent_sha256, genesis_sha256,
               account_binding_sha256, key, action):
     # The caller-supplied hashes identify a potential event; they DO NOT
@@ -181,6 +182,19 @@ def _proposal(source, *, event_id, signal_sha256, strategy_release_sha256,
                     ("signal_sha256", signal_sha256),
                     ("intent_sha256", intent_sha256)):
         _hex(v, 64, name)
+    # Bind the journal event to the exact existing recurring V6 strategy
+    # domain, not a free-form client ID supplied with unrelated inputs.
+    try:
+        verified_id = event.key(
+            strategy_id=strategy_id, signal_time_utc=signal_time_utc,
+            signal_sha256=signal_sha256,
+            deployed_strategy_release_sha256=strategy_release_sha256,
+            standing_mandate_sha256=standing_mandate_sha256,
+        )
+    except event.IdentityStop:
+        raise JournalStop("Invalid original recurring event identity inputs") from None
+    if event_id != verified_id:
+        raise JournalStop("Journal attempt event does not match its signal or mandate")
     old_sha, current = read_github_source(
         source, genesis_sha256=genesis_sha256,
         account_binding_sha256=account_binding_sha256, key=key,
