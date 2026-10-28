@@ -28,6 +28,11 @@ BROKER_GETS=BROKER_POSTS=BROKER_ORDERS=0
 class MarkStop(ValueError):
     pass
 
+
+def _now_utc()->datetime:
+    """Actual observation clock; replaceable only in deterministic tests."""
+    return datetime.now(timezone.utc)
+
 def _panel(frame:pd.DataFrame,symbols:set[str])->pd.DataFrame:
     if (not isinstance(frame,pd.DataFrame) or not len(frame)
         or set(frame.columns)!=symbols
@@ -84,6 +89,11 @@ def evaluate(frozen:dict,*,prices:pd.DataFrame|None,
         or frozen.get("source")!="INDEPENDENTLY_REPLAYED_U5_CONSECUTIVE_OFFICIAL_SEC100"):
         raise MarkStop("Unqualified frozen original SEC100 cohort")
     captured=u6.stamp(frozen.get("current_source_finished_utc"))
+    # Source timestamps are claims, not proof that a future session occurred.
+    # This check applies even when no market prices were supplied.
+    observed_now=_now_utc()
+    if captured>observed_now:
+        raise MarkStop("Original SEC cohort capture lies in the future")
     rows=frozen.get("deduplicated_stock_entry_exposures")
     accessions=frozen.get("source_qualified_accessions")
     if (not isinstance(rows,list) or len(rows)>MAX_EXPOSURES
@@ -138,6 +148,8 @@ def evaluate(frozen:dict,*,prices:pd.DataFrame|None,
             acquired=u6.stamp(later_price_acquired_utc)
         except u6.ForwardAdmissionStop as exc:
             raise MarkStop("Later price source timestamp invalid") from exc
+        if acquired>observed_now:
+            raise MarkStop("Later market-price receipt lies in the future")
         last=panel.index[-1].date()
         if (type(provider_reference) is not str or
             not 10<=len(provider_reference)<=240
