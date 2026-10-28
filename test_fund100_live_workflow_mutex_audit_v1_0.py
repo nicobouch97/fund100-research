@@ -536,10 +536,17 @@ def test_actual_protected_writer_groups_would_satisfy_new_guard_if_fixed():
         existing = sources[filename]
         line = "    runs-on: ubuntu-latest"
         assert existing.count(line) == 1
-        assert "    environment:" not in existing
-        sources[filename] = existing.replace(
-            line, line + "\n    environment: " + LIVE_CREDENTIAL_ENVIRONMENT,
-        )
+        environment_line = "    environment: " + LIVE_CREDENTIAL_ENVIRONMENT
+        if "    environment:" in existing:
+            # The real main branch now already contains the 13 protected
+            # environment references. Keep this historical hypothetical
+            # migration test compatible without skipping source validation.
+            assert existing.count(environment_line) == 1
+            sources[filename] = existing
+        else:
+            sources[filename] = existing.replace(
+                line, line + "\n" + environment_line,
+            )
 
     report = scan_workflow_sources(sources)
     assert len(report.credential_workflows) == len(CREDENTIAL_SCRIPT_BY_WORKFLOW)
