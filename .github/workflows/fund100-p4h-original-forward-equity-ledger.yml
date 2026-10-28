@@ -148,7 +148,7 @@ jobs:
           assert not x['live_authorized'] and not x['trading_authorized']
           assert x['broker_orders']==0
           print('REAL PINNED 17 OCT AND 28 OCT PG DIVIDEND SOURCE MATCH: research-only, 0 orders')
-
+          PY
           python fund100_stock_forward_source_selector_p4w_v1_0.py \
             --anchor research_lab/stocks/P4I_PERMANENT_2026_10_17_SOURCE_ANCHOR.json \
             --original-json /tmp/fund100-p4i-original/fund100-p4g-snapshot.json \
@@ -166,7 +166,6 @@ jobs:
           assert x['future_return_observations']==6
           assert not x['live_authorized'] and x['broker_orders']==0
           print('REAL FIXED SOURCE SELECTION: known PG dividend only; NO BROKER')
-          PY
           PY
       - name: Locate newest successful post-anchor real P4G source snapshot
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
