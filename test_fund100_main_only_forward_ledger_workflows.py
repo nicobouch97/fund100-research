@@ -65,3 +65,53 @@ def test_forward_overnight_source_run_preserves_next_day_and_fallbacks():
     adapter = (ROOT / "fund100.py").read_text(encoding="utf-8")
     assert "prices.index.date\n        < today_utc" in source
     assert "close.index < today_utc" in adapter
+
+
+def test_forward_source_repairs_get_authentic_main_branch_rerun_without_loop():
+    """A merged source repair should validate real prices, not wait for cron.
+
+    Never trigger on the generated ledger, which the job commits to main;
+    that would create a self-triggering, contents-write workflow loop.
+    """
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/fund100-forward.yml").read_text(encoding="utf-8")
+    )
+    triggers = workflow.get("on", workflow.get(True))
+    push = triggers["push"]
+    assert push["branches"] == ["main"]
+    assert push["paths"] == [
+        "fund100.py",
+        "fund100_forward.py",
+        "fund100_forward_v1_1.py",
+        "fund100_forward_evidence_scorecard_v1_0.py",
+        ".github/workflows/fund100-forward.yml",
+    ]
+    assert all("forward_outputs" not in path for path in push["paths"])
+    assert "pull_request" not in triggers
+    assert workflow["jobs"]["forward-lab"]["if"] == MAIN_ONLY
+    assert workflow["concurrency"]["cancel-in-progress"] is False
+    # Keep the original full tests, original-source run, evidence scorecard
+    # and main-only append-only state commit in the same guarded job.
+    steps = workflow["jobs"]["forward-lab"]["steps"]
+    commands = "\n".join(step.get("run", "") for step in steps)
+    for command in (
+        "pytest -q",
+        "python fund100_forward_v1_1.py",
+        "python fund100_forward_evidence_scorecard_v1_0.py",
+        "git push origin HEAD:main",
+    ):
+        assert command in commands
+
+
+def test_forward_rerun_workflow_changes_require_full_live_static_audit():
+    audit = yaml.safe_load(
+        (ROOT / ".github/workflows/fund100-live-static-audit.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    triggers = audit.get("on", audit.get(True))
+    for event in ("push", "pull_request"):
+        paths = triggers[event]["paths"]
+        assert ".github/workflows/fund100-forward.yml" in paths
+        assert "fund100_forward_v1_1.py" in paths
+        assert "test_fund100_main_only_forward_ledger_workflows.py" in paths

@@ -3,6 +3,18 @@ name: Fund-100 Forward Lab
 on:
   workflow_dispatch:
 
+  # Recheck authentic market data immediately after a reviewed source,
+  # ledger or scorecard repair lands on main. A Forward Lab output commit
+  # must NOT trigger itself; scheduled observations remain the fallback.
+  push:
+    branches: [main]
+    paths:
+      - 'fund100.py'
+      - 'fund100_forward.py'
+      - 'fund100_forward_v1_1.py'
+      - 'fund100_forward_evidence_scorecard_v1_0.py'
+      - '.github/workflows/fund100-forward.yml'
+
   schedule:
     # First next-UTC-day check: 00:37Z Tue-Sat is after the prior US
     # trading session has closed (in both NYSE DST and standard time).
