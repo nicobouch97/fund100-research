@@ -59,6 +59,11 @@ def _eq(a:float,b:float,*,tol:float=0.000003)->bool:
     return abs(a-b)<=tol
 
 
+def _now_utc()->pd.Timestamp:
+    """Clock seam for deterministic tests; production uses the actual UTC clock."""
+    return pd.Timestamp.now(tz="UTC")
+
+
 def analyze(report:dict)->dict:
     if type(report) is not dict:
         raise ScorecardStop("Source-qualified forward result absent")
@@ -104,13 +109,20 @@ def analyze(report:dict)->dict:
         or report["post_freeze_exit_observation_session"]<=report["post_freeze_entry_session"]):
         raise ScorecardStop("Invalid fixed forward-return chronology")
     try:
-        dates=xcals.get_calendar("XNYS").sessions_in_range(
+        calendar=xcals.get_calendar("XNYS")
+        dates=calendar.sessions_in_range(
             pd.Timestamp(report["post_freeze_entry_session"]),
             pd.Timestamp(report["post_freeze_exit_observation_session"]))
+        # A valid NYSE session *date* is not proof that its close has occurred.
+        # Do not score today's unclosed or future hypothetical observations.
+        # The 15-minute buffer is a minimum, not vendor finality attestation.
+        last_close=calendar.session_close(dates[-1])
     except Exception as exc:
         raise ScorecardStop("Market-session chronology cannot be verified") from exc
     if len(dates)!=report["observed_new_completed_sessions"]:
         raise ScorecardStop("Missing or fabricated completed NYSE forward sessions")
+    if _now_utc()<last_close+pd.Timedelta(minutes=15):
+        raise ScorecardStop("Last claimed NYSE forward close has not completed")
     source_key=("followup_source_sha256" if method=="KNOWN_PG_OCT23_DIVIDEND_BRIDGE_P4V"
                 else "later_original_p4g_json_sha256")
     digest=report.get(source_key)
