@@ -174,3 +174,46 @@ def test_all_cash_attribution_has_no_invented_stock_return_or_active_edge():
         assert all(value == 0 for value in row[field].values())
     assert row["gross_attribution_reconciliation_error_pp"] == 0
     assert row["gross_active_attribution_reconciliation_error_pp"] == 0
+
+
+def test_costed_risk_paths_include_entry_and_final_exit_without_extra_day():
+    r = analyze(prices(flat=True))["scenarios"]["15"]
+    assert r["risk_paths_include_entry_and_exit_costs_on_actual_sessions"]
+    assert r["risk_path_observed_sessions"] == r["observed_return_intervals"] + 1
+    assert r["max_drawdown_hypothetical_pct"] == 0
+    assert r["strategy_worst_session_return_pct"] == 0
+    # A flat 100%-equity benchmark still loses both modeled trading fees.
+    # Prior drawdown logic silently dropped the first-close entry fee.
+    cost = .0015
+    expected_drawdown = 100 * ((1 - cost) ** 2 - 1)
+    for arm in ("spy_passive", "equal24_passive"):
+        assert r[arm + "_max_drawdown_hypothetical_pct"] == pytest.approx(
+            expected_drawdown, abs=.0001)
+        assert r[arm + "_worst_session_return_pct"] == pytest.approx(-.15, abs=1e-6)
+        assert r[arm + "_annualized_volatility_fraction"] > 0
+
+
+def test_relative_risk_uses_same_window_but_not_falsely_cash_matched():
+    frame = prices()
+    frame.loc[frame.index[-1], "SPY"] *= .90
+    result = analyze(frame)
+    for bps, r in result["scenarios"].items():
+        assert r["passive_benchmarks_100pct_equity_not_cash_matched"]
+        assert r["risk_paths_include_entry_and_exit_costs_on_actual_sessions"]
+        assert r["spy_passive_max_drawdown_hypothetical_pct"] < -9
+        assert r["spy_passive_worst_session_return_pct"] < -9
+        assert r["spy_passive_annualized_volatility_fraction"] > 0
+        assert r["strategy_annualized_volatility_fraction"] >= 0
+        assert r["equal24_passive_annualized_volatility_fraction"] >= 0
+        assert r["risk_path_observed_sessions"] > 20
+    # The final SPY mark does not rewrite the preceding stock decisions.
+    original = analyze(prices())["scenarios"]["15"]
+    assert original["signals_and_next_close_execution"] == result[
+        "scenarios"]["15"]["signals_and_next_close_execution"]
+
+
+def test_risk_path_rejects_missing_or_fictitious_session_and_nonfinite_wealth():
+    with pytest.raises(p4p.FeasibilityStop, match="wealth path"):
+        p4p._risk_path([1.0, .99], sessions=2)
+    with pytest.raises(p4p.FeasibilityStop, match="wealth path"):
+        p4p._risk_path([1.0, float("nan"), 1.0], sessions=2)
