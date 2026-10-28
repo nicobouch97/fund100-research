@@ -179,7 +179,7 @@ def test_unreported_repository_permission_is_unknown_never_write_proof(e,source,
     assert report["funded_order_authorized"] is False
 
 
-def test_repository_permission_GET_is_read_only_bounded_and_not_write_certification(e,source):
+def test_repository_permission_GET_is_read_only_bounded_and_not_write_certification(e):
     from io import BytesIO
     import json
     class Response:
