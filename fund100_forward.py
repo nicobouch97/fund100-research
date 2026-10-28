@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import exchange_calendars as xcals
 import numpy as np
 import pandas as pd
 
@@ -459,6 +460,51 @@ def build_forward_manifest() -> dict:
 
 
 # ============================================================
+# PROSPECTIVE SESSION COMPLETENESS
+# ============================================================
+
+def verify_complete_forward_nyse_sessions(
+    observed: pd.DatetimeIndex,
+    *,
+    first_session: pd.Timestamp,
+    last_completed_date: date,
+) -> None:
+    """Fail closed if a whole completed NYSE session vanished from Yahoo.
+
+    A per-cell non-null check cannot catch a missing *entire row*. Skipping
+    such a row would silently compound a multi-day move as one day's
+    prospective return and lose the original daily signal chronology.
+    Only completed dates strictly before today UTC are eligible; an
+    unpublished prior close waits for the existing fallback schedule.
+    """
+    if (
+        not isinstance(observed, pd.DatetimeIndex)
+        or observed.tz is not None
+        or observed.has_duplicates
+        or not observed.is_monotonic_increasing
+        or not observed.equals(observed.normalize())
+    ):
+        raise RuntimeError("Invalid prospective market session index")
+    if not isinstance(last_completed_date, date):
+        raise RuntimeError("Invalid prospective completed-session cutoff")
+    end = pd.Timestamp(last_completed_date)
+    if end < first_session:
+        return
+    try:
+        expected = xcals.get_calendar("XNYS").sessions_in_range(
+            first_session, end
+        ).tz_localize(None).normalize()
+    except Exception as exc:
+        raise RuntimeError("NYSE completed-session calendar unavailable") from exc
+    missing = expected.difference(observed)
+    if len(missing):
+        raise RuntimeError(
+            "Missing entire completed NYSE forward session: "
+            f"{missing[0].date()}; refusing skipped daily return"
+        )
+
+
+# ============================================================
 # DATA
 # ============================================================
 
@@ -511,6 +557,14 @@ def load_completed_market_data(
         raise RuntimeError(
             "No completed market data available."
         )
+
+    # Yahoo can omit a whole session for every ticker. A non-null
+    # asset/benchmark/FX test sees no row to inspect in that case.
+    verify_complete_forward_nyse_sessions(
+        prices.index,
+        first_session=HISTORICAL_CUTOFF,
+        last_completed_date=today_utc - timedelta(days=1),
+    )
 
     missing_assets = [
         asset
