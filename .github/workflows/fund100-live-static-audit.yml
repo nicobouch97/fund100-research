@@ -134,6 +134,9 @@ on:
       - "test_fund100_v7_pinned_etf_monthly_switch_v1_0.py"
       - "fund100_stock_quality_momentum_p4g_v1_0.py"
       - "test_fund100_stock_quality_momentum_p4g_v1_0.py"
+      # Scorecard chronology and source checks must receive the same full audit.
+      - "fund100_stock_forward_aftercost_verdict_p4x_v1_0.py"
+      - "test_fund100_stock_forward_aftercost_verdict_p4x_v1_0.py"
       - "fund100_stock_single_vintage_forward_marks_p4k_v1_0.py"
       - "test_fund100_stock_single_vintage_forward_marks_p4k_v1_0.py"
       - "fund100_v6_four_model_walkforward_selector_v1_0.py"
@@ -301,6 +304,9 @@ on:
       - "test_fund100_v7_pinned_etf_monthly_switch_v1_0.py"
       - "fund100_stock_quality_momentum_p4g_v1_0.py"
       - "test_fund100_stock_quality_momentum_p4g_v1_0.py"
+      # Scorecard chronology and source checks must receive the same full audit.
+      - "fund100_stock_forward_aftercost_verdict_p4x_v1_0.py"
+      - "test_fund100_stock_forward_aftercost_verdict_p4x_v1_0.py"
       - "fund100_stock_single_vintage_forward_marks_p4k_v1_0.py"
       - "test_fund100_stock_single_vintage_forward_marks_p4k_v1_0.py"
       - "fund100_v6_four_model_walkforward_selector_v1_0.py"
