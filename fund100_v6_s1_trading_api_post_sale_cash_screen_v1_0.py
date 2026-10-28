@@ -147,9 +147,17 @@ def screen(*,snapshot:dict,now_utc:str,buy_symbol:str,
             raw=account.get(name)
             if raw is None:
                 continue
-            if type(raw) not in (str,int,Decimal):
+            if (type(raw) not in (str,int,Decimal)
+                or type(raw) is str and (
+                    not raw or raw.strip()!=raw or "e" in raw.lower())):
                 raise TradingCashStop("Malformed pending transfer type")
-            pending.append(_usd(str(raw),name))
+            try:
+                value=Decimal(str(raw))
+            except InvalidOperation:
+                raise TradingCashStop("Malformed pending transfer amount") from None
+            if not value.is_finite() or value<0:
+                raise TradingCashStop("Invalid pending transfer amount")
+            pending.append(value)
         if any(x!=0 for x in pending):
             return _hold("HOLD_ACCOUNT_NOT_UNLEVERAGED_ACTIVE_OR_PENDING_TRANSFER")
     except TradingCashStop:
