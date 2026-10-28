@@ -258,10 +258,13 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-v6-s1-original-client-id-getonly.yml",
         "fund100_v6_s1_live_original_client_ids_getonly_v1_0.py",
     ): "31d4ff0e1e90091eb8514f06452adeded782f019",
+    # Reviewed exact terminal-stop bootstrap SHA. Reject any drift; this
+    # writer's new eligibility additionally depends on the independent
+    # source-pinned /v2/orders + ENGAGED pre-HTTP AST check below.
     (
         ".github/workflows/fund100-live-bootstrap.yml",
         "fund100_live_bootstrap_v1_0.py",
-    ): "2df0e9b216366b7659386d9cc541041b5365a2ab",
+    ): "3d866d415ba228b6c538adac6d0a70e6b93de34d",
     (
         ".github/workflows/fund100-live-micro-pilot-prepare.yml",
         "fund100_live_pilot_prepare_v1_0.py",
@@ -338,6 +341,31 @@ def approved_scoped_live_script(
     path = ROOT / script
     if not path.is_file() or git_blob_digest(path) != expected:
         return False
+
+    if script == "fund100_live_bootstrap_v1_0.py":
+        # Unlike GET-only credential readers, this source can submit a
+        # real Alpaca order. Exact SHA alone cannot waive the final HTTP
+        # sink restriction or the independent production call-site scan.
+        # Fail closed if the additional audited guard cannot be loaded.
+        try:
+            from fund100_live_terminal_write_guard_audit_v1_0 import (
+                read_terminal_sources, scan_terminal_write_sources,
+            )
+            report = scan_terminal_write_sources(
+                read_terminal_sources(ROOT)
+            )
+        except (ImportError, OSError, TypeError, ValueError):
+            return False
+        if not report.passed:
+            return False
+        # Main ref job gate and noncancellable account-writer lock
+        # are also mandatory, not superseded by a content hash.
+        if "if: github.ref == 'refs/heads/main'" not in source:
+            return False
+        if "group: fund100-alpaca-live-account-writer" not in source:
+            return False
+        if "cancel-in-progress: false" not in source:
+            return False
 
     if script == "fund100_v7_x3_actual_live_crypto_gold_getonly_v1_0.py":
         # Only reviewed original-account six-GET source, never a general

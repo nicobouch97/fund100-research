@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: fund100-live-micro-pilot-bootstrap
+  group: fund100-alpaca-live-account-writer
   cancel-in-progress: false
 
 env:
@@ -22,6 +22,7 @@ jobs:
   bootstrap:
     name: Bootstrap V5-002 LIVE Micro-Pilot
     environment: fund100-live-broker
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
