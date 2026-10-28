@@ -143,7 +143,7 @@ def test_forward_publish_race_recomputes_from_new_main(tmp_path):
     git("config", "user.email", "test@example.invalid", cwd=worker)
     output_dir = worker / "forward_outputs"
     output_dir.mkdir()
-    (output_dir / "ledger.txt").write_text("baseline\\n")
+    (output_dir / "ledger.txt").write_text("baseline\n")
     git("add", "forward_outputs", cwd=worker)
     git("commit", "-m", "baseline", cwd=worker)
     git("push", "-u", "origin", "main", cwd=worker)
@@ -152,27 +152,27 @@ def test_forward_publish_race_recomputes_from_new_main(tmp_path):
     git("config", "user.name", "test", cwd=contender)
     git("config", "user.email", "test@example.invalid", cwd=contender)
     (contender / "forward_outputs" / "ledger.txt").write_text(
-        "baseline\\nconcurrent\\n"
+        "baseline\nconcurrent\n"
     )
     git("add", "forward_outputs", cwd=contender)
     git("commit", "-m", "concurrent ledger advance", cwd=contender)
     git("push", "origin", "HEAD:main", cwd=contender)
 
     # The worker computed an obsolete result before seeing the new main.
-    (output_dir / "ledger.txt").write_text("baseline\\nstale\\n")
+    (output_dir / "ledger.txt").write_text("baseline\nstale\n")
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "pytest").write_text(
-        "#!/bin/sh\\nprintf 'tested\\n' > .replay-tests-ran\\n"
+        "#!/bin/sh\nprintf 'tested\n' > .replay-tests-ran\n"
     )
     (bin_dir / "python").write_text(
-        "#!/bin/sh\\n"
-        "case \\"$1\\" in\\n"
-        "  fund100_forward_v1_1.py) printf 'replayed\\n' >> forward_outputs/ledger.txt ;;\\n"
-        "  fund100_forward_evidence_scorecard_v1_0.py) printf 'scorecard\\n' > forward_outputs/scorecard.txt ;;\\n"
-        "  *) exit 2 ;;\\n"
-        "esac\\n"
+        "#!/bin/sh\n"
+        "case \"$1\" in\n"
+        "  fund100_forward_v1_1.py) printf 'replayed\n' >> forward_outputs/ledger.txt ;;\n"
+        "  fund100_forward_evidence_scorecard_v1_0.py) printf 'scorecard\n' > forward_outputs/scorecard.txt ;;\n"
+        "  *) exit 2 ;;\n"
+        "esac\n"
     )
     for tool in ("pytest", "python"):
         (bin_dir / tool).chmod(0o755)
