@@ -6,6 +6,8 @@ on:
       - "fund100_stock_forward_return_ledger_p4h_v1_0.py"
       - "test_fund100_stock_forward_return_ledger_p4h_v1_0.py"
       - "fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
+      - "fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py"
+      - "test_fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py"
       - "test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
       - "research_lab/stocks/P4I_*"
       - ".github/workflows/fund100-p4h-original-forward-equity-ledger.yml"
@@ -13,6 +15,8 @@ on:
     branches: [main]
     paths:
       - "fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
+      - "fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py"
+      - "test_fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py"
       - "test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
       - "research_lab/stocks/P4I_*"
       - ".github/workflows/fund100-p4h-original-forward-equity-ledger.yml"
@@ -48,7 +52,8 @@ jobs:
           set -euo pipefail
           python -m pytest -q \
             test_fund100_stock_forward_return_ledger_p4h_v1_0.py \
-            test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py
+            test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py \
+            test_fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py
       - name: Confirm P4I source anchor permanently pins actual 17 Oct observation
         run: |
           set -euo pipefail
