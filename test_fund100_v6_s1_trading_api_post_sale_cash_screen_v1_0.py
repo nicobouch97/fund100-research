@@ -78,6 +78,45 @@ def test_incomplete_or_unsupported_broker_inputs_hold(change,stage):
     assert check(s)["status"]==stage
     assert check(s)["broker_post_attempts"]==0
 
+def test_original_funding_is_a_maximum_not_a_required_exact_deposit():
+    s=fixture()
+    s["original_deposit_total_usd"]="120.00"
+    result=check(s)
+    assert result["status"]=="CONSERVATIVE_TRADING_API_CASH_ENVELOPE_PASSED_NOT_AUTHORIZED"
+    assert result["original_contribution_cap_usd"]=="130.30"
+    assert result["eligible_for_separate_approved_live_buy"] is False
+    assert result["actual_settled_proceeds_certified"] is False
+
+
+@pytest.mark.parametrize("deposit",["0","130.31","999.99","-1","NaN","1e2",""])
+def test_invalid_zero_or_over_ceiling_original_deposit_cannot_pass(deposit):
+    s=fixture()
+    s["original_deposit_total_usd"]=deposit
+    assert check(s)["status"]=="HOLD_INVALID_OR_EXCESS_INITIAL_PILOT_FUNDING"
+
+
+def test_multiple_original_deposit_events_are_not_reinterpreted_as_pilot_cap():
+    s=fixture()
+    s["original_deposit_events"]=2
+    s["original_deposit_total_usd"]="120.00"
+    assert check(s)["status"]=="HOLD_UNPROVEN_OR_UNRECONCILED_ACCOUNT_HISTORY"
+
+
+@pytest.mark.parametrize("pending",["0","0.00","0.0000",0])
+def test_real_trading_account_zero_pending_transfer_formats(pending):
+    s=fixture()
+    s["account"]["pending_transfer_in"]=pending
+    s["account"]["pending_transfer_out"]=pending
+    assert check(s)["status"]=="CONSERVATIVE_TRADING_API_CASH_ENVELOPE_PASSED_NOT_AUTHORIZED"
+
+
+@pytest.mark.parametrize("pending",["0.01","-0.01","NaN","1e1","unknown",True,1])
+def test_nonzero_or_malformed_pending_transfer_always_holds(pending):
+    s=fixture()
+    s["account"]["pending_transfer_in"]=pending
+    assert check(s)["status"]=="HOLD_ACCOUNT_NOT_UNLEVERAGED_ACTIVE_OR_PENDING_TRANSFER"
+
+
 def test_tplusone_calendar_not_used_as_immediate_buy_license():
     s=fixture()
     for f in s["original_exit_fills"].values():
