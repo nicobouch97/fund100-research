@@ -13,6 +13,9 @@ import json
 from math import isfinite
 from pathlib import Path
 
+import exchange_calendars as xcals
+import pandas as pd
+
 import fund100_stock_forward_permanent_anchor_p4i_v1_0 as p4i
 import fund100_stock_forward_corporate_action_bridge_p4v_v1_0 as p4v
 import fund100_stock_forward_source_selector_p4w_v1_0 as p4w
@@ -100,6 +103,14 @@ def analyze(report:dict)->dict:
         or type(report.get("post_freeze_exit_observation_session")) is not str
         or report["post_freeze_exit_observation_session"]<=report["post_freeze_entry_session"]):
         raise ScorecardStop("Invalid fixed forward-return chronology")
+    try:
+        dates=xcals.get_calendar("XNYS").sessions_in_range(
+            pd.Timestamp(report["post_freeze_entry_session"]),
+            pd.Timestamp(report["post_freeze_exit_observation_session"]))
+    except Exception as exc:
+        raise ScorecardStop("Market-session chronology cannot be verified") from exc
+    if len(dates)!=report["observed_new_completed_sessions"]:
+        raise ScorecardStop("Missing or fabricated completed NYSE forward sessions")
     source_key=("followup_source_sha256" if method=="KNOWN_PG_OCT23_DIVIDEND_BRIDGE_P4V"
                 else "later_original_p4g_json_sha256")
     digest=report.get(source_key)
