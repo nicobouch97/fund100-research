@@ -59,6 +59,54 @@ def test_source_first_and_independently_later_close_mark_has_costed_spy():
     assert out["broker_orders"]==0 and out["trading_authorized"] is False
     assert len(out["later_price_source_csv_sha256"])==64
 
+def test_two_distinct_source_frozen_stocks_form_one_equal_weight_costed_cohort():
+    # A second distinct issuer is one equal-weight investment, not a
+    # second independent benchmark or a reason to count filings as capital.
+    second=new_row(ticker="MSFT",accession="0000000456-26-000001")
+    second["sec_cik_10_digit"]="0000000456"
+    original=frozen(new_row(),second)
+    prices=panel()
+    prices["MSFT"]=[50.0,49.0]  # -2% versus AAPL +10%; equal-weight +4%
+    out=u7.evaluate(original,prices=prices,
+        later_price_acquired_utc="2026-10-30T19:00:00Z",
+        provider_reference="independently completed two-stock source vintage")
+    c=out["complete_equal_weight_cohort_vs_spy"]
+    assert c["status"]=="COMPLETE_EQUAL_WEIGHT_SOURCE_COHORT_DESCRIPTIVE_NOT_ALPHA"
+    assert c["distinct_equal_weight_stock_exposures"]==2
+    assert c["equal_weight_stock_gross_return"]==pytest.approx(.04)
+    assert c["matched_spy_gross_return"]==pytest.approx(.02)
+    for b in u7.COSTS:
+        fee=(1-b/10000)**2
+        assert c["equal_weight_stock_net_minus_costed_spy_percentage_points"][str(b)] == pytest.approx(
+            100*(1.04-1.02)*fee,abs=1e-8)
+        assert c["equal_weight_stock_net_minus_gross_spy_percentage_points"][str(b)] == pytest.approx(
+            100*(1.04*fee-1.02),abs=1e-8)
+    assert out["statistically_proven_alpha"] is False
+    assert out["broker_orders"]==0
+
+
+def test_unpriced_or_zero_source_cohort_never_reports_selected_survivors():
+    pending=u7.evaluate(frozen(new_row()),prices=panel(aapl=(100.,),
+        spy=(200.,),dates=("2026-10-28",)),
+        later_price_acquired_utc="2026-10-29T19:00:00Z",
+        provider_reference="only first market close available")
+    assert pending["complete_equal_weight_cohort_vs_spy"] is None
+    assert pending["partial_or_zero_cohort_never_reweighted_into_a_return"] is True
+    empty=u7.evaluate(frozen(),prices=None)
+    assert empty["complete_equal_weight_cohort_vs_spy"] is None
+
+
+def test_multiple_filings_of_one_ticker_do_not_overweight_cohort():
+    original=frozen(new_row(),new_row(accession="0000000123-26-000002"))
+    out=u7.evaluate(original,prices=panel(),
+        later_price_acquired_utc="2026-10-30T19:00:00Z",
+        provider_reference="independently completed deduplicated source vintage")
+    c=out["complete_equal_weight_cohort_vs_spy"]
+    assert c["distinct_equal_weight_stock_exposures"]==1
+    assert c["equal_weight_stock_gross_return"]==pytest.approx(.10)
+    assert c["matched_spy_gross_return"]==pytest.approx(.02)
+
+
 def test_future_closes_not_available_stays_pending():
     out=u7.evaluate(frozen(new_row()),prices=panel(aapl=(100.,),
                               spy=(200.,),dates=("2026-10-28",)),
