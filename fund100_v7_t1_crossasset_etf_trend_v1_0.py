@@ -38,6 +38,10 @@ TRADING_AUTHORIZED=False
 
 class CrossAssetTrendStop(ValueError):pass
 
+def _now_utc()->datetime:
+    """Real acquisition-clock bound; isolated seam for deterministic regression."""
+    return datetime.now(timezone.utc)
+
 def prices_validate(frame:pd.DataFrame):
     if (not isinstance(frame,pd.DataFrame)
         or set(frame.columns)!=set(ASSETS)
@@ -224,6 +228,7 @@ def analyze(prices:pd.DataFrame,captured_utc:str):
     stamp=datetime.strptime(captured_utc,"%Y-%m-%dT%H:%M:%SZ").replace(
         tzinfo=timezone.utc)
     if (stamp.strftime("%Y-%m-%dT%H:%M:%SZ")!=captured_utc
+        or stamp>_now_utc()
         or stamp.date()<=panel.index[-1].date()
         or (stamp.date()-panel.index[-1].date()).days>5):
         raise CrossAssetTrendStop("Stale or future-dated original source observation")
