@@ -2,6 +2,7 @@
 from __future__ import annotations
 from hashlib import sha256
 import json
+from math import log
 
 import pandas as pd
 import pytest
@@ -96,3 +97,39 @@ def test_invalid_frozen_manifest_or_duplicate_model_date_rejected():
         score.analyze(ledger, {**manifest, "historical_cutoff": "2026-09-17"})
     with pytest.raises(score.ScorecardStop, match="duplicated"):
         score.analyze(pd.concat([ledger, ledger.iloc[[0]]]), manifest)
+
+
+def test_forward_and_recovered_log_contributions_reconcile_without_gap_compounding():
+    ledger, manifest = _fixture()
+    result = score.analyze(ledger, manifest)
+    assert result["active_log_contributions_are_additive_not_subset_backtest_returns"]
+    nav = (100.0, 102.0, 99.0, 101.0)
+    bench = (100.0, 101.0, 100.0, 101.5)
+    contributions = [
+        100 * log((nav[i] / nav[i-1]) / (bench[i] / bench[i-1]))
+        for i in range(1, len(nav))
+    ]
+    for name in base.MODELS:
+        row = result["models"][name]
+        assert row["strict_forward_active_log_relative_wealth_contribution_pp"] == (
+            pytest.approx(contributions[0] + contributions[2], abs=1e-8))
+        assert row["recovered_active_log_relative_wealth_contribution_pp"] == (
+            pytest.approx(contributions[1], abs=1e-8))
+        assert row["total_active_log_relative_wealth_contribution_pp"] == (
+            pytest.approx(sum(contributions), abs=1e-8))
+        assert row["strict_forward_positive_active_intervals"] == 2
+        assert row["recovered_positive_active_intervals"] == 0
+        assert row["strict_forward_intervals"] == 2
+        assert row["recovered_after_outage_intervals"] == 1
+
+
+@pytest.mark.parametrize("kind", ["FORWARD", "RECOVERED_AFTER_OUTAGE"])
+def test_homogeneous_observation_provenance_has_zero_opposite_contribution(kind):
+    ledger, manifest = _fixture(types=("BASELINE", kind, kind, kind))
+    result = score.analyze(ledger, manifest)
+    opposite = ("recovered" if kind == "FORWARD" else "strict_forward")
+    for row in result["models"].values():
+        assert row[f"{opposite}_active_log_relative_wealth_contribution_pp"] == 0
+        assert row[f"{opposite}_positive_active_intervals"] == 0
+        assert row["total_active_log_relative_wealth_contribution_pp"] == (
+            row[f"{'strict_forward' if kind == 'FORWARD' else 'recovered'}_active_log_relative_wealth_contribution_pp"])
