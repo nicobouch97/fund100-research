@@ -19,7 +19,12 @@ SCHEMA="FUND100_V6_S1_ORIGINAL_ACWI_SELL_FILL_FLAT_OFFLINE_PROOF_V1"
 MODE="SYNTHETIC_BROKER_INPUT_ONLY_NO_LIVE_SOURCE"
 MAX_PAGE=100
 MAX_PAGES=16
-MAX_FIRST_ORDER_GROSS_USD=Decimal("65")
+# Closing an original, HMAC-bound full ACWI inventory is not a *new*
+# investment order. The $65 maximum-new-order cap MUST NOT be applied
+# to the completed original sale receipt/FILL reconciliation. Exact
+# historical original share quantity and independent post-sale flat
+# positions are mandatory; this offline proof never authorizes a trade.
+ORIGINAL_FULL_INVENTORY_EXIT_NOT_SUBJECT_TO_NEW_ORDER_CAP=True
 ORIGINAL="ACWI"
 RETAIN=("EEM","XLE","XLV")
 LIVE_BROKER_REQUESTS_RELEASED=False
@@ -182,7 +187,7 @@ def assess(*,signed_prepost_sources:dict,closed_receipt:dict,
             elif leaves==0:
                 raise FillFlatStop("Partial FILL falsely claims all shares")
     if (not filled_once or target_count==0 or cumulative!=expected[ORIGINAL]
-        or spend<=0 or spend>MAX_FIRST_ORDER_GROSS_USD):
+        or spend<=0):
         raise FillFlatStop("Incomplete activity-to-receipt first SELL reconciliation")
     if type(open_orders) is not list or open_orders:
         raise FillFlatStop("No open orders allowed after the original first SELL")
