@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from hashlib import sha256
+from math import sqrt
 import json
 from pathlib import Path
 
@@ -59,9 +60,22 @@ def _select(prices: pd.DataFrame, t: int) -> list[str]:
     return chosen
 
 
-def _drawdown(path: list[float]) -> float:
+def _risk_path(path: list[float], sessions: int) -> dict:
+    """Entry and exit fees belong to actual observed market sessions.
+
+    Include the initial 1.0 wealth anchor so a first-close purchase cost
+    cannot disappear from drawdown. Never append a fictitious liquidation day.
+    """
     arr = np.asarray(path, dtype=float)
-    return float((arr / np.maximum.accumulate(arr) - 1).min())
+    if (len(arr) != sessions + 1 or sessions < 2
+        or not np.isfinite(arr).all() or (arr <= 0).any()):
+        raise FeasibilityStop("Invalid cost-inclusive market-session wealth path")
+    returns = arr[1:] / arr[:-1] - 1
+    return {
+        "max_drawdown": float((arr / np.maximum.accumulate(arr) - 1).min()),
+        "annualized_volatility": float(np.std(returns, ddof=1) * sqrt(252)),
+        "worst_session_return": float(returns.min()),
+    }
 
 
 def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
@@ -76,7 +90,8 @@ def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
     weights: dict[str, float] = {}
     cash = 1.0
     pending = (start, signal_i, _select(prices, signal_i))
-    path: list[float] = []
+    # Preserve the pre-entry wealth anchor; the first close charges entry fees.
+    path: list[float] = [1.0]
     decisions: list[dict] = []
     one_way_turnover = 0.0
     cash_history: list[float] = []
@@ -187,6 +202,26 @@ def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
     # actual gross notional turnover at every rotation for the strategy.
     spy_net = spy_gross * (1 - c) ** 2
     equal24_net = equal24_gross * (1 - c) ** 2
+
+    # Passive controls use their actual buy-and-hold wealth paths rather than
+    # only a terminal return. This is the SAME execution-close window as the
+    # rotating strategy, including entry cost on the first close and final
+    # liquidation cost on the last close, with no invented extra session.
+    spy_relatives = (prices[p4l.BENCHMARK].iloc[start:] /
+                     start_prices[p4l.BENCHMARK]).to_numpy(dtype=float)
+    equal24_relatives = (prices[list(p4l.SECTORS)].iloc[start:] /
+                         start_prices[list(p4l.SECTORS)]).mean(axis=1).to_numpy(dtype=float)
+    spy_path = [1.0] + list((1 - c) * spy_relatives)
+    equal24_path = [1.0] + list((1 - c) * equal24_relatives)
+    spy_path[-1] *= 1 - c
+    equal24_path[-1] *= 1 - c
+    if (abs(spy_path[-1] - spy_net) > 1e-10
+        or abs(equal24_path[-1] - equal24_net) > 1e-10):
+        raise FeasibilityStop("Passive costed risk and terminal return disagree")
+    sessions = len(prices) - start
+    strategy_risk = _risk_path(path, sessions)
+    spy_risk = _risk_path(spy_path, sessions)
+    equal24_risk = _risk_path(equal24_path, sessions)
     return {
         "entry_execution_close": prices.index[start].date().isoformat(),
         "last_exit_mark_close": prices.index[-1].date().isoformat(),
@@ -195,7 +230,27 @@ def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
         "signals_and_next_close_execution": decisions,
         "total_one_way_turnover_including_entry_exit": round(one_way_turnover, 6),
         "average_cash_weight_pct": round(100 * float(np.mean(cash_history)), 4),
-        "max_drawdown_hypothetical_pct": round(100 * _drawdown(path), 4),
+        "max_drawdown_hypothetical_pct": round(
+            100 * strategy_risk["max_drawdown"], 4),
+        "spy_passive_max_drawdown_hypothetical_pct": round(
+            100 * spy_risk["max_drawdown"], 4),
+        "equal24_passive_max_drawdown_hypothetical_pct": round(
+            100 * equal24_risk["max_drawdown"], 4),
+        "strategy_annualized_volatility_fraction": round(
+            strategy_risk["annualized_volatility"], 8),
+        "spy_passive_annualized_volatility_fraction": round(
+            spy_risk["annualized_volatility"], 8),
+        "equal24_passive_annualized_volatility_fraction": round(
+            equal24_risk["annualized_volatility"], 8),
+        "strategy_worst_session_return_pct": round(
+            100 * strategy_risk["worst_session_return"], 6),
+        "spy_passive_worst_session_return_pct": round(
+            100 * spy_risk["worst_session_return"], 6),
+        "equal24_passive_worst_session_return_pct": round(
+            100 * equal24_risk["worst_session_return"], 6),
+        "risk_path_observed_sessions": sessions,
+        "risk_paths_include_entry_and_exit_costs_on_actual_sessions": True,
+        "passive_benchmarks_100pct_equity_not_cash_matched": True,
         "strategy_net_return_pct": round(100 * (nav - 1), 6),
         "strategy_pre_cost_return_pct": round(100 * (gross_nav - 1), 6),
         "spy_passive_pre_cost_return_pct": round(100 * (spy_gross - 1), 6),
@@ -268,6 +323,7 @@ def analyze(prices: pd.DataFrame, *, source_sha256: str) -> dict:
         "cash_assumed_zero_yield": True,
         "transaction_costs_exclude_market_impact_and_tax": True,
         "pre_cost_selection_vs_friction_attribution_same_decisions": True,
+        "costed_drawdown_volatility_and_worst_day_for_all_three_arms": True,
         "gross_stock_sector_attribution_uses_same_decisions_and_prices": True,
         "pre_cost_is_not_a_tradeable_zero_friction_strategy": True,
         "initial_month_end_signal": data.index[first].date().isoformat(),
