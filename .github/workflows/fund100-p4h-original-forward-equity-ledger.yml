@@ -7,6 +7,8 @@ on:
       - "test_fund100_stock_forward_return_ledger_p4h_v1_0.py"
       - "fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
       - "fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py"
+      - "fund100_stock_forward_source_selector_p4w_v1_0.py"
+      - "test_fund100_stock_forward_source_selector_p4w_v1_0.py"
       - "test_fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py"
       - "test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
       - "research_lab/stocks/P4I_*"
@@ -16,6 +18,8 @@ on:
     paths:
       - "fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
       - "fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py"
+      - "fund100_stock_forward_source_selector_p4w_v1_0.py"
+      - "test_fund100_stock_forward_source_selector_p4w_v1_0.py"
       - "test_fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py"
       - "test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py"
       - "research_lab/stocks/P4I_*"
@@ -53,7 +57,8 @@ jobs:
           python -m pytest -q \
             test_fund100_stock_forward_return_ledger_p4h_v1_0.py \
             test_fund100_stock_forward_permanent_anchor_p4i_v1_0.py \
-            test_fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py
+            test_fund100_stock_forward_corporate_action_bridge_p4v_v1_0.py \
+            test_fund100_stock_forward_source_selector_p4w_v1_0.py
       - name: Confirm P4I source anchor permanently pins actual 17 Oct observation
         run: |
           set -euo pipefail
@@ -144,6 +149,24 @@ jobs:
           assert x['broker_orders']==0
           print('REAL PINNED 17 OCT AND 28 OCT PG DIVIDEND SOURCE MATCH: research-only, 0 orders')
           PY
+          python fund100_stock_forward_source_selector_p4w_v1_0.py \
+            --anchor research_lab/stocks/P4I_PERMANENT_2026_10_17_SOURCE_ANCHOR.json \
+            --original-json /tmp/fund100-p4i-original/fund100-p4g-snapshot.json \
+            --original-csv /tmp/fund100-p4i-original/fund100-p4g-original-prices.csv \
+            --followup-json /tmp/fund100-p4v-real-followup/fund100-p4g-snapshot.json \
+            --followup-csv /tmp/fund100-p4v-real-followup/fund100-p4g-original-prices.csv \
+            --output /tmp/fund100-p4w-real-20261028-source-selected.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path('/tmp/fund100-p4w-real-20261028-source-selected.json').read_text())
+          z=x['scheduled_research_source_selection']
+          assert z['selection_method']=='KNOWN_PG_OCT23_DIVIDEND_BRIDGE_P4V'
+          assert not z['strict_p4i_original_vintage_accepted']
+          assert x['future_return_observations']==6
+          assert not x['live_authorized'] and x['broker_orders']==0
+          print('REAL FIXED SOURCE SELECTION: known PG dividend only; NO BROKER')
+          PY
       - name: Locate newest successful post-anchor real P4G source snapshot
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         id: followup
@@ -165,11 +188,11 @@ jobs:
             --dir /tmp/fund100-p4i-followup
           echo "eligible=true" >> "${GITHUB_OUTPUT}"
           echo "PROSPECTIVE_INPUT_RUN=${next}"
-      - name: Use ORIGINAL pinned price archive for historical prefix; STOP material restatements
+      - name: Require original price SHA or exactly documented dividend-bound research bridge
         if: steps.followup.outputs.eligible == 'true'
         run: |
           set -euo pipefail
-          python fund100_stock_forward_permanent_anchor_p4i_v1_0.py \
+          python fund100_stock_forward_source_selector_p4w_v1_0.py \
             --anchor research_lab/stocks/P4I_PERMANENT_2026_10_17_SOURCE_ANCHOR.json \
             --original-json /tmp/fund100-p4i-original/fund100-p4g-snapshot.json \
             --original-csv /tmp/fund100-p4i-original/fund100-p4g-original-prices.csv \
@@ -181,19 +204,41 @@ jobs:
           import json
           from pathlib import Path
           r=json.loads(Path("/tmp/fund100-p4i-anchored-prospective-result.json").read_text())
-          assert r["schema"]=="FUND100_P4I_HASH_ANCHORED_POST_FREEZE_EQUITY_RETURNS_V1"
+          import fund100_stock_forward_permanent_anchor_p4i_v1_0 as p4i
+          import fund100_stock_forward_corporate_action_bridge_p4v_v1_0 as p4v
           assert r["frozen_baseline_session"]=="2026-10-16"
           assert r["original_frozen_watchlist"]==["MSFT","KO","PG"]
-          assert r["overlapping_original_adjusted_prices_sha_verified"]
-          assert r["original_17_oct_archive_verified_before_forward_calculation"]
-          assert r["revised_overlap_prices_used_for_pnl"] is False
-          assert r["observed_overlap_vendor_relative_jitter"] <= 5e-7
+          assert r["original_baseline_price_csv_sha256"]==p4i.ORIGINAL_CSV_SHA
+          assert r["selection_is_not_reranked_from_followup"]
           assert not r["prior_history_used_for_strategy_pnl"]
           assert not r["period_cagr_or_statistical_alpha_inferred"]
           assert r["broker_orders"]==0
           assert not r["paper_authorized"] and not r["live_authorized"]
           assert not r["trading_authorized"]
-          print("Original archived 17 October signal anchored indefinitely; no trading.")
+          chosen=r["scheduled_research_source_selection"]
+          if chosen["selection_method"]=="STRICT_P4I_ORIGINAL_VINTAGE":
+              assert chosen["strict_p4i_original_vintage_accepted"]
+              assert r["schema"]==p4i.SCHEMA
+              assert r["overlapping_original_adjusted_prices_sha_verified"]
+              assert r["original_17_oct_archive_verified_before_forward_calculation"]
+              assert r["revised_overlap_prices_used_for_pnl"] is False
+              assert r["observed_overlap_vendor_relative_jitter"] <= 5e-7
+          else:
+              assert chosen["selection_method"]=="KNOWN_PG_OCT23_DIVIDEND_BRIDGE_P4V"
+              assert not chosen["strict_p4i_original_vintage_accepted"]
+              assert "material historical vendor restatement" in chosen["strict_p4i_revision_rejection"]
+              assert r["schema"]==p4v.SCHEMA
+              evidence=r["corporate_action_crosscheck"]
+              assert evidence["event"]==p4v.PG_EVENT
+              assert evidence["frozen_original_price_rows_retained"]
+              assert evidence["revised_pre_freeze_rows_used_for_returns"] is False
+              assert evidence["independent_total_return_benchmark_verified"] is False
+              assert evidence["cash_dividend_actually_settled_verified"] is False
+          assert not chosen["later_vendor_revisions_permitted_unconditionally"]
+          assert chosen["broker_orders"]==0 and not chosen["live_authorized"]
+          print("Pinned 17 October research-source gate:",chosen["selection_method"],
+                "; no alpha proof or broker orders.")
+
           PY
       - name: Preserve rejected original-vintage change evidence (no strategy returns)
         if: failure() && steps.followup.outputs.eligible == 'true'
