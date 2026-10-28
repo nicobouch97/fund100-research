@@ -34,6 +34,10 @@ REQUIRED=(
 )
 ISSUE_URL="https://api.github.com/repos/nicobouch97/fund100-research/issues/8"
 SELF_URL="https://api.github.com/user"
+PRIVATE_REPO_URL="https://api.github.com/repos/nicobouch97/fund100-state-private"
+PUBLIC_REPO_URL="https://api.github.com/repos/nicobouch97/fund100-research"
+MAX_REPO_METADATA_BYTES=128_000
+
 
 class PrincipalStop(RuntimeError):pass
 
@@ -90,6 +94,49 @@ def _release_token_authenticated(*,token,transport=None):
     except PrincipalStop:raise
     except (HTTPError,URLError,TimeoutError,OSError,ValueError,UnicodeError):
         raise PrincipalStop("RELEASE_WRITE_TOKEN_AUTHENTICATED_GET_FAILED") from None
+
+def _repository_push_metadata(*,url,expected_name,token,transport=None):
+    """Read repository permission metadata, never infer endpoint WRITE proof.
+
+    For fine-grained PATs, a repository GET can at best reveal a negative
+    coarse push permission. Even push=True does not independently prove
+    Contents(write), Release(write) or owner-branch policy. No mutation.
+    """
+    if (url,expected_name) not in (
+        (PRIVATE_REPO_URL,"nicobouch97/fund100-state-private"),
+        (PUBLIC_REPO_URL,"nicobouch97/fund100-research"),
+    ):
+        raise PrincipalStop("Unexpected token-bound repo metadata endpoint")
+    req=Request(url,method="GET",headers={
+        "Accept":"application/vnd.github+json",
+        "Authorization":"Bearer "+token,
+        "X-GitHub-Api-Version":"2022-11-28",
+        "User-Agent":"fund100-original-first-write-candidate-metadata-getonly"})
+    sender=build_opener(NoRedirect()).open if transport is None else transport
+    try:
+        with sender(req,timeout=12) as response:
+            if getattr(response,"status",None)!=200:
+                raise PrincipalStop("Candidate repository metadata GET not authenticated")
+            raw=response.read(MAX_REPO_METADATA_BYTES+1)
+        if len(raw)>MAX_REPO_METADATA_BYTES:
+            raise PrincipalStop("Candidate repository metadata oversized")
+        import json
+        value=json.loads(raw)
+    except PrincipalStop:
+        raise
+    except (HTTPError,URLError,TimeoutError,OSError,ValueError,UnicodeError):
+        raise PrincipalStop("Candidate repository metadata unavailable") from None
+    if (type(value) is not dict
+        or value.get("full_name")!=expected_name
+        or type(value.get("permissions")) is not dict):
+        # Metadata may be omitted for some fine-grained token types. UNKNOWN
+        # cannot be interpreted as write authority or a verified denial.
+        return "UNDETERMINED"
+    permission=value["permissions"].get("push")
+    if type(permission) is not bool:
+        return "UNDETERMINED"
+    return "PUSH_INDICATED_NOT_ENDPOINT_WRITE_PROOF" if permission else "PUSH_DENIED"
+
 
 def inspect(*,environ=None,transport=None)->dict:
     """Deterministic source-HMAC and public-principal GETs only; no orders."""
@@ -190,9 +237,26 @@ def inspect(*,environ=None,transport=None)->dict:
         _public_issue_get(token=values["GITHUB_TOKEN"],transport=transport)
     except Exception:
         raise PrincipalStop("PUBLIC_ISSUE_GET_DENIED") from None
+    # These are explicit GET-only negative-permission screens. The final
+    # signed private owner CAS and GitHub Release WRITE are NOT exercised.
+    private_push=_repository_push_metadata(
+        url=PRIVATE_REPO_URL,expected_name="nicobouch97/fund100-state-private",
+        token=values["FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"],
+        transport=transport)
+    release_push=_repository_push_metadata(
+        url=PUBLIC_REPO_URL,expected_name="nicobouch97/fund100-research",
+        token=values["FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN"],
+        transport=transport)
+    if private_push=="PUSH_DENIED":
+        raise PrincipalStop("ORIGINAL_PRIVATE_WRITE_CANDIDATE_REPOSITORY_PUSH_DENIED")
+    if release_push=="PUSH_DENIED":
+        raise PrincipalStop("ORIGINAL_RELEASE_WRITE_CANDIDATE_REPOSITORY_PUSH_DENIED")
     return {
         "schema":SCHEMA,
         "status":"FIVE_DISTINCT_GITHUB_PRINCIPALS_AUTHENTICATED_READ_ONLY_NO_WRITE_PROOF",
+        "private_candidate_repository_push_metadata":private_push,
+        "release_candidate_repository_push_metadata":release_push,
+        "positive_push_metadata_is_proof_of_release_or_git_contents_write":False,
         "original_private_signed_seq1_and_owner_seq0_verified":True,
         "github_provider_immutable_releases_enabled":True,
         "private_write_permission_confirmed":False,
@@ -208,6 +272,8 @@ def main():
     assert result["signed_state_mutations"]==result["broker_orders"]==0
     print(result["status"])
     print("Immutable setting and private signed original seq1/owner seq0 READ verified.")
+    print("Private WRITE candidate repo permission:",result["private_candidate_repository_push_metadata"])
+    print("Public release candidate repo permission:",result["release_candidate_repository_push_metadata"])
     print("GitHub WRITE capability NOT established by GET. Funded trading STILL STOP.")
 
 if __name__=="__main__":
