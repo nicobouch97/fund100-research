@@ -96,6 +96,19 @@ def test_flat_market_fee_risk_uses_actual_entry_and_exit_sessions():
         result["worst_modeled_session_return_including_fees_pct"])
 
 
+def test_terminal_liquidation_can_trigger_daily_risk_breach():
+    # A 6.2% final-day SPY fall becomes a 5.89% portfolio decline before
+    # liquidation; 35bp final SELL friction pushes the day below -6%.
+    df=sample(short=True)
+    df.loc[:,list(t.ASSETS)]=100.
+    df.loc[pd.Timestamp("2016-12-30"),"SPY"]=93.8
+    result=t.simulate(df,start="2014-01-02",end="2016-12-30",
+                      side_bps=35,strategy="STATIC_SPY")
+    assert result["worst_modeled_session_return_including_fees_pct"]< -6.
+    assert result["original_high_risk_breach_sessions"][
+        "account_day_below_minus_6pct"]==1
+
+
 def test_fee_stress_reduces_total_net_returns():
     df=sample(short=True)
     lo=t.simulate(df,start="2014-01-02",end="2016-12-30",
