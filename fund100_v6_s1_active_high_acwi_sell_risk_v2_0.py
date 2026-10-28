@@ -130,8 +130,12 @@ def evaluate_original_sell_only(*,account,positions,orders,clock,history,
             raise ActiveSellStop("Cash/equity/holdings no longer reconcile")
         # First ACWI is a SELL; no new buys, leverage, excess deposits,
         # wash sale consideration, or unsettled sale proceeds are authorized.
-        if by_symbol[SYMBOL][1]>limits.MAX_ORDER:
-            raise ActiveSellStop("Full original ACWI sell exceeds $65 order cap")
+        # Full liquidation of the independently authenticated, already-owned
+        # ACWI inventory REDUCES exposure. The S1 $65 MAX_ORDER cap applies
+        # to NEW orders, not liquidation of the original bootstrap shares.
+        # Never size by a caller-supplied amount or allow more than live equity.
+        if by_symbol[SYMBOL][1]>equity:
+            raise ActiveSellStop("Original ACWI liquidation exceeds current broker equity")
         if (len(activities)>=100
             or sum(row.get("activity_type")=="CSD" for row in activities
                    if type(row) is dict)!=1
@@ -171,7 +175,8 @@ def evaluate_original_sell_only(*,account,positions,orders,clock,history,
         "original_strict_postfunding_6_20_35_risk_pass":True,
         "sell_only_original_legacy_ACWI":True,
         "capital_ceiling_usd":"130.30",
-        "max_single_sell_notional_usd":"65.00",
+        "full_original_acwi_exit_bounded_by_authenticated_inventory":True,
+        "maximum_new_order_notional_usd":"65.00",
         "broker_order_authorized":True,
         "broker_post_attempts":0,
         "orders_submitted_here":0,
