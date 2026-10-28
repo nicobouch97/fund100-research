@@ -113,4 +113,5 @@ def test_forward_rerun_workflow_changes_require_full_live_static_audit():
     for event in ("push", "pull_request"):
         paths = triggers[event]["paths"]
         assert ".github/workflows/fund100-forward.yml" in paths
+        assert "fund100_forward_v1_1.py" in paths
         assert "test_fund100_main_only_forward_ledger_workflows.py" in paths
