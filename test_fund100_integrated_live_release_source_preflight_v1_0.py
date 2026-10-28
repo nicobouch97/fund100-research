@@ -124,3 +124,65 @@ def test_manifest_source_only_can_produce_noorder_not_live_permission():
     import fund100_alpaca_live_scheduled_compiler_v1_1 as compiler
     assert callable(compiler.permit_stale_snapshot_for_no_event)
     assert (ROOT/"test_fund100_stale_no_event_manifest_guard.py").is_file()
+
+
+def test_every_actual_live_secret_consumer_is_job_scoped_and_protected():
+    """Reinventory ALL actual LIVE key references, not a 2026-10-13 roster.
+
+    This source-scoped test is intentionally independent of historical
+    CREDENTIAL_SCRIPT_BY_WORKFLOW: recent read-only workflows and an
+    emergency-cancel workflow may not have been present in that roster.
+    The protected name in YAML does NOT verify GitHub environment Settings.
+    """
+    import json
+    key_ref = "${{ secrets.ALPACA_LIVE_KEY }}"
+    secret_ref = "${{ secrets.ALPACA_LIVE_SECRET }}"
+    refs = (key_ref, secret_ref)
+    matched = set()
+    directory = ROOT / ".github" / "workflows"
+    for path in sorted((*directory.glob("*.yml"), *directory.glob("*.yaml"))):
+        raw = path.read_text(encoding="utf-8")
+        if not any(ref in raw for ref in refs):
+            continue
+        if not all(ref in raw for ref in refs):
+            raise AssertionError(f"{path.name}: incomplete pair of LIVE secret references")
+        cfg = yaml.safe_load(raw)
+        if not isinstance(cfg, dict):
+            raise AssertionError(f"{path.name}: malformed workflow")
+        global_parts = dict(cfg)
+        jobs = global_parts.pop("jobs", None)
+        assert not any(ref in json.dumps(global_parts) for ref in refs), (
+            f"{path.name}: global or trigger LIVE secret exposure")
+        assert isinstance(jobs, dict) and jobs, path.name
+        seen = 0
+        for job_name, job in jobs.items():
+            assert isinstance(job, dict), (path.name, job_name)
+            shallow_job = dict(job)
+            steps = shallow_job.pop("steps", None)
+            assert not any(ref in json.dumps(shallow_job) for ref in refs), (
+                f"{path.name}:{job_name}: job-level LIVE secret exposure")
+            assert isinstance(steps, list), path.name
+            credential_steps = []
+            for step in steps:
+                assert isinstance(step, dict), path.name
+                other = dict(step)
+                env = other.pop("env", None)
+                assert not any(ref in json.dumps(other) for ref in refs), (
+                    f"{path.name}: secret passed to action, with, condition or shell")
+                if isinstance(env, dict) and any(ref in json.dumps(env) for ref in refs):
+                    assert env.get("ALPACA_LIVE_KEY") == key_ref, path.name
+                    assert env.get("ALPACA_LIVE_SECRET") == secret_ref, path.name
+                    assert "uses" not in step, path.name
+                    credential_steps.append(step)
+            if credential_steps:
+                assert job.get("environment") == LIVE_ENVIRONMENT, (
+                    f"{path.name}:{job_name}: LIVE creds outside protected env")
+                assert len(credential_steps) == 1, (
+                    f"{path.name}: multiple unrestricted secret consumers")
+                seen += 1
+        assert seen >= 1, f"{path.name}: literal LIVE secret references not secured"
+        matched.add(path.name)
+    # A positive count independent of the original 13-entry source allowlist.
+    assert set(WORKFLOWS).issubset(matched)
+    assert len(matched) > len(WORKFLOWS), (
+        "Newer LIVE credential workflow consumers not enumerated")
