@@ -67,6 +67,35 @@ def test_synthetic_costed_metrics_and_recovery_classification():
         assert row["cumulative_modeled_cost_ledger_units"] == pytest.approx(0.009)
 
 
+def test_strict_forward_win_frequency_uncertainty_is_not_alpha():
+    ledger, manifest = _fixture()
+    result = score.analyze(ledger, manifest)
+    assert result["wilson_win_interval_assumes_independent_binary_sessions_not_alpha"]
+    assert result["serial_dependence_selection_and_payoff_size_not_in_win_interval"]
+    for row in result["models"].values():
+        assert row["strict_forward_intervals"] == 2
+        assert row["strict_forward_positive_active_intervals"] == 2
+        assert row["strict_forward_active_win_rate_pct"] == 100.0
+        low, high = row["strict_forward_win_rate_wilson_95pct_interval_pct"]
+        assert 0 < low < high == 100.0
+
+    # Exact 9/19 Wilson interval: small samples cannot establish an edge.
+    assert score._wilson_win_interval_95(9, 19) == [27.32980516, 68.29219075]
+    assert score._wilson_win_interval_95(0, 0) is None
+    assert score._wilson_win_interval_95(0, 1)[0] == 0.0
+
+
+def test_recovered_only_observations_do_not_fake_strict_forward_win_rate():
+    ledger, manifest = _fixture(types=(
+        "BASELINE", "RECOVERED_AFTER_OUTAGE",
+        "RECOVERED_AFTER_OUTAGE", "RECOVERED_AFTER_OUTAGE"))
+    result = score.analyze(ledger, manifest)
+    for row in result["models"].values():
+        assert row["strict_forward_intervals"] == 0
+        assert row["strict_forward_active_win_rate_pct"] is None
+        assert row["strict_forward_win_rate_wilson_95pct_interval_pct"] is None
+
+
 def test_tampered_chain_or_payload_cannot_change_performance():
     ledger, manifest = _fixture()
     bad = ledger.copy()

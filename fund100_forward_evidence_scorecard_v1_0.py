@@ -46,6 +46,28 @@ def _annualized_std(values: np.ndarray) -> float | None:
     return 100.0 * float(np.std(values, ddof=1) * sqrt(252)) if len(values) >= 2 else None
 
 
+def _wilson_win_interval_95(wins: int, observations: int) -> list[float] | None:
+    """Illustrative Bernoulli win-frequency interval; not a test of alpha.
+
+    Serial dependence, selection and payoff asymmetry invalidate treating
+    this interval as a confidence interval for investment outperformance.
+    """
+    if observations == 0:
+        return None
+    z = 1.959963984540054
+    p = wins / observations
+    denominator = 1.0 + z * z / observations
+    center = (p + z * z / (2.0 * observations)) / denominator
+    half_width = z * sqrt(
+        p * (1.0 - p) / observations
+        + z * z / (4.0 * observations * observations)
+    ) / denominator
+    return [
+        round(100.0 * max(0.0, center - half_width), 8),
+        round(100.0 * min(1.0, center + half_width), 8),
+    ]
+
+
 def analyze(ledger: pd.DataFrame, manifest: dict) -> dict:
     required = {"date", "strategy", "row_type", "nav", "benchmark_nav",
                 "turnover", "transaction_cost_gbp", "payload_json",
@@ -131,6 +153,8 @@ def analyze(ledger: pd.DataFrame, manifest: dict) -> dict:
         recovered_mask = np.asarray(types[1:]) == "RECOVERED_AFTER_OUTAGE"
         if not np.all(forward_mask | recovered_mask):
             raise ScorecardStop("Unknown nonbaseline observation provenance")
+        strict_n = int(np.sum(forward_mask))
+        strict_wins = int(np.sum((nav_returns > bench_returns) & forward_mask))
         summaries[name] = {
             "first_date": str(dates.iloc[0].date()),
             "last_completed_date": str(dates.iloc[-1].date()),
@@ -148,8 +172,11 @@ def analyze(ledger: pd.DataFrame, manifest: dict) -> dict:
             "descriptive_annualized_active_tracking_error_pct": (
                 None if (v := _annualized_std(nav_returns - bench_returns)) is None else round(v, 8)),
             "positive_daily_active_return_intervals": int(np.sum(nav_returns > bench_returns)),
-            "strict_forward_positive_active_intervals": int(
-                np.sum((nav_returns > bench_returns) & forward_mask)),
+            "strict_forward_positive_active_intervals": strict_wins,
+            "strict_forward_active_win_rate_pct": (
+                round(100.0 * strict_wins / strict_n, 8) if strict_n else None),
+            "strict_forward_win_rate_wilson_95pct_interval_pct": (
+                _wilson_win_interval_95(strict_wins, strict_n)),
             "recovered_positive_active_intervals": int(
                 np.sum((nav_returns > bench_returns) & recovered_mask)),
             "total_active_log_relative_wealth_contribution_pp": round(
@@ -175,6 +202,8 @@ def analyze(ledger: pd.DataFrame, manifest: dict) -> dict:
         "recovered_rows_are_not_pristine_forward_evidence": True,
         "active_log_contributions_are_additive_not_subset_backtest_returns": True,
         "risk_statistics_are_descriptive_not_significance_tests": True,
+        "wilson_win_interval_assumes_independent_binary_sessions_not_alpha": True,
+        "serial_dependence_selection_and_payoff_size_not_in_win_interval": True,
         "model_selection_or_strategy_promotion_authorized": False,
         "vendor_adjusted_prices_not_broker_fills": True,
         "original_live_ceiling_usd": "130.30",
