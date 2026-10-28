@@ -137,6 +137,12 @@ def _verify_body(body, *, genesis_sha256, account_binding_sha256, key):
         expected_seq += 1 + (item["stage"] == "POST_MAY_HAVE_BEEN_SENT")
     if expected_seq != seq:
         raise JournalStop("Possible duplicate event transition or invalid sequence")
+    # An authenticated document must never claim two unresolved possible
+    # broker sends, even if its event count and HMAC are otherwise valid.
+    # This protects future readers as well as the offline planner.
+    if sum(item["stage"] == "POST_MAY_HAVE_BEEN_SENT"
+           for item in entries.values()) > 1:
+        raise JournalStop("Multiple unresolved possible-send events")
     return obj
 
 
@@ -226,6 +232,13 @@ def _proposal(source, *, event_id, strategy_id, signal_time_utc,
             raise JournalStop("Cannot enter possible-send stage without reservation")
         if existing["stage"] != "RESERVED_NO_ORDER":
             return {"status": "HOLD_ORDER_MAY_ALREADY_HAVE_BEEN_SENT",
+                    "commit": None, "broker_order_authorized": False}
+        # Two events may have been reserved before either POST. Once one
+        # reaches possible-send, the other must not progress without an
+        # independently reviewed broker reconciliation protocol.
+        if any(eid != event_id and item["stage"] == "POST_MAY_HAVE_BEEN_SENT"
+               for eid, item in entries.items()):
+            return {"status": "HOLD_PREVIOUS_EVENT_MAY_HAVE_SENT_ORDER",
                     "commit": None, "broker_order_authorized": False}
         if any(existing[name] != value for name, value in (
             ("signal_sha256", signal_sha256),

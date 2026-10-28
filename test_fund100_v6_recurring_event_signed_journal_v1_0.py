@@ -130,6 +130,42 @@ def test_one_event_reserve_then_possible_post_then_same_id_permanently_holds():
         CONTEXT, event_id=NEXT, signal_time_utc="2026-10-28T10:21:00Z"))[
         "status"] == "HOLD_PREVIOUS_EVENT_MAY_HAVE_SENT_ORDER"
 
+@pytest.mark.parametrize("first_post_is_next", [False, True])
+def test_only_one_reserved_event_can_advance_to_possible_send(first_post_is_next):
+    # Both reservations may legitimately exist before a POST attempt. A
+    # possible-send for either must permanently block the other, even when
+    # both were reserved before the first possible-send transition.
+    later = dict(CONTEXT, event_id=NEXT,
+                 signal_time_utc="2026-10-28T10:21:00Z")
+    one = next_source(journal.plan_reserve(genesis_source(), **CONTEXT))
+    both = next_source(journal.plan_reserve(one, **later))
+    first = later if first_post_is_next else CONTEXT
+    other = CONTEXT if first_post_is_next else later
+    marked = next_source(journal.plan_possible_post(both, **first))
+    blocked = journal.plan_possible_post(marked, **other)
+    assert blocked["status"] == "HOLD_PREVIOUS_EVENT_MAY_HAVE_SENT_ORDER"
+    assert blocked["commit"] is None
+    assert blocked["broker_order_authorized"] is False
+    _, doc = journal.read_github_source(
+        marked, genesis_sha256=GENESIS,
+        account_binding_sha256=ACCOUNT, key=KEY,
+    )
+    assert doc["sequence"] == 3
+    assert sum(item["stage"] == "POST_MAY_HAVE_BEEN_SENT"
+               for item in doc["events"].values()) == 1
+
+    # A correctly HMAC-signed but logically impossible two-POST journal
+    # must be rejected by readers, not just by the transition planner.
+    forged = deepcopy(doc)
+    forged["events"][other["event_id"]]["stage"] = "POST_MAY_HAVE_BEEN_SENT"
+    forged["sequence"] += 1
+    with pytest.raises(journal.JournalStop, match="Multiple unresolved"):
+        journal.read_github_source(
+            source(signed(forged)), genesis_sha256=GENESIS,
+            account_binding_sha256=ACCOUNT, key=KEY,
+        )
+
+
 def test_event_id_cannot_be_detached_from_signal_release_or_mandate():
     with pytest.raises(journal.JournalStop):
         journal.plan_reserve(genesis_source(), **dict(CONTEXT, event_id=NEXT))
