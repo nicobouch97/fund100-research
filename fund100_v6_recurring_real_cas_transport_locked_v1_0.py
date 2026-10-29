@@ -81,7 +81,7 @@ def _exact_put_request(*, commit, old_sha, new_sha):
 
 
 def _one_conditional_put(*, writer_token, expected_old, expected_new,
-                         commit, transport=None):
+                         commit, genesis, account, key, transport=None):
     """One private Contents PUT; lost ACK remains terminal with NO retry.
 
     This primitive is callable by tests using an injected fake transport.
@@ -101,6 +101,26 @@ def _one_conditional_put(*, writer_token, expected_old, expected_new,
         raise PrivateCasHold("Missing scoped Contents-write principal")
     body = _exact_put_request(
         commit=commit, old_sha=expected_old, new_sha=expected_new)
+    # The remote HTTP primitive itself must validate the HMAC, signed
+    # namespace, parent, exact original anchored seq0, one event and the
+    # reservation-only stage. It cannot trust a caller-supplied Git blob.
+    try:
+        candidate = {
+            "type":"file", "path":journal.PATH, "encoding":"base64",
+            "sha":expected_new, "content":commit["content_base64"],
+        }
+        signed_sha, signed = journal.read_github_source(
+            candidate, genesis_sha256=genesis,
+            account_binding_sha256=account, key=key)
+        if (expected_old != anchored.source.PINNED_INITIAL_BLOB_SHA
+            or signed_sha != expected_new
+            or signed["sequence"] != 1
+            or signed["prior_document_sha"] != expected_old
+            or len(signed["events"]) != 1
+            or next(iter(signed["events"].values()))["stage"] != "RESERVED_NO_ORDER"):
+            raise ValueError("not original signed first reservation")
+    except Exception:
+        raise PrivateCasHold("Unverified first signed HMAC reserve: zero GitHub PUT") from None
     req = Request(URL, method="PUT", data=body, headers={
         "Authorization": "Bearer " + writer_token,
         "Content-Type": "application/json",
