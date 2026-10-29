@@ -101,3 +101,69 @@ def test_future_price_revisions_cannot_rewrite_previous_frozen_snapshot():
     assert original["source_acquired_at_utc"] == changed["source_acquired_at_utc"]
     assert not changed["price_source_vintages_independently_authenticated"]
     assert not changed["company_delistings_and_corporate_actions_independently_verified"]
+
+
+def _vendor_batch(p):
+    """Yahoo's documented two-level Close/ticker output shape."""
+    return pd.concat({"Close": p}, axis=1)
+
+
+def test_transient_missing_price_retries_whole_source_batch(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    complete = prices()
+    incomplete = complete.copy()
+    # Simulate a revised adjustment in the second vendor batch. The output
+    # must use that entire second vintage, not just patch its missing NVDA bar.
+    incomplete["MSFT"] *= 0.98
+    incomplete.loc[incomplete.index[-2], "NVDA"] = np.nan
+    calls = []
+
+    def download(**kwargs):
+        calls.append(kwargs)
+        return _vendor_batch(incomplete if len(calls) == 1 else complete)
+
+    monkeypatch.setitem(sys.modules, "yfinance", SimpleNamespace(download=download))
+    monkeypatch.setattr(p4l, "sleep", lambda _: None)
+    monkeypatch.setattr(p4g, "verify_original_nyse_source_sessions", lambda _: None)
+    result = p4l.public_prices()
+    assert len(calls) == 2
+    assert all(call["tickers"] == sorted(set(p4l.SECTORS) | {"SPY", "SHY"})
+               for call in calls)
+    pd.testing.assert_frame_equal(result, p4l.validate_prices(complete))
+
+
+def test_persistently_incomplete_vendor_batches_never_publish(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    incomplete = prices()
+    incomplete.loc[incomplete.index[-2], "NVDA"] = np.nan
+    calls = []
+
+    def download(**kwargs):
+        calls.append(kwargs)
+        return _vendor_batch(incomplete)
+
+    monkeypatch.setitem(sys.modules, "yfinance", SimpleNamespace(download=download))
+    monkeypatch.setattr(p4l, "sleep", lambda _: None)
+    monkeypatch.setattr(p4g, "verify_original_nyse_source_sessions", lambda _: None)
+    with pytest.raises(p4l.BroadStockStop, match="No complete original 26-symbol.*Missing"):
+        p4l.public_prices()
+    assert len(calls) == p4l.SOURCE_ATTEMPTS == 3
+
+
+def test_valid_original_batch_does_not_retry(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    calls = []
+    def download(**kwargs):
+        calls.append(kwargs)
+        return _vendor_batch(prices())
+
+    monkeypatch.setitem(sys.modules, "yfinance", SimpleNamespace(download=download))
+    monkeypatch.setattr(p4g, "verify_original_nyse_source_sessions", lambda _: None)
+    assert len(p4l.public_prices()) == len(prices())
+    assert len(calls) == 1
