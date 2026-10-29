@@ -12,7 +12,7 @@ import fund100_v6_recurring_event_signed_journal_v1_0 as recurring
 import fund100_v6_s1_private_git_cas_protocol_v1_0 as old
 import fund100_v6_s1_one_time_owner_claim_cas_v1_0 as owner
 
-KEY = b"offline-test-hmac-key-material-123"
+KEY = b"k" * 32
 NONCE = "1" * 64
 ACCOUNT = "2" * 64
 READER = "fake-read-principal-identity"
