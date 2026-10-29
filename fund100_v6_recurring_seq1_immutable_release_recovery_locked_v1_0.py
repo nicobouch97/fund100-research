@@ -222,11 +222,29 @@ def _one_mutation(*, step, candidate, token, target_commit, release_id=None,
     token in a future reviewed production job; NEVER a broker credential.
     Synthetic transports must explicitly mark 'synthetic_only=True'.
     """
-    if (transport is None or getattr(transport, "synthetic_only", None) is not True):
+    if transport is not None and getattr(transport, "synthetic_only", None) is not True:
+        raise PublicationHold("Injected release transports must be synthetic only")
+    if transport is None:
         if not all((PRODUCTION_PUBLIC_MUTATION_RELEASED,
                     AUTHENTICATED_SEQ1_REMOTE_HEAD_RELEASED,
                     DURABLE_PERSISTENT_ATTEMPT_FENCE_RELEASED)):
             raise PublicationHold("Production recurring immutable release HARD LOCKED")
+        # No such workflow is deployed. Any future production release must
+        # add and review it alongside authenticated event/attempt provenance.
+        import os
+        env=os.environ
+        required_ref=(seq1.PUBLIC_REPO
+            + "/.github/workflows/fund100-v6-recurring-event-publisher-production-once.yml"
+            + "@refs/heads/main")
+        if (env.get("GITHUB_ACTIONS")!="true"
+            or env.get("GITHUB_REPOSITORY")!=seq1.PUBLIC_REPO
+            or env.get("GITHUB_REF")!="refs/heads/main"
+            or env.get("GITHUB_EVENT_NAME")!="push"
+            or env.get("GITHUB_RUN_ATTEMPT")!="1"
+            or env.get("GITHUB_WORKFLOW_REF")!=required_ref
+            or env.get("FUND100_BROKER_KILL_SWITCH")!="ENGAGED"
+            or env.get("FUND100_RISK_LEVEL")!="HIGH"):
+            raise PublicationHold("Unreviewed protected seq1 publisher context; HOLD")
     if (type(step) is not str or step not in ACTIONS[:3]
         or type(token) is not str or len(token) < 10
         or token.strip() != token or "\r" in token or "\n" in token):
