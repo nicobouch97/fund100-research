@@ -81,8 +81,10 @@ def _company_fact(concepts,tag,filing,*,annual):
         elif entry.get("start") is not None:
             continue
         amount=entry.get("val")
-        if type(amount) is not int or amount<=0:
-            raise SourceHold("Malformed or nonpositive exact SEC companyfact")
+        if type(amount) is not int:
+            raise SourceHold("Malformed exact SEC companyfact")
+        if amount<=0:
+            return None
         matches.append(amount)
     if not matches:
         return None
@@ -269,7 +271,11 @@ def main():
             time.sleep(.18)
     # Separate existing completed-session market reader, NO brokerage.
     frame=prices._later_original_public_prices()
-    captured=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now=datetime.now(timezone.utc)
+    # Even a fully closed same-UTC-date bar is held until the next date.
+    if len(frame) and frame.index[-1].date()>=now.date():
+        frame=cohort.validate_prices(frame.iloc[:-1])
+    captured=now.strftime("%Y-%m-%dT%H:%M:%SZ")
     result,price_bytes=analyze_sources(
         registry=registry,source_files=raw,
         price_panel=frame,acquired_utc=captured)
