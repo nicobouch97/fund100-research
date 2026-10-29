@@ -1,15 +1,11 @@
-name: Fund-100 V6 Recurring Immutable Signed Genesis Anchor (ONE PUBLIC RELEASE; STOP)
+name: Fund-100 V6 Immutable Genesis Publisher Regression (RETIRED; NO RELEASE)
 
-# A single protected main push publishes ONLY a non-secret immutable seq0
-# public fingerprint. Never place orders or mutate private trading state.
+# The original protected main release POST on run 40884760157 was REJECTED.
+# It is one-shot; never replay or rearm this release attempt. Retain
+# credentialless PR regressions ONLY. No protected secrets, release mutation,
+# private state mutation, trading or broker credentials are available here.
 on:
   pull_request:
-    paths:
-      - ".github/workflows/fund100-v6-recurring-immutable-genesis-anchor-once.yml"
-      - "fund100_v6_recurring_immutable_genesis_anchor_once_v1_0.py"
-      - "test_fund100_v6_recurring_immutable_genesis_anchor_once_v1_0.py"
-  push:
-    branches: [main]
     paths:
       - ".github/workflows/fund100-v6-recurring-immutable-genesis-anchor-once.yml"
       - "fund100_v6_recurring_immutable_genesis_anchor_once_v1_0.py"
@@ -18,12 +14,8 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: fund100-v6-recurring-immutable-genesis-publication-once
-  cancel-in-progress: false
-
 jobs:
-  credentialless-signature-and-publisher-tests:
+  credentialless-immutable-genesis-regressions:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -33,64 +25,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Test signed seq0 and GitHub immutable asset publication without credentials
+      - name: Verify fake immutable publisher only; no protected secrets or public mutation
         run: |
           set -euo pipefail
           python -m pip install 'pytest>=8,<9'
           python -m pytest -q test_fund100_v6_recurring_immutable_genesis_anchor_once_v1_0.py
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
           grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
-
-  protected-main-publish-immutable-genesis-only:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: credentialless-signature-and-publisher-tests
-    runs-on: ubuntu-latest
-    environment: fund100-live-broker
-    timeout-minutes: 10
-    env:
-      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
-      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Check protected main STOP and HMAC journal reader only
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
-          test "$GITHUB_REF" = "refs/heads/main"
-          test "$GITHUB_EVENT_NAME" = "push"
-          test "$GITHUB_RUN_ATTEMPT" = "1"
-          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
-          test "$FUND100_RISK_LEVEL" = "HIGH"
-          test "$GITHUB_WORKFLOW_REF" = "nicobouch97/fund100-research/.github/workflows/fund100-v6-recurring-immutable-genesis-anchor-once.yml@refs/heads/main"
-          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
-          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
-          python - <<'PY'
-          import fund100_v6_recurring_immutable_genesis_anchor_once_v1_0 as anchor
-          import fund100_v6_s1_original_first_acwi_entry_locked_v1_0 as order
-          assert anchor.NO_PRIVATE_MUTATIONS and anchor.NO_BROKER_NETWORK_OR_TRADING
-          assert anchor.NO_RETRY_AFTER_ANY_PUBLIC_MUTATION
-          assert order.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
-          print("Signed recurring seq0 immutable public fingerprint only; STOP.")
-          PY
-      - name: Verify authenticated signed private seq0 and publish ONE immutable public release
-        env:
-          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
-          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
-          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
-          FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}
-          FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN }}
-        run: |
-          set -euo pipefail
-          python -B fund100_v6_recurring_immutable_genesis_anchor_once_v1_0.py
-      - name: Confirm private state untouched and broker STOP preserved
-        run: |
-          set -euo pipefail
-          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
-          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
-          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
-          echo 'Immutable signed genesis public anchor ONLY; zero private writes and broker orders.'
