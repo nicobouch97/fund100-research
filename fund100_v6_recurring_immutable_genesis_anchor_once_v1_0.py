@@ -185,6 +185,10 @@ def _request(*, method, url, token, data=None, transport=None, allow_absent=Fals
 def publish_once(*, environ, transport=None, inspect_fn=None, get_fn=None,
                  witness_doc=None):
     """Two real authenticated V2 heads, one immutable RELEASE, NO trade."""
+    if transport is None:
+        # The sole genuine protected release POST in run 40884760157 failed.
+        # Regardless of apparent public absence, never replay that attempt.
+        raise AnchorStop("Original public release attempt consumed; production RETIRED")
     env = dict(environ)
     _check_context(env)
     read, writer, admin, publisher, _ = _credentials(env)
