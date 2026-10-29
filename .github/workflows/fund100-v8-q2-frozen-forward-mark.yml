@@ -1,0 +1,141 @@
+name: Fund-100 V8 Q2 Frozen Original 63-Session Forward Marks (NO BROKER)
+
+# Nightly only AFTER a real first future-vintage source archive exists.
+# Original Q2 2026 source is NOT rebuilt from new SEC XBRL or new prices.
+on:
+  pull_request:
+    paths:
+      - "fund100_v8_q2_frozen_forward_63_marks_v1_0.py"
+      - "test_fund100_v8_q2_frozen_forward_63_marks_v1_0.py"
+      - ".github/workflows/fund100-v8-q2-frozen-forward-mark.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v8_q2_frozen_forward_63_marks_v1_0.py"
+      - "test_fund100_v8_q2_frozen_forward_63_marks_v1_0.py"
+      - ".github/workflows/fund100-v8-q2-frozen-forward-mark.yml"
+  schedule:
+    - cron: "17 23 * * 1-5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v8-q2-original-next-63-market-marks
+  cancel-in-progress: false
+
+jobs:
+  frozen-original-forward-offline-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify no horizon extension, true SEC original bytes and costed forward comparators
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m pytest -q test_fund100_v8_q2_frozen_forward_63_marks_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+
+  actual-original-new-mark-readonly:
+    if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+    needs: frozen-original-forward-offline-regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Find first eligible Q2 source, or hash-checked continuation after artifact expiry
+        id: first
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=fund100-v8-q2-new-original-first&per_page=100" > /tmp/q2-first-artifacts.json
+          first=$(jq -r '[.artifacts[] | select(.expired == false and .name == "fund100-v8-q2-new-original-first" and .workflow_run.head_branch == "main")] | sort_by(.created_at) | .[0].workflow_run.id // empty' /tmp/q2-first-artifacts.json)
+          name="fund100-v8-q2-new-original-first"
+          if [[ -z "$first" ]]; then
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=fund100-v8-q2-original-carryforward&per_page=100" > /tmp/q2-carry-artifacts.json
+            first=$(jq -r '[.artifacts[] | select(.expired == false and .name == "fund100-v8-q2-original-carryforward" and .workflow_run.head_branch == "main")] | sort_by(.created_at) | last | .workflow_run.id // empty' /tmp/q2-carry-artifacts.json)
+            name="fund100-v8-q2-original-carryforward"
+          fi
+          if [[ -z "$first" ]]; then
+            echo "No first actual original source exists: source HOLD, no invented forward."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "available=true" >> "$GITHUB_OUTPUT"
+          echo "source_run_id=$first" >> "$GITHUB_OUTPUT"
+          echo "source_artifact_name=$name" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        if: steps.first.outputs.available == 'true'
+        with:
+          python-version: "3.12"
+      - name: Install public research dependencies
+        if: steps.first.outputs.available == 'true'
+        run: python -m pip install -r requirements.txt
+      - name: Reuse exact original source archive, not a newly chosen basket
+        if: steps.first.outputs.available == 'true'
+        env:
+          SOURCE_RUN_ID: ${{ steps.first.outputs.source_run_id }}
+          SOURCE_ARTIFACT_NAME: ${{ steps.first.outputs.source_artifact_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/q2-first
+          gh run download "$SOURCE_RUN_ID" --name "$SOURCE_ARTIFACT_NAME" --dir /tmp/q2-first
+          test -f /tmp/q2-first/first-new-vintage-q2-source-coverage-and-candidate-NO-LIVE.json
+          test -f /tmp/q2-first/original-24-issuer-completed-adjusted-prices.csv
+      - name: GET independent completed following NYSE price vintage, charge original fee path
+        if: steps.first.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          python -B fund100_v8_q2_frozen_forward_63_marks_v1_0.py \
+            --original-dir /tmp/q2-first \
+            --output "/tmp/fund100-q2-forward-$GITHUB_RUN_ID/q2-frozen-forward-mark.json" \
+            --later-price-csv "/tmp/fund100-q2-forward-$GITHUB_RUN_ID/later-completed-24-stock-prices.csv"
+      - name: Publish separately dated future observation, never overwrite original
+        if: steps.first.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v8-q2-forward-mark-${{ github.run_id }}
+          path: /tmp/fund100-q2-forward-${{ github.run_id }}
+          retention-days: 90
+          if-no-files-found: error
+      - name: Keep origin SEC raw bytes recoverable beyond 90-day first-artifact retention
+        if: steps.first.outputs.available == 'true'
+        id: mirror
+        run: |
+          set -euo pipefail
+          if [[ "$(date -u +%u)" = "1" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Weekly independently hashed source continuation, no new issuer selection
+        if: steps.mirror.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v8-q2-original-carryforward
+          path: /tmp/q2-first
+          retention-days: 90
+          if-no-files-found: error
+      - name: Broker, journal and alpha remain disabled
+        if: steps.first.outputs.available == 'true'
+        run: |
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'Original frozen source + dated costed forward mark, 0 orders.'
