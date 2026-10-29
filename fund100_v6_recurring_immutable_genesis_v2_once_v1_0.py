@@ -187,7 +187,9 @@ def _request(*, method, url, token, data=None, transport=None, allow_absent=Fals
 
 def publish_once(*, environ, transport=None, inspect_fn=None, get_fn=None,
                  witness_doc=None):
-    """Two real authenticated V2 heads, one immutable RELEASE, NO trade."""
+    """Retired V2 creator: only offline injected synthetic scenarios remain."""
+    if transport is None:
+        raise AnchorStop("Original V2 public draft/asset already exists; production RETIRED")
     env = dict(environ)
     _check_context(env)
     if (not ORIGINAL_V1_RELEASE_POST_PERMANENTLY_RETIRED
