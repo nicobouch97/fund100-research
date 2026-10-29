@@ -1,0 +1,181 @@
+"""Offline synthetic SEC provenance checks for new, strictly post-registration Q2."""
+from datetime import timedelta
+from hashlib import sha256
+import json
+from pathlib import Path
+
+import pytest
+
+import fund100_stock_broad_sec_coverage_p4n_v1_0 as sec
+import fund100_v8_qm_first_original_sec_price_capture_v1_0 as original
+import fund100_v8_q2_first_actual_sec_roa_price_source_v1_0 as app
+from test_fund100_v8_qm_first_original_sec_price_capture_v1_0 import inputs
+
+NEW = "2026-10-30T08:00:00Z"
+
+def sources():
+    registry,raw,panel=inputs()
+    mapping=sec.resolve_registry(registry)
+    for i,(ticker,cik) in enumerate(sorted(mapping.items())):
+        key=f"raw/CIK{cik}-{ticker}-companyfacts.json"
+        doc=json.loads(raw[key])
+        gross=doc["facts"]["us-gaap"]["GrossProfit"]["units"]["USD"][0]
+        ni={k:v for k,v in gross.items()}
+        ni["val"]=12_000_000+i*500_000
+        doc["facts"]["us-gaap"]["NetIncomeLoss"]={
+            "units":{"USD":[ni]}}
+        raw[key]=json.dumps(doc).encode()
+    return registry,raw,panel
+
+def evaluate(**kwargs):
+    registry,source_files,price_panel=sources()
+    params=dict(registry=registry,source_files=source_files,
+                price_panel=price_panel,acquired_utc=NEW)
+    params.update(kwargs)
+    return app.analyze_sources(**params)
+
+def test_new_original_sec_10k_roa_source_and_completed_prices_research_only():
+    result,prices_bytes=evaluate()
+    assert result["schema"]==app.SCHEMA
+    assert result["source_acquired_utc"]==NEW
+    assert result["last_completed_market_session"]=="2026-10-28"
+    assert result["completed_original_price_panel_sha256"]==sha256(prices_bytes).hexdigest()
+    assert len(result["complete_current_original_24_sec_source_receipts"])==24
+    selected=result["source_derived_research_selection"]
+    assert selected["matched_positive_annual_net_income_assets"]==24
+    assert selected["selection_candidate"] is not None
+    assert len(selected["selection_candidate"]["symbols"])==8
+    assert not selected["live_order_authorized"]
+    assert not result["live_order_authorized"]
+    assert result["broker_gets"]==result["broker_posts"]==result["broker_orders"]==0
+    assert result["original_archive_not_yet_permanently_immutable"]
+    assert not selected["source_inputs_authenticated_by_external_receipt"]
+
+def test_old_original_pre_registered_vintage_cannot_be_rebranded_new_q2():
+    with pytest.raises((app.Q2SourceHold,ValueError)):
+        evaluate(acquired_utc="2026-10-29T23:59:59Z")
+
+def test_signed_net_income_is_preserved_but_loss_is_not_positive_quality():
+    reg,raw,prices=sources()
+    cik=sec.resolve_registry(reg)["AAPL"]
+    path=f"raw/CIK{cik}-AAPL-companyfacts.json"
+    doc=json.loads(raw[path])
+    doc["facts"]["us-gaap"]["NetIncomeLoss"]["units"]["USD"][0]["val"]=-1_000_000
+    raw[path]=json.dumps(doc).encode()
+    report,_=evaluate(registry=reg,source_files=raw,price_panel=prices)
+    screen=report["source_derived_research_selection"]
+    assert screen["matched_positive_annual_net_income_assets"]==23
+    assert screen["observed_nonpositive_annual_net_income"]==["AAPL"]
+    assert "AAPL" not in screen["selection_candidate"]["symbols"]
+    assert report["source_rows"][0]["matched_annual_net_income_usd"] is not None
+
+def test_unavailable_same_filing_net_income_never_backfills_from_older_10k():
+    reg,raw,prices=sources()
+    cik=sec.resolve_registry(reg)["AAPL"]
+    path=f"raw/CIK{cik}-AAPL-companyfacts.json"
+    obj=json.loads(raw[path])
+    obj["facts"]["us-gaap"].pop("NetIncomeLoss")
+    raw[path]=json.dumps(obj).encode()
+    report,_=evaluate(registry=reg,source_files=raw,price_panel=prices)
+    s=report["source_derived_research_selection"]
+    assert s["matched_positive_annual_net_income_assets"]==23
+    assert s["source_gaps"]==["AAPL"]
+    assert not report["live_order_authorized"]
+
+def test_cross_accession_and_nonannual_comparative_rows_cannot_be_eligible():
+    reg,raw,prices=sources()
+    cik=sec.resolve_registry(reg)["MSFT"]
+    key=f"raw/CIK{cik}-MSFT-companyfacts.json"
+    obj=json.loads(raw[key])
+    obj["facts"]["us-gaap"]["NetIncomeLoss"]["units"]["USD"][0]["accn"]="0123456789-26-123456"
+    raw[key]=json.dumps(obj).encode()
+    out,_=evaluate(registry=reg,source_files=raw,price_panel=prices)
+    assert "MSFT" in out["source_derived_research_selection"]["source_gaps"]
+
+def test_conflicting_duplicate_original_10k_net_income_fails_closed():
+    reg,raw,prices=sources()
+    cik=sec.resolve_registry(reg)["KO"]
+    key=f"raw/CIK{cik}-KO-companyfacts.json"
+    obj=json.loads(raw[key])
+    annual=obj["facts"]["us-gaap"]["NetIncomeLoss"]["units"]["USD"]
+    row=dict(annual[0]);row["val"]+=1
+    annual.append(row)
+    raw[key]=json.dumps(obj).encode()
+    with pytest.raises(app.Q2SourceHold, match="Conflicting"):
+        evaluate(registry=reg,source_files=raw,price_panel=prices)
+
+def test_current_registry_cik_drift_quarantined_with_all_current_raw_receipts():
+    reg,raw,prices=sources()
+    mapping=sec.resolve_registry(reg)
+    ticker="XOM"
+    old=mapping[ticker]
+    current="0099999988"
+    assert current not in mapping.values()
+    doc=json.loads(reg)
+    for entry in doc.values():
+        if entry["ticker"]==ticker:
+            entry["cik_str"]=int(current)
+            break
+    for kind in ("companyfacts","submissions"):
+        oldkey=f"raw/CIK{old}-{ticker}-{kind}.json"
+        newkey=f"raw/CIK{current}-{ticker}-{kind}.json"
+        data=json.loads(raw.pop(oldkey))
+        data["cik"]=int(current)
+        if kind=="companyfacts":
+            for tag in ("GrossProfit","NetIncomeLoss","Assets"):
+                data["facts"]["us-gaap"][tag]["units"]["USD"][0]["accn"]=f"{current}-26-000001"
+        else:
+            data["filings"]["recent"]["accessionNumber"]=[f"{current}-26-000001"]
+        raw[newkey]=json.dumps(data).encode()
+    report,_=evaluate(registry=json.dumps(doc).encode(),
+                      source_files=raw,price_panel=prices)
+    assert report["quarantined_historical_issuer_identity_drift"]==["XOM"]
+    screen=report["source_derived_research_selection"]
+    assert screen["matched_positive_annual_net_income_assets"]==23
+    assert "XOM" in screen["source_gaps"]
+    assert "XOM" not in screen["selection_candidate"]["symbols"]
+    assert len(report["complete_current_original_24_sec_source_receipts"])==24
+
+@pytest.mark.parametrize("corruption",[
+    "missing_sec","mismatched_cik","missing_price","stale_session","same_day_bar",
+])
+def test_all_source_gaps_fail_closed_without_partial_snapshot(corruption):
+    reg,raw,prices=sources()
+    if corruption=="missing_sec":
+        raw.pop(next(iter(raw)))
+    elif corruption=="mismatched_cik":
+        key=next(k for k in raw if "companyfacts" in k)
+        doc=json.loads(raw[key]);doc["cik"]=999999999
+        raw[key]=json.dumps(doc).encode()
+    elif corruption=="missing_price":
+        prices=prices.iloc[:200]
+    elif corruption=="stale_session":
+        prices.index=prices.index-timedelta(days=10)
+    elif corruption=="same_day_bar":
+        ix=prices.index
+        prices.index=ix[:-1].append(type(ix)(["2026-10-30"]))
+    with pytest.raises((app.Q2SourceHold,ValueError)):
+        evaluate(registry=reg,source_files=raw,price_panel=prices)
+
+def test_deployed_source_workflow_has_only_public_get_and_existing_sec_identity():
+    assert all((app.NO_BROKER_HTTP,app.NO_PRIVATE_GITHUB_WRITES,
+                app.NO_PUBLIC_GITHUB_RELEASES,app.NO_TRADING))
+    code=Path(app.__file__).read_text()
+    for bad in ('method="POST"','method="PUT"','method="PATCH"',
+                "ALPACA_LIVE_KEY","PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"):
+        assert bad not in code
+    workflow=Path(".github/workflows/fund100-v8-q2-first-new-sec-price-source.yml").read_text()
+    assert "contents: read" in workflow and "actions: read" in workflow
+    assert "contents: write" not in workflow
+    assert "secrets.FUND100_SEC_USER_AGENT" in workflow
+    assert "secrets.ALPACA_LIVE_KEY" not in workflow
+    assert "fund100-live-broker" not in workflow
+    assert "  workflow_dispatch:" not in workflow
+    assert "github.event_name == 'schedule'" in workflow
+    audit=Path(".github/workflows/fund100-live-static-audit.yml").read_text()
+    for p in (
+        "fund100_v8_q2_first_actual_sec_roa_price_source_v1_0.py",
+        "test_fund100_v8_q2_first_actual_sec_roa_price_source_v1_0.py",
+        ".github/workflows/fund100-v8-q2-first-new-sec-price-source.yml",
+    ):
+        assert '      - "'+p+'"' in audit
