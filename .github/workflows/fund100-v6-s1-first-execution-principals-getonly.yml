@@ -57,6 +57,17 @@ jobs:
           assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
           print('Original first ACWI execution release HARD LOCKED. Principal GET only.')
           PY
+      - name: Independently inspect signed recurring journal with existing READ principal (GET ONLY)
+        # This executes BEFORE the candidate-WRITE principal health check;
+        # failure of that principal must not block genuine read-only evidence.
+        # Does not certify any Contents(write) or trading permission.
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          python -B fund100_v6_recurring_private_protected_getonly_v1_0.py --independent-readonly
       - name: Verify existing 5 independent GitHub principals by ORIGINAL authenticated READ
         env:
           FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}

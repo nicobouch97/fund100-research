@@ -191,6 +191,84 @@ def inspect(*, environ=None, recurring_transport=None,
     }
 
 
+
+def inspect_independent_readonly(*, environ=None, recurring_transport=None,
+                                 original_transport=None, witness=None):
+    """Authenticate original signed ledger with READ principal alone.
+
+    A broken prospective private WRITE credential is a genuine blocker for
+    funded execution, but must not block independent read-only research
+    checks. All results are HOLD, even if a V2 recurring HMAC head exists.
+    No token, private state or account identifier is included in reports.
+    """
+    env = os.environ if environ is None else environ
+    if (env.get("GITHUB_ACTIONS") != "true"
+        or env.get("GITHUB_REPOSITORY") != "nicobouch97/fund100-research"
+        or env.get("GITHUB_REF") != "refs/heads/main"
+        or env.get("GITHUB_RUN_ATTEMPT") != "1"
+        or env.get("GITHUB_EVENT_NAME") not in ("push", "workflow_dispatch")
+        or env.get("FUND100_BROKER_KILL_SWITCH") != "ENGAGED"
+        or env.get("FUND100_RISK_LEVEL") != "HIGH"):
+        raise RecurringReadStop("Protected original main, HIGH and STOP required")
+    read = env.get("FUND100_PRIVATE_STATE_READ_TOKEN")
+    key_hex = env.get("FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX")
+    if (type(read) is not str or len(read) < 10
+        or read != read.strip() or "\r" in read or "\n" in read
+        or type(key_hex) is not str
+        or re.fullmatch(r"[a-f0-9]{64}", key_hex) is None):
+        raise RecurringReadStop("Existing READ principal and exact HMAC key required")
+    try:
+        w = original_witness.verify() if witness is None else witness()
+        nonce = w["original_public_genesis_nonce"]
+        binding = w["original_live_account_binding_sha256"]
+        genesis = _recurring_genesis_candidate(nonce, binding)
+        key = bytes.fromhex(key_hex)
+    except Exception:
+        raise RecurringReadStop("Pinned recurring genesis/account binding unavailable") from None
+    _original_principal_authenticated(
+        token=read, nonce=nonce, binding=binding, key=key,
+        original_transport=original_transport)
+    source = _get_recurring(token=read, transport=recurring_transport)
+    if source is None:
+        return {
+            "schema": SCHEMA,
+            "status": "AUTHENTICATED_READ_ONLY_RECURRING_JOURNAL_ABSENT_HOLD",
+            "original_signed_acwi_seq1_authenticated_by_reader": True,
+            "recurring_signed_head_verified": False,
+            "production_write_candidate_auth_verified": False,
+            "independent_immutable_recurring_head_anchor_verified": False,
+            "private_git_puts": 0, "broker_gets": 0, "broker_posts": 0,
+            "live_trading_authorized": False,
+            "manual_per_trade_approval_required": False,
+        }
+    try:
+        _, doc = journal.read_github_source(
+            source, genesis_sha256=genesis,
+            account_binding_sha256=binding, key=key)
+        if type(doc.get("sequence")) is not int or doc["sequence"] < 0:
+            raise RecurringReadStop("Recurring signed sequence invalid")
+    except Exception:
+        raise RecurringReadStop("Existing recurring private HMAC/head invalid; HOLD") from None
+    return {
+        "schema": SCHEMA,
+        "status": "AUTHENTICATED_READER_HMAC_RECURRING_HEAD_STILL_HOLD",
+        "original_signed_acwi_seq1_authenticated_by_reader": True,
+        "recurring_signed_head_verified": True,
+        "production_write_candidate_auth_verified": False,
+        "independent_immutable_recurring_head_anchor_verified": False,
+        "private_git_puts": 0, "broker_gets": 0, "broker_posts": 0,
+        "live_trading_authorized": False,
+        "manual_per_trade_approval_required": False,
+    }
+
+
+def independent_readonly_main():
+    result = inspect_independent_readonly()
+    print(result["status"])
+    print("Existing signed READ principal only; production writer is NOT verified.")
+    print("No private writes, no broker calls, no live trades.")
+
+
 def main():
     report = inspect()
     print(report["status"])
@@ -199,4 +277,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if sys.argv[1:] == ["--independent-readonly"]:
+        independent_readonly_main()
+    elif len(sys.argv) == 1:
+        main()
+    else:
+        raise RecurringReadStop("Unknown protected GET-only inspection mode")
