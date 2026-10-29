@@ -69,6 +69,25 @@ def test_multiple_10k_filings_per_cik_are_counted_without_double_counting_issuer
     assert out["2017_q1_10k_ciks_absent_from_current_ticker_registry"] == 1
 
 
+
+
+@pytest.mark.parametrize("change", [
+    ("2017-02-15", "2017-02-30"),  # lexical range is not a real calendar day
+    ("0001001-17-000001", "0001001-16-000001"),  # wrong accession vintage
+    ("0001001-17-000001", "0001001-17-00001"),   # malformed sequence
+    ("0001001-17-000001", "12345678901-17-000001"),  # invalid submitter prefix
+])
+def test_10k_index_rejects_invalid_date_and_accession_vintage(change):
+    bad = ONE.replace(*change)
+    with pytest.raises(p4t.PopulationStop, match="Unverifiable"):
+        p4t.parse_index(index(bad))
+
+
+def test_10k_index_accepts_different_valid_submitter_cik_prefix():
+    # SEC accession submitter need not be the issuer CIK in the archive path.
+    agent = ONE.replace("0001001-17-000001", "0001193125-17-000001")
+    assert len(p4t.parse_index(index(agent))) == 1
+
 @pytest.mark.parametrize("bad", [
     index(ONE, ONE),  # duplicate accession/file
     index(ONE.replace("2017-02-15", "2017-04-01")),
@@ -387,6 +406,19 @@ def test_form25_index_rejects_invalid_event_provenance(change):
         quarters[1] = index(ONE, TWO, old, bad)
     else:
         quarters[1] = index(ONE, TWO, bad)
+    with pytest.raises(p4t.PopulationStop, match="Form 25"):
+        p4t.form25_index_manifest(quarters)
+
+
+@pytest.mark.parametrize("change", [
+    ("2017-01-20", "2017-02-30"),
+    ("0000001001-17-000101", "0000001001-16-000101"),
+    ("0000001001-17-000101", "0000001001-17-00001"),
+    ("0000001001-17-000101", "12345678901-17-000101"),
+])
+def test_form25_index_rejects_invalid_calendar_date_and_accession(change):
+    quarters = quarters_with_form25_events()
+    quarters[1] = quarters[1].replace(change[0].encode(), change[1].encode())
     with pytest.raises(p4t.PopulationStop, match="Form 25"):
         p4t.form25_index_manifest(quarters)
 
