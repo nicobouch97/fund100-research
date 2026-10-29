@@ -160,9 +160,54 @@ def test_no_broker_static_workflow_and_first_source_stays_read_only():
     assert "fund100-live-broker" not in workflow
     assert "method=\"POST\"" not in module
     assert "  workflow_dispatch:" not in workflow
+    push_paths, pr_paths = audit.split("  pull_request:\n", 1)
     for path in (
         "fund100_v8_q2_frozen_forward_63_marks_v1_0.py",
         "test_fund100_v8_q2_frozen_forward_63_marks_v1_0.py",
         ".github/workflows/fund100-v8-q2-frozen-forward-mark.yml",
+        "fund100_v8_q2_first_actual_sec_roa_price_source_v1_0.py",
     ):
-        assert '      - "'+path+'"' in audit
+        expected = '      - "'+path+'"'
+        assert expected in push_paths
+        assert expected in pr_paths.split("\npermissions:", 1)[0]
+
+
+def test_frozen_historical_overlap_accepts_unchanged_original_returns(tmp_path):
+    panel,_=archive(tmp_path)
+    later=subsequent(panel,last="2026-11-05")
+    r=marks.evaluate(original_root=tmp_path,later_prices=later,
+                     observed_at_utc="2026-11-05T23:45:00Z")
+    assert r["original_price_overlap_return_shape_verified"]
+    assert r["frozen_original_price_overlap_sessions"]==len(panel)
+    assert r["max_frozen_overlap_relative_adjustment_drift_bps"]<0.001
+
+
+def test_frozen_overlap_accepts_uniform_adjusted_price_rebasing(tmp_path):
+    panel,_=archive(tmp_path)
+    later=subsequent(panel,last="2026-11-05")
+    # A later corporate action can multiply all earlier adjusted prices
+    # by the same factor without changing any historical daily return.
+    later.loc[panel.index,"AAPL"]*=0.995
+    r=marks.evaluate(original_root=tmp_path,later_prices=later,
+                     observed_at_utc="2026-11-05T23:45:00Z")
+    assert r["uniform_corporate_action_rebasing_allowed"]
+    assert r["max_frozen_overlap_relative_adjustment_drift_bps"]<0.001
+
+
+def test_frozen_overlap_rejects_revised_historical_selection_returns(tmp_path):
+    panel,_=archive(tmp_path)
+    later=subsequent(panel,last="2026-11-05")
+    # Valid-looking, modest retroactive vendor change inside the original
+    # signal lookback must not be silently accepted as the frozen source.
+    later.loc[panel.index[-20],"SPY"]*=1.002
+    with pytest.raises(marks.MarkHold,match="returns revised across vintages"):
+        marks.evaluate(original_root=tmp_path,later_prices=later,
+                       observed_at_utc="2026-11-05T23:45:00Z")
+
+
+def test_frozen_overlap_rejects_missing_old_history_even_if_later_complete(tmp_path):
+    panel,_=archive(tmp_path)
+    later=subsequent(panel,last="2026-11-05").iloc[10:]
+    with pytest.raises(marks.MarkHold,match="omits original frozen"):
+        marks.evaluate(original_root=tmp_path,later_prices=later,
+                       observed_at_utc="2026-11-05T23:45:00Z")
