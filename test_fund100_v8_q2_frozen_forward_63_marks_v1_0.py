@@ -2,6 +2,7 @@
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from hashlib import sha256
+from decimal import Decimal
 import json
 
 import exchange_calendars as xcals
@@ -136,7 +137,33 @@ def test_original_source_report_mutation_disagrees_with_reproduced_selector(tmp_
     doc=json.loads(path.read_text())
     doc["source_derived_research_selection"]["selection_candidate"]["symbols"][0]="FAKE"
     path.write_text(json.dumps(doc))
-    with pytest.raises(marks.MarkHold,match="selection or missingness altered"):
+    with pytest.raises(marks.MarkHold,match="selection"):
+        marks._read_source(tmp_path)
+
+
+def test_forged_roa_and_recomputed_selector_cannot_replace_raw_sec_facts(tmp_path):
+    # Report + its selector are internally consistent, and the original raw
+    # SEC receipts/hashes have NOT changed. Earlier verification accepted
+    # this invented financial statement because it only re-ranked report rows.
+    panel, report = archive(tmp_path)
+    row = next(r for r in report["source_rows"]
+               if r["matched_annual_net_income_usd"] is not None
+               and int(r["matched_annual_net_income_usd"]) > 0)
+    row["matched_annual_net_income_usd"] = str(
+        int(row["matched_annual_net_income_usd"]) * 10)
+    snap = lambda n: format(Decimal(str(n)), ".8f")
+    report["source_derived_research_selection"] = marks.q2.select(
+        rows=report["source_rows"],
+        benchmark_minus252=snap(panel["SPY"].iloc[
+            -1-marks.q2.LOOKBACK_SESSIONS]),
+        benchmark_minus42=snap(panel["SPY"].iloc[
+            -1-marks.q2.SKIP_RECENT_SESSIONS]),
+        decision_utc=NEW,
+        price_session=report["last_completed_market_session"],
+        source_mode=marks.q2.SOURCE_MODE)
+    (tmp_path/marks.FIRST_SOURCE_REPORT).write_text(
+        json.dumps(report, sort_keys=True, indent=2) + "\n")
+    with pytest.raises(marks.MarkHold, match="diverged from raw sources"):
         marks._read_source(tmp_path)
 
 

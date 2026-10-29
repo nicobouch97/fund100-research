@@ -63,6 +63,7 @@ def _read_source(root: Path):
         or type(rows) is not list or len(rows) != 24):
         raise MarkHold("Original complete 24 SEC issuer receipts unavailable")
     from_original = {}
+    raw_source_files = {}
     for rec in raw_receipts:
         if type(rec) is not dict or set(rec) != {
             "symbol","current_registry_cik","official_companyfacts_sha256",
@@ -84,6 +85,7 @@ def _read_source(root: Path):
             if digest != rec.get(key):
                 raise MarkHold("Original raw SEC source bytes changed")
             d[kind] = digest
+            raw_source_files[f"raw/CIK{cik}-{ticker}-{kind}.json"] = contents
         from_original[ticker] = sha256(
             (d["companyfacts"]+d["submissions"]).encode("ascii")).hexdigest()
     if set(from_original) != set(cohort.SECTORS):
@@ -100,6 +102,19 @@ def _read_source(root: Path):
         raise MarkHold("First original price panel not verified") from exc
     if normalized != prices:
         raise MarkHold("Original price bytes noncanonical or source revised")
+    # A hash receipt alone only proves the raw bytes are unchanged. Rebuild
+    # issuer identity, annual 10-K facts, ROA and ranks FROM those SEC bytes.
+    # Otherwise a modified report can invent earnings and recompute its own
+    # selector/fingerprints without altering any archived official SEC file.
+    try:
+        derived_report, derived_prices = source.analyze_sources(
+            registry=registry, source_files=raw_source_files,
+            price_panel=original_price_panel, acquired_utc=report.get(
+                "source_acquired_utc"))
+    except Exception as exc:
+        raise MarkHold("Original SEC facts or issuer identity cannot be reproduced") from exc
+    if derived_prices != prices or derived_report != report:
+        raise MarkHold("Original SEC facts, issuer identity or selection diverged from raw sources")
     original_session = original_price_panel.index[-1].date().isoformat()
     acquired = report.get("source_acquired_utc")
     if original_session != report.get("last_completed_market_session"):
