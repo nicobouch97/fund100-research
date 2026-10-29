@@ -21,7 +21,9 @@ import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from fund100_stock_historical_sec_population_p4t_v1_0 import parse_current_registry
+from fund100_stock_historical_sec_population_p4t_v1_0 import (
+    QUARTER_BOUNDS, _valid_2017_index_identity, parse_current_registry,
+)
 
 SCHEMA = "FUND100_P4U_2017_ORIGINAL_10K_COVER_SOURCE_AUDIT_V5"
 MAX_FILING_BYTES = 12_000_000  # full submission remains tightly bounded
@@ -99,14 +101,23 @@ def select_sample(source_dir: Path, *, per_stratum: int = 16) -> tuple[list[dict
                 or set(row) != {"cik", "company_name_in_original_index",
                                 "filing_date", "quarter", "sec_archive_path"}
                 or type(row["cik"]) is not int or row["cik"] <= 0
-                or not re.fullmatch(r"2017-\d\d-\d\d", row["filing_date"])
+                or type(row["filing_date"]) is not str
                 or row["quarter"] not in {"2017_Q1", "2017_Q2", "2017_Q3", "2017_Q4"}
                 or type(row["company_name_in_original_index"]) is not str
                 or not row["company_name_in_original_index"].strip()
                 or type(row["sec_archive_path"]) is not str):
                 raise ListingEvidenceStop("Invalid historical filing identity")
             m = ARCHIVE_PATH.fullmatch(row["sec_archive_path"])
-            if (m is None or int(m.group(1)) != row["cik"]
+            # Revalidate the *downstream* source manifest against the same
+            # original SEC quarter/date/accession contract used by P4T.
+            # A SHA-matched manifest alone cannot establish a calendar-valid,
+            # correctly dated filing or prevent future-quarter lookahead.
+            quarter = int(row["quarter"][-1])
+            start, end = QUARTER_BOUNDS[quarter]
+            if (m is None
+                or not _valid_2017_index_identity(
+                    row["filing_date"], row["sec_archive_path"],
+                    str(row["cik"]), start, end)
                 or row["sec_archive_path"] in paths):
                 raise ListingEvidenceStop("Invalid or repeated historical SEC accession path")
             paths.add(row["sec_archive_path"])
