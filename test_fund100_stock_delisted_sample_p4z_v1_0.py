@@ -294,3 +294,51 @@ def test_original_return_window_rejects_reversed_sessions():
         p4z._observed_close_return(
             {"date": "2022-10-27", "close": "100", "adj_close": "100"},
             {"date": "2022-07-01", "close": "100", "adj_close": "100"})
+
+
+def test_independent_raw_close_split_and_dividend_chain_is_not_vendor_adjustment():
+    # A 3-for-1 split preserves value; a later $1 distribution reinvested
+    # against a $30 previous close increases the hypothetical wealth.
+    rows = [
+        {"date": "2022-08-24", "close": "90", "split": "", "dividend": ""},
+        {"date": "2022-08-25", "close": "30", "split": "1:3", "dividend": ""},
+        {"date": "2022-08-26", "close": "31", "split": "", "dividend": "1"},
+    ]
+    assert p4z._reconstruct_corporate_action_return(rows) == pytest.approx(
+        100 * (32 / 30 - 1))
+    # Unlike the original raw-close comparison, a split alone is not a loss.
+    assert p4z._reconstruct_corporate_action_return(rows[:2]) == pytest.approx(0)
+
+
+def test_independent_reconstruction_refuses_unknown_actions_and_bad_cash():
+    rows = [
+        {"date": "2022-07-01", "close": "100", "split": "", "dividend": ""},
+        {"date": "2022-07-05", "close": "50", "split": "2:1", "dividend": ""},
+    ]
+    with pytest.raises(p4z.DelistedSampleStop, match="split ratio"):
+        p4z._reconstruct_corporate_action_return(rows)
+    rows[1].update(split="", dividend="-0.1")
+    with pytest.raises(p4z.DelistedSampleStop, match="cash flow"):
+        p4z._reconstruct_corporate_action_return(rows)
+    rows[1]["dividend"] = "NaN"
+    with pytest.raises(p4z.DelistedSampleStop, match="cash flow"):
+        p4z._reconstruct_corporate_action_return(rows)
+    rows[1].update(date="2022-07-01", dividend="")
+    with pytest.raises(p4z.DelistedSampleStop, match="Nonchronological"):
+        p4z._reconstruct_corporate_action_return(rows)
+
+
+def test_source_report_keeps_reconstruction_separate_from_terminal_proceeds(tmp_path):
+    result = p4z.audit_zip(_zip(tmp_path))
+    assert result["corporate_action_reconstruction_uses_original_split_and_dividend_rows"]
+    assert result["corporate_action_reconstruction_is_hypothetical_ex_date_reinvestment"]
+    assert result["corporate_action_reconstruction_not_settled_or_investable_return"]
+    for symbol in p4z.FILES:
+        diagnostics = result["per_listing_observed_window"][symbol]
+        assert isinstance(
+            diagnostics["raw_close_split_dividend_reconstructed_change_pct"], float)
+        assert isinstance(
+            diagnostics["reconstructed_minus_vendor_adjusted_change_pp"], float)
+    assert result["twtr_terminal_shareholder_proceeds_usd"] is None
+    assert result["twtr_post_delisting_total_return"] is None
+    assert not result["historical_stock_alpha_backtest_eligible"]
