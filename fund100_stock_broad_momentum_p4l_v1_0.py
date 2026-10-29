@@ -91,6 +91,11 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
             raise ValueError("Noncanonical acquisition timestamp")
     except (TypeError, ValueError, AttributeError) as exc:
         raise BroadStockStop("Canonical UTC acquisition timestamp required") from exc
+    # A self-consistent source receipt is not proof it has already occurred.
+    # This also protects downstream frozen forward-mark revalidation, which
+    # re-evaluates archived P4L reports using their original receipt time.
+    if acquired > datetime.now(timezone.utc):
+        raise BroadStockStop("Future-dated source acquisition is not completed evidence")
     last = data.index[-1].date()
     if (last < BASELINE_COMPLETED_SESSION or acquired.date() <= last
         or (acquired.date() - last).days > 5):
