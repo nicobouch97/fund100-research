@@ -61,6 +61,8 @@ on:
       - "test_fund100_v6_private_writer_candidate_get_diagnostic_v1_0.py"
       - "test_fund100_v6_recurring_private_protected_getonly_v1_0.py"
       - "test_fund100_v6_recurring_private_cas_once_offline_v1_0.py"
+      - "fund100_v6_recurring_real_cas_transport_locked_v1_0.py"
+      - "test_fund100_v6_recurring_real_cas_transport_locked_v1_0.py"
       - "fund100_v6_recurring_immutable_genesis_anchor_once_v1_0.py"
       - "test_fund100_v6_recurring_immutable_genesis_anchor_once_v1_0.py"
       - "fund100_v6_recurring_immutable_genesis_v2_once_v1_0.py"
@@ -274,6 +276,8 @@ on:
       - "test_fund100_v6_private_writer_candidate_get_diagnostic_v1_0.py"
       - "test_fund100_v6_recurring_private_protected_getonly_v1_0.py"
       - "test_fund100_v6_recurring_private_cas_once_offline_v1_0.py"
+      - "fund100_v6_recurring_real_cas_transport_locked_v1_0.py"
+      - "test_fund100_v6_recurring_real_cas_transport_locked_v1_0.py"
       # Retired release publisher payload/transport changes must also pass full LIVE audit.
       - "fund100_v6_recurring_immutable_genesis_anchor_once_v1_0.py"
       - "test_fund100_v6_recurring_immutable_genesis_anchor_once_v1_0.py"
