@@ -1,0 +1,112 @@
+name: Fund-100 V6 Immutable Signed Genesis V2 Existing Draft Finish (ONE PATCH; STOP)
+
+# Single protected continuation of the ORIGINAL GitHub draft 427978301 and
+# asset 688837795 already created by main run 40892690151. NO RELEASE POST,
+# NO asset upload, NO new tag, NO private mutation, NO broker calls.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fund100-v6-recurring-immutable-genesis-v2-draft-finish-once.yml"
+      - "fund100_v6_recurring_immutable_genesis_v2_draft_finish_once_v1_0.py"
+      - "test_fund100_v6_recurring_immutable_genesis_v2_draft_finish_once_v1_0.py"
+      - "fund100_v6_recurring_immutable_genesis_v2_once_v1_0.py"
+      - ".github/workflows/fund100-v6-recurring-immutable-genesis-v2-once.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v6-recurring-immutable-genesis-v2-draft-finish-once.yml"
+      - "fund100_v6_recurring_immutable_genesis_v2_draft_finish_once_v1_0.py"
+      - "test_fund100_v6_recurring_immutable_genesis_v2_draft_finish_once_v1_0.py"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-v6-recurring-immutable-signed-genesis-draft-427978301-finish-once
+  cancel-in-progress: false
+
+jobs:
+  credentialless-exact-draft-asset-patch-rehearsal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Regress exact immutable draft and signed private seq0 before one fake PATCH
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q             test_fund100_v6_recurring_immutable_genesis_v2_draft_finish_once_v1_0.py             test_fund100_v6_recurring_immutable_genesis_v2_once_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+
+  protected-main-original-draft-exact-single-publish-patch:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: credentialless-exact-draft-asset-patch-rehearsal
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify original v2 creation retired and protected HIGH/STOP
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "push"
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          test "$FUND100_RISK_LEVEL" = "HIGH"
+          test "$GITHUB_WORKFLOW_REF" = "nicobouch97/fund100-research/.github/workflows/fund100-v6-recurring-immutable-genesis-v2-draft-finish-once.yml@refs/heads/main"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          python - <<'PY'
+          import fund100_v6_recurring_immutable_genesis_v2_draft_finish_once_v1_0 as finish
+          import fund100_v6_recurring_immutable_genesis_v2_once_v1_0 as old_v2
+          import fund100_v6_s1_original_first_acwi_entry_locked_v1_0 as broker
+          assert finish.NO_PUBLIC_POST and finish.NO_NEW_DRAFT_OR_ASSET
+          assert finish.NO_PRIVATE_MUTATIONS and finish.NO_BROKER_NETWORK
+          assert finish.NO_AUTOMATIC_RETRY
+          assert old_v2.NO_BROKER_NETWORK_OR_TRADING and old_v2.NO_PRIVATE_MUTATIONS
+          assert broker.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
+          try:
+              old_v2.publish_once(environ={})
+          except old_v2.AnchorStop:
+              pass
+          else:
+              raise AssertionError('Original v2 release creator not retired')
+          print('V2 creation permanently retired; only exact original draft publish PATCH possible.')
+          PY
+      - name: Verify exact signed seq0 and GitHub asset digest, publish existing draft ONE PATCH
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}
+          FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -B fund100_v6_recurring_immutable_genesis_v2_draft_finish_once_v1_0.py
+      - name: Confirm user emergency stop after immutable fingerprint publication
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'Only original drafted public asset verified/published. NO broker requests or orders.'
