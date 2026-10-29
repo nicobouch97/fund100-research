@@ -345,7 +345,9 @@ def capture_original_sample(source_dir: Path, agent: str) -> dict:
             "form_type": row["form_type"],
             "filing_role": ROLES[row["form_type"]],
             "index_cik": row["filer_cik"],
-            "same_cik_prior_10k": row["same_cik_10k_filed_on_or_before_form25"],
+            "same_cik_prior_10k": row["same_cik_10k_filed_strictly_before_form25"],
+            "same_cik_same_day_10k_not_asof_available":
+                row["same_cik_10k_filed_same_day_as_form25"],
             "source_state": "UNAVAILABLE_OR_UNVERIFIABLE",
             "security_class_state": "NOT_EVALUATED",
         }
@@ -359,8 +361,12 @@ def capture_original_sample(source_dir: Path, agent: str) -> dict:
                 issuer = extracted["original_nse_issuer_cik"]
                 original_dates = original_10k_dates.get(issuer, [])
                 extracted["nse_issuer_in_original_2017_10k_population"] = bool(original_dates)
-                extracted["nse_issuer_10k_on_or_before_notice"] = any(
-                    filed <= row["filing_date"] for filed in original_dates)
+                # SEC master.idx has filing dates but not release times.
+                # A same-day issuer 10-K cannot qualify as prior knowledge.
+                extracted["nse_issuer_10k_strictly_before_notice"] = any(
+                    filed < row["filing_date"] for filed in original_dates)
+                extracted["nse_issuer_10k_same_day_notice_embargoed"] = any(
+                    filed == row["filing_date"] for filed in original_dates)
             name = f"{accession}.txt"
             (raw_dir / name).write_bytes(raw)
             observation.update({
@@ -400,9 +406,13 @@ def capture_original_sample(source_dir: Path, agent: str) -> dict:
         "nse_verified_issuer_in_2017_10k_population": sum(
             r.get("nse_issuer_in_original_2017_10k_population") is True
             for r in observations),
-        "nse_verified_issuer_10k_on_or_before_notice": sum(
-            r.get("nse_issuer_10k_on_or_before_notice") is True
+        "nse_verified_issuer_10k_strictly_before_notice": sum(
+            r.get("nse_issuer_10k_strictly_before_notice") is True
             for r in observations),
+        "nse_verified_issuer_10k_same_day_notice_embargoed": sum(
+            r.get("nse_issuer_10k_same_day_notice_embargoed") is True
+            for r in observations),
+        "same_day_sec_index_not_intraday_availability_proof": True,
         "nse_index_role_counts": dict(sorted(Counter(
             r["original_nse_index_cik_role"] for r in observations
             if "original_nse_index_cik_role" in r).items())),

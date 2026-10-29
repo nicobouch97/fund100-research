@@ -325,6 +325,10 @@ def test_form25_index_links_real_2017_filer_ciks_without_claiming_stock_delistin
     assert out["same_cik_2017_10k_filer_index_entries"] == 5
     assert out["same_cik_2017_10k_filer_distinct_ciks"] == 3
     assert out["same_cik_prior_or_same_day_10k_index_entries"] == 4
+    assert out["same_cik_strictly_prior_10k_index_entries"] == 4
+    assert out["same_cik_same_day_10k_index_entries"] == 0
+    assert out["same_day_without_prior_10k_entries_embargoed"] == 0
+    assert out["same_day_sec_index_not_intraday_availability_proof"]
     assert rows == sorted(rows, key=lambda row: (
         row["filing_date"], row["filer_cik"], row["sec_archive_path"]))
     assert sha256(p4t._manifest_bytes(rows)).hexdigest() == out[
@@ -342,6 +346,29 @@ def test_form25_index_links_real_2017_filer_ciks_without_claiming_stock_delistin
     assert not before["same_cik_10k_filed_on_or_before_form25"]
     unrelated = next(row for row in rows if row["filer_cik"] == 9009)
     assert not unrelated["same_cik_in_full_2017_10k_filer_population"]
+
+
+def test_form25_same_day_10k_is_not_available_at_asof_notice_date():
+    quarters = quarters_with_form25_events()
+    # Issuer 3003 has no earlier 2017 10-K; its August 15 filing and
+    # Form 25 on the SAME date have unknown intraday ordering.
+    quarters[3] = quarters[3].replace(
+        b"3003|NEWCO INC|25|2017-08-20|",
+        b"3003|NEWCO INC|25|2017-08-15|")
+    rows = p4t.form25_index_manifest(quarters)
+    same = next(r for r in rows if r["filer_cik"] == 3003)
+    assert same["same_cik_in_full_2017_10k_filer_population"]
+    assert same["same_cik_10k_filed_on_or_before_form25"]  # descriptive only
+    assert same["same_cik_10k_filed_same_day_as_form25"]
+    assert not same["same_cik_10k_filed_strictly_before_form25"]
+    report = p4t.evaluate_form25_index(quarters)
+    assert report["same_cik_prior_or_same_day_10k_index_entries"] == 4
+    assert report["same_cik_strictly_prior_10k_index_entries"] == 3
+    assert report["same_cik_same_day_10k_index_entries"] == 1
+    assert report["same_day_without_prior_10k_entries_embargoed"] == 1
+    assert report["form25_role_10k_cik_overlap"]["issuer_filed_25"][
+        "same_cik_same_day_10k_entries"] == 1
+    assert report["same_day_sec_index_not_intraday_availability_proof"]
 
 
 @pytest.mark.parametrize("change", ["duplicate", "wrong_cik", "wrong_quarter",
@@ -733,15 +760,54 @@ def test_form25_original_source_issuer_cik_joins_prior_10k_not_exchange_filer(
     out = p4y.capture_original_sample(tmp_path, "Research contact@example.org")
     assert out["nse_verified_original_issuer_exchange_pairs"] == 2
     assert out["nse_verified_issuer_in_2017_10k_population"] == 2
-    assert out["nse_verified_issuer_10k_on_or_before_notice"] == 1
+    assert out["nse_verified_issuer_10k_strictly_before_notice"] == 1
     assert out["nse_index_role_counts"] == {"EXCHANGE": 2}
     assert out["exchange_filed_index_cik_not_necessarily_security_issuer"]
     nse = [x for x in out["observations"] if x["form_type"] == "25-NSE"]
     assert {x["original_nse_issuer_cik"] for x in nse} == {3003}
     assert all(x["nse_issuer_in_original_2017_10k_population"] for x in nse)
-    assert sorted(x["nse_issuer_10k_on_or_before_notice"] for x in nse) == [False, True]
+    assert sorted(x["nse_issuer_10k_strictly_before_notice"] for x in nse) == [False, True]
     assert out["broker_requests"] == out["broker_orders"] == 0
     assert not out["paper_authorized"] and not out["live_authorized"]
+
+
+def test_form25_nse_same_day_issuer_10k_is_embargoed_in_source_capture(
+        tmp_path, monkeypatch):
+    quarters = quarters_with_form25_events()
+    # An exchange-filed notice references issuer 3003 on the exact date
+    # of its first observed 2017 10-K, with no intraday release evidence.
+    quarters[3] = index(
+        "3003|NEWCO INC|10-K|2017-08-15|edgar/data/3003/0003003-17-000012.txt",
+        "3003|NEWCO INC|25|2017-08-20|edgar/data/3003/0000003003-17-000104.txt",
+        "9009|EXCHANGE|25-NSE|2017-08-15|edgar/data/9009/0000009009-17-000107.txt")
+    sources = {p4t.INDEX_URLS[q]: raw for q, raw in quarters.items()}
+    sources[p4t.REGISTRY_URL] = registry((1001, "OLD"))
+    monkeypatch.setattr(p4t, "_official_get", lambda url, agent, limit: sources[url])
+    p4t.capture_annual(tmp_path, "Research contact@example.org")
+    selected = p4y.select_original_sample(p4t.form25_index_manifest(quarters))
+
+    def original(url, agent):
+        row = next(r for r in selected if url.endswith(r["sec_archive_path"]))
+        accession = p4y.ARCHIVE_PATH.fullmatch(row["sec_archive_path"]).group(2)
+        if row["form_type"] == "25":
+            return _form25_submission(
+                accession, "25", "Common Stock", header_cik=row["filer_cik"])
+        xml = _nse_original_xml(row["filer_cik"], 3003)
+        return _form25_submission(
+            accession, "25-NSE", None, header_cik=row["filer_cik"]).replace(
+                b"<other>Not a security title</other>", xml.encode())
+
+    monkeypatch.setattr(p4y, "_official_form25_get", original)
+    out = p4y.capture_original_sample(tmp_path, "Research contact@example.org")
+    same = next(r for r in out["observations"]
+                if r["sec_archive_path"].endswith("0000009009-17-000107.txt"))
+    assert same["nse_issuer_identity_state"] == "ORIGINAL_NSE_PARTIES_INDEX_CONCORDANT"
+    assert same["nse_issuer_in_original_2017_10k_population"]
+    assert same["nse_issuer_10k_same_day_notice_embargoed"]
+    assert not same["nse_issuer_10k_strictly_before_notice"]
+    assert out["nse_verified_issuer_10k_same_day_notice_embargoed"] >= 1
+    assert out["same_day_sec_index_not_intraday_availability_proof"]
+    assert out["broker_requests"] == out["broker_orders"] == 0
 
 
 def test_form25_nse_requires_independent_sec_header_index_cik_evidence():
