@@ -264,3 +264,15 @@ def test_signed_first_genesis_is_compatible_with_existing_offline_recurring_cas(
     assert proposal_from_new_head["old_blob_sha"] == prepared["sha"]
     assert first.PRODUCTION_GITHUB_TRANSPORT_RELEASED is False
     assert first.LIVE_BROKER_ORDER_RELEASED is False
+
+
+
+def test_protected_first_genesis_transport_candidate_remains_disconnected():
+    """Keep the new candidate in the existing full LIVE static-audit gate."""
+    import fund100_v6_recurring_protected_genesis_transport_candidate_v1_0 as protected
+    assert protected.PRODUCTION_PRIVATE_GENESIS_CREATE_RELEASED is False
+    assert protected.LIVE_BROKER_ORDERS_RELEASED is False
+    assert protected.NO_AUTOMATIC_RETRY is True
+    assert protected.CREATE_URL.endswith("/contents/" + journal.PATH)
+    assert protected.READ_URL == protected.CREATE_URL + "?ref=main"
+    assert protected.REAL_PRIVATE_PUTS == protected.REAL_BROKER_POSTS == 0
