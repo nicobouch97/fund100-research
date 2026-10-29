@@ -1,0 +1,88 @@
+name: Fund-100 V8 QM Original SEC + Completed Stock Price Source (NO BROKER)
+
+# First genuinely acquired source archive for predeclared profitability x
+# momentum. Weekly future original source capture, not a retro backtest.
+# Missing issuer accounting results in source-coverage HOLD, never proxy alpha.
+on:
+  pull_request:
+    paths:
+      - "fund100_v8_qm_first_original_sec_price_capture_v1_0.py"
+      - "test_fund100_v8_qm_first_original_sec_price_capture_v1_0.py"
+      - ".github/workflows/fund100-v8-qm-first-original-sec-price-source.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v8_qm_first_original_sec_price_capture_v1_0.py"
+      - "test_fund100_v8_qm_first_original_sec_price_capture_v1_0.py"
+      - ".github/workflows/fund100-v8-qm-first-original-sec-price-source.yml"
+  schedule:
+    - cron: '35 12 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v8-qm-first-seen-official-source-weekly
+  cancel-in-progress: false
+
+jobs:
+  focused-source-qualification-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test issuer SEC XBRL provenance and completed NYSE source
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m pytest -q test_fund100_v8_qm_first_original_sec_price_capture_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+
+  main-actual-official-sec-and-original-prices-getonly:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: focused-source-qualification-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned existing research dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+      - name: Acquire OFFICIAL original SEC companyfacts/submissions and full completed-price panel
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          python -B fund100_v8_qm_first_original_sec_price_capture_v1_0.py \
+            --output-dir "/tmp/fund100-v8-qm-original-${GITHUB_RUN_ID}"
+      - name: Upload immutable-by-run FIRST-SEEN research source archive (not orders)
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v8-qm-source-${{ github.run_id }}
+          path: /tmp/fund100-v8-qm-original-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 90
+      - name: Confirm zero broker and no original private journal mutation
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'Completed original research source capture, no broker/private Git mutations.'
