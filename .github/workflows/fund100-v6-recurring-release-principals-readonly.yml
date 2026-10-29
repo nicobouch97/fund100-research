@@ -1,0 +1,95 @@
+name: Fund-100 V6 Recurring Failed Release Read-only Principal Diagnosis (NO ORDERS)
+
+# One protected MAIN push probes ONLY public GitHub GET endpoints to determine
+# credential authentication, draft visibility and immutable setting. The
+# retired original release POST is consumed. NO mutation or broker credentials.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fund100-v6-recurring-release-principals-readonly.yml"
+      - "fund100_v6_recurring_release_principals_readonly_v1_0.py"
+      - "test_fund100_v6_recurring_release_principals_readonly_v1_0.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v6-recurring-release-principals-readonly.yml"
+      - "fund100_v6_recurring_release_principals_readonly_v1_0.py"
+      - "test_fund100_v6_recurring_release_principals_readonly_v1_0.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-recurring-public-release-getonly-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  credentialless-no-mutation-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test GET-only original release draft diagnosis, ambiguous states and STOP
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_recurring_release_principals_readonly_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+
+  protected-main-public-release-getonly:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: credentialless-no-mutation-regression
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify protected main scope, locked release POST and broker STOP
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_EVENT_NAME" = 'push'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          test "$FUND100_RISK_LEVEL" = 'HIGH'
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          python - <<'PY'
+          import fund100_v6_recurring_release_principals_readonly_v1_0 as diagnosis
+          import fund100_v6_recurring_immutable_genesis_anchor_once_v1_0 as old
+          import fund100_v6_s1_original_first_acwi_entry_locked_v1_0 as first
+          assert diagnosis.NO_HTTP_MUTATION and diagnosis.NO_BROKER_NETWORK
+          assert diagnosis.NO_PRIVATE_STATE_ACCESS and diagnosis.NO_SECRET_LOGGING
+          assert diagnosis.ORIGINAL_RELEASE_RETRY_ALLOWED is False
+          assert old.NO_RETRY_AFTER_ANY_PUBLIC_MUTATION
+          assert first.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
+          print('Original immutable release POST remains RETIRED; GET only.')
+          PY
+      - name: Inspect release publisher authenticated GET, visible draft and immutable setting only
+        env:
+          FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}
+          FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN }}
+        run: |
+          set -euo pipefail
+          python -B fund100_v6_recurring_release_principals_readonly_v1_0.py
+      - name: Confirm immutable release remains blocked and no broker activity
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          echo 'Only public GETs completed, NO release POST, NO private git mutation, NO broker orders.'
