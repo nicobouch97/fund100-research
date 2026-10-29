@@ -263,8 +263,8 @@ def test_v2_workflow_is_main_only_for_realtime_publisher():
     assert "  schedule:" not in workflow and "  workflow_dispatch:" not in workflow
     assert "environment: fund100-live-broker" in workflow
     assert "secrets.ALPACA_LIVE_KEY" not in workflow
-    assert "permissions:\\n  contents: write" in workflow
-    assert "FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: \${{ github.token }}" in workflow
+    assert ("permissions:" + chr(10) + "  contents: write") in workflow
+    assert ("FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: " + chr(36) + "{{ github.token }}") in workflow
     assert "secrets.FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN" not in workflow
     assert "GITHUB_EVENT_NAME" in workflow
     assert "fund100_v6_recurring_immutable_genesis_v2_once_v1_0.py" in workflow
@@ -281,7 +281,7 @@ def test_v2_release_payload_has_correct_string_enum_and_unique_tag(monkeypatch):
 
 def test_v2_module_paths_run_full_live_pr_audit():
     audit = Path(".github/workflows/fund100-live-static-audit.yml").read_text()
-    pr_paths = audit.split("  pull_request:\\n    paths:\\n", 1)[1]
+    pr_paths = audit.split("  pull_request:" + chr(10) + "    paths:" + chr(10), 1)[1]
     assert '      - "fund100_v6_recurring_immutable_genesis_v2_once_v1_0.py"' in pr_paths
     assert '      - "test_fund100_v6_recurring_immutable_genesis_v2_once_v1_0.py"' in pr_paths
     assert '      - ".github/workflows/fund100-v6-recurring-immutable-genesis-v2-once.yml"' in pr_paths
