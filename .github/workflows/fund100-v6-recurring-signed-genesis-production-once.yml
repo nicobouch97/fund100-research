@@ -1,0 +1,105 @@
+name: Fund-100 V6 Recurring First Signed Production Genesis (ONE PRIVATE CREATE; STOP)
+
+# Automatic on a reviewed main merge; no operator confirmation or approval UI.
+# This is a storage genesis only. No Alpaca secrets, no broker connection/order.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fund100-v6-recurring-signed-genesis-production-once.yml"
+      - "fund100_v6_recurring_production_genesis_once_v1_0.py"
+      - "test_fund100_v6_recurring_production_genesis_once_v1_0.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v6-recurring-signed-genesis-production-once.yml"
+      - "fund100_v6_recurring_production_genesis_once_v1_0.py"
+      - "test_fund100_v6_recurring_production_genesis_once_v1_0.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-production-recurring-one-signed-genesis
+  cancel-in-progress: false
+
+jobs:
+  credentialless-no-order-one-shot-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test signed original dual GET, single create and lost-ack HOLD without credentials
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q             test_fund100_v6_recurring_production_genesis_once_v1_0.py             test_fund100_v6_recurring_protected_genesis_transport_candidate_v1_0.py             test_fund100_v6_recurring_private_protected_getonly_v1_0.py             test_fund100_v6_recurring_genesis_single_create_offline_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+
+  protected-main-single-genesis-no-orders:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: credentialless-no-order-one-shot-tests
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_RECURRING_GENESIS_SCOPE: EXACT_SIGNED_EMPTY_RECURRING_GENESIS_NO_BROKER
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify locked main only, current STOP, no trading delegation in storage job
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_EVENT_NAME" = 'push'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          test "$FUND100_RISK_LEVEL" = 'HIGH'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-v6-recurring-signed-genesis-production-once.yml@refs/heads/main'
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          python - <<'PY'
+          import fund100_v6_recurring_production_genesis_once_v1_0 as init
+          import fund100_v6_recurring_protected_genesis_transport_candidate_v1_0 as offline
+          import fund100_v6_s1_original_first_acwi_entry_locked_v1_0 as original
+          assert init.ONLY_SIGNED_GENESIS and init.NO_BROKER_NETWORK
+          assert init.NO_LIVE_ORDERS and init.NO_RETRY
+          assert not offline.PRODUCTION_PRIVATE_GENESIS_CREATE_RELEASED
+          assert not offline.LIVE_BROKER_ORDERS_RELEASED
+          assert not original.ORIGINAL_ACWI_ENTRYPOINT_RELEASED
+          print('Main HIGH/STOP; only signed empty recurring journal CREATE allowed.')
+          PY
+      - name: Authenticate original two principals; one signed production private CREATE; independent READ
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+        run: |
+          set -euo pipefail
+          python -B fund100_v6_recurring_production_genesis_once_v1_0.py
+      - name: Verify independently signed recurring journal with READ token only (NO MUTATION)
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+        run: |
+          set -euo pipefail
+          python -B fund100_v6_recurring_private_protected_getonly_v1_0.py --independent-readonly
+      - name: Confirm emergency STOP remains and no brokerage order released
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'Production recurring signed EMPTY seq0 only; NO broker POST or LIVE release.'
