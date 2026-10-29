@@ -49,7 +49,7 @@ def _number(value, name, *, positive=True):
 def _signed_income(value):
     """Preserve real SEC losses/zero as observed but never positive quality."""
     if (type(value) is not str or
-        re.fullmatch(r"-?(?:0|[1-9][0-9]{0,15})(?:\\.[0-9]{1,8})?", value) is None):
+        re.fullmatch(r"-?(?:0|[1-9][0-9]{0,15})(?:\.[0-9]{1,8})?", value) is None):
         raise Q2Hold("Invalid signed same-10K annual net income")
     return Decimal(value)
 
