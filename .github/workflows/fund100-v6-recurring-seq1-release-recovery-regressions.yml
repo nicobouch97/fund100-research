@@ -1,0 +1,32 @@
+name: Fund-100 V6 Signed Seq1 Immutable Release Recovery (FAKE ONLY; NO BROKER)
+
+# Credentialless recovery contract for eventual REAL signed event.
+# No private journal writes, GitHub releases, protected tokens or broker access.
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_recurring_seq1_immutable_release_recovery_locked_v1_0.py"
+      - "test_fund100_v6_recurring_seq1_immutable_release_recovery_locked_v1_0.py"
+      - ".github/workflows/fund100-v6-recurring-seq1-release-recovery-regressions.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  fake-persistent-attempt-fences-and-immutable-release-steps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test signed release draft, upload, publish and ambiguous response recovery
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_recurring_seq1_immutable_release_recovery_locked_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
