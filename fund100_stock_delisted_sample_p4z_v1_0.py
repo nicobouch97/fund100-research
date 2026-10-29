@@ -164,6 +164,63 @@ def audit_twtr_sec_merger(original: bytes) -> dict:
     }
 
 
+def _observed_close_return(first: dict, last: dict) -> dict:
+    """Price-window arithmetic, NOT independently certified total return.
+
+    The vendor's adjusted close includes its own corporate-action convention;
+    the raw close does not. Both must use identical first/last sessions.
+    """
+    if first["date"] > last["date"]:
+        raise DelistedSampleStop("Reversed original price observation window")
+    raw = 100 * (float(last["close"]) / float(first["close"]) - 1)
+    adjusted = 100 * (float(last["adj_close"]) / float(first["adj_close"]) - 1)
+    return {
+        "first_observed_close_session": first["date"],
+        "last_observed_close_session": last["date"],
+        "raw_close_price_change_pct": round(raw, 6),
+        "vendor_adjusted_close_change_pct": round(adjusted, 6),
+        "adjusted_minus_raw_change_pp": round(adjusted - raw, 6),
+    }
+
+
+def _corporate_action_return_diagnostics(rows: dict[str, list[dict]]) -> dict:
+    """Expose historical split/dividend measurement bias without future filling.
+
+    TWTR ends at its actual last trading bar; its subsequent contractual
+    merger right is NOT inserted as a fictitious vendor closing price.
+    SPY is separately marked through that SAME TWTR observation date.
+    """
+    observed = {s: _observed_close_return(series[0], series[-1])
+                for s, series in rows.items()}
+    twtr_end = rows["TWTR"][-1]["date"]
+    spy_at_twtr_end = [r for r in rows["SPY"] if r["date"] == twtr_end]
+    if len(spy_at_twtr_end) != 1:
+        raise DelistedSampleStop("SPY matching TWTR final trading session missing")
+    matched_spy = _observed_close_return(rows["SPY"][0], spy_at_twtr_end[0])
+    matched_twtr = observed["TWTR"]
+    if (matched_spy["first_observed_close_session"] !=
+            matched_twtr["first_observed_close_session"]):
+        raise DelistedSampleStop("TWTR/SPY original observation windows disagree")
+    return {
+        "per_listing_observed_window": observed,
+        "twtr_vs_spy_same_pre_suspension_window": {
+            "first_session": matched_twtr["first_observed_close_session"],
+            "last_session": twtr_end,
+            "twtr_vendor_adjusted_close_change_pct": matched_twtr[
+                "vendor_adjusted_close_change_pct"],
+            "spy_vendor_adjusted_close_change_pct": matched_spy[
+                "vendor_adjusted_close_change_pct"],
+            "twtr_minus_spy_vendor_adjusted_change_pp": round(
+                matched_twtr["vendor_adjusted_close_change_pct"] -
+                matched_spy["vendor_adjusted_close_change_pct"], 6),
+        },
+        "vendor_adjusted_prices_not_independently_total_return_certified": True,
+        "retrospectively_chosen_listings_not_a_point_in_time_universe": True,
+        "no_twtr_mark_or_portfolio_return_after_last_trading_bar": True,
+        "observed_price_changes_not_realized_trade_or_settlement_returns": True,
+    }
+
+
 def audit_zip(path: Path, *, sec_merger_filing: Path | None = None) -> dict:
     """Bounded source-specific audit, NOT an investable delisting backtest."""
     if not isinstance(path, Path) or not path.is_file():
@@ -182,6 +239,7 @@ def audit_zip(path: Path, *, sec_merger_filing: Path | None = None) -> dict:
 
     rows = {s: original[s][0] for s in FILES}
     by_date = {s: {r["date"]: r for r in rows[s]} for s in FILES}
+    return_diagnostics = _corporate_action_return_diagnostics(rows)
     split = by_date["TSLA"]["2022-08-25"]["split"]
     if split != "1:3" or any(
         r["split"].strip() for r in rows["TSLA"] if r["date"] != "2022-08-25"
@@ -230,6 +288,7 @@ def audit_zip(path: Path, *, sec_merger_filing: Path | None = None) -> dict:
             100 * (cash_right / last_twtr_close - 1), 6)
     return {
         **sec_evidence,
+        **return_diagnostics,
         "schema": SCHEMA,
         "status": "FOUR_LISTING_SOURCE_SAMPLE_VALIDATED_NO_ALPHA",
         "source_credit": SOURCE_CREDIT,
@@ -277,6 +336,12 @@ def main() -> None:
     print("Listing rows", {r["symbol"]: r["daily_rows"] for r in result["listings"]})
     print("TWTR actual settlement UNKNOWN; SEC contractual cash right:",
           result.get("twtr_sec_verified_contractual_cash_consideration_usd"))
+    print("Source-adjusted versus raw price changes (pp):", {
+        s: v["adjusted_minus_raw_change_pp"] for s, v in
+        result["per_listing_observed_window"].items()})
+    print("TWTR/SPY pre-suspension matched close-window difference (pp):",
+          result["twtr_vs_spy_same_pre_suspension_window"][
+              "twtr_minus_spy_vendor_adjusted_change_pp"])
     print("No historical alpha or broker order.")
 
 
