@@ -16,6 +16,12 @@ from test_fund100_v6_recurring_private_cas_once_offline_v1_0 import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _pin_synthetic_genesis(monkeypatch):
+    # Actual immutable public SHA is NEVER overwritten in production code.
+    monkeypatch.setattr(head.source, "PINNED_INITIAL_BLOB_SHA", genesis()["sha"])
+
+
 class Reply:
     def __init__(self, status, value):
         self.status=status
@@ -67,7 +73,7 @@ def test_exact_signed_first_reservation_http_put_single_ack_contract():
         writer_token="fake-writer-personal-access",
         expected_old=plan["old_blob_sha"],
         expected_new=plan["new_blob_sha"],
-        commit=plan["commit"],transport=fake)
+        commit=plan["commit"],genesis=AUTH["genesis_sha256"],account=AUTH["account_binding_sha256"],key=AUTH["key"],transport=fake)
     assert out==plan["new_blob_sha"]
     assert len(fake.calls)==1
     assert fake.calls[0]["sha"]==plan["old_blob_sha"]
@@ -84,7 +90,7 @@ def test_any_unknown_private_cas_ack_must_permanently_hold_no_second_put(failure
             writer_token="fake-writer-personal-access",
             expected_old=plan["old_blob_sha"],
             expected_new=plan["new_blob_sha"],
-            commit=plan["commit"],transport=fake)
+            commit=plan["commit"],genesis=AUTH["genesis_sha256"],account=AUTH["account_binding_sha256"],key=AUTH["key"],transport=fake)
     assert len(fake.calls)==1
 
 
@@ -97,7 +103,7 @@ def test_injected_http_500_after_one_request_must_hold():
             writer_token="fake-writer-personal-access",
             expected_old=plan["old_blob_sha"],
             expected_new=plan["new_blob_sha"],
-            commit=plan["commit"],transport=fake)
+            commit=plan["commit"],genesis=AUTH["genesis_sha256"],account=AUTH["account_binding_sha256"],key=AUTH["key"],transport=fake)
     assert len(fake.calls)==1
 
 
@@ -120,7 +126,7 @@ def test_untrusted_private_put_is_rejected_before_network(problem):
         mod._one_conditional_put(
             writer_token=token,
             expected_old=old,expected_new=new,
-            commit=original,transport=fake)
+            commit=original,genesis=AUTH["genesis_sha256"],account=AUTH["account_binding_sha256"],key=AUTH["key"],transport=fake)
     assert fake.calls==[]
 
 
@@ -131,7 +137,7 @@ def test_real_network_path_hard_locked_even_with_signed_fake_plan():
             writer_token="fake-writer-personal-access",
             expected_old=plan["old_blob_sha"],
             expected_new=plan["new_blob_sha"],
-            commit=plan["commit"],transport=None)
+            commit=plan["commit"],genesis=AUTH["genesis_sha256"],account=AUTH["account_binding_sha256"],key=AUTH["key"],transport=None)
 
 
 def test_original_signed_genesis_to_signed_reservation_one_injected_CAS(monkeypatch):
@@ -230,5 +236,18 @@ def test_injected_non_test_http_transport_refused_before_any_put():
         mod._one_conditional_put(
             writer_token="fake-writer-personal-access",
             expected_old=plan["old_blob_sha"],expected_new=plan["new_blob_sha"],
-            commit=plan["commit"],transport=fake)
+            commit=plan["commit"],genesis=AUTH["genesis_sha256"],account=AUTH["account_binding_sha256"],key=AUTH["key"],transport=fake)
+    assert fake.calls==[]
+
+
+def test_http_adapter_hmac_tampering_refused_even_with_git_blob_consistent():
+    plan=proposal()
+    fake=FakeGitHttp(plan["old_blob_sha"],plan["new_blob_sha"])
+    wrong_key=b"other-synthetic-only-key-"+b"x"*40
+    with pytest.raises(mod.PrivateCasHold,match="HMAC"):
+        mod._one_conditional_put(
+            writer_token="fake-writer-personal-access",
+            expected_old=plan["old_blob_sha"],expected_new=plan["new_blob_sha"],
+            commit=plan["commit"],genesis=AUTH["genesis_sha256"],
+            account=AUTH["account_binding_sha256"],key=wrong_key,transport=fake)
     assert fake.calls==[]
