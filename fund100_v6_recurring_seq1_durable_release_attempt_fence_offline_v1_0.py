@@ -308,6 +308,96 @@ def verify_post_cas(*, plan, source, candidate, target_commit, key):
     }
 
 
+
+def _one_synthetic_fence_contents_put(*, old_source, plan, candidate,
+                                      target_commit, key, writer_token,
+                                      transport=None):
+    """Construct one exact GitHub Contents old-SHA PUT, but only in fake tests.
+
+    An actual production writer requires a separate reviewed authenticated
+    seq1/fence and protected-context controller; no such controller exists.
+    Even a successful HTTP ACK is not an independently verified readback.
+    """
+    if transport is None or getattr(transport, "synthetic_only", None) is not True:
+        raise FenceHold("Real release fence GitHub CAS transport HARD LOCKED")
+    if (type(writer_token) is not str or len(writer_token) < 10
+        or writer_token.strip() != writer_token
+        or "\r" in writer_token or "\n" in writer_token):
+        raise FenceHold("Invalid private fence writer")
+    old_sha, old_doc = read_github_source(
+        old_source,candidate=candidate,target_commit=target_commit,key=key)
+    if (type(plan) is not dict
+        or plan.get("schema") != SCHEMA
+        or plan.get("status") != "OFFLINE_SIGNED_PRIVATE_RELEASE_ATTEMPT_CAS_NOT_COMMITTED"
+        or plan.get("protected_private_CAS_committed") is not False
+        or plan.get("broker_orders_authorized") is not False
+        or plan.get("new_sequence") != old_doc["sequence"] + 1
+        or plan.get("expected_prior_blob_sha") != old_sha
+        or type(plan.get("commit")) is not dict
+        or set(plan["commit"]) != {
+            "repository", "path", "expected_current_sha", "content_base64"}
+        or plan["commit"]["repository"] != REPOSITORY
+        or plan["commit"]["path"] != PATH
+        or plan["commit"]["expected_current_sha"] != old_sha):
+        raise FenceHold("Unverified exact signed parent private CAS plan")
+    try:
+        raw=b64decode(plan["commit"]["content_base64"],validate=True)
+        new_sha=journal.original.blob_sha(raw)
+        if new_sha != plan.get("expected_new_blob_sha"):
+            raise ValueError("unsigned new Git blob")
+        new_doc=_verify_raw(raw,candidate=candidate,target_commit=target_commit,key=key)
+        if (new_doc["prior_document_git_blob_sha"] != old_sha
+            or new_doc["sequence"] != old_doc["sequence"] + 1
+            or new_doc["attempts"] != _steps_for_sequence(new_doc["sequence"])):
+            raise ValueError("unexpected release attempt transition")
+    except Exception:
+        raise FenceHold("Unverified next signed fence HMAC before PUT") from None
+    from urllib.request import Request
+    from urllib.error import HTTPError, URLError
+    from base64 import b64encode as _enc
+    url="https://api.github.com/repos/"+REPOSITORY+"/contents/"+PATH
+    body=_canon({
+        "message":"Fund-100 signed per-operation immutable release attempt fence",
+        "branch":"main",
+        "sha":old_sha,
+        "content":_enc(raw).decode("ascii"),
+    })
+    if len(body)>MAX_BYTES*2:
+        raise FenceHold("Signed attempt CAS HTTP request oversized")
+    req=Request(url,method="PUT",data=body,headers={
+        "Authorization":"Bearer "+writer_token,
+        "Accept":"application/vnd.github+json",
+        "Content-Type":"application/json",
+        "X-GitHub-Api-Version":"2022-11-28",
+        "User-Agent":"fund100-synthetic-at-most-one-fence-CAS",
+    })
+    try:
+        with transport(req,timeout=12) as response:
+            status=getattr(response,"status",None)
+            data=response.read(MAX_BYTES+1)
+        if status!=200 or len(data)>MAX_BYTES:
+            raise ValueError("uncertain private fence PUT ack")
+        reply=json.loads(data.decode("utf-8"))
+        if (type(reply) is not dict
+            or type(reply.get("content")) is not dict
+            or reply["content"].get("path") != PATH
+            or reply["content"].get("sha") != new_sha
+            or type(reply.get("commit")) is not dict
+            or type(reply["commit"].get("sha")) is not str
+            or re.fullmatch("[a-f0-9]{40}",reply["commit"]["sha"]) is None):
+            raise ValueError("ambiguous GitHub CAS acknowledgement")
+    except Exception:
+        raise FenceHold("Private release fence CAS outcome unknown; NEVER RETRY") from None
+    return {
+        "schema":SCHEMA,
+        "status":"SYNTHETIC_ONE_PRIVATE_FENCE_CAS_ACK_AWAIT_INDEPENDENT_READBACK",
+        "new_private_fence_blob_sha":new_sha,
+        "public_release_action_authorized":False,
+        "private_CAS_readback_independently_verified":False,
+        "retry_allowed":False,
+        "broker_order_authorized":False,
+    }
+
 def main():
     print("First real signed seq1 release attempt fences: OFFLINE ONLY; NO PRIVATE WRITES/RELEASE/BROKER.")
 
