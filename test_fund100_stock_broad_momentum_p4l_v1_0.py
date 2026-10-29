@@ -91,6 +91,31 @@ def test_future_or_stale_market_snapshot_rejected():
                      provider_reference="Synthetic fixture")
 
 
+
+def test_acquisition_receipt_cannot_claim_future_utc_time(monkeypatch):
+    # Both receipts satisfy the old five-day age test. Only one has occurred.
+    # Freeze the clock so this remains deterministic on future CI dates.
+    from datetime import datetime, timezone
+
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 24, 4, 0, 0, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(p4l, "datetime", FixedClock)
+    valid = p4l.evaluate(
+        prices(), acquired_at_utc="2026-10-24T04:00:00Z",
+        provider_reference="Synthetic fixture, not observed market evidence",
+    )
+    assert valid["source_acquired_at_utc"] == "2026-10-24T04:00:00Z"
+    for future in ("2026-10-24T04:00:01Z", "2026-10-27T04:00:00Z"):
+        with pytest.raises(p4l.BroadStockStop, match="Future-dated source"):
+            p4l.evaluate(
+                prices(), acquired_at_utc=future,
+                provider_reference="Synthetic fixture, not observed market evidence",
+            )
+
+
 def test_future_price_revisions_cannot_rewrite_previous_frozen_snapshot():
     p = prices()
     original = evaluate(p)
