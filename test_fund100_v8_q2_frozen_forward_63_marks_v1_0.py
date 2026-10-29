@@ -211,3 +211,70 @@ def test_frozen_overlap_rejects_missing_old_history_even_if_later_complete(tmp_p
     with pytest.raises(marks.MarkHold,match="omits original frozen"):
         marks.evaluate(original_root=tmp_path,later_prices=later,
                        observed_at_utc="2026-11-05T23:45:00Z")
+
+
+def test_costed_forward_risk_matches_each_net_nav_and_is_not_annualized(tmp_path):
+    panel,_=archive(tmp_path)
+    result=marks.evaluate(
+        original_root=tmp_path,later_prices=subsequent(panel,last="2026-11-05"),
+        observed_at_utc="2026-11-05T23:45:00Z")
+    for fee, portfolios in result["performance"].items():
+        for name, outcome in portfolios.items():
+            risk=outcome["observed_close_path_risk"]
+            assert risk["observed_completed_close_marks"]==result[
+                "forward_close_sessions_observed"]
+            assert risk["last_costed_close_nav_per_100_original_usd"]==outcome[
+                "net_value_per_100_original_usd"]
+            assert risk["max_costed_close_drawdown_pct"]>=0
+            assert risk["minimum_costed_close_nav_per_100_original_usd"]<=risk[
+                "last_costed_close_nav_per_100_original_usd"]
+            assert risk["entry_cost_included_in_initial_drawdown"]
+            assert risk["risk_is_close_only_not_intraday_or_executable"]
+            assert not risk["terminal_exit_fee_included_only_if_horizon_complete"]
+    assert result["proven_statistical_alpha"] is False
+
+
+def test_forward_risk_detects_intermediate_loss_even_when_terminal_recovers(tmp_path):
+    panel,report=archive(tmp_path)
+    later=subsequent(panel,last="2026-11-05")
+    selected=report["source_derived_research_selection"][
+        "selection_candidate"]["symbols"][0]
+    original=marks.evaluate(
+        original_root=tmp_path,later_prices=later,
+        observed_at_utc="2026-11-05T23:45:00Z")
+    # A one-session loss in a selected name reverses before the endpoint.
+    # Terminal returns alone cannot reveal the intervening drawdown.
+    second=later.index[later.index>pd.Timestamp(
+        original["hypothetical_entry_close"])][0]
+    later.loc[second,selected]*=.88
+    stressed=marks.evaluate(
+        original_root=tmp_path,later_prices=later,
+        observed_at_utc="2026-11-05T23:45:00Z")
+    a=original["performance"]["15"]["frozen_q2_eight_equal"]
+    b=stressed["performance"]["15"]["frozen_q2_eight_equal"]
+    assert b["net_value_per_100_original_usd"]==a[
+        "net_value_per_100_original_usd"]
+    assert b["observed_close_path_risk"]["max_costed_close_drawdown_pct"]>a[
+        "observed_close_path_risk"]["max_costed_close_drawdown_pct"]+.5
+    assert b["observed_close_path_risk"][
+        "worst_observed_close_to_close_return_pct"]<-.5
+
+
+def test_costed_forward_risk_includes_terminal_fee_only_on_close_63(tmp_path):
+    panel,_=archive(tmp_path)
+    cal=xcals.get_calendar("XNYS")
+    days=cal.sessions_in_range(
+        pd.Timestamp("2026-10-30"),pd.Timestamp("2027-04-01"))
+    extra=days[66].date().isoformat()
+    result=marks.evaluate(
+        original_root=tmp_path,later_prices=subsequent(panel,last=extra),
+        observed_at_utc=(pd.Timestamp(extra)+pd.Timedelta(days=1)).strftime(
+            "%Y-%m-%dT10:00:00Z"))
+    assert result["complete_horizon"]
+    for portfolios in result["performance"].values():
+        for outcome in portfolios.values():
+            risk=outcome["observed_close_path_risk"]
+            assert risk["observed_completed_close_marks"]==63
+            assert risk["terminal_exit_fee_included_only_if_horizon_complete"]
+            assert risk["last_costed_close_nav_per_100_original_usd"]==outcome[
+                "net_value_per_100_original_usd"]

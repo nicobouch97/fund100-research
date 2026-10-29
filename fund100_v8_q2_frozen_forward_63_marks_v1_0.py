@@ -169,6 +169,47 @@ def _costed_hypothetical(entry, final, weights, fee_bps, *, horizon_done):
     }
 
 
+
+def _costed_observed_close_risk(prices: pd.DataFrame, weights: dict,
+                                fee_bps: int, *, horizon_done: bool) -> dict:
+    """Pathwise, cost-inclusive CLOSE-to-close risk; never intraday risk.
+
+    Frozen entry weights buy once and drift. The original $100 cash is the
+    initial high-water mark; entry fees can therefore create a small initial
+    drawdown. The terminal liquidation fee is included only on close 63.
+    This is a descriptive risk diagnostic, not an independent alpha test.
+    """
+    if prices.empty or len(prices) > FOLLOWING_SESSIONS:
+        raise MarkHold("Invalid frozen forward risk observation horizon")
+    entry = prices.iloc[0]
+    nav = np.asarray([
+        _costed_hypothetical(
+            entry, prices.iloc[i], weights, fee_bps,
+            horizon_done=horizon_done and i == len(prices) - 1,
+        )["net_value_per_100_original_usd"]
+        for i in range(len(prices))
+    ], dtype=float)
+    if not np.isfinite(nav).all() or (nav <= 0).any():
+        raise MarkHold("Invalid forward costed NAV path")
+    # Include the initial pre-entry $100 so the entry cost is not hidden.
+    from_inception = np.concatenate(([100.], nav))
+    high_water = np.maximum.accumulate(from_inception)
+    drawdowns = 100. * (1. - from_inception / high_water)
+    daily = 100. * (nav[1:] / nav[:-1] - 1.)
+    return {
+        "observed_completed_close_marks": len(nav),
+        "max_costed_close_drawdown_pct": round(float(np.max(drawdowns)), 8),
+        "worst_observed_close_to_close_return_pct": (
+            round(float(np.min(daily)), 8) if len(daily) else None),
+        "minimum_costed_close_nav_per_100_original_usd": round(
+            float(np.min(nav)), 8),
+        "last_costed_close_nav_per_100_original_usd": round(float(nav[-1]), 8),
+        "entry_cost_included_in_initial_drawdown": True,
+        "terminal_exit_fee_included_only_if_horizon_complete": bool(horizon_done),
+        "risk_is_close_only_not_intraday_or_executable": True,
+    }
+
+
 def _verify_original_price_overlap(original_price_bytes: bytes, later: pd.DataFrame) -> dict:
     """Require stable pre-selection total-return shapes across vendor vintages.
 
@@ -284,9 +325,14 @@ def evaluate(*, original_root:Path, later_prices:pd.DataFrame, observed_at_utc:s
         "same_sector_original_24_cohort":_sector_neutral(selected),
         "passive_95_spy_5_cash":{"SPY":1.},
     }
+    forward_path=later.loc[eligible]
     perf={str(bps):{
-        name:_costed_hypothetical(
-            row_entry,row_end,weights,bps,horizon_done=complete_horizon)
+        name:{
+            **_costed_hypothetical(
+                row_entry,row_end,weights,bps,horizon_done=complete_horizon),
+            "observed_close_path_risk":_costed_observed_close_risk(
+                forward_path,weights,bps,horizon_done=complete_horizon),
+        }
         for name,weights in comparators.items()}
         for bps in COSTS_BPS}
     result.update({
