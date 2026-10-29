@@ -74,7 +74,7 @@ def _research(root=Path(".")):
     for path,pinned,markers in files:
         try:
             contents=(root / path).read_bytes()
-            digest=head.source.original.blob_sha(contents)
+            digest=head.source.journal.original.blob_sha(contents)
             lines=contents.decode("utf-8")
         except Exception:
             raise CombinedHold("Pinned costed strategy decision unavailable") from None
