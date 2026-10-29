@@ -192,7 +192,7 @@ def test_existing_signed_recurring_genesis_is_not_recreated():
         journal.PATH, journal.initial_bytes(
             genesis_sha256=genesis, account_binding_sha256=ACCOUNT, key=KEY))
     fake.existing_writer = fake.existing_read
-    with pytest.raises(candidate.ProtectedGenesisStop, match="preflight uncertain"):
+    with pytest.raises(candidate.ProtectedGenesisStop, match="proof absent"):
         run(fake)
     assert "PUT" not in fake.calls
 
