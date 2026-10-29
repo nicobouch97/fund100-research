@@ -46,6 +46,14 @@ def _number(value, name, *, positive=True):
         raise Q2Hold("Invalid " + name) from exc
 
 
+def _signed_income(value):
+    """Preserve real SEC losses/zero as observed but never positive quality."""
+    if (type(value) is not str or
+        re.fullmatch(r"-?(?:0|[1-9][0-9]{0,15})(?:\\.[0-9]{1,8})?", value) is None):
+        raise Q2Hold("Invalid signed same-10K annual net income")
+    return Decimal(value)
+
+
 def _utc(s):
     try:
         return common._utc(s)
@@ -104,6 +112,7 @@ def select(*, rows, benchmark_minus252, benchmark_minus42,
     original_hashes = {}
     quarantined = []
     source_gaps = []
+    nonpositive_income = []
     expected = {
         "symbol", "sector", "frozen_issuer_identity_status",
         "original_raw_sec_receipt_sha256", "matched_annual_net_income_usd",
@@ -146,15 +155,21 @@ def select(*, rows, benchmark_minus252, benchmark_minus42,
             continue
         if any(x is None for x in data):
             raise Q2Hold("Partially spliced annual SEC source cannot be scored")
-        income = _number(data[0], "same-10K annual net income")
+        income = _signed_income(data[0])
         assets = _number(data[1], "same-10K annual assets")
         filed = _utc(data[2])
-        if not now - timedelta(days=540) <= filed <= now:
-            raise Q2Hold("Future or stale SEC annual filing")
+        if (filed < now - timedelta(days=540) or filed.date() >= now.date()):
+            # SEC index dates alone cannot establish same-day publication order.
+            raise Q2Hold("Same-day, future or stale SEC annual filing")
         _sha(data[3])
-        source_valid[s] = income / assets
-        sector[s] = row["sector"]
-        momentum[s] = lagged / old - 1 - benchmark_momentum
+        if income <= 0:
+            # Genuine losses/zero are observed source evidence, not missing
+            # filings, and cannot be ranked as positive ROA.
+            nonpositive_income.append(s)
+        else:
+            source_valid[s] = income / assets
+            sector[s] = row["sector"]
+            momentum[s] = lagged / old - 1 - benchmark_momentum
         original_hashes[s] = {
             "sec_accession_sha256": data[3],
             "sec_raw_receipt_sha256": row["original_raw_sec_receipt_sha256"],
@@ -175,6 +190,7 @@ def select(*, rows, benchmark_minus252, benchmark_minus42,
         "matched_positive_annual_net_income_assets": len(source_valid),
         "source_coverage_minimum": MIN_COMPARABLE_24,
         "source_gaps": sorted(source_gaps),
+        "observed_nonpositive_annual_net_income": sorted(nonpositive_income),
         "frozen_issuer_identity_quarantined": sorted(quarantined),
         "selection_candidate": None,
         "source_inputs_authenticated_by_external_receipt": False,
