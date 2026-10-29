@@ -225,6 +225,52 @@ def _costed_observed_close_risk(prices: pd.DataFrame, weights: dict,
     }
 
 
+
+def _relative_costed_close_risk(prices: pd.DataFrame, strategy_weights: dict,
+                                control_weights: dict, fee_bps: int,
+                                *, horizon_done: bool) -> dict:
+    """Compare *paths* of net wealth on identical completed close dates.
+
+    Active drawdown is a drawdown in strategy/control relative wealth, not
+    the difference between their individual maximum drawdowns. Both sides
+    pay their own identical modeled entry and (only on close 63) exit fees.
+    A terminal tie can conceal material intervening active underperformance.
+    """
+    if prices.empty or len(prices) > FOLLOWING_SESSIONS:
+        raise MarkHold("Invalid frozen relative-risk observation horizon")
+    entry = prices.iloc[0]
+    paths = []
+    for weights in (strategy_weights, control_weights):
+        nav = np.asarray([
+            _costed_hypothetical(
+                entry, prices.iloc[i], weights, fee_bps,
+                horizon_done=horizon_done and i == len(prices) - 1,
+            )["net_value_per_100_original_usd"]
+            for i in range(len(prices))
+        ], dtype=float)
+        if not np.isfinite(nav).all() or (nav <= 0).any():
+            raise MarkHold("Invalid net relative-risk portfolio wealth")
+        paths.append(nav)
+    relative = paths[0] / paths[1]
+    # Equal pre-entry $100 principals; include a neutral 1.0 anchor.
+    anchored = np.concatenate(([1.], relative))
+    high_water = np.maximum.accumulate(anchored)
+    active_close = 100. * (relative[1:] / relative[:-1] - 1.)
+    return {
+        "observed_completed_close_marks": len(relative),
+        "last_net_relative_wealth_return_pct": round(
+            float(100. * (relative[-1] - 1.)), 8),
+        "max_net_relative_close_drawdown_pct": round(
+            float(np.max(100. * (1. - anchored / high_water))), 8),
+        "worst_observed_relative_close_to_close_return_pct": (
+            round(float(np.min(active_close)), 8) if len(active_close) else None),
+        "relative_wealth_is_strategy_divided_by_control": True,
+        "both_sides_pay_identical_registered_cost_bps": fee_bps,
+        "terminal_exit_fee_only_if_horizon_complete": bool(horizon_done),
+        "not_a_tradeable_hedge_or_independent_alpha_test": True,
+    }
+
+
 def _verify_original_price_overlap(original_price_bytes: bytes, later: pd.DataFrame) -> dict:
     """Require stable pre-selection total-return shapes across vendor vintages.
 
@@ -350,7 +396,21 @@ def evaluate(*, original_root:Path, later_prices:pd.DataFrame, observed_at_utc:s
         }
         for name,weights in comparators.items()}
         for bps in COSTS_BPS}
+    # The terminal benchmark gap alone can hide extended relative losses.
+    # Diagnose the actual frozen net-wealth ratio against both controls,
+    # without reranking, refitting, or adding an executable hedge.
+    relative_path_risk = {str(bps): {
+        "versus_same_sector_original_24_cohort": _relative_costed_close_risk(
+            forward_path, comparators["frozen_q2_eight_equal"],
+            comparators["same_sector_original_24_cohort"], bps,
+            horizon_done=complete_horizon),
+        "versus_passive_95_spy_5_cash": _relative_costed_close_risk(
+            forward_path, comparators["frozen_q2_eight_equal"],
+            comparators["passive_95_spy_5_cash"], bps,
+            horizon_done=complete_horizon),
+    } for bps in COSTS_BPS}
     result.update({
+        "relative_observed_close_path_risk": relative_path_risk,
         "status":("63_FOLLOWING_CLOSES_DESCRIPTIVE_COMPLETE_NOT_ALPHA"
                   if complete_horizon else "EARLY_DESCRIPTIVE_FORWARD_MARK_ONLY"),
         "hypothetical_entry_close":entry.date().isoformat(),
