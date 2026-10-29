@@ -18,7 +18,6 @@ ACCOUNT = "2" * 64
 SIGNAL = "3" * 64
 MODEL = "4" * 64
 MANDATE = "5" * 64
-INTENT = "6" * 64
 EVENT = identity.key(
     strategy_id="V6_S1_CONCENTRATED_ETF",
     signal_time_utc="2026-10-28T10:20:00Z",
@@ -33,6 +32,13 @@ NEXT = identity.key(
     deployed_strategy_release_sha256=MODEL,
     standing_mandate_sha256=MANDATE,
 )
+ORDER_INTENT = {
+    "schema": journal.INTENT_SCHEMA,
+    "client_order_id": journal.client_id(EVENT),
+    "symbol": "SPY", "side": "buy", "type": "market",
+    "time_in_force": "day", "qty": "1.25", "notional": None,
+}
+INTENT = hashlib.sha256(journal._canon(ORDER_INTENT)).hexdigest()
 CONTEXT = {
     "event_id": EVENT,
     "strategy_id": "V6_S1_CONCENTRATED_ETF",
@@ -41,10 +47,21 @@ CONTEXT = {
     "strategy_release_sha256": MODEL,
     "standing_mandate_sha256": MANDATE,
     "intent_sha256": INTENT,
+    "original_intent": ORDER_INTENT,
     "genesis_sha256": GENESIS,
     "account_binding_sha256": ACCOUNT,
     "key": KEY,
 }
+
+def next_context():
+    intent = dict(ORDER_INTENT, client_order_id=journal.client_id(NEXT))
+    return dict(
+        CONTEXT, event_id=NEXT,
+        signal_time_utc="2026-10-28T10:21:00Z",
+        original_intent=intent,
+        intent_sha256=hashlib.sha256(journal._canon(intent)).hexdigest(),
+    )
+
 
 def source(raw):
     return {
@@ -127,8 +144,7 @@ def test_one_event_reserve_then_possible_post_then_same_id_permanently_holds():
         account_binding_sha256=ACCOUNT, key=KEY,
     )["broker_order_authorized"] is False
     assert journal.plan_possible_post(marked, **CONTEXT)["commit"] is None
-    assert journal.plan_reserve(marked, **dict(
-        CONTEXT, event_id=NEXT, signal_time_utc="2026-10-28T10:21:00Z"))[
+    assert journal.plan_reserve(marked, **next_context())[
         "status"] == "HOLD_PREVIOUS_EVENT_MAY_HAVE_SENT_ORDER"
 
 @pytest.mark.parametrize("first_post_is_next", [False, True])
@@ -136,8 +152,7 @@ def test_only_one_reserved_event_can_advance_to_possible_send(first_post_is_next
     # Both reservations may legitimately exist before a POST attempt. A
     # possible-send for either must permanently block the other, even when
     # both were reserved before the first possible-send transition.
-    later = dict(CONTEXT, event_id=NEXT,
-                 signal_time_utc="2026-10-28T10:21:00Z")
+    later = next_context()
     one = next_source(journal.plan_reserve(genesis_source(), **CONTEXT))
     both = next_source(journal.plan_reserve(one, **later))
     first = later if first_post_is_next else CONTEXT
@@ -306,9 +321,7 @@ def simulated_filled_fixture(*, event_id=EVENT):
 def test_recurring_second_event_can_be_planned_after_synthetic_completion_only():
     reserved = next_source(journal.plan_reserve(genesis_source(), **CONTEXT))
     marked = next_source(journal.plan_possible_post(reserved, **CONTEXT))
-    assert journal.plan_reserve(marked, **dict(
-        CONTEXT, event_id=NEXT, signal_time_utc="2026-10-28T10:21:00Z",
-    ))["commit"] is None
+    assert journal.plan_reserve(marked, **next_context())["commit"] is None
     completed_plan = journal.plan_simulated_reconcile(
         marked, broker_fixture=simulated_filled_fixture(), **CONTEXT)
     assert completed_plan["status"] == "OFFLINE_SYNTHETIC_RECONCILIATION_CAS_NO_ORDER_AUTHORITY"
@@ -325,8 +338,7 @@ def test_recurring_second_event_can_be_planned_after_synthetic_completion_only()
     assert journal.plan_simulated_reconcile(
         completed, broker_fixture=simulated_filled_fixture(), **CONTEXT)["commit"] is None
     assert journal.plan_reserve(completed, **CONTEXT)["commit"] is None
-    newer = dict(CONTEXT, event_id=NEXT,
-                 signal_time_utc="2026-10-28T10:21:00Z")
+    newer = next_context()
     next_plan = journal.plan_reserve(completed, **newer)
     assert next_plan["commit"] is not None
     next_state = next_source(next_plan)
@@ -367,8 +379,7 @@ def test_no_synthetic_cas_on_ambiguous_or_mismatched_broker_fixture(changes):
         journal.plan_simulated_reconcile(
             marked, broker_fixture=fixture, **CONTEXT)
     assert journal.plan_reserve(
-        marked, **dict(CONTEXT, event_id=NEXT,
-                       signal_time_utc="2026-10-28T10:21:00Z"))["commit"] is None
+        marked, **next_context())["commit"] is None
 
 
 def test_synthetic_reconciliation_never_skips_possible_post_or_forges_ledger():
@@ -437,7 +448,8 @@ def replay_source_and_context(*, side="buy", symbol="SPY", notional=None):
         "notional": notional,
     }
     intent_sha = hashlib.sha256(journal._canon(intent)).hexdigest()
-    scoped = dict(CONTEXT, intent_sha256=intent_sha)
+    scoped = dict(CONTEXT, intent_sha256=intent_sha,
+                  original_intent=intent)
     reserved = next_source(journal.plan_reserve(genesis_source(), **scoped))
     possible = next_source(journal.plan_possible_post(reserved, **scoped))
     return possible, dict(
@@ -446,7 +458,6 @@ def replay_source_and_context(*, side="buy", symbol="SPY", notional=None):
         signal_time_utc=CONTEXT["signal_time_utc"],
         signal_sha256=SIGNAL, strategy_release_sha256=MODEL,
         standing_mandate_sha256=MANDATE, intent_sha256=intent_sha,
-        original_intent=intent,
     )
 
 
@@ -682,22 +693,47 @@ def test_signed_intent_refuses_sell_when_original_event_authorized_only_buy():
     ("time_in_force", "gtc"),
     ("schema", "UNREVIEWED_INTENT"),
 ])
-def test_original_order_intent_preimage_mutation_refused(field, altered):
+def test_hmac_signed_journal_rejects_original_preimage_mutation(field, altered):
     signed_source, context = replay_source_and_context()
-    context["original_intent"] = dict(context["original_intent"], **{field: altered})
-    with pytest.raises(broker_proof.BrokerProofStop):
+    payload = json.loads(b64decode(signed_source["content"]))
+    payload.pop("signature")
+    record = payload["events"][EVENT]
+    record["original_intent"][field] = altered
+    # Even validly HMAC-signed but digest-incoherent records fail CLOSED.
+    with pytest.raises(broker_proof.BrokerProofStop, match="Unverified original signed"):
         broker_proof.assess(
-            private_signed_journal_source=signed_source,
+            private_signed_journal_source=source(signed(payload)),
             **context, **recurring_broker_fixture())
 
 
-def test_missing_original_order_intent_preimage_refused():
+def test_hmac_signed_journal_requires_original_preimage_on_restart():
     signed_source, context = replay_source_and_context()
-    context["original_intent"] = None
-    with pytest.raises(broker_proof.BrokerProofStop, match="preimage"):
+    payload = json.loads(b64decode(signed_source["content"]))
+    payload.pop("signature")
+    payload["events"][EVENT].pop("original_intent")
+    with pytest.raises(broker_proof.BrokerProofStop, match="Unverified original signed"):
         broker_proof.assess(
-            private_signed_journal_source=signed_source,
+            private_signed_journal_source=source(signed(payload)),
             **context, **recurring_broker_fixture())
+
+
+def test_original_order_preimage_survives_read_after_cas_and_restart():
+    marked, context = replay_source_and_context(notional="15.00")
+    # No caller-supplied preimage after a restart: only the HMAC journal
+    # knows the exact market BUY, symbol and originally requested USD size.
+    _, doc = journal.read_github_source(
+        marked, genesis_sha256=GENESIS, account_binding_sha256=ACCOUNT, key=KEY)
+    record = doc["events"][EVENT]
+    assert record["original_intent"]["notional"] == "15.00"
+    assert record["original_intent"]["qty"] is None
+    assert hashlib.sha256(journal._canon(
+        record["original_intent"])).hexdigest() == record["intent_sha256"]
+    fixture = recurring_broker_fixture()
+    fixture["closed_order"].update(qty=None, notional="15.00")
+    result = broker_proof.assess(
+        private_signed_journal_source=marked, **context, **fixture)
+    assert result["synthetic_order_fields_bound_to_signed_intent_preimage"] is True
+    assert result["next_live_order_authorized"] is False
 
 
 def test_signed_original_qty_cannot_be_silently_changed_in_broker_order():
