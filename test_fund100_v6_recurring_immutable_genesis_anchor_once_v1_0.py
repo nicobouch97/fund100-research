@@ -4,6 +4,7 @@ from hashlib import sha256
 from io import BytesIO
 import json
 from urllib.error import HTTPError
+from urllib.request import Request
 
 import pytest
 
@@ -90,6 +91,13 @@ class FakeGitHubRelease:
             payload = json.loads(req.data)
             assert payload["draft"] is True and payload["tag_name"] == mod.TAG
             assert payload["target_commitish"] == ENV["GITHUB_SHA"]
+            # GitHub REST Create Release: make_latest is a STRING enum,
+            # not a JSON boolean. A real 422 can otherwise be masked by
+            # a permissive fake transport.
+            if (type(payload.get("make_latest")) is not str
+                or payload["make_latest"] not in ("true", "false", "legacy")):
+                raise HTTPError(url, 422, "invalid make_latest type", {}, None)
+            assert payload["make_latest"] == "false"
             self.draft = {
                 "id":self.id, "draft":True, "tag_name":mod.TAG,
                 "target_commitish":ENV["GITHUB_SHA"], "assets":[],
@@ -130,6 +138,23 @@ def run(fake, monkeypatch, env=None, source=None):
         environ=ENV if env is None else env, transport=fake,
         witness_doc=WITNESS, inspect_fn=inspect, get_fn=get_fn)
     return report, calls, blob
+
+
+def test_fake_rejects_boolean_make_latest_as_real_github_schema_requires():
+    # Offline proof that the fake would reject the payload used by the
+    # failed production attempt; this never invokes the retired publisher.
+    fake = FakeGitHubRelease()
+    payload = {
+        "tag_name": mod.TAG, "target_commitish": ENV["GITHUB_SHA"],
+        "draft": True, "make_latest": False,
+    }
+    request = Request(
+        mod.RELEASE_URL, data=json.dumps(payload).encode(),
+        method="POST")
+    with pytest.raises(HTTPError) as exc:
+        fake(request, timeout=12)
+    assert exc.value.code == 422
+    assert fake.draft is None
 
 
 def test_signed_production_seq0_public_immutable_genesis_anchor_once(monkeypatch):
