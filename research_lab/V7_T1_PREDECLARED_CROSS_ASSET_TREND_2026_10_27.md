@@ -104,3 +104,27 @@ original signal's exposure and was added after viewing prior historical
 results, it is **not** independent validation, an alpha claim, a revised
 promotion gate or permission to trade. Original static four-ETF and SPY
 benchmarks remain untouched.
+
+
+## 29 October 2026 — fee-inclusive calendar-year concentration audit (post-hoc)
+
+Retain the **original** preregistered T1 15-basis-point, three-era
+comparison against the static four-ETF benchmark without changing its
+pass/fail threshold, universe, signals, rebalancing or costs. An additional
+**descriptive** annual attribution decomposes the exact same modelled net
+terminal wealth into additive calendar-year log returns. Entry-side costs
+are allocated to the first actual session's year, and the final liquidation
+cost to the final actual session's year, without fabricating another session.
+Each independently costed benchmark receives its own trading costs.
+
+For each historical era, report annual *relative net log wealth* against
+(1) the original static equal-four benchmark and (2) the post-hoc
+exposure-matched equal-four comparator, at the already predeclared 15 bps.
+The annual contributions must reconcile to the terminal log wealth ratio.
+Show the strongest positive year and the arithmetic remainder when that
+year's relative contribution is removed. This omission is **not** a
+tradeable leave-one-year-out strategy, a bootstrap confidence interval,
+an independently held-out test or an alpha p-value. It diagnoses whether
+retrospective excess wealth is concentrated in a small number of years.
+No model tuning, capital authority, operator controls, LIVE credentials
+or broker requests are introduced.

@@ -210,6 +210,14 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
     costed_daily=series[1:]/series[:-1]-1.
     if len(costed_daily)!=len(view) or not np.isfinite(costed_daily).all():
         raise CrossAssetTrendStop("Fee-inclusive market-session risk path invalid")
+    # A session's log return is attributed to the calendar year of its
+    # closing mark. This includes entry and terminal liquidation fees in
+    # their ACTUAL source years; no additional fictitious trading session.
+    annual_log=pd.Series(np.log1p(costed_daily),index=view.index).groupby(
+        view.index.year).sum()
+    terminal_log=float(np.log(terminal/100.))
+    if not np.isclose(float(annual_log.sum()),terminal_log,atol=1e-10,rtol=0):
+        raise CrossAssetTrendStop("Annual net log wealth fails terminal reconciliation")
     max_dd=float(np.min(series/np.maximum.accumulate(series)-1))
     v=float(np.std(costed_daily,ddof=1)*sqrt(252))
     # Include final liquidation fees when counting threshold breaches;
@@ -223,6 +231,11 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
         "strategy":strategy,
         "net_annualized_return_pct":round(100*((terminal/100)**(1/years)-1),6),
         "net_total_return_pct":round(terminal-100,6),
+        "terminal_net_log_wealth_pct":round(100*terminal_log,8),
+        "annual_net_log_wealth_pct":{
+            str(int(year)):round(100*float(value),8)
+            for year,value in annual_log.items()},
+        "annual_log_wealth_includes_entry_and_exit_costs":True,
         "max_drawdown_pct":round(max_dd*100,6),
         "annualized_volatility_fraction":round(v,8),
         "worst_close_to_close_return_pct":round(100*min(costed_daily),6),
@@ -240,6 +253,43 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
         "signal_trade_log":selected_log if strategy in (
             "CROSS_ASSET_12_1","EXPOSURE_MATCHED_FOUR_EQUAL") else [],
     }
+
+def _paired_yearly_relative_log_wealth(candidate:dict,control:dict)->dict:
+    """Describe post-hoc annual relative net wealth, not a new alpha test.
+
+    Same-calendar-year *log* differences add across years, unlike CAGR
+    differences. Both independently costed paths include their own entry,
+    monthly turnover and final liquidation. No year is used to retune
+    either predeclared strategy or the original all-three-eras hurdle.
+    """
+    a=candidate["annual_net_log_wealth_pct"]
+    b=control["annual_net_log_wealth_pct"]
+    if (not isinstance(a,dict) or not isinstance(b,dict)
+        or not a or list(a)!=list(b)
+        or any(not isinstance(x,str) or len(x)!=4 or not x.isdigit()
+               or not np.isfinite(a[x]) or not np.isfinite(b[x]) for x in a)):
+        raise CrossAssetTrendStop("Nonmatching or invalid costed annual observations")
+    years={year:round(a[year]-b[year],8) for year in a}
+    total=round(candidate["terminal_net_log_wealth_pct"]
+                -control["terminal_net_log_wealth_pct"],8)
+    if abs(sum(years.values())-total)>1e-6:
+        raise CrossAssetTrendStop("Annual paired log wealth fails terminal reconciliation")
+    positive=[year for year in years if years[year]>0]
+    strongest=max(positive,key=lambda year:(years[year],-int(year))) if positive else None
+    return {
+        "calendar_year_relative_net_log_wealth_pp":years,
+        "terminal_relative_net_log_wealth_pp":total,
+        "positive_relative_years":len(positive),
+        "negative_relative_years":sum(value<0 for value in years.values()),
+        "strongest_positive_year":strongest,
+        "strongest_positive_year_contribution_pp":(
+            years[strongest] if strongest is not None else None),
+        "relative_log_wealth_ex_strongest_positive_year_pp":round(
+            total-(years[strongest] if strongest is not None else 0.),8),
+        "same_sessions_and_separately_costed":True,
+        "descriptive_posthoc_not_independent_alpha_evidence":True,
+    }
+
 
 def analyze(prices:pd.DataFrame,captured_utc:str):
     panel=prices_validate(prices)
@@ -264,6 +314,16 @@ def analyze(prices:pd.DataFrame,captured_utc:str):
         >result[era]["15"]["STATIC_FOUR_EQUAL"]["net_annualized_return_pct"]
         for era in ("2014_2016","2017_2020","2021_2025")
     )
+    annual_diagnostics={}
+    for era in REGISTERED_WINDOWS:
+        at_15=result[era]["15"]
+        candidate=at_15["CROSS_ASSET_12_1"]
+        annual_diagnostics[era]={
+            "vs_original_static_four_equal":_paired_yearly_relative_log_wealth(
+                candidate,at_15["STATIC_FOUR_EQUAL"]),
+            "vs_posthoc_exposure_matched_four_equal":_paired_yearly_relative_log_wealth(
+                candidate,at_15["EXPOSURE_MATCHED_FOUR_EQUAL"]),
+        }
     return {
         "schema":SCHEMA,
         "status":"HISTORICAL_REPEATEDLY_STUDIED_CROSS_ASSET_NO_ALPHA_AUTHORITY",
@@ -279,6 +339,8 @@ def analyze(prices:pd.DataFrame,captured_utc:str):
         "exposure_matched_control_added_post_hoc_not_new_alpha_gate":True,
         "passive_SPY_comparator_is_different_risk_profile":True,
         "tested_15bps_strong_all_three_eras":gate,
+        "posthoc_15bps_annual_relative_log_wealth":annual_diagnostics,
+        "annual_concentration_diagnostic_not_promotion_gate":True,
         "favorable_result_is_not_forward_alpha_qualification":True,
         "DBC_methodology_changed_2025":True,
         "current_live_capital_ceiling_usd":"130.30",
