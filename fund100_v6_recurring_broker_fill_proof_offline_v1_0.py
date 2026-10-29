@@ -98,9 +98,9 @@ INTENT_FIELDS = frozenset({
 def _verify_frozen_intent(intent, signed_sha256, client_order_id, receipt):
     """Bind original signed intent preimage to the exact completed order.
 
-    The HMAC journal authenticates only a digest of the original order
-    intent. A client_order_id match alone cannot prove what asset, side or
-    dollar/quantity was authorised in that recorded attempt.
+    The HMAC journal now persists both the exact original instruction and
+    its digest. Use ONLY the HMAC-authenticated journal-owned preimage;
+    never depend on ephemeral caller-provided order details after restart.
     """
     if type(intent) is not dict or set(intent) != INTENT_FIELDS:
         raise BrokerProofStop("Missing exact original order intent preimage")
@@ -139,7 +139,7 @@ def _verify_frozen_intent(intent, signed_sha256, client_order_id, receipt):
 def assess(*, private_signed_journal_source, genesis_sha256, account_binding_sha256,
            key, event_id, strategy_id, signal_time_utc, signal_sha256,
            strategy_release_sha256, standing_mandate_sha256, intent_sha256,
-           original_intent, closed_order, fill_pages, before_positions, after_positions,
+           closed_order, fill_pages, before_positions, after_positions,
            open_orders, observed_at_utc):
     """Validate ONE synthetic replay; never turn dicts into LIVE authority."""
     try:
@@ -175,11 +175,11 @@ def assess(*, private_signed_journal_source, genesis_sha256, account_binding_sha
         or type(closed_order.get("symbol")) is not str
         or re.fullmatch(r"[A-Z][A-Z0-9.]{0,10}", closed_order["symbol"]) is None):
         raise BrokerProofStop("Unlinked or non-final recurring broker receipt")
-    # The signed HMAC event stores ONLY the original intent commitment:
-    # require its exact immutable preimage and compare every submitted order
-    # field before trusting any broker-shaped fill math (still offline).
+    # Recovery uses the original HMAC-validated journal preimage,
+    # not a separately supplied caller-owned copy that may vanish or drift.
     intent_is_notional = _verify_frozen_intent(
-        original_intent, intent_sha256, record["client_order_id"], closed_order
+        record["original_intent"], record["intent_sha256"],
+        record["client_order_id"], closed_order
     )
     order_id = _uuid(closed_order.get("id"))
     # Alpaca dollar-notional fractional orders return qty=null even when

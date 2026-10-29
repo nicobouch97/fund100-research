@@ -1,6 +1,8 @@
 """V6 recurring strategy-event PRIVATE HMAC/CAS journal, offline transition plans.
 
 This is a NEW namespace, never the original one-time ACWI reservation/fence.
+Every reserved event persists its exact original order preimage in the signed
+private journal so recovery never needs an ephemeral caller-owned copy.
 No private repository creation or update, GitHub API transport, broker client,
 order submission, credentials or operator GO is implemented here. A future
 reviewed controller must independently authenticate the real private source,
@@ -21,9 +23,9 @@ import re
 import fund100_v6_autonomous_event_identity_v1_0 as event
 import fund100_v6_s1_private_git_cas_protocol_v1_0 as original
 
-SCHEMA = "FUND100_V6_RECURRING_PRIVATE_HMAC_CAS_JOURNAL_V1"
+SCHEMA = "FUND100_V6_RECURRING_PRIVATE_HMAC_CAS_JOURNAL_V2"
 MODE = "OFFLINE_PLANS_ONLY_NO_LIVE_ORDER_AUTHORITY"
-DOMAIN = b"fund100-v6-recurring-event-hmac-v1\x00"
+DOMAIN = b"fund100-v6-recurring-event-hmac-v2\x00"
 REPOSITORY = "nicobouch97/fund100-state-private"
 PATH = "state/v6_recurring_strategy_events.json"
 MAX_EVENTS = 128
@@ -62,6 +64,53 @@ def _canon(payload):
 
 def _signature(payload, key):
     return hmac.new(_key(key), DOMAIN + _canon(payload), sha256).hexdigest()
+
+
+INTENT_SCHEMA = "FUND100_V6_RECURRING_EXACT_ORDER_INTENT_V1"
+INTENT_FIELDS = frozenset({
+    "schema", "client_order_id", "symbol", "side",
+    "type", "time_in_force", "qty", "notional",
+})
+MAX_SIGNED_NEW_NOTIONAL_USD = Decimal("65")
+
+
+def _stored_order_intent(intent, *, event_id, intent_sha256):
+    """Validate the recoverable ORIGINAL order preimage (never a trade permit).
+
+    A hash-only journal cannot recover an authorised order after a process
+    restart. The exact original request is now HMAC-signed with the journal.
+    """
+    _hex(intent_sha256, 64, "original order intent commitment")
+    if type(intent) is not dict or set(intent) != INTENT_FIELDS:
+        raise JournalStop("Original signed order preimage missing or malformed")
+    if (intent["schema"] != INTENT_SCHEMA
+        or intent["client_order_id"] != client_id(event_id)
+        or type(intent["symbol"]) is not str
+        or re.fullmatch(r"[A-Z][A-Z0-9.]{0,10}", intent["symbol"]) is None
+        or intent["side"] not in ("buy", "sell")
+        or intent["type"] != "market"
+        or intent["time_in_force"] != "day"):
+        raise JournalStop("Original stored order preimage identity/direction invalid")
+    qty, notional = intent["qty"], intent["notional"]
+    if (qty is None) == (notional is None):
+        raise JournalStop("Original stored order sizing mode invalid")
+    raw = qty if notional is None else notional
+    if (type(raw) is not str
+        or re.fullmatch(r"(?:0|[1-9][0-9]{0,8})(?:\.[0-9]{1,9})?", raw) is None):
+        raise JournalStop("Original stored order sizing amount malformed")
+    try:
+        amount = Decimal(raw)
+    except InvalidOperation:
+        raise JournalStop("Original stored order numeric amount invalid") from None
+    if not amount.is_finite() or amount <= 0:
+        raise JournalStop("Original stored order size must be positive")
+    if notional is not None and (
+        intent["side"] != "buy" or amount > MAX_SIGNED_NEW_NOTIONAL_USD
+    ):
+        raise JournalStop("Original signed notional mode must be BUY <= $65")
+    if not hmac.compare_digest(sha256(_canon(intent)).hexdigest(), intent_sha256):
+        raise JournalStop("Stored order preimage does not match signed commitment")
+    return intent
 
 
 def _json_unique(pairs):
@@ -127,7 +176,7 @@ def _verify_body(body, *, genesis_sha256, account_binding_sha256, key):
         if type(eid) is not str or re.fullmatch(r"V6EV-[0-9a-f]{40}", eid) is None:
             raise JournalStop("Recurring journal reused a non-V6 event identity")
         fields = {"strategy_release_sha256", "mandate_sha256", "signal_sha256",
-                  "intent_sha256", "stage", "client_order_id"}
+                  "intent_sha256", "original_intent", "stage", "client_order_id"}
         if type(item) is not dict or item.get("stage") not in STATES:
             raise JournalStop("Malformed recurring attempt record")
         if item["stage"] == SIMULATED:
@@ -144,6 +193,8 @@ def _verify_body(body, *, genesis_sha256, account_binding_sha256, key):
             raise JournalStop("Unknown or unsafe recurring order state")
         if item["client_order_id"] != client_id(eid):
             raise JournalStop("Recurring order client ID disagrees with event")
+        _stored_order_intent(item["original_intent"], event_id=eid,
+                             intent_sha256=item["intent_sha256"])
         expected_seq += (1 + (item["stage"] != "RESERVED_NO_ORDER")
                          + (item["stage"] == SIMULATED))
     if expected_seq != seq:
@@ -245,7 +296,7 @@ def _synthetic_reconciliation(fixture, event_id):
 
 def _proposal(source, *, event_id, strategy_id, signal_time_utc,
               signal_sha256, strategy_release_sha256,
-              standing_mandate_sha256, intent_sha256, genesis_sha256,
+              standing_mandate_sha256, intent_sha256, original_intent, genesis_sha256,
               account_binding_sha256, key, action, broker_fixture=None):
     # The caller-supplied hashes identify a potential event; they DO NOT
     # authenticate a signal, deployed strategy, economic edge or GO mandate.
@@ -267,6 +318,8 @@ def _proposal(source, *, event_id, strategy_id, signal_time_utc,
         raise JournalStop("Invalid original recurring event identity inputs") from None
     if event_id != verified_id:
         raise JournalStop("Journal attempt event does not match its signal or mandate")
+    _stored_order_intent(original_intent, event_id=event_id,
+                         intent_sha256=intent_sha256)
     old_sha, current = read_github_source(
         source, genesis_sha256=genesis_sha256,
         account_binding_sha256=account_binding_sha256, key=key,
@@ -291,6 +344,7 @@ def _proposal(source, *, event_id, strategy_id, signal_time_utc,
             "strategy_release_sha256": strategy_release_sha256,
             "mandate_sha256": standing_mandate_sha256,
             "intent_sha256": intent_sha256,
+            "original_intent": deepcopy(original_intent),
             "stage": "RESERVED_NO_ORDER",
             "client_order_id": client_id(event_id),
         }
@@ -314,7 +368,8 @@ def _proposal(source, *, event_id, strategy_id, signal_time_utc,
             ("signal_sha256", signal_sha256),
             ("strategy_release_sha256", strategy_release_sha256),
             ("mandate_sha256", standing_mandate_sha256),
-            ("intent_sha256", intent_sha256))):
+            ("intent_sha256", intent_sha256),
+            ("original_intent", original_intent))):
             raise JournalStop("Attempt changed original source, mandate or order intent")
         record = dict(existing, stage="POST_MAY_HAVE_BEEN_SENT")
         target = "OFFLINE_POSSIBLE_SEND_PREPOST_CAS_NO_RESEND"
@@ -326,7 +381,8 @@ def _proposal(source, *, event_id, strategy_id, signal_time_utc,
             ("signal_sha256", signal_sha256),
             ("strategy_release_sha256", strategy_release_sha256),
             ("mandate_sha256", standing_mandate_sha256),
-            ("intent_sha256", intent_sha256))):
+            ("intent_sha256", intent_sha256),
+            ("original_intent", original_intent))):
             raise JournalStop("Synthetic reconciliation changed frozen event")
         proof_hash = _synthetic_reconciliation(broker_fixture, event_id)
         record = dict(existing, stage=SIMULATED,
