@@ -12,6 +12,22 @@ import fund100_stock_broad_momentum_p4l_v1_0 as p4l
 import fund100_stock_frozen_forward_marks_p4m_v1_0 as p4m
 
 
+
+@pytest.fixture(autouse=True)
+def synthetic_source_clock(monkeypatch):
+    # Some forward-mark fixtures intentionally model later October sessions.
+    # Freeze receipt validation after those sessions instead of relying on
+    # whichever real date the CI runner happens to execute the test.
+    from datetime import datetime, timezone
+
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(p4l, "datetime", FixedClock)
+
+
 def snapshot(through="2026-10-23", *, capture=None):
     baseline = pd.bdate_range(end="2026-10-23", periods=150)
     later = pd.date_range("2026-10-26", through, freq="B")
