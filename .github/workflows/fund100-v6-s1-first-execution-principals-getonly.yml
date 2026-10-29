@@ -10,6 +10,8 @@ on:
     paths:
       - ".github/workflows/fund100-v6-s1-first-execution-principals-getonly.yml"
       - "fund100_v6_s1_first_execution_principals_getonly_v1_0.py"
+      - "fund100_v6_private_writer_candidate_get_diagnostic_v1_0.py"
+      - "test_fund100_v6_private_writer_candidate_get_diagnostic_v1_0.py"
       - "fund100_v6_recurring_private_protected_getonly_v1_0.py"
       - "test_fund100_v6_recurring_private_protected_getonly_v1_0.py"
       - "fund100_v6_recurring_event_signed_journal_v1_0.py"
@@ -78,6 +80,9 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # Finite authentication/access categories only, before the original
+          # strict signed-HMAC gate below. Reuse its ALREADY isolated PATs.
+          python -B fund100_v6_private_writer_candidate_get_diagnostic_v1_0.py
           python fund100_v6_s1_first_execution_principals_getonly_v1_0.py
       - name: Check V2 recurring private journal with existing distinct principals (GET ONLY)
         # Reuse the already isolated principal-checking job, NOT the
