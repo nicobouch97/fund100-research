@@ -181,19 +181,26 @@ def test_module_has_no_mutation_client_and_never_leaks_token_or_private_document
         assert forbidden not in code
 
 
-def test_credential_scope_workflow_still_has_mandatory_original_five_principal_failure():
+def test_credential_scope_workflow_keeps_existing_strict_step_and_no_new_secret_scope():
     workflow=Path(
         ".github/workflows/fund100-v6-s1-first-execution-principals-getonly.yml"
     ).read_text()
-    status=workflow.index("Diagnose write-candidate GitHub GET failure category (READ ONLY)")
+    independent=workflow.index(
+        "Independently inspect signed recurring journal with existing READ principal")
     strict=workflow.index(
         "Verify existing 5 independent GitHub principals by ORIGINAL authenticated READ")
-    assert status < strict
-    segment=workflow[status:strict]
+    diag=workflow.index(
+        "python -B fund100_v6_private_writer_candidate_get_diagnostic_v1_0.py")
+    original=workflow.index(
+        "python fund100_v6_s1_first_execution_principals_getonly_v1_0.py")
+    following=workflow.index(
+        "Check V2 recurring private journal with existing distinct principals")
+    assert independent < strict < diag < original < following
+    segment=workflow[strict:following]
     assert "FUND100_PRIVATE_STATE_READ_TOKEN" in segment
     assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" in segment
     assert "ALPACA_LIVE_KEY" not in workflow
     assert "ALPACA_LIVE_SECRET" not in workflow
     assert "contents: write" not in workflow
-    assert "python -B fund100_v6_private_writer_candidate_get_diagnostic_v1_0.py" in segment
-    assert "python fund100_v6_s1_first_execution_principals_getonly_v1_0.py" in workflow
+    assert "      - name: Diagnose write-candidate" not in workflow
+    assert segment.count("      - name: ") == 1
