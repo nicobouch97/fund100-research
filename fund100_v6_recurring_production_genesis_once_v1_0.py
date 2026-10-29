@@ -42,10 +42,10 @@ def _guard(env, *, synthetic):
     if (env.get("FUND100_RECURRING_GENESIS_SCOPE") != SCOPE
         or env.get("GITHUB_WORKFLOW_REF") != WORKFLOW_REF):
         raise FirstGenesisStop("Only exact protected production-genesis workflow may initialize")
-    if synthetic is False:
-        # A main-only GitHub push starts this without a new manual approval.
-        if env.get("GITHUB_EVENT_NAME") != "push":
-            raise FirstGenesisStop("Only reviewed main push can initialize private genesis")
+    # Even synthetic rehearsal must model the actual main-push-only boundary.
+    # An operator-dispatched run must never create production state.
+    if env.get("GITHUB_EVENT_NAME") != "push":
+        raise FirstGenesisStop("Only reviewed main push can initialize private genesis")
     if (candidate.PRODUCTION_PRIVATE_GENESIS_CREATE_RELEASED is not False
         or candidate.LIVE_BROKER_ORDERS_RELEASED is not False):
         raise FirstGenesisStop("Unexpected changes to original hard-locked entrypoint")
