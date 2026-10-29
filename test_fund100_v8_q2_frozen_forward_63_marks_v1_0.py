@@ -244,7 +244,8 @@ def test_forward_risk_detects_intermediate_loss_even_when_terminal_recovers(tmp_
         observed_at_utc="2026-11-05T23:45:00Z")
     # A one-session loss in a selected name reverses before the endpoint.
     # Terminal returns alone cannot reveal the intervening drawdown.
-    second=later.index[later.index>panel.index[-1]][1]
+    second=later.index[later.index>pd.Timestamp(
+        original["hypothetical_entry_close"])][0]
     later.loc[second,selected]*=.88
     stressed=marks.evaluate(
         original_root=tmp_path,later_prices=later,
