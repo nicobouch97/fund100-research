@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "fund100_stock_historical_sec_population_p4t_v1_0.py"
+      - "fund100_stock_historical_sec_form25_p4y_v1_0.py"
       - "test_fund100_stock_historical_sec_population_p4t_v1_0.py"
       - "fund100_stock_historical_sec_listing_p4u_v1_0.py"
       - "test_fund100_stock_historical_sec_listing_p4u_v1_0.py"
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths:
       - "fund100_stock_historical_sec_population_p4t_v1_0.py"
+      - "fund100_stock_historical_sec_form25_p4y_v1_0.py"
       - "test_fund100_stock_historical_sec_population_p4t_v1_0.py"
       - "fund100_stock_historical_sec_listing_p4u_v1_0.py"
       - "test_fund100_stock_historical_sec_listing_p4u_v1_0.py"
@@ -109,6 +111,21 @@ jobs:
               annual["quarter_10k_filing_counts"].values())
           assert annual["annual_distinct_10k_ciks"] >= report["original_2017_q1_distinct_10k_ciks"]
           assert annual["annual_filing_and_cik_counts_reconciled"]
+          form25 = json.loads((root / "historical-2017-form25-index-census.json").read_text())
+          form25_raw = (root / form25["original_form25_manifest_file"]).read_bytes()
+          assert hashlib.sha256(form25_raw).hexdigest() == form25[
+              "original_form25_manifest_sha256"]
+          notices = [json.loads(line) for line in form25_raw.decode().splitlines()]
+          assert len(notices) == form25["original_form25_index_entries"]
+          assert form25["same_day_sec_index_not_intraday_availability_proof"]
+          assert form25["same_cik_strictly_prior_10k_index_entries"] == sum(
+              r["same_cik_10k_filed_strictly_before_form25"] for r in notices)
+          assert form25["same_cik_same_day_10k_index_entries"] == sum(
+              r["same_cik_10k_filed_same_day_as_form25"] for r in notices)
+          assert form25["same_day_without_prior_10k_entries_embargoed"] == sum(
+              r["same_cik_10k_filed_same_day_as_form25"]
+              and not r["same_cik_10k_filed_strictly_before_form25"]
+              for r in notices)
           assert annual["historical_population_selected_without_2026_ticker_filter"]
           assert annual["quarterly_10k_absence_not_proof_of_company_exit"]
           assert annual["no_survivorship_safe_investable_backtest_or_alpha_claim"]
