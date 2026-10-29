@@ -26,6 +26,7 @@ class Reply:
 
 
 class FakeGitHttp:
+    synthetic_only = True
     def __init__(self, old, new):
         self.calls=[]
         self.old=old
@@ -219,3 +220,15 @@ def test_no_production_writer_release_or_broker_ever_from_module():
     assert "ALPACA_LIVE_SECRET" not in module
     assert "  workflow_dispatch:" not in module
     assert "secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in module
+
+
+def test_injected_non_test_http_transport_refused_before_any_put():
+    plan=proposal()
+    fake=FakeGitHttp(plan["old_blob_sha"],plan["new_blob_sha"])
+    fake.synthetic_only=False
+    with pytest.raises(mod.PrivateCasHold,match="synthetic fake"):
+        mod._one_conditional_put(
+            writer_token="fake-writer-personal-access",
+            expected_old=plan["old_blob_sha"],expected_new=plan["new_blob_sha"],
+            commit=plan["commit"],transport=fake)
+    assert fake.calls==[]
