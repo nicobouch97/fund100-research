@@ -169,6 +169,41 @@ def _costed_hypothetical(entry, final, weights, fee_bps, *, horizon_done):
     }
 
 
+def _verify_original_price_overlap(original_price_bytes: bytes, later: pd.DataFrame) -> dict:
+    """Require stable pre-selection total-return shapes across vendor vintages.
+
+    A later dividend or split may uniformly rebase all prices preceding the
+    original capture. Such a constant multiplicative adjustment is harmless
+    to historical returns. A date-specific revision inside the frozen
+    selection window is not: HOLD rather than silently score changed data.
+    This is a source-consistency check, NOT independent vendor authentication.
+    """
+    from io import BytesIO
+    original = pd.read_csv(
+        BytesIO(original_price_bytes), index_col="Date", parse_dates=["Date"])
+    if not original.index.isin(later.index).all():
+        raise MarkHold("Later price vintage omits original frozen price sessions")
+    frozen = original.loc[:, later.columns].to_numpy(dtype=float)
+    revised = later.loc[original.index, original.columns].loc[
+        :, later.columns].to_numpy(dtype=float)
+    if frozen.shape != revised.shape or not np.isfinite(revised).all():
+        raise MarkHold("Later original price overlap cannot be verified")
+    # Compare each day's vintage adjustment with the adjustment at the
+    # frozen source's final session, independently for each security.
+    factors = revised / frozen
+    relative_adjustments = factors / factors[-1, :]
+    max_drift_bps = float(np.max(np.abs(relative_adjustments - 1.0))) * 10000
+    if not np.isfinite(max_drift_bps) or max_drift_bps > 1.0:
+        raise MarkHold("Historical frozen price returns revised across vintages")
+    return {
+        "frozen_original_price_overlap_sessions": len(original),
+        "max_frozen_overlap_relative_adjustment_drift_bps": round(
+            max_drift_bps, 6),
+        "uniform_corporate_action_rebasing_allowed": True,
+        "original_price_overlap_return_shape_verified": True,
+    }
+
+
 def evaluate(*, original_root:Path, later_prices:pd.DataFrame, observed_at_utc:str):
     report, screen, original_prices, captured = _read_source(original_root)
     try:
@@ -182,6 +217,7 @@ def evaluate(*, original_root:Path, later_prices:pd.DataFrame, observed_at_utc:s
         raise MarkHold("Later original vendor close or dated NYSE source not valid") from exc
     if now <= selection_at:
         raise MarkHold("Future marks cannot predate original selection")
+    overlap = _verify_original_price_overlap(original_prices, later)
     original_session=pd.Timestamp(report["last_completed_market_session"])
     if later.index[-1] < original_session:
         raise MarkHold("Latest original vendor source precedes frozen source")
@@ -201,6 +237,7 @@ def evaluate(*, original_root:Path, later_prices:pd.DataFrame, observed_at_utc:s
         "schema":SCHEMA,
         "research_only":True,
         "source_acquired_utc":captured,
+        **overlap,
         "source_report_sha256":sha256(
             (original_root/FIRST_SOURCE_REPORT).read_bytes()).hexdigest(),
         "original_market_price_csv_sha256":sha256(original_prices).hexdigest(),
