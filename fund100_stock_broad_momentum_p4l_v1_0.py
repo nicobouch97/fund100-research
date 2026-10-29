@@ -12,6 +12,7 @@ from datetime import datetime, date, timezone
 import hashlib
 import json
 from pathlib import Path
+from time import sleep
 
 import numpy as np
 import pandas as pd
@@ -43,6 +44,7 @@ RELATIVE_LOOKBACK = 63
 MAX_NAMES = 6
 MAX_PER_SECTOR = 2
 MAX_PRICE_GAP = 0.45
+SOURCE_ATTEMPTS = 3  # Whole-batch retries only; never splice ticker vintages
 
 
 class BroadStockStop(ValueError):
@@ -157,44 +159,73 @@ def evaluate(prices: pd.DataFrame, *, acquired_at_utc: str,
 
 
 def public_prices(start: str = "2025-10-01") -> pd.DataFrame:
-    """Retrieve original daily adjusted closes, fail closed on any missing bar.
+    """Fetch one complete original vendor batch; retry transient partial batches.
 
-    Optional earlier start is for historical research only; the ordinary
-    prospective P4L workflow keeps its unchanged 2025-10-01 default.
+    Never fill missing observations, drop dates, or combine ticker histories
+    from separate downloads. Each attempt must independently pass all price
+    and NYSE-calendar checks before any output can be published.
     """
     if start not in ("2025-10-01", "2017-01-01"):
         raise BroadStockStop("Only frozen research price start dates allowed")
     import yfinance as yf
     symbols = sorted(set(SECTORS) | {BENCHMARK, CASH_REFERENCE})
     end = datetime.now(timezone.utc).date().isoformat()
-    raw = yf.download(
-        tickers=symbols, start=start, end=end,
-        interval="1d", auto_adjust=True, actions=False,
-        progress=False, threads=False,
-    )
-    if not isinstance(raw, pd.DataFrame) or raw.empty:
-        raise BroadStockStop("Original public source unavailable")
-    if not isinstance(raw.columns, pd.MultiIndex):
-        raise BroadStockStop("Unexpected original source schema")
-    extracted = {}
-    for symbol in symbols:
-        for key in (("Close", symbol), (symbol, "Close")):
-            if key in raw.columns:
-                extracted[symbol] = raw[key]
-                break
-        if symbol not in extracted:
-            raise BroadStockStop("Original price missing for " + symbol)
-    out = pd.DataFrame(extracted)
-    if out.index.tz is not None:
-        out.index = out.index.tz_convert("UTC").tz_localize(None).normalize()
-    else:
-        out.index = out.index.normalize()
-    data = validate_prices(out)
-    try:
-        p4g.verify_original_nyse_source_sessions(data.index)
-    except p4g.P4GStop as exc:
-        raise BroadStockStop("Incomplete actual XNYS original source history") from exc
-    return data
+    last_failure: Exception | None = None
+    for attempt in range(SOURCE_ATTEMPTS):
+        try:
+            raw = yf.download(
+                tickers=symbols, start=start, end=end,
+                interval="1d", auto_adjust=True, actions=False,
+                progress=False, threads=False,
+            )
+            if not isinstance(raw, pd.DataFrame) or raw.empty:
+                raise BroadStockStop("Original public source unavailable")
+            if not isinstance(raw.columns, pd.MultiIndex):
+                raise BroadStockStop("Unexpected original source schema")
+            extracted = {}
+            for symbol in symbols:
+                for key in (("Close", symbol), (symbol, "Close")):
+                    if key in raw.columns:
+                        extracted[symbol] = raw[key]
+                        break
+                if symbol not in extracted:
+                    raise BroadStockStop("Original price missing for " + symbol)
+            out = pd.DataFrame(extracted)
+            if out.index.tz is not None:
+                out.index = out.index.tz_convert("UTC").tz_localize(None).normalize()
+            else:
+                out.index = out.index.normalize()
+            missing = out.isna()
+            if missing.to_numpy().any():
+                examples = [
+                    f"{date.date().isoformat()}:{symbol}"
+                    for date, row in missing.iterrows()
+                    for symbol in symbols if row[symbol]
+                ][:5]
+                raise BroadStockStop(
+                    "Missing original adjusted closes (first five): " +
+                    ", ".join(examples)
+                )
+            data = validate_prices(out)
+            try:
+                p4g.verify_original_nyse_source_sessions(data.index)
+            except p4g.P4GStop as exc:
+                raise BroadStockStop(
+                    "Incomplete actual XNYS original source history"
+                ) from exc
+            return data
+        except Exception as exc:
+            # Vendor failures and incomplete batches can be transient.
+            # A retry replaces the ENTIRE acquisition, never individual bars.
+            last_failure = exc
+            if attempt + 1 < SOURCE_ATTEMPTS:
+                sleep(1)
+    reason = (str(last_failure) if isinstance(last_failure, BroadStockStop)
+              else type(last_failure).__name__)
+    raise BroadStockStop(
+        f"No complete original 26-symbol price batch after {SOURCE_ATTEMPTS} attempts: "
+        + reason
+    ) from last_failure
 
 
 def main() -> None:
