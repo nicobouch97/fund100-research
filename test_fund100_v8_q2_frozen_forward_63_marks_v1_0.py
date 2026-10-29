@@ -160,12 +160,16 @@ def test_no_broker_static_workflow_and_first_source_stays_read_only():
     assert "fund100-live-broker" not in workflow
     assert "method=\"POST\"" not in module
     assert "  workflow_dispatch:" not in workflow
+    push_paths, pr_paths = audit.split("  pull_request:\n", 1)
     for path in (
         "fund100_v8_q2_frozen_forward_63_marks_v1_0.py",
         "test_fund100_v8_q2_frozen_forward_63_marks_v1_0.py",
         ".github/workflows/fund100-v8-q2-frozen-forward-mark.yml",
+        "fund100_v8_q2_first_actual_sec_roa_price_source_v1_0.py",
     ):
-        assert '      - "'+path+'"' in audit
+        expected = '      - "'+path+'"'
+        assert expected in push_paths
+        assert expected in pr_paths.split("\npermissions:", 1)[0]
 
 
 def test_frozen_historical_overlap_accepts_unchanged_original_returns(tmp_path):
