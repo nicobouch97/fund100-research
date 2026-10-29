@@ -155,7 +155,7 @@ def test_unsigned_or_alternate_private_blob_holds_before_public_call(monkeypatch
         result=dict(get(token=token))
         result["sha"]="0"*40
         return result
-    with pytest.raises(gate.HeadStop,match="private signed seq0"):
+    with pytest.raises(gate.HeadStop,match="original signed seq0"):
         gate.inspect(
             environ=ENV,transport=fake,
             private_inspect=inspect,private_get=corrupt,witness_doc=WITNESS)
