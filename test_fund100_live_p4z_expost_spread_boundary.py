@@ -11,6 +11,11 @@ P4Z_MODULE = "fund100_stock_delisted_sample_p4z_v1_0"
 POST_EVENT_FIELDS = (
     "twtr_sec_contractual_right_vs_last_close_pct",
     "twtr_sec_contractual_right_minus_last_close_usd",
+    # Vendor-adjusted historical returns are retrospective research diagnostics,
+    # never current LIVE stock signals or execution inputs.
+    "per_listing_observed_window",
+    "twtr_vs_spy_same_pre_suspension_window",
+    "twtr_minus_spy_vendor_adjusted_change_pp",
 )
 
 
