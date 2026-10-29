@@ -152,3 +152,33 @@ def test_q2_is_isolated_from_broker_and_prior_gross_profit_rule():
     assert "gross_profit_usd" in inspect.getsource(old.select)
     assert "matched_annual_net_income_usd" in inspect.getsource(q2.select)
     assert "alpaca" not in inspect.getsource(q2).lower()
+
+
+def test_real_negative_and_zero_sec_income_is_observed_not_ranked_or_missing():
+    rows=inputs()
+    losses={rows[0]["symbol"],rows[1]["symbol"],rows[2]["symbol"]}
+    rows[0]["matched_annual_net_income_usd"]="-250.50"
+    rows[1]["matched_annual_net_income_usd"]="0"
+    rows[2]["matched_annual_net_income_usd"]="-1"
+    result=evaluate(rows)
+    assert result["matched_positive_annual_net_income_assets"]==21
+    assert result["observed_nonpositive_annual_net_income"]==sorted(losses)
+    assert result["source_gaps"]==[]
+    assert result["selection_candidate"] is not None
+    assert losses.isdisjoint(result["selection_candidate"]["symbols"])
+    assert not result["live_order_authorized"]
+
+
+def test_same_day_sec_filing_is_embargoed_even_with_midnight_timestamp():
+    rows=inputs()
+    rows[0]["original_10k_filed_available_utc"]="2026-10-30T00:00:00Z"
+    with pytest.raises(q2.Q2Hold,match="Same-day"):
+        evaluate(rows)
+
+
+@pytest.mark.parametrize("invalid",["-","--2","-1e6"," 1","1.234567890","-01","nan"])
+def test_invalid_signed_income_is_rejected_not_silently_excluded(invalid):
+    rows=inputs()
+    rows[0]["matched_annual_net_income_usd"]=invalid
+    with pytest.raises(q2.Q2Hold,match="Invalid signed"):
+        evaluate(rows)
