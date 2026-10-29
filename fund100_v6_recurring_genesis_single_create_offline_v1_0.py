@@ -10,7 +10,6 @@ immutable anti-rollback anchor, a standing mandate, and brokerage eligibility.
 from __future__ import annotations
 
 from base64 import b64encode
-from hashlib import sha1
 import re
 
 import fund100_v6_recurring_event_signed_journal_v1_0 as journal
@@ -70,7 +69,9 @@ def create_offline_once(*, read_before_primary, read_before_independent,
     if (mode != MODE or PRODUCTION_GITHUB_TRANSPORT_RELEASED is not False
         or LIVE_BROKER_ORDER_RELEASED is not False
         or not all(callable(fn) for fn in callbacks)
-        or len({id(fn) for fn in callbacks}) != len(callbacks)):
+        or len({(id(getattr(fn, '__self__', None)),
+                 id(getattr(fn, '__func__', fn))) for fn in callbacks})
+                 != len(callbacks)):
         raise GenesisCreateStop("Offline injection only; distinct callbacks required")
     candidate = prepare_offline_genesis(
         genesis_sha256=genesis_sha256,
