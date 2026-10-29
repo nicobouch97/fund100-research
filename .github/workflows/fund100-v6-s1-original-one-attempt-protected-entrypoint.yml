@@ -12,6 +12,9 @@ on:
       - "fund100_v6_s1_operator_control.json"
       - "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       - "fund100_v6_s1_owner_fence_private_getonly_v1_0.py"
+      - "fund100_v6_recurring_private_protected_getonly_v1_0.py"
+      - "fund100_v6_recurring_event_signed_journal_v1_0.py"
+      - "test_fund100_v6_recurring_private_protected_getonly_v1_0.py"
 
 # Deliberately incapable of writing to public GitHub or the private ledger.
 # The signed first-ACWI coordinator has NO invocation in this version.
@@ -119,6 +122,17 @@ jobs:
               assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
               print('Original signed context hydrated in SAME protected job memory; coordinator STILL STOP.')
           PY
+      - name: Authenticate recurring V2 private HEAD with BOTH distinct principals (GET ONLY)
+        # Existing read and candidate write principals both authenticate the
+        # original signed seq1 file BEFORE any expected recurring-path 404.
+        # No broker credentials, no Git PUT, no optional human confirmation.
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+        run: |
+          set -euo pipefail
+          python -B fund100_v6_recurring_private_protected_getonly_v1_0.py
       - name: Provider immutable setting MUST pass (Administration READ; NO WRITES)
         env:
           FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}
