@@ -305,3 +305,71 @@ def test_costed_forward_risk_includes_terminal_fee_only_on_close_63(tmp_path):
             assert risk["terminal_exit_fee_included_only_if_horizon_complete"]
             assert risk["last_costed_close_nav_per_100_original_usd"]==outcome[
                 "net_value_per_100_original_usd"]
+
+
+def test_relative_path_risk_detects_drawdown_hidden_by_terminal_tie():
+    # Two hypothetical paths finish at identical wealth, but one suffers
+    # a 20% relative trough en route. Compare costed NAV ratios, not
+    # differences of standalone drawdown percentages.
+    frame = pd.DataFrame({
+        "AAPL": [100., 80., 100.],
+        "SPY": [100., 100., 100.],
+    }, index=pd.date_range("2026-11-02", periods=3, freq="B"))
+    active = marks._relative_costed_close_risk(
+        frame, {"AAPL": 1.}, {"SPY": 1.}, 15, horizon_done=False)
+    assert active["observed_completed_close_marks"] == 3
+    assert abs(active["last_net_relative_wealth_return_pct"]) < 1e-7
+    assert active["max_net_relative_close_drawdown_pct"] > 18
+    assert active["worst_observed_relative_close_to_close_return_pct"] < -18
+    assert active["not_a_tradeable_hedge_or_independent_alpha_test"]
+
+
+def test_relative_path_reconciles_to_costed_terminal_benchmark_ratios(tmp_path):
+    panel, _ = archive(tmp_path)
+    result = marks.evaluate(
+        original_root=tmp_path,
+        later_prices=subsequent(panel, last="2026-11-05"),
+        observed_at_utc="2026-11-05T23:45:00Z")
+    for bps, portfolios in result["performance"].items():
+        active = result["relative_observed_close_path_risk"][bps]
+        for label, benchmark in (
+            ("versus_same_sector_original_24_cohort",
+             "same_sector_original_24_cohort"),
+            ("versus_passive_95_spy_5_cash", "passive_95_spy_5_cash"),
+        ):
+            expected = 100. * (
+                portfolios["frozen_q2_eight_equal"][
+                    "net_value_per_100_original_usd"] /
+                portfolios[benchmark]["net_value_per_100_original_usd"] - 1.)
+            assert abs(active[label][
+                "last_net_relative_wealth_return_pct"] - expected) < 1e-7
+            assert active[label]["observed_completed_close_marks"] == result[
+                "forward_close_sessions_observed"]
+            assert active[label]["max_net_relative_close_drawdown_pct"] >= 0
+            assert not active[label][
+                "terminal_exit_fee_only_if_horizon_complete"]
+    assert not result["proven_statistical_alpha"]
+    assert result["real_broker_orders"] == 0
+
+
+def test_relative_path_detects_recovered_selected_stock_loss(tmp_path):
+    panel, report = archive(tmp_path)
+    later = subsequent(panel, last="2026-11-05")
+    selected = report["source_derived_research_selection"][
+        "selection_candidate"]["symbols"][0]
+    original_result = marks.evaluate(
+        original_root=tmp_path, later_prices=later,
+        observed_at_utc="2026-11-05T23:45:00Z")
+    second = later.index[later.index > pd.Timestamp(
+        original_result["hypothetical_entry_close"])][0]
+    later.loc[second, selected] *= .80
+    stressed = marks.evaluate(
+        original_root=tmp_path, later_prices=later,
+        observed_at_utc="2026-11-05T23:45:00Z")
+    name = "versus_passive_95_spy_5_cash"
+    a = original_result["relative_observed_close_path_risk"]["15"][name]
+    b = stressed["relative_observed_close_path_risk"]["15"][name]
+    assert a["last_net_relative_wealth_return_pct"] == b[
+        "last_net_relative_wealth_return_pct"]
+    assert b["max_net_relative_close_drawdown_pct"] > a[
+        "max_net_relative_close_drawdown_pct"] + 1.
