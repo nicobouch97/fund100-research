@@ -42,6 +42,27 @@ class PopulationStop(ValueError):
     pass
 
 
+def _valid_2017_index_identity(filed: str, path: str, cik: str,
+                               start: str, end: str) -> bool:
+    """Validate real calendar date and 2017 accession before as-of use.
+
+    The accession's submitter prefix need not equal the filer CIK: filing
+    agents can submit for an issuer. The EDGAR archive directory must match
+    the index filer, while the accession year and six-digit sequence must
+    match the original 2017 source being audited.
+    """
+    if (not start <= filed <= end
+        or re.fullmatch(r"edgar/data/[0-9]+/[0-9]{1,10}-17-[0-9]{6}\.txt",
+                        path) is None
+        or int(path.split("/")[2]) != int(cik)):
+        return False
+    try:
+        day = date.fromisoformat(filed)
+    except ValueError:
+        return False
+    return day.isoformat() == filed
+
+
 def parse_index(raw: bytes, *, quarter: int = 1) -> dict[int, dict]:
     """Validate original 10-K filings in a specified 2017 SEC quarter."""
     if type(quarter) is not int or quarter not in QUARTER_BOUNDS:
@@ -81,9 +102,7 @@ def parse_index(raw: bytes, *, quarter: int = 1) -> dict[int, dict]:
         if (not re.fullmatch(r"[0-9]{1,10}", cik)
             or int(cik) == 0 or not company.strip()
             or len(company) > 250 or not form.strip()
-            or not start <= filed <= end
-            or not re.fullmatch(r"edgar/data/[0-9]+/[0-9-]+\.txt", path)
-            or int(path.split("/")[2]) != int(cik)
+            or not _valid_2017_index_identity(filed, path, cik, start, end)
             or path in paths):
             raise PopulationStop("Unverifiable, duplicated or out-of-quarter SEC filing")
         paths.add(path)
@@ -431,9 +450,8 @@ def form25_index_manifest(index_by_quarter: dict[int, bytes]) -> list[dict]:
                 continue
             if (not re.fullmatch(r"[0-9]{1,10}", cik)
                 or int(cik) == 0 or not name.strip() or len(name) > 250
-                or not start <= filed <= end
-                or not re.fullmatch(r"edgar/data/[0-9]+/[0-9-]+\.txt", path)
-                or int(path.split("/")[2]) != int(cik) or path in seen):
+                or not _valid_2017_index_identity(filed, path, cik, start, end)
+                or path in seen):
                 raise PopulationStop("Unverifiable or duplicated original Form 25 index entry")
             seen.add(path)
             issuer = int(cik)
