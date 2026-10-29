@@ -70,16 +70,6 @@ jobs:
           set -euo pipefail
           test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
           python -B fund100_v6_recurring_private_protected_getonly_v1_0.py --independent-readonly
-      - name: Diagnose write-candidate GitHub GET failure category (READ ONLY)
-        # Finite HTTP status categories only. Existing strict five-principal
-        # step below STILL FAILS CLOSED and gates recurring dual-principal GET.
-        env:
-          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
-          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
-        run: |
-          set -euo pipefail
-          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
-          python -B fund100_v6_private_writer_candidate_get_diagnostic_v1_0.py
       - name: Verify existing 5 independent GitHub principals by ORIGINAL authenticated READ
         env:
           FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
@@ -90,6 +80,9 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # Finite authentication/access categories only, before the original
+          # strict signed-HMAC gate below. Reuse its ALREADY isolated PATs.
+          python -B fund100_v6_private_writer_candidate_get_diagnostic_v1_0.py
           python fund100_v6_s1_first_execution_principals_getonly_v1_0.py
       - name: Check V2 recurring private journal with existing distinct principals (GET ONLY)
         # Reuse the already isolated principal-checking job, NOT the
