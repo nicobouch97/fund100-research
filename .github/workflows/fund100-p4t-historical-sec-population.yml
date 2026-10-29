@@ -70,6 +70,36 @@ jobs:
                                  "filing_date", "quarter", "sec_archive_path"}
                      for row in manifest_rows)
           assert not annual["historical_filing_manifest_uses_current_tickers"]
+          first_raw = (root / annual["first_observed_2017_10k_events_file"]).read_bytes()
+          first_events = [json.loads(line) for line in first_raw.decode("utf-8").splitlines()]
+          assert hashlib.sha256(first_raw).hexdigest() == annual[
+              "first_observed_2017_10k_events_sha256"]
+          assert len(first_events) == annual["first_observed_2017_10k_event_ciks"] == annual[
+              "annual_distinct_10k_ciks"]
+          assert len({r["cik"] for r in first_events}) == len(first_events)
+          assert all(set(row) == {
+              "cik", "first_observed_2017_10k_filing_date",
+              "first_observed_2017_10k_archive_path"} for row in first_events)
+          panel = annual["month_end_asof_2017_filing_observability"]
+          assert len(panel) == 12
+          assert annual["asof_cutoff_excludes_same_day_unknown_release_time"]
+          assert annual["first_observed_2017_10k_not_first_ever_filing_or_listing"]
+          assert annual["2017_filing_observability_not_investable_stock_universe"]
+          for row in panel:
+              cutoff = row["asof_month_end_date"]
+              observed = sum(event["first_observed_2017_10k_filing_date"] < cutoff
+                             for event in first_events)
+              assert row["cutoff_convention"] == "ONLY_FILINGS_DATED_BEFORE_ASOF_DATE"
+              assert row["distinct_ciks_with_2017_10k_observed_before_cutoff"] == observed
+              assert row["future_or_same_day_2017_first_10k_ciks_excluded"] == (
+                  len(first_events) - observed)
+              assert row["original_2017_10k_filings_observed_before_cutoff"] == sum(
+                  event["filing_date"] < cutoff for event in manifest_rows)
+          print("Dated 2017 original 10-K observability (NOT listed stock eligibility):",
+                [(row["asof_month_end_date"],
+                  row["distinct_ciks_with_2017_10k_observed_before_cutoff"],
+                  row["future_or_same_day_2017_first_10k_ciks_excluded"])
+                 for row in panel])
           for quarter in (1, 2, 3, 4):
               label = f"2017_Q{quarter}"
               raw = (root / f"original-sec-2017q{quarter}-master.idx").read_bytes()
