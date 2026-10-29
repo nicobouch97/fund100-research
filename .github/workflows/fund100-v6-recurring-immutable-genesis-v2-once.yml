@@ -1,0 +1,112 @@
+name: Fund-100 V6 Recurring Signed Genesis V2 Immutable Public Release (ONE; STOP)
+
+# The original v1 release POST was rejected and permanently retired.
+# This is one NEW distinct v2 tag and correctly typed REST payload,
+# using scoped ephemeral GitHub Actions Contents(write) instead of a PAT.
+# NEVER mutate private state, use Alpaca credentials or place orders.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fund100-v6-recurring-immutable-genesis-v2-once.yml"
+      - "fund100_v6_recurring_immutable_genesis_v2_once_v1_0.py"
+      - "test_fund100_v6_recurring_immutable_genesis_v2_once_v1_0.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v6-recurring-immutable-genesis-v2-once.yml"
+      - "fund100_v6_recurring_immutable_genesis_v2_once_v1_0.py"
+      - "test_fund100_v6_recurring_immutable_genesis_v2_once_v1_0.py"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-v6-recurring-genesis-public-immutable-v2-only
+  cancel-in-progress: false
+
+jobs:
+  offline-corrected-release-schema-and-single-attempt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Regress signed private seq0, new v2 tag, string enum, no retry and STOP
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q             test_fund100_v6_recurring_immutable_genesis_v2_once_v1_0.py             test_fund100_v6_recurring_release_principals_readonly_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+
+  protected-main-new-v2-immutable-genesis-only:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: offline-corrected-release-schema-and-single-attempt
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Assert protected main STOP and original public v1 POST remains retired
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_EVENT_NAME" = 'push'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          test "$FUND100_RISK_LEVEL" = 'HIGH'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-v6-recurring-immutable-genesis-v2-once.yml@refs/heads/main'
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          python - <<'PY'
+          import fund100_v6_recurring_immutable_genesis_v2_once_v1_0 as v2
+          import fund100_v6_recurring_immutable_genesis_anchor_once_v1_0 as v1
+          import fund100_v6_s1_original_first_acwi_entry_locked_v1_0 as locked
+          assert v2.TAG != v1.TAG
+          assert v2.ORIGINAL_V1_RELEASE_POST_PERMANENTLY_RETIRED is True
+          assert v2.RELEASE_PUBLISHER_IS_SCOPED_MAIN_GITHUB_TOKEN is True
+          assert v2.NO_PRIVATE_MUTATIONS and v2.NO_BROKER_NETWORK_OR_TRADING
+          assert v2.NO_RETRY_AFTER_ANY_PUBLIC_MUTATION
+          assert locked.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
+          try:
+              v1.publish_once(environ={})
+          except v1.AnchorStop:
+              pass
+          else:
+              raise AssertionError('Original first release unexpectedly armed')
+          print('Original v1 retired; v2 first-attempt public fingerprint ONLY; STOP.')
+          PY
+      - name: Publish one new immutable public v2 genesis release with scoped Contents-write token
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}
+          FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -B fund100_v6_recurring_immutable_genesis_v2_once_v1_0.py
+      - name: Verify STOP remains and no broker order released
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'Only independent signed genesis public fingerprint; no private Git writes and no LIVE broker calls.'
