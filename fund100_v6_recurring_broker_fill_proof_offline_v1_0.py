@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from hashlib import sha256
+import hmac
+import json
 import re
 from uuid import UUID
 
@@ -85,10 +88,58 @@ def _positions(raw):
     return result
 
 
+INTENT_SCHEMA = "FUND100_V6_RECURRING_EXACT_ORDER_INTENT_V1"
+INTENT_FIELDS = frozenset({
+    "schema", "client_order_id", "symbol", "side", "type",
+    "time_in_force", "qty", "notional",
+})
+
+
+def _verify_frozen_intent(intent, signed_sha256, client_order_id, receipt):
+    """Bind original signed intent preimage to the exact completed order.
+
+    The HMAC journal authenticates only a digest of the original order
+    intent. A client_order_id match alone cannot prove what asset, side or
+    dollar/quantity was authorised in that recorded attempt.
+    """
+    if type(intent) is not dict or set(intent) != INTENT_FIELDS:
+        raise BrokerProofStop("Missing exact original order intent preimage")
+    if (intent["schema"] != INTENT_SCHEMA
+        or intent["client_order_id"] != client_order_id
+        or intent["symbol"] != receipt.get("symbol")
+        or intent["side"] != receipt.get("side")
+        or intent["type"] != "market"
+        or intent["time_in_force"] != "day"
+        or intent["side"] not in ("buy", "sell")):
+        raise BrokerProofStop("Order intent identity or trade direction mismatch")
+    q, n = intent["qty"], intent["notional"]
+    if (q is None) == (n is None):
+        raise BrokerProofStop("Original order intent has conflicting sizing modes")
+    if n is not None:
+        if intent["side"] != "buy":
+            raise BrokerProofStop("Notional SELL intent lacks share quantity proof")
+        if _number(n, "signed USD order notional") > MAX_ORIGINAL_PILOT_ORDER_USD:
+            raise BrokerProofStop("Original signed order exceeds $65 investment limit")
+    else:
+        _number(q, "signed share order quantity")
+    try:
+        raw = json.dumps(
+            intent, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=True, allow_nan=False,
+        ).encode("ascii")
+    except (TypeError, ValueError, UnicodeError):
+        raise BrokerProofStop("Uncanonical original order intent") from None
+    if not hmac.compare_digest(sha256(raw).hexdigest(), signed_sha256):
+        raise BrokerProofStop("Original order intent preimage disagrees with signed journal")
+    if receipt.get("qty") != q or receipt.get("notional") != n:
+        raise BrokerProofStop("Broker order sizing differs from signed intent")
+    return n is not None
+
+
 def assess(*, private_signed_journal_source, genesis_sha256, account_binding_sha256,
            key, event_id, strategy_id, signal_time_utc, signal_sha256,
            strategy_release_sha256, standing_mandate_sha256, intent_sha256,
-           closed_order, fill_pages, before_positions, after_positions,
+           original_intent, closed_order, fill_pages, before_positions, after_positions,
            open_orders, observed_at_utc):
     """Validate ONE synthetic replay; never turn dicts into LIVE authority."""
     try:
@@ -124,6 +175,12 @@ def assess(*, private_signed_journal_source, genesis_sha256, account_binding_sha
         or type(closed_order.get("symbol")) is not str
         or re.fullmatch(r"[A-Z][A-Z0-9.]{0,10}", closed_order["symbol"]) is None):
         raise BrokerProofStop("Unlinked or non-final recurring broker receipt")
+    # The signed HMAC event stores ONLY the original intent commitment:
+    # require its exact immutable preimage and compare every submitted order
+    # field before trusting any broker-shaped fill math (still offline).
+    intent_is_notional = _verify_frozen_intent(
+        original_intent, intent_sha256, record["client_order_id"], closed_order
+    )
     order_id = _uuid(closed_order.get("id"))
     # Alpaca dollar-notional fractional orders return qty=null even when
     # status=filled. Their *filled_qty* is the realized share quantity.
@@ -133,6 +190,8 @@ def assess(*, private_signed_journal_source, genesis_sha256, account_binding_sha
     raw_qty = closed_order.get("qty")
     raw_notional = closed_order.get("notional")
     is_notional_buy = raw_qty is None and raw_notional is not None
+    if is_notional_buy != intent_is_notional:
+        raise BrokerProofStop("Broker order mode drift from signed intent")
     if is_notional_buy:
         if closed_order["side"] != "buy":
             raise BrokerProofStop("Notional SELL requires independent quantity proof")
@@ -232,6 +291,7 @@ def assess(*, private_signed_journal_source, genesis_sha256, account_binding_sha
         "schema": SCHEMA,
         "status": "SYNTHETIC_RECEIPT_FILL_AND_PORTFOLIO_REPLAY_MATCH_ONLY",
         "signed_possible_send_source_structurally_verified": True,
+        "synthetic_order_fields_bound_to_signed_intent_preimage": True,
         "filled_order_and_complete_FILLS_structurally_matched": True,
         "all_remaining_positions_unchanged_in_fixture": True,
         "original_65usd_order_notional_ceiling_checked": True,
