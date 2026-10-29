@@ -231,3 +231,103 @@ def test_original_acwi_reader_never_receives_private_write_candidate_token():
     assert "contents: write" not in scoped
     assert "  workflow_dispatch:" in scoped
     assert "  schedule:" not in scoped
+
+
+def reader_env():
+    result = dict(ENV)
+    # Deliberately absent/invalid WRITE principal. This proves only that
+    # read-only inspection doesn't depend on the candidate; NEVER trading.
+    result.pop("FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN")
+    return result
+
+
+def reader_check(transport, env=None):
+    return p.inspect_independent_readonly(
+        environ=reader_env() if env is None else env,
+        recurring_transport=transport, witness=witness)
+
+
+def test_readonly_recurring_dual_404_not_required_with_unhealthy_writer(original_mock):
+    t = Transport()
+    result = reader_check(t)
+    assert original_mock == [READER]
+    assert t.calls == [READER]
+    assert result["status"] == "AUTHENTICATED_READ_ONLY_RECURRING_JOURNAL_ABSENT_HOLD"
+    assert result["original_signed_acwi_seq1_authenticated_by_reader"] is True
+    assert result["production_write_candidate_auth_verified"] is False
+    assert result["recurring_signed_head_verified"] is False
+    assert result["live_trading_authorized"] is False
+    assert result["broker_posts"] == result["private_git_puts"] == 0
+
+
+def test_readonly_signed_existing_journal_still_not_a_trade_release(original_mock):
+    t = Transport(read=recurring_signed_genesis())
+    result = reader_check(t)
+    assert original_mock == [READER] and t.calls == [READER]
+    assert result["status"] == "AUTHENTICATED_READER_HMAC_RECURRING_HEAD_STILL_HOLD"
+    assert result["recurring_signed_head_verified"] is True
+    assert result["production_write_candidate_auth_verified"] is False
+    assert result["independent_immutable_recurring_head_anchor_verified"] is False
+    assert result["live_trading_authorized"] is False
+
+
+def test_readonly_corrupt_hmac_is_held_without_owner_intervention(original_mock):
+    corrupt = recurring_signed_genesis()
+    corrupt["content"] = b64encode(b'{"forged":true}').decode()
+    with pytest.raises(p.RecurringReadStop, match="HMAC/head invalid"):
+        reader_check(Transport(read=corrupt))
+
+
+def test_readonly_original_get_failure_prevents_recurring_404(monkeypatch):
+    def wrong(**kwargs):
+        return source(old.STATE_PATH, b'{}')
+    monkeypatch.setattr(owner, "_get_bounded_json", wrong)
+    t = Transport()
+    with pytest.raises(p.RecurringReadStop, match="HMAC principal authentication"):
+        reader_check(t)
+    assert t.calls == []
+
+
+@pytest.mark.parametrize("change", [
+    {"GITHUB_REF": "refs/heads/feature-branch"},
+    {"GITHUB_RUN_ATTEMPT": "2"},
+    {"GITHUB_EVENT_NAME": "pull_request"},
+    {"FUND100_RISK_LEVEL": "LOW"},
+    {"FUND100_BROKER_KILL_SWITCH": "DISENGAGED"},
+    {"FUND100_PRIVATE_STATE_READ_TOKEN": ""},
+    {"FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX": "0"},
+])
+def test_readonly_invalid_context_fails_before_get(original_mock, change):
+    t = Transport()
+    with pytest.raises(p.RecurringReadStop):
+        reader_check(t, dict(reader_env(), **change))
+    assert original_mock == []
+    assert t.calls == []
+
+
+def test_protected_readonly_happens_before_strict_unhealthy_writer_gate():
+    workflow = Path(
+        ".github/workflows/fund100-v6-s1-first-execution-principals-getonly.yml"
+    ).read_text()
+    preflight = workflow.index("Verify protected original STOP before any GitHub source GET")
+    independent = workflow.index("Independently inspect signed recurring journal with existing READ principal")
+    writer = workflow.index("Verify existing 5 independent GitHub principals by ORIGINAL authenticated READ")
+    dual = workflow.index("Check V2 recurring private journal with existing distinct principals")
+    assert preflight < independent < writer < dual
+    segment = workflow[independent:writer]
+    assert "FUND100_PRIVATE_STATE_READ_TOKEN" in segment
+    assert "FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX" in segment
+    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in segment
+    assert "ALPACA_LIVE_KEY" not in workflow
+    assert "ALPACA_LIVE_SECRET" not in workflow
+    assert "contents: write" not in workflow
+    assert "--independent-readonly" in segment
+
+
+def test_independent_reader_retains_all_read_only_module_controls():
+    import inspect
+    assert p.NO_GIT_MUTATIONS and p.NO_BROKER_ACCESS
+    assert p.REAL_PRIVATE_WRITES == p.BROKER_GETS == p.BROKER_POSTS == 0
+    assert p.LIVE_ORDER_AUTHORIZED is False
+    signature = inspect.signature(p.inspect_independent_readonly)
+    assert "write_token" not in signature.parameters
