@@ -136,6 +136,68 @@ def _spy_at_strategy_decision_exposure(
     return {"terminal_wealth": nav, "path": path, "one_way_turnover": turnover}
 
 
+
+def _spy_shy_at_strategy_decision_exposure(
+    prices: pd.DataFrame, start: int, decisions: list[dict], cost: float,
+) -> dict:
+    """Fully invested, costed SPY/SHY control using identical decision dates.
+
+    This is a separate *tradable ETF proxy* for the strategy's cash sleeve,
+    NOT a claim that SHY is cash or risk-free. Both ETFs incur entry,
+    rotation and exit costs. SHY's price embeds duration and distributions.
+    No signal is learned or retuned from the benchmark's performance.
+    """
+    if not 0 <= cost < 1 or start < 0 or start >= len(prices) - 1:
+        raise FeasibilityStop("Invalid SPY/SHY comparator configuration")
+    if any(s not in prices.columns for s in (p4l.BENCHMARK, "SHY")):
+        raise FeasibilityStop("Missing SPY/SHY comparator source")
+    targets = {}
+    for decision in decisions:
+        day = decision["execution_close_session"]
+        chosen = decision["selected"]
+        if (day in targets or len(chosen) > p4l.MAX_NAMES
+            or len(chosen) != len(set(chosen))
+            or any(s not in p4l.SECTORS for s in chosen)):
+            raise FeasibilityStop("Invalid SPY/SHY decision exposure")
+        targets[day] = len(chosen) / p4l.MAX_NAMES
+    sessions = [d.date().isoformat() for d in prices.index[start:]]
+    if set(targets) - set(sessions) or sessions[0] not in targets:
+        raise FeasibilityStop("SPY/SHY decision outside observed sessions")
+    nav, equity, defensive, cash, turnover = 1.0, 0.0, 0.0, 1.0, 0.0
+    path = [nav]
+    for t in range(start, len(prices)):
+        if t > start:
+            spy_relative = float(prices[p4l.BENCHMARK].iloc[t] /
+                                 prices[p4l.BENCHMARK].iloc[t - 1])
+            shy_relative = float(prices["SHY"].iloc[t] / prices["SHY"].iloc[t - 1])
+            gross = cash + equity * spy_relative + defensive * shy_relative
+            if not np.isfinite(gross) or gross <= 0:
+                raise FeasibilityStop("Invalid SPY/SHY comparator market return")
+            nav *= gross
+            equity = equity * spy_relative / gross
+            defensive = defensive * shy_relative / gross
+            cash /= gross
+        target = targets.get(sessions[t - start])
+        if target is not None:
+            target_shy = 1.0 - target
+            traded = abs(target - equity) + abs(target_shy - defensive)
+            fee_factor = 1 - cost * traded
+            if fee_factor <= 0:
+                raise FeasibilityStop("Invalid SPY/SHY transaction-cost factor")
+            nav *= fee_factor
+            turnover += traded
+            equity, defensive, cash = target, target_shy, 0.0
+        path.append(nav)
+    # Liquidation is charged on the final observed session, not an extra day.
+    terminal_turnover = equity + defensive
+    nav *= 1 - cost * terminal_turnover
+    turnover += terminal_turnover
+    path[-1] = nav
+    if not np.isfinite(nav) or nav <= 0:
+        raise FeasibilityStop("Invalid costed SPY/SHY comparator wealth")
+    return {"terminal_wealth": nav, "path": path, "one_way_turnover": turnover}
+
+
 def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
     if cost_bps not in SIDE_COSTS:
         raise FeasibilityStop("Only predeclared 5/15/35 bps per-side costs")
@@ -288,6 +350,14 @@ def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
     exposure_spy_risk = _risk_path(exposure_spy["path"], sessions)
     if exposure_spy["terminal_wealth"] > exposure_spy_gross["terminal_wealth"] + 1e-10:
         raise FeasibilityStop("Costed comparator exceeds its gross wealth")
+    exposure_spy_shy = _spy_shy_at_strategy_decision_exposure(
+        prices, start, decisions, c)
+    exposure_spy_shy_gross = _spy_shy_at_strategy_decision_exposure(
+        prices, start, decisions, 0.0)
+    exposure_spy_shy_risk = _risk_path(exposure_spy_shy["path"], sessions)
+    if (exposure_spy_shy["terminal_wealth"] >
+            exposure_spy_shy_gross["terminal_wealth"] + 1e-10):
+        raise FeasibilityStop("Costed SPY/SHY comparator exceeds gross wealth")
     return {
         "entry_execution_close": prices.index[start].date().isoformat(),
         "last_exit_mark_close": prices.index[-1].date().isoformat(),
@@ -337,6 +407,26 @@ def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
             exposure_spy_risk["annualized_volatility"], 8),
         "spy_decision_exposure_worst_session_return_pct": round(
             100 * exposure_spy_risk["worst_session_return"], 6),
+        "spy_shy_decision_exposure_control_is_fully_invested_etfs": True,
+        "spy_shy_decision_exposure_control_shy_is_not_cash_or_risk_free": True,
+        "spy_shy_decision_exposure_control_uses_same_strategy_signals": True,
+        "spy_shy_decision_exposure_net_return_pct": round(
+            100 * (exposure_spy_shy["terminal_wealth"] - 1), 6),
+        "spy_shy_decision_exposure_pre_cost_return_pct": round(
+            100 * (exposure_spy_shy_gross["terminal_wealth"] - 1), 6),
+        "spy_shy_decision_exposure_modelled_cost_drag_pp": round(
+            100 * (exposure_spy_shy_gross["terminal_wealth"] -
+                   exposure_spy_shy["terminal_wealth"]), 6),
+        "spy_shy_decision_exposure_one_way_turnover": round(
+            exposure_spy_shy["one_way_turnover"], 6),
+        "strategy_minus_spy_shy_decision_exposure_net_pp": round(
+            100 * (nav - exposure_spy_shy["terminal_wealth"]), 6),
+        "spy_shy_decision_exposure_max_drawdown_hypothetical_pct": round(
+            100 * exposure_spy_shy_risk["max_drawdown"], 4),
+        "spy_shy_decision_exposure_annualized_volatility_fraction": round(
+            exposure_spy_shy_risk["annualized_volatility"], 8),
+        "spy_shy_decision_exposure_worst_session_return_pct": round(
+            100 * exposure_spy_shy_risk["worst_session_return"], 6),
         "strategy_net_return_pct": round(100 * (nav - 1), 6),
         "strategy_pre_cost_return_pct": round(100 * (gross_nav - 1), 6),
         "spy_passive_pre_cost_return_pct": round(100 * (spy_gross - 1), 6),
@@ -411,6 +501,7 @@ def analyze(prices: pd.DataFrame, *, source_sha256: str) -> dict:
         "pre_cost_selection_vs_friction_attribution_same_decisions": True,
         "costed_drawdown_volatility_and_worst_day_for_all_three_arms": True,
         "strategy_decision_exposure_spy_cash_control_is_descriptive": True,
+        "spy_shy_etf_cash_proxy_control_is_descriptive_not_alpha": True,
         "gross_stock_sector_attribution_uses_same_decisions_and_prices": True,
         "pre_cost_is_not_a_tradeable_zero_friction_strategy": True,
         "initial_month_end_signal": data.index[first].date().isoformat(),
