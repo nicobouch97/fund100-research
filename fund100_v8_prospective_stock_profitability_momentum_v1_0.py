@@ -94,7 +94,7 @@ def select(*,records, benchmark_252_close, benchmark_42_close,
         raise QualityMomentumStop("Unregistered or retrospectively selected research candidate")
     try:session=datetime.strptime(original_price_session,"%Y-%m-%d").date()
     except ValueError:raise QualityMomentumStop("Invalid completed-session label") from None
-    if not timedelta(days=0)<=observed.date()-session<=timedelta(days=5):
+    if not timedelta(days=1)<=observed.date()-session<=timedelta(days=5):
         raise QualityMomentumStop("Future or stale original market session")
     b252=_dec(benchmark_252_close,"SPY 252d source",positive=True)
     b42=_dec(benchmark_42_close,"SPY 42d source",positive=True)
