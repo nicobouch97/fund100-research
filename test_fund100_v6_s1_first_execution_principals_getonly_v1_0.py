@@ -260,3 +260,60 @@ def test_protected_capability_workflow_push_or_manual_recheck_with_no_broker_sec
     assert "contents: write" not in w and "issues: write" not in w
     assert "python fund100_v6_s1_first_execution_principals_getonly_v1_0.py" in w
     assert "run_protected_first_acwi_once()" not in w
+
+
+@pytest.mark.parametrize("stage", [
+    "READ_TOKEN_ORIGINAL_OWNER_GET",
+    "WRITE_CANDIDATE_ORIGINAL_OWNER_GET",
+    "ORIGINAL_PUBLIC_WITNESS_LOCAL_VERIFICATION",
+    "ORIGINAL_OWNER_HMAC_VERIFICATION",
+    "READ_TOKEN_ORIGINAL_LEDGER_GET",
+    "WRITE_CANDIDATE_ORIGINAL_LEDGER_GET",
+    "ORIGINAL_LEDGER_HMAC_VERIFICATION",
+])
+def test_failure_diagnostics_distinguish_protected_get_stage_without_secrets(
+        e,source,monkeypatch,stage):
+    # The actual main workflow currently fails in a broad exception handler.
+    # Keep the original STOP behaviour but reveal which safe *stage* failed,
+    # never its credential value or signed private source bytes.
+    def broken(**kwargs):
+        raise RuntimeError("sensitive fake response material must not be logged")
+    if stage.endswith("ORIGINAL_OWNER_GET"):
+        original=scope.owner._get_signed_source
+        target=(e["FUND100_PRIVATE_STATE_READ_TOKEN"]
+                if stage.startswith("READ_TOKEN")
+                else e["FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"])
+        def read_owner(**kwargs):
+            if kwargs["token"]==target:
+                return broken(**kwargs)
+            return original(**kwargs)
+        monkeypatch.setattr(scope.owner,"_get_signed_source",read_owner)
+    elif stage=="ORIGINAL_PUBLIC_WITNESS_LOCAL_VERIFICATION":
+        monkeypatch.setattr(scope.witness,"verify",lambda:broken())
+    elif stage=="ORIGINAL_OWNER_HMAC_VERIFICATION":
+        monkeypatch.setattr(scope.fence,"_read",lambda *args,**kw:broken())
+    elif stage.endswith("ORIGINAL_LEDGER_GET"):
+        original=scope.owner._get_bounded_json
+        target=(e["FUND100_PRIVATE_STATE_READ_TOKEN"]
+                if stage.startswith("READ_TOKEN")
+                else e["FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"])
+        def read_ledger(**kwargs):
+            if kwargs["token"]==target:
+                return broken(**kwargs)
+            return original(**kwargs)
+        monkeypatch.setattr(scope.owner,"_get_bounded_json",read_ledger)
+    else:
+        monkeypatch.setattr(scope.cas,"_read_source",lambda *args,**kw:broken())
+    with pytest.raises(
+        scope.PrincipalStop,
+        match="ORIGINAL_PRIVATE_HMAC_SOURCE_FAILED_AT_"+stage,
+    ) as caught:
+        scope.inspect(environ=e)
+    message=str(caught.value)
+    assert "sensitive fake response" not in message
+    for secret in (
+        e["FUND100_PRIVATE_STATE_READ_TOKEN"],
+        e["FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"],
+        e["FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX"],
+    ):
+        assert secret not in message

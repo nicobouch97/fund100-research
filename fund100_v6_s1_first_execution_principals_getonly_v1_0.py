@@ -177,12 +177,16 @@ def inspect(*,environ=None,transport=None)->dict:
         raise PrincipalStop("DISTINCT_GITHUB_PRINCIPALS_MISSING") from None
     read=values["FUND100_PRIVATE_STATE_READ_TOKEN"]
     proposed_write=values["FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"]
+    stage="READ_TOKEN_ORIGINAL_OWNER_GET"
     try:
         a=owner._get_signed_source(token=read,transport=transport)
+        stage="WRITE_CANDIDATE_ORIGINAL_OWNER_GET"
         b=owner._get_signed_source(token=proposed_write,transport=transport)
         if not all(a.get(k)==b.get(k) for k in ("path","sha","encoding","content")):
             raise PrincipalStop("Original owner private READ/WRITE candidate HEADs differ")
+        stage="ORIGINAL_PUBLIC_WITNESS_LOCAL_VERIFICATION"
         w=witness.verify()
+        stage="ORIGINAL_OWNER_HMAC_VERIFICATION"
         _,claim=fence._read(a,
             private_genesis=w["original_public_genesis_nonce"],
             account_binding_sha256=w["original_live_account_binding_sha256"],
@@ -193,10 +197,13 @@ def inspect(*,environ=None,transport=None)->dict:
             return owner._get_bounded_json(
                 url=owner.ORIGINAL_ORDER_LEDGER_URL+"?ref=main",
                 token=t,transport=transport)
+        stage="READ_TOKEN_ORIGINAL_LEDGER_GET"
         x=ledger_source(read)
+        stage="WRITE_CANDIDATE_ORIGINAL_LEDGER_GET"
         y=ledger_source(proposed_write)
         if not all(x.get(k)==y.get(k) for k in ("path","sha","encoding","content")):
             raise PrincipalStop("Original reserved private READ/WRITE candidate HEADs differ")
+        stage="ORIGINAL_LEDGER_HMAC_VERIFICATION"
         _,state=cas._read_source(x,
             private_genesis=w["original_public_genesis_nonce"],
             account_binding_sha256=w["original_live_account_binding_sha256"],
@@ -206,7 +213,9 @@ def inspect(*,environ=None,transport=None)->dict:
     except PrincipalStop:
         raise
     except Exception:
-        raise PrincipalStop("ORIGINAL_PRIVATE_PRINCIPAL_GET_OR_SIGNED_HEAD_FAILED") from None
+        # Stage is code-owned, finite and redacted: never print token,
+        # private Contents source, HMAC key, account ID or HTTP payload.
+        raise PrincipalStop("ORIGINAL_PRIVATE_HMAC_SOURCE_FAILED_AT_"+stage) from None
     try:
         admin=publication._request(method="GET",
             url=publication.IMMUTABLE_SETTING_URL,
