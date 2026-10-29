@@ -126,6 +126,10 @@ def run_once(*, environ=None, transport=None, private_inspect=None,
     Synthetic injected transport is only for regression tests; production
     always reauthenticates signed private source and GitHub release remotely.
     """
+    if transport is None:
+        # Run 40894337592 published and independently verified original
+        # release 427978301 as provider-IMMUTABLE. Never replay the PATCH.
+        raise DraftStop("Original V2 draft already published immutable; production RETIRED")
     env = dict(os.environ if environ is None else environ)
     _context(env)
     if transport is not None and (
