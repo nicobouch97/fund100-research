@@ -50,7 +50,7 @@ def test_prospectively_frozen_rank_is_deterministic_and_sector_diverse():
 
 
 @pytest.mark.parametrize("fault",[
-    "too_early","wrong_source_mode","future_price_session","stale_price_session",
+    "too_early","wrong_source_mode","same_day_unclosed_price","future_price_session","stale_price_session",
     "future_filing","stale_filing","duplicate_symbol","bad_sec_hash","bad_price_hash",
     "not_common_stock","missing_fundamentals","missing_price","negative_profit",
     "zero_assets","less_than_24","all_same_sector","all_negative_momentum",
@@ -60,6 +60,7 @@ def test_missing_lookahead_or_unqualified_source_rejected(fault):
     rec=x["records"]
     if fault=="too_early":x["research_vintage_utc"]="2026-10-29T16:00:00Z"
     if fault=="wrong_source_mode":x["source_mode"]="AUTHENTICATED_LIVE_READY"
+    if fault=="same_day_unclosed_price":x["original_price_session"]="2026-10-30"
     if fault=="future_price_session":x["original_price_session"]="2026-11-01"
     if fault=="stale_price_session":x["original_price_session"]="2026-10-01"
     if fault=="future_filing":rec[0]["sec_filed_utc"]="2026-11-01T00:00:00Z"
