@@ -1,0 +1,26 @@
+name: Fund-100 Signed Release Fence Tests (OFFLINE)
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_recurring_seq1_durable_release_attempt_fence_offline_v1_0.py"
+      - "test_fund100_v6_recurring_seq1_durable_release_attempt_fence_offline_v1_0.py"
+      - ".github/workflows/fund100-v6-recurring-seq1-durable-release-fence-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  offline-signed-release-fence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: HMAC signed fence and no-repeat regression tests
+        run: |
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_recurring_seq1_durable_release_attempt_fence_offline_v1_0.py
