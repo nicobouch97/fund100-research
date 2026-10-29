@@ -1,0 +1,33 @@
+name: Fund-100 V6 Signed Recurring Seq1 Immutable Event Chain (OFFLINE ONLY)
+
+# One candidate public immutable asset bound to authentic HMAC-signed seq1,
+# prior GitHub-provider immutable seq0, and exact no-order reservation.
+# No broker, GitHub POST, private PUT, credentials or user approvals.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fund100-v6-recurring-seq1-immutable-chain-regressions.yml"
+      - "fund100_v6_recurring_seq1_immutable_event_asset_candidate_v1_0.py"
+      - "test_fund100_v6_recurring_seq1_immutable_event_asset_candidate_v1_0.py"
+
+permissions:
+  contents: read
+
+jobs:
+  credentialless-first-event-immutable-chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test exact public seq1 event immutable fingerprints and forged HEAD rejection
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_recurring_seq1_immutable_event_asset_candidate_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
