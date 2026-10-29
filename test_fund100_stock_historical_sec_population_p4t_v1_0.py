@@ -138,6 +138,65 @@ def test_annual_union_counts_each_original_filing_but_deduplicates_issuers():
     assert not out["live_authorized"] and not out["paper_authorized"]
 
 
+
+def test_2017_month_end_panel_excludes_later_filers_without_today_ticker_filter():
+    quarters = annual_quarters()
+    a = p4t.evaluate_annual(
+        quarters, registry((1001, "OLD")),
+        captured_utc="2026-10-25T12:00:00Z")
+    b = p4t.evaluate_annual(
+        quarters, registry((4004, "LATER")),
+        captured_utc="2026-10-25T12:00:00Z")
+    panel = a["month_end_asof_2017_filing_observability"]
+    assert panel == b["month_end_asof_2017_filing_observability"]
+    assert len(panel) == 12
+    assert [r["distinct_ciks_with_2017_10k_observed_before_cutoff"]
+            for r in panel] == [0, 1, 2, 2, 2, 2, 2, 3, 3, 3, 4, 4]
+    assert panel[2]["future_or_same_day_2017_first_10k_ciks_excluded"] == 2
+    assert panel[4]["original_2017_10k_filings_observed_before_cutoff"] == 3
+    assert panel[-1]["future_or_same_day_2017_first_10k_ciks_excluded"] == 0
+    assert a["first_observed_2017_10k_event_ciks"] == 4
+    assert a["first_observed_2017_10k_events_sha256"] == b[
+        "first_observed_2017_10k_events_sha256"]
+    assert a["asof_cutoff_excludes_same_day_unknown_release_time"]
+    assert a["first_observed_2017_10k_not_first_ever_filing_or_listing"]
+    assert a["2017_filing_observability_not_investable_stock_universe"]
+    assert a["no_survivorship_safe_investable_backtest_or_alpha_claim"]
+
+
+def test_2017_month_end_panel_excludes_same_day_filing_until_next_cutoff():
+    quarters = annual_quarters()
+    quarters[1] = index(
+        ONE, TWO,
+        "5005|LATE MARCH|10-K|2017-03-31|edgar/data/5005/0005005-17-000031.txt")
+    rows = p4t.annual_filing_manifest(quarters)
+    events, panel = p4t.month_end_2017_filing_observability(rows)
+    assert len(events) == 5
+    assert panel[2]["distinct_ciks_with_2017_10k_observed_before_cutoff"] == 2
+    assert panel[2]["future_or_same_day_2017_first_10k_ciks_excluded"] == 3
+    assert panel[3]["distinct_ciks_with_2017_10k_observed_before_cutoff"] == 3
+    assert panel[3]["newly_observed_2017_10k_ciks_since_prior_month_end"] == 1
+    assert len({e["cik"] for e in events}) == 5
+    assert all(set(e) == {
+        "cik", "first_observed_2017_10k_filing_date",
+        "first_observed_2017_10k_archive_path"} for e in events)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("filing_date", "2017-02-30"),
+    ("filing_date", "2018-02-15"),
+    ("quarter", "2017_Q4"),
+    ("cik", True),
+    ("sec_archive_path", "edgar/data/9999/0001001-17-000001.txt"),
+])
+def test_2017_first_filing_events_fail_closed_on_invalid_identity(field, value):
+    rows = p4t.annual_filing_manifest(annual_quarters())
+    rows[0] = {**rows[0], field: value}
+    with pytest.raises(p4t.PopulationStop):
+        p4t.first_2017_10k_filing_events(rows)
+
+
+
 def test_annual_rejects_missing_quarter_and_cross_quarter_duplicate_accession():
     quarters = annual_quarters()
     quarters.pop(3)
