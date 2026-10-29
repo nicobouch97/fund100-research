@@ -358,3 +358,26 @@ def test_execution_stress_is_diagnostic_not_an_alpha_promotion_gate():
             "net_annualized_return_pct"]
         for era in ("2014_2016","2017_2020","2021_2025"))
     assert not report["trading_authorized"]
+
+
+def test_delayed_cross_asset_all_cash_regime_never_invents_trades():
+    # A negative-momentum regime must not turn an execution delay into
+    # invented buying, turnover or cost. It must respect the same frozen
+    # all-cash decision at all originally registered fee levels.
+    panel=sample(decline=True,short=True)
+    for bps in t.COSTS:
+        immediate=t.simulate(panel,start="2014-01-02",end="2016-12-30",
+                             side_bps=bps,strategy="CROSS_ASSET_12_1")
+        delayed=t.simulate(panel,start="2014-01-02",end="2016-12-30",
+                           side_bps=bps,strategy="CROSS_ASSET_12_1_NEXT_CLOSE")
+        assert immediate["net_total_return_pct"]==0
+        assert delayed["net_total_return_pct"]==0
+        assert delayed["modeled_fees_usd_per_100_initial_usd"]==0
+        assert delayed["gross_traded_notional_per_100_initial_usd"]==0
+        assert delayed["unexecuted_terminal_decisions"]==0
+        assert len(delayed["signal_trade_log"])==len(immediate["signal_trade_log"])
+        assert all(x["hypothetical_positions"]==[]
+                   and x["target_gross_fraction"]==0
+                   and x["modeled_execution_close"] is not None
+                   for x in delayed["signal_trade_log"])
+        assert delayed["no_actual_orders"]
