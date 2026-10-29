@@ -1022,3 +1022,54 @@ def test_indexed_xbrl_unavailable_keeps_verified_primary_and_abstains(tmp_path):
         "INDEXED_XBRL_NOT_CAPTURED": 2}
     assert all(row["primary_xbrl_trading_symbol"] is None for row in report["observations"])
     assert report["broker_orders"] == 0 and not report["live_authorized"]
+
+
+@pytest.mark.parametrize("tamper", [
+    "impossible_calendar_date", "wrong_filing_quarter",
+    "wrong_accession_year", "bad_accession_sequence",
+    "wrong_archive_cik",
+])
+def test_2017_cover_sample_rejects_invalid_asof_filing_identity(tmp_path, tamper):
+    # Even a locally rehashed P4T manifest must not become an as-of
+    # security source when its original SEC identity is impossible.
+    make_sources(tmp_path)
+    path = tmp_path / "historical-2017-10k-filings.jsonl"
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    row = rows[0]
+    if tamper == "impossible_calendar_date":
+        row["filing_date"] = "2017-02-30"
+    elif tamper == "wrong_filing_quarter":
+        row["filing_date"] = "2017-04-03"  # real date, not Q1
+    elif tamper == "wrong_accession_year":
+        row["sec_archive_path"] = row["sec_archive_path"].replace("-17-", "-18-")
+    elif tamper == "bad_accession_sequence":
+        row["sec_archive_path"] = row["sec_archive_path"].replace("-000001.txt", "-1.txt")
+    else:
+        row["sec_archive_path"] = row["sec_archive_path"].replace(
+            "/1001/", "/9999/")
+    raw = "".join(json.dumps(r, sort_keys=True) + "\n" for r in rows).encode()
+    path.write_bytes(raw)
+    census = tmp_path / "historical-2017-annual-filer-census.json"
+    annual = json.loads(census.read_text())
+    annual["historical_filing_manifest_sha256"] = sha256(raw).hexdigest()
+    census.write_text(json.dumps(annual))
+    with pytest.raises(p4u.ListingEvidenceStop):
+        p4u.select_sample(tmp_path, per_stratum=1)
+
+
+def test_2017_cover_sample_allows_legitimate_filing_agent_accession(tmp_path):
+    # The accession submitter can differ from the issuer CIK. Only the
+    # EDGAR archive directory must match the original filer identity.
+    make_sources(tmp_path)
+    path = tmp_path / "historical-2017-10k-filings.jsonl"
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    rows[0]["sec_archive_path"] = "edgar/data/1001/0001193125-17-000001.txt"
+    raw = "".join(json.dumps(r, sort_keys=True) + "\n" for r in rows).encode()
+    path.write_bytes(raw)
+    census = tmp_path / "historical-2017-annual-filer-census.json"
+    annual = json.loads(census.read_text())
+    annual["historical_filing_manifest_sha256"] = sha256(raw).hexdigest()
+    census.write_text(json.dumps(annual))
+    selected, _ = p4u.select_sample(tmp_path, per_stratum=2)
+    assert len(selected) == 4
+    assert any(r["sec_archive_path"] == rows[0]["sec_archive_path"] for r in selected)
