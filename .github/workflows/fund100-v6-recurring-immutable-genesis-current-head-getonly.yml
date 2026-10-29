@@ -1,0 +1,99 @@
+name: Fund-100 V6 Recurring Authenticated Immutable GENESIS HEAD (GET ONLY; STOP)
+
+# A read-only proof that CURRENT signed private recurring seq0 is the exact
+# HMAC-signed state publicly committed in provider-IMMUTABLE asset 688837795.
+# Not a recurring event seq1+ anchor, NOT a broker order or standing release.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fund100-v6-recurring-immutable-genesis-current-head-getonly.yml"
+      - "fund100_v6_recurring_anchored_current_head_getonly_v1_0.py"
+      - "test_fund100_v6_recurring_anchored_current_head_getonly_v1_0.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-v6-recurring-immutable-genesis-current-head-getonly.yml"
+      - "fund100_v6_recurring_anchored_current_head_getonly_v1_0.py"
+      - "test_fund100_v6_recurring_anchored_current_head_getonly_v1_0.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-recurring-signed-private-immutable-genesis-readonly
+  cancel-in-progress: false
+
+jobs:
+  credentialless-signed-head-immutable-asset-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test HMAC/rollback/asset corruption under zero authenticated network
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_recurring_anchored_current_head_getonly_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+
+  protected-main-real-immutable-original-head-getonly:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: credentialless-signed-head-immutable-asset-tests
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Enforce protected HIGH and engaged STOP, zero order authority
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "push"
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          test "$FUND100_RISK_LEVEL" = "HIGH"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          python - <<'PY'
+          import fund100_v6_recurring_anchored_current_head_getonly_v1_0 as head
+          import fund100_v6_recurring_private_cas_once_offline_v1_0 as cas
+          assert head.NO_PUBLIC_MUTATIONS and head.NO_PRIVATE_MUTATIONS
+          assert head.NO_BROKER_HTTP and head.NO_TRADE_PERMIT
+          assert cas.PRODUCTION_REMOTE_TRANSPORT_RELEASED is False
+          assert cas.LIVE_BROKER_ORDER_RELEASED is False
+          print('Only immutable signed initial HEAD GET; no future CAS/order released.')
+          PY
+      - name: Authenticate current private HMAC seq0 and exact immutable public bytes by GET only
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}
+          FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -B fund100_v6_recurring_anchored_current_head_getonly_v1_0.py
+      - name: Confirm original STOP and no broker calls
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'Verified dual-private HMAC and provider immutable asset bytes; no broker/order/PUT.'
