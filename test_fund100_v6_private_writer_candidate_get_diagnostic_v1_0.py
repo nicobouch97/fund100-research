@@ -204,3 +204,26 @@ def test_credential_scope_workflow_keeps_existing_strict_step_and_no_new_secret_
     assert "contents: write" not in workflow
     assert "      - name: Diagnose write-candidate" not in workflow
     assert segment.count("      - name: ") == 1
+
+
+def test_valid_replacement_writer_token_can_be_rechecked_by_existing_dispatch_without_mutation():
+    """Credentialless post-rotation rehearsal: positive auth is READ, not WRITE proof."""
+    fake = FakeGit(auth_code=200, owner_code=200)
+    outcome = probe.diagnose(
+        environ=dict(ENV, GITHUB_EVENT_NAME="workflow_dispatch"),
+        transport=fake)
+    assert fake.calls == [
+        (READ, probe.OWNER_URL),
+        (WRITE, probe.USER_URL),
+        (WRITE, probe.OWNER_URL),
+    ]
+    assert outcome["assessment"] == "CANDIDATE_OWNER_GET_HTTP_200_NOT_WRITE_PROOF"
+    assert outcome["independent_reader_owner_get"] == "HTTP_200"
+    assert outcome["write_candidate_user_auth_get"] == "HTTP_200"
+    assert outcome["write_candidate_owner_get"] == "HTTP_200"
+    assert outcome["candidate_github_contents_write_permission_verified"] is False
+    assert outcome["production_private_git_puts"] == 0
+    assert outcome["broker_posts"] == 0
+    assert outcome["live_orders_authorized"] is False
+    assert outcome["approval_prompt_required"] is False
+    assert READ not in repr(outcome) and WRITE not in repr(outcome)
