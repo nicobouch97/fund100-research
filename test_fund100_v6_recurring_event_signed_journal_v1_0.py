@@ -427,25 +427,37 @@ def recurring_broker_fixture(*, side="buy"):
     }
 
 
-def replay_source_and_context():
-    reserved = next_source(journal.plan_reserve(genesis_source(), **CONTEXT))
-    possible = next_source(journal.plan_possible_post(reserved, **CONTEXT))
+def replay_source_and_context(*, side="buy", symbol="SPY", notional=None):
+    intent = {
+        "schema": broker_proof.INTENT_SCHEMA,
+        "client_order_id": journal.client_id(EVENT),
+        "symbol": symbol, "side": side,
+        "type": "market", "time_in_force": "day",
+        "qty": None if notional is not None else "1.25",
+        "notional": notional,
+    }
+    intent_sha = hashlib.sha256(journal._canon(intent)).hexdigest()
+    scoped = dict(CONTEXT, intent_sha256=intent_sha)
+    reserved = next_source(journal.plan_reserve(genesis_source(), **scoped))
+    possible = next_source(journal.plan_possible_post(reserved, **scoped))
     return possible, dict(
         genesis_sha256=GENESIS, account_binding_sha256=ACCOUNT, key=KEY,
         event_id=EVENT, strategy_id=CONTEXT["strategy_id"],
         signal_time_utc=CONTEXT["signal_time_utc"],
         signal_sha256=SIGNAL, strategy_release_sha256=MODEL,
-        standing_mandate_sha256=MANDATE, intent_sha256=INTENT,
+        standing_mandate_sha256=MANDATE, intent_sha256=intent_sha,
+        original_intent=intent,
     )
 
 
 @pytest.mark.parametrize("side", ["buy", "sell"])
 def test_recurring_actual_broker_shaped_fill_math_is_offline_only(side):
-    signed_source, context = replay_source_and_context()
+    signed_source, context = replay_source_and_context(side=side)
     result = broker_proof.assess(
         private_signed_journal_source=signed_source,
         **context, **recurring_broker_fixture(side=side))
     assert result["filled_order_and_complete_FILLS_structurally_matched"] is True
+    assert result["synthetic_order_fields_bound_to_signed_intent_preimage"] is True
     assert result["real_broker_receipt_source_authenticated"] is False
     assert result["real_private_journal_antirollback_verified"] is False
     assert result["broker_cash_and_settlement_verified"] is False
@@ -513,7 +525,7 @@ def test_recurring_broker_proof_never_has_network_or_private_write_capability():
 
 
 def test_full_existing_inventory_exit_over_65_reconciles_offline_only():
-    signed_source, context = replay_source_and_context()
+    signed_source, context = replay_source_and_context(side="sell")
     fixture = recurring_broker_fixture(side="sell")
     fixture["before_positions"] = {"SPY": "1.25", "XLE": "0.5"}
     fixture["after_positions"] = {"XLE": "0.5"}
@@ -529,7 +541,7 @@ def test_full_existing_inventory_exit_over_65_reconciles_offline_only():
 
 @pytest.mark.parametrize("side", ["buy", "sell"])
 def test_over_65_new_buy_or_partial_sell_cannot_use_full_exit_exception(side):
-    signed_source, context = replay_source_and_context()
+    signed_source, context = replay_source_and_context(side=side)
     fixture = recurring_broker_fixture(side=side)
     for row in fixture["fill_pages"][0]:
         row["price"] = "80"  # $100 of filled notional
@@ -539,7 +551,7 @@ def test_over_65_new_buy_or_partial_sell_cannot_use_full_exit_exception(side):
 
 
 def test_full_existing_inventory_exit_under_65_does_not_fake_exception():
-    signed_source, context = replay_source_and_context()
+    signed_source, context = replay_source_and_context(side="sell")
     fixture = recurring_broker_fixture(side="sell")
     fixture["before_positions"] = {"SPY": "1.25", "XLE": "0.5"}
     fixture["after_positions"] = {"XLE": "0.5"}
@@ -585,7 +597,7 @@ def test_broker_shaped_receipt_accepts_completed_causal_clock_only(monkeypatch):
 
 def test_alpaca_usd_notional_filled_buy_null_qty_reconciles_offline_only():
     """Documented /v2/orders: qty=null when a USD notional is supplied."""
-    signed_source, context = replay_source_and_context()
+    signed_source, context = replay_source_and_context(notional="15.00")
     fixture = recurring_broker_fixture()
     fixture["closed_order"]["qty"] = None
     fixture["closed_order"]["notional"] = "15.00"
@@ -621,7 +633,7 @@ def test_invalid_alpaca_notional_buy_modes_remain_blocked(qty, notional, side):
 
 
 def test_notional_buy_must_not_fill_more_dollars_than_broker_requested():
-    signed_source, context = replay_source_and_context()
+    signed_source, context = replay_source_and_context(notional="14.50")
     fixture = recurring_broker_fixture()
     fixture["closed_order"]["qty"] = None
     fixture["closed_order"]["notional"] = "14.50"  # FILLs total $15.00
@@ -631,7 +643,7 @@ def test_notional_buy_must_not_fill_more_dollars_than_broker_requested():
 
 
 def test_notional_buy_fill_over_65_still_rejected_with_full_sell_exception():
-    signed_source, context = replay_source_and_context()
+    signed_source, context = replay_source_and_context(notional="65.00")
     fixture = recurring_broker_fixture()
     fixture["closed_order"]["qty"] = None
     fixture["closed_order"]["notional"] = "65.00"
@@ -650,3 +662,66 @@ def test_explicit_share_sized_buy_must_have_null_notional():
         private_signed_journal_source=signed_source, **context, **fixture)
     assert result["synthetic_alpaca_notional_buy_with_null_qty_validated"] is False
     assert result["next_live_order_authorized"] is False
+
+
+def test_signed_intent_refuses_sell_when_original_event_authorized_only_buy():
+    signed_source, context = replay_source_and_context(side="buy")
+    fixture = recurring_broker_fixture(side="sell")
+    # Shares, FILL rows and post-position changes are coherent for SELL,
+    # but the original HMAC event bound a BUY, not this SELL.
+    with pytest.raises(broker_proof.BrokerProofStop, match="trade direction"):
+        broker_proof.assess(
+            private_signed_journal_source=signed_source, **context, **fixture)
+
+
+@pytest.mark.parametrize("field,altered", [
+    ("symbol", "XLE"),
+    ("side", "sell"),
+    ("qty", "1.24"),
+    ("client_order_id", "unrelated-order"),
+    ("time_in_force", "gtc"),
+    ("schema", "UNREVIEWED_INTENT"),
+])
+def test_original_order_intent_preimage_mutation_refused(field, altered):
+    signed_source, context = replay_source_and_context()
+    context["original_intent"] = dict(context["original_intent"], **{field: altered})
+    with pytest.raises(broker_proof.BrokerProofStop):
+        broker_proof.assess(
+            private_signed_journal_source=signed_source,
+            **context, **recurring_broker_fixture())
+
+
+def test_missing_original_order_intent_preimage_refused():
+    signed_source, context = replay_source_and_context()
+    context["original_intent"] = None
+    with pytest.raises(broker_proof.BrokerProofStop, match="preimage"):
+        broker_proof.assess(
+            private_signed_journal_source=signed_source,
+            **context, **recurring_broker_fixture())
+
+
+def test_signed_original_qty_cannot_be_silently_changed_in_broker_order():
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture()
+    # Receipt, full FILL activity, and before/after inventory are internally
+    # consistent at 1.50 shares. Signed original intent was only 1.25.
+    fixture["closed_order"]["qty"] = "1.50"
+    fixture["closed_order"]["filled_qty"] = "1.50"
+    fixture["after_positions"]["SPY"] = "3.50"
+    fixture["fill_pages"][0][1]["qty"] = "1.00"
+    fixture["fill_pages"][0][1]["cum_qty"] = "1.50"
+    fixture["fill_pages"][0][0]["leaves_qty"] = "1.00"
+    fixture["fill_pages"][0][1]["leaves_qty"] = "0"
+    with pytest.raises(broker_proof.BrokerProofStop, match="sizing"):
+        broker_proof.assess(
+            private_signed_journal_source=signed_source, **context, **fixture)
+
+
+def test_original_notional_commitment_cannot_drift_to_a_different_valid_buy():
+    signed_source, context = replay_source_and_context(notional="15.00")
+    fixture = recurring_broker_fixture()
+    fixture["closed_order"]["qty"] = None
+    fixture["closed_order"]["notional"] = "16.00"
+    with pytest.raises(broker_proof.BrokerProofStop, match="sizing"):
+        broker_proof.assess(
+            private_signed_journal_source=signed_source, **context, **fixture)
