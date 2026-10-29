@@ -232,7 +232,7 @@ def test_lost_ack_after_fake_server_committed_never_retries_or_trades():
 def test_201_ack_wrong_git_blob_does_not_pass():
     fake = FakePrivate()
     fake.bad_ack = True
-    with pytest.raises(candidate.ProtectedGenesisStop, match="acknowledgement"):
+    with pytest.raises(candidate.ProtectedGenesisStop, match="response incomplete"):
         run(fake)
     assert fake.calls.count("PUT") == 1
 
