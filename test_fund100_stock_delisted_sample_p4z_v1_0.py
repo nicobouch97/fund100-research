@@ -226,3 +226,71 @@ def test_twtr_ex_post_contractual_spread_can_be_negative(tmp_path):
     assert result["twtr_sec_contractual_right_vs_last_close_pct"] == pytest.approx(-9.666667)
     assert result["twtr_terminal_shareholder_proceeds_usd"] is None
 
+
+
+def test_original_adjusted_vs_raw_corporate_action_return_bias_is_quantified(tmp_path):
+    # Synthetic split/dividend adjustments deliberately differ from raw close.
+    # The exercise is price-source arithmetic, not historical strategy alpha.
+    def adjust(symbol, rows):
+        if symbol == "TSLA":
+            rows[0]["close"] = "900"
+            rows[0]["adj_close"] = "300"
+        if symbol in ("KO", "SPY"):
+            rows[0]["adj_close"] = "290"
+        if symbol == "TWTR":
+            rows[-1]["close"] = "330"
+            rows[-1]["adj_close"] = "330"
+        if symbol == "SPY":
+            next(r for r in rows if r["date"] == "2022-10-27")[
+                "adj_close"] = "315"
+
+    result = p4z.audit_zip(_zip(tmp_path, adjust))
+    by_symbol = result["per_listing_observed_window"]
+    assert set(by_symbol) == {"TSLA", "KO", "SPY", "TWTR"}
+    assert by_symbol["TSLA"]["raw_close_price_change_pct"] == pytest.approx(
+        -66.666667)
+    assert by_symbol["TSLA"]["vendor_adjusted_close_change_pct"] == 0
+    assert by_symbol["TSLA"]["adjusted_minus_raw_change_pp"] == pytest.approx(
+        66.666667)
+    assert by_symbol["KO"]["adjusted_minus_raw_change_pp"] == pytest.approx(
+        3.448276)
+    assert by_symbol["SPY"]["last_observed_close_session"] == "2022-12-30"
+    assert by_symbol["TWTR"]["last_observed_close_session"] == "2022-10-27"
+    matched = result["twtr_vs_spy_same_pre_suspension_window"]
+    assert matched["first_session"] == "2022-07-01"
+    assert matched["last_session"] == "2022-10-27"
+    assert matched["twtr_vendor_adjusted_close_change_pct"] == 10
+    assert matched["spy_vendor_adjusted_close_change_pct"] == pytest.approx(
+        8.62069)
+    assert matched["twtr_minus_spy_vendor_adjusted_change_pp"] == pytest.approx(
+        1.37931)
+    assert result["no_twtr_mark_or_portfolio_return_after_last_trading_bar"]
+    assert result["vendor_adjusted_prices_not_independently_total_return_certified"]
+    assert result["retrospectively_chosen_listings_not_a_point_in_time_universe"]
+    assert result["observed_price_changes_not_realized_trade_or_settlement_returns"]
+    assert result["twtr_terminal_shareholder_proceeds_usd"] is None
+    assert result["twtr_post_delisting_total_return"] is None
+
+
+def test_matching_twtr_and_spy_window_never_uses_later_spy_prices(tmp_path):
+    base = p4z.audit_zip(_zip(tmp_path))
+
+    def change_later_spy(symbol, rows):
+        if symbol == "SPY":
+            rows[-1]["close"] = "600"
+            rows[-1]["adj_close"] = "600"
+
+    changed = p4z.audit_zip(_zip(tmp_path, change_later_spy))
+    assert (base["twtr_vs_spy_same_pre_suspension_window"] ==
+            changed["twtr_vs_spy_same_pre_suspension_window"])
+    assert (base["per_listing_observed_window"]["SPY"] !=
+            changed["per_listing_observed_window"]["SPY"])
+    assert base["twtr_post_delisting_total_return"] is None
+    assert changed["twtr_post_delisting_total_return"] is None
+
+
+def test_original_return_window_rejects_reversed_sessions():
+    with pytest.raises(p4z.DelistedSampleStop, match="Reversed"):
+        p4z._observed_close_return(
+            {"date": "2022-10-27", "close": "100", "adj_close": "100"},
+            {"date": "2022-07-01", "close": "100", "adj_close": "100"})
