@@ -85,3 +85,22 @@ API. A real opportunity must be independently qualified, pass
 the existing X6 cost/settlement/capacity chooser, and be
 approved by a future standing mandate. This task is ONLY
 source-backed comparative investment research.
+
+## 29 October 2026 — post-hoc exposure-matched diagnostic (NOT a new hypothesis)
+
+The original T1 test and its three-era 15 bp pass/fail hurdle above remain
+**unchanged**. After the original results had been examined, we added a
+*descriptive* fourth comparator to each existing window/cost scenario:
+`EXPOSURE_MATCHED_FOUR_EQUAL`. On the exact same monthly decision close,
+it uses the original trend rule's number of positive selected names (zero,
+one or two) to set the same 0%, 47.5% or 95% equity budget, but divides
+that budget equally across SPY/TLT/GLD/DBC. It charges the same per-side
+transaction-cost schedule on its **own** entry, rotation and exit trades.
+The comparator observes only the original signal's previous-session data;
+it never learns the future market return. Matching gross exposure helps
+identify whether the apparent trend advantage comes from timing gross risk
+or selecting particular assets. Because the comparator inherits the
+original signal's exposure and was added after viewing prior historical
+results, it is **not** independent validation, an alpha claim, a revised
+promotion gate or permission to trade. Original static four-ETF and SPY
+benchmarks remain untouched.
