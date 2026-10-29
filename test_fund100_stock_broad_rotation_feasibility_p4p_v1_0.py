@@ -281,3 +281,70 @@ def test_decision_exposure_comparator_is_reported_separately_from_full_spy():
     assert cash["spy_decision_exposure_net_return_pct"] == 0
     assert cash["spy_decision_exposure_one_way_turnover"] == 0
     assert cash["strategy_minus_spy_decision_exposure_net_pp"] == 0
+
+
+def test_spy_shy_etf_control_charges_both_sides_and_earns_shy_return():
+    dates = pd.to_datetime(["2026-01-02", "2026-01-05",
+                            "2026-01-06", "2026-01-07"])
+    frame = pd.DataFrame({"SPY": [100., 100., 120., 120.],
+                          "SHY": [100., 100., 102., 102.]}, index=dates)
+    decisions = [{"execution_close_session": "2026-01-05",
+                  "selected": list(p4l.SECTORS)[:3]}]
+    c = .0015
+    gross = p4p._spy_shy_at_strategy_decision_exposure(frame, 1, decisions, 0)
+    net = p4p._spy_shy_at_strategy_decision_exposure(frame, 1, decisions, c)
+    # 50% SPY (+20%) and 50% SHY (+2%): +11% before costs.
+    # Both ETFs are bought at entry and liquidated on the final real close.
+    assert gross["terminal_wealth"] == pytest.approx(1.11)
+    assert net["terminal_wealth"] == pytest.approx(1.11 * (1 - c) ** 2)
+    assert net["one_way_turnover"] == pytest.approx(2)
+    assert len(net["path"]) == 4
+    assert net["path"][-1] == pytest.approx(net["terminal_wealth"])
+    assert net["terminal_wealth"] < gross["terminal_wealth"]
+
+
+def test_spy_shy_control_rebalances_drifted_etfs_with_two_sided_turnover():
+    dates = pd.to_datetime(["2026-01-02", "2026-01-05",
+                            "2026-01-06", "2026-01-07"])
+    frame = pd.DataFrame({"SPY": [100., 100., 120., 120.],
+                          "SHY": [100., 100., 100., 100.]}, index=dates)
+    decisions = [
+        {"execution_close_session": "2026-01-05",
+         "selected": list(p4l.SECTORS)[:3]},
+        {"execution_close_session": "2026-01-06",
+         "selected": list(p4l.SECTORS)[:p4l.MAX_NAMES]},
+    ]
+    gross = p4p._spy_shy_at_strategy_decision_exposure(frame, 1, decisions, 0)
+    # 50/50 becomes 6/11 SPY and 5/11 SHY; moving to all SPY
+    # trades 5/11 of each ETF, not just the net equity increment.
+    assert gross["terminal_wealth"] == pytest.approx(1.1)
+    assert gross["one_way_turnover"] == pytest.approx(1 + 10/11 + 1)
+    with pytest.raises(p4p.FeasibilityStop, match="decision exposure"):
+        p4p._spy_shy_at_strategy_decision_exposure(
+            frame, 1, decisions + decisions[:1], .0015)
+
+
+def test_spy_shy_comparison_is_separate_from_zero_yield_cash_and_costed():
+    scenarios = analyze(prices())["scenarios"]
+    for row in scenarios.values():
+        assert row["spy_shy_decision_exposure_control_is_fully_invested_etfs"]
+        assert row["spy_shy_decision_exposure_control_shy_is_not_cash_or_risk_free"]
+        assert row["spy_shy_decision_exposure_control_uses_same_strategy_signals"]
+        assert row["spy_shy_decision_exposure_one_way_turnover"] >= 2
+        assert row["spy_shy_decision_exposure_modelled_cost_drag_pp"] > 0
+        assert row["strategy_minus_spy_shy_decision_exposure_net_pp"] == pytest.approx(
+            row["strategy_net_return_pct"] -
+            row["spy_shy_decision_exposure_net_return_pct"], abs=2e-6)
+        assert row["spy_shy_decision_exposure_annualized_volatility_fraction"] >= 0
+        assert row["spy_shy_decision_exposure_max_drawdown_hypothetical_pct"] <= 0
+    assert scenarios["5"]["spy_shy_decision_exposure_net_return_pct"] > (
+        scenarios["15"]["spy_shy_decision_exposure_net_return_pct"]) > (
+        scenarios["35"]["spy_shy_decision_exposure_net_return_pct"])
+    # All-cash stock strategy does not incur fees; all-SHY ETF alternative
+    # earns SHY adjusted-price returns but pays actual modeled ETF costs.
+    cash = analyze(prices(flat=True))["scenarios"]["15"]
+    assert cash["strategy_net_return_pct"] == 0
+    assert cash["spy_decision_exposure_net_return_pct"] == 0
+    assert cash["spy_shy_decision_exposure_net_return_pct"] == pytest.approx(
+        100 * ((1 - .0015) ** 2 - 1), abs=2e-6)
+    assert cash["spy_shy_decision_exposure_one_way_turnover"] == pytest.approx(2)
