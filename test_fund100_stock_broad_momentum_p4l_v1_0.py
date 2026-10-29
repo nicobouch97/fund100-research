@@ -114,6 +114,9 @@ def test_transient_missing_price_retries_whole_source_batch(monkeypatch):
 
     complete = prices()
     incomplete = complete.copy()
+    # Simulate a revised adjustment in the second vendor batch. The output
+    # must use that entire second vintage, not just patch its missing NVDA bar.
+    incomplete["MSFT"] *= 0.98
     incomplete.loc[incomplete.index[-2], "NVDA"] = np.nan
     calls = []
 
