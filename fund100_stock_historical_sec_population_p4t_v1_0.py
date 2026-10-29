@@ -9,7 +9,8 @@ This source-only study cannot rank stocks, request broker access or trade.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from calendar import monthrange
+from datetime import date, datetime, timezone
 from hashlib import sha256
 import json
 import os
@@ -235,6 +236,83 @@ def _manifest_bytes(rows: list[dict]) -> bytes:
     ).encode("utf-8")
 
 
+
+def first_2017_10k_filing_events(rows: list[dict]) -> list[dict]:
+    """Earliest ORIGINAL 2017 10-K per issuer, never a historical listing date.
+
+    The annual census contains all four quarters, so using its full-year
+    membership at a January or March decision would leak later filings.
+    This is a dated *2017 filing-observation* bridge only. A CIK can have
+    filed before 2017, can represent multiple securities, and may not have
+    had listed common stock at any time in 2017.
+    """
+    if type(rows) is not list or not rows:
+        raise PopulationStop("Missing original annual 10-K filing manifest")
+    first = {}
+    seen_paths = set()
+    expected = {"cik", "company_name_in_original_index", "filing_date",
+                "quarter", "sec_archive_path"}
+    for row in rows:
+        if type(row) is not dict or set(row) != expected:
+            raise PopulationStop("Malformed original 2017 filing event")
+        cik, filed, path = row["cik"], row["filing_date"], row["sec_archive_path"]
+        if (type(cik) is not int or not 0 < cik < 10**10
+            or type(filed) is not str or type(path) is not str
+            or type(row["company_name_in_original_index"]) is not str
+            or not row["company_name_in_original_index"].strip()
+            or not re.fullmatch(r"edgar/data/[0-9]+/[0-9-]+\\.txt", path)
+            or int(path.split("/")[2]) != cik or path in seen_paths):
+            raise PopulationStop("Unverifiable original 2017 filing event")
+        try:
+            day = date.fromisoformat(filed)
+        except ValueError as exc:
+            raise PopulationStop("Invalid original 2017 filing date") from exc
+        if (day.year != 2017 or day.isoformat() != filed
+            or row["quarter"] != f"2017_Q{(day.month - 1) // 3 + 1}"):
+            raise PopulationStop("Original filing date/quarter mismatch")
+        seen_paths.add(path)
+        event = {
+            "cik": cik,
+            "first_observed_2017_10k_filing_date": filed,
+            "first_observed_2017_10k_archive_path": path,
+        }
+        if (cik not in first or
+            (filed, path) < (first[cik]["first_observed_2017_10k_filing_date"],
+                             first[cik]["first_observed_2017_10k_archive_path"])):
+            first[cik] = event
+    return sorted(first.values(), key=lambda row: (
+        row["first_observed_2017_10k_filing_date"], row["cik"]))
+
+
+def month_end_2017_filing_observability(rows: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Twelve as-of counts, excluding SAME-DAY filings with unknown release time.
+
+    The conservative cutoff is the start of the calendar month-end date.
+    A first observed 2017 10-K on that date is not available in this
+    diagnostic until the next cutoff. No filing absence is an issuer exit.
+    """
+    events = first_2017_10k_filing_events(rows)
+    total = len(events)
+    panel = []
+    prior_seen = 0
+    for month in range(1, 13):
+        cutoff = date(2017, month, monthrange(2017, month)[1]).isoformat()
+        seen = sum(e["first_observed_2017_10k_filing_date"] < cutoff for e in events)
+        filings_seen = sum(r["filing_date"] < cutoff for r in rows)
+        if not prior_seen <= seen <= total or filings_seen < seen:
+            raise PopulationStop("Historical filing observability reconciliation failed")
+        panel.append({
+            "asof_month_end_date": cutoff,
+            "cutoff_convention": "ONLY_FILINGS_DATED_BEFORE_ASOF_DATE",
+            "distinct_ciks_with_2017_10k_observed_before_cutoff": seen,
+            "original_2017_10k_filings_observed_before_cutoff": filings_seen,
+            "newly_observed_2017_10k_ciks_since_prior_month_end": seen - prior_seen,
+            "future_or_same_day_2017_first_10k_ciks_excluded": total - seen,
+        })
+        prior_seen = seen
+    return events, panel
+
+
 def evaluate_annual(index_by_quarter: dict[int, bytes], registry_raw: bytes,
                     *, captured_utc: str) -> dict:
     """Reconcile all 2017 10-K filings and preserve a source-bound issuer manifest.
@@ -266,6 +344,12 @@ def evaluate_annual(index_by_quarter: dict[int, bytes], registry_raw: bytes,
     overlap = all_ciks & current
     absent = all_ciks - current
     manifest = _manifest_bytes(rows)
+    first_events, dated_panel = month_end_2017_filing_observability(rows)
+    first_event_manifest = _manifest_bytes(first_events)
+    if (len(first_events) != len(all_ciks)
+        or dated_panel[-1]["distinct_ciks_with_2017_10k_observed_before_cutoff"]
+           > len(all_ciks)):
+        raise PopulationStop("Dated SEC issuer observation reconciliation failed")
     return {
         "schema": ANNUAL_SCHEMA,
         "source_index_urls": {f"2017_Q{q}": INDEX_URLS[q] for q in QUARTER_BOUNDS},
@@ -287,6 +371,13 @@ def evaluate_annual(index_by_quarter: dict[int, bytes], registry_raw: bytes,
         "historical_filing_manifest_rows": len(rows),
         "historical_filing_manifest_distinct_ciks": len(all_ciks),
         "historical_filing_manifest_uses_current_tickers": False,
+        "first_observed_2017_10k_events_file": "historical-2017-first-10k-events.jsonl",
+        "first_observed_2017_10k_events_sha256": sha256(first_event_manifest).hexdigest(),
+        "first_observed_2017_10k_event_ciks": len(first_events),
+        "month_end_asof_2017_filing_observability": dated_panel,
+        "asof_cutoff_excludes_same_day_unknown_release_time": True,
+        "first_observed_2017_10k_not_first_ever_filing_or_listing": True,
+        "2017_filing_observability_not_investable_stock_universe": True,
         "historical_population_selected_without_2026_ticker_filter": True,
         "current_registry_absence_not_proof_of_delisting_or_failure": True,
         "quarterly_10k_absence_not_proof_of_company_exit": True,
@@ -445,6 +536,16 @@ def capture_annual(output_dir: Path, agent: str, *, form25_documents: bool = Fal
     for quarter in (2, 3, 4):
         (output_dir / f"original-sec-2017q{quarter}-master.idx").write_bytes(
             original[quarter])
+    first_events, panel = month_end_2017_filing_observability(
+        annual_filing_manifest(original))
+    first_event_bytes = _manifest_bytes(first_events)
+    if (sha256(first_event_bytes).hexdigest() !=
+            report["first_observed_2017_10k_events_sha256"]
+        or len(first_events) != report["first_observed_2017_10k_event_ciks"]
+        or panel != report["month_end_asof_2017_filing_observability"]):
+        raise PopulationStop("Dated original filing manifest reconciliation failed")
+    (output_dir / report["first_observed_2017_10k_events_file"]).write_bytes(
+        first_event_bytes)
     (output_dir / report["historical_filing_manifest_file"]).write_bytes(manifest)
     (output_dir / "historical-2017-annual-filer-census.json").write_text(
         json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
