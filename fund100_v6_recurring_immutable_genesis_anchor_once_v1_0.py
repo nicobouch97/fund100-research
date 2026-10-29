@@ -219,7 +219,7 @@ def publish_once(*, environ, transport=None, inspect_fn=None, get_fn=None,
         "name": "Fund-100 V6 immutable signed recurring genesis (NO TRADES)",
         "body": "Public genesis fingerprint only. No journal contents, credentials, trading mandate or authority.",
         "draft": True, "prerelease": False,
-        "make_latest": False, "generate_release_notes": False,
+        "make_latest": "false", "generate_release_notes": False,
     })
     # No repeat, even if the first draft acknowledgement is lost.
     draft = send(method="POST", url=RELEASE_URL, token=publisher, data=payload)
