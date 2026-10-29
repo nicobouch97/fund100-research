@@ -1,5 +1,5 @@
 """Real SEC+vendor first-vintage adapter regression with fully synthetic sources."""
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
 import hashlib
 import json
 from pathlib import Path
