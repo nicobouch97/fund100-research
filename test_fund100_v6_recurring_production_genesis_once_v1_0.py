@@ -174,3 +174,21 @@ def test_no_broker_access_or_extra_operator_approval():
     assert "ALPACA_LIVE_KEY" not in source
     assert "ALPACA_LIVE_SECRET" not in source
     assert "broker POST" not in source.split("def main():")[-1]
+
+
+def test_completed_one_time_production_genesis_workflow_is_permanently_unarmed():
+    """The signed private seq0 exists; no later GitHub push may repeat CREATE."""
+    from pathlib import Path
+    workflow = Path(
+        ".github/workflows/fund100-v6-recurring-signed-genesis-production-once.yml"
+    ).read_text()
+    assert "on:\n  pull_request:" in workflow.replace("\r\n", "\n")
+    assert "credentialless-no-order-one-shot-tests:" in workflow
+    for prohibited in (
+        "\n  push:", "\n  workflow_dispatch:", "\n  schedule:",
+        "protected-main-single-genesis-no-orders:",
+        "environment: fund100-live-broker",
+        "${{ secrets.", "python -B fund100_v6_recurring_production_genesis_once_v1_0.py",
+    ):
+        assert prohibited not in workflow
+    assert "persist-credentials: false" in workflow
