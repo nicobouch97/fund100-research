@@ -254,3 +254,13 @@ def test_module_has_no_http_broker_credentials_or_production_mutation_entrypoint
         "def main(", "method=\"POST\"", "method=\"PUT\"",
     ):
         assert dangerous not in code
+
+
+def test_signed_first_genesis_is_compatible_with_existing_offline_recurring_cas():
+    import fund100_v6_recurring_genesis_single_create_offline_v1_0 as first
+    prepared = first.prepare_offline_genesis(**AUTH)
+    assert prepared == genesis()
+    proposal_from_new_head = journal.plan_reserve(prepared, **CONTEXT)
+    assert proposal_from_new_head["old_blob_sha"] == prepared["sha"]
+    assert first.PRODUCTION_GITHUB_TRANSPORT_RELEASED is False
+    assert first.LIVE_BROKER_ORDER_RELEASED is False
