@@ -60,6 +60,10 @@ def test_full_synthetic_source_preserves_terminal_unknown(tmp_path):
     assert report["twtr_source_delisting_label"] == "2022-10-31"
     assert report["twtr_terminal_shareholder_proceeds_usd"] is None
     assert report["twtr_post_delisting_total_return"] is None
+    assert report["twtr_last_observed_raw_close_usd"] == 300.0
+    assert report["twtr_sec_contractual_right_minus_last_close_usd"] is None
+    assert report["twtr_sec_contractual_right_vs_last_close_pct"] is None
+    assert report["twtr_contractual_spread_ex_post_not_tradeable_or_realized"]
     assert report["twtr_position_cannot_be_dropped_or_valued_at_zero_by_default"]
     assert report["tsla_split_raw_close_return_pct"] < -60
     assert abs(report["tsla_split_adjusted_close_return_pct"]) < 1
@@ -187,3 +191,38 @@ def test_sec_conflicting_cash_right_and_script_spoof_fail_closed():
     )
     with pytest.raises(p4z.DelistedSampleStop, match="issuer"):
         p4z.audit_twtr_sec_merger(spoof)
+
+
+def test_twtr_original_last_close_vs_later_contractual_right_is_ex_post_only(tmp_path):
+    sec = tmp_path / "original-sec-8k.htm"
+    sec.write_bytes(_sec_html())
+
+    def last_price(symbol, rows):
+        if symbol == "TWTR":
+            rows[-1]["close"] = "50.00"
+            rows[-1]["adj_close"] = "50.00"
+
+    result = p4z.audit_zip(_zip(tmp_path, last_price), sec_merger_filing=sec)
+    assert result["twtr_last_observed_raw_close_usd"] == 50.0
+    assert result["twtr_sec_contractual_right_minus_last_close_usd"] == 4.2
+    assert result["twtr_sec_contractual_right_vs_last_close_pct"] == 8.4
+    assert result["twtr_contractual_spread_ex_post_not_tradeable_or_realized"]
+    assert result["sec_later_filing_not_a_signal_at_2022_10_27_close"]
+    assert result["twtr_terminal_shareholder_proceeds_usd"] is None
+    assert result["twtr_post_delisting_total_return"] is None
+    assert result["historical_stock_alpha_backtest_eligible"] is False
+
+
+def test_twtr_ex_post_contractual_spread_can_be_negative(tmp_path):
+    sec = tmp_path / "original-sec-8k.htm"
+    sec.write_bytes(_sec_html())
+
+    def last_price(symbol, rows):
+        if symbol == "TWTR":
+            rows[-1]["close"] = "60.00"
+
+    result = p4z.audit_zip(_zip(tmp_path, last_price), sec_merger_filing=sec)
+    assert result["twtr_sec_contractual_right_minus_last_close_usd"] == -5.8
+    assert result["twtr_sec_contractual_right_vs_last_close_pct"] == pytest.approx(-9.666667)
+    assert result["twtr_terminal_shareholder_proceeds_usd"] is None
+
