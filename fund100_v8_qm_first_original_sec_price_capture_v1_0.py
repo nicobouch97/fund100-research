@@ -68,7 +68,7 @@ def _company_fact(concepts,tag,filing,*,annual):
                 ("accn",filing["accn"]),
                 ("filed",filing["filed"]),
                 ("form","10-K"),
-                ("end",filing["end"]))):
+                ("end",filing["end"])))):
             continue
         if annual:
             try:
