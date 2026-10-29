@@ -175,3 +175,45 @@ def test_source_capture_workflow_no_live_secret_or_write_authority():
         ".github/workflows/fund100-v8-qm-first-original-sec-price-source.yml",
     ):
         assert '      - "'+path+'"' in audit
+
+
+def test_current_official_sec_cik_drift_is_quarantined_not_joined_as_old_issuer():
+    registry,src,frame=inputs()
+    original=sec.resolve_registry(registry)
+    ticker="AAPL"
+    oldcik=original[ticker]
+    newcik="0099999988"
+    assert newcik not in original.values()
+    obj=json.loads(registry)
+    for entry in obj.values():
+        if entry["ticker"]==ticker:
+            entry["cik_str"]=int(newcik)
+            break
+    else:
+        raise AssertionError("Missing original frozen ticker")
+    current=json.dumps(obj).encode()
+    # Latest issuer SEC observations for NEW ticker mapping are real-format
+    # but NOT proof that the historical frozen CIK describes the same firm.
+    for kind in ("companyfacts","submissions"):
+        oldpath=f"raw/CIK{oldcik}-{ticker}-{kind}.json"
+        newpath=f"raw/CIK{newcik}-{ticker}-{kind}.json"
+        data=json.loads(src.pop(oldpath))
+        data["cik"]=int(newcik)
+        newacc=f"{newcik}-26-000001"
+        if kind=="companyfacts":
+            for concept in ("GrossProfit","Assets"):
+                data["facts"]["us-gaap"][concept]["units"]["USD"][0]["accn"]=newacc
+        else:
+            data["filings"]["recent"]["accessionNumber"]=[newacc]
+        src[newpath]=json.dumps(data).encode()
+    mapping,drift=app._current_registry_with_original_identity_quarantine(current)
+    assert mapping[ticker]==newcik
+    assert drift==[ticker]
+    result,_=app.analyze_sources(
+        registry=current,source_files=src,price_panel=frame,acquired_utc=CAPTURE)
+    assert result["frozen_original_eight_cik_identity_drift_quarantined"]==[ticker]
+    assert result["latest_same_filing_10K_gross_profit_and_assets_available"]==23
+    assert result["missing_comparable_sec_gross_profit_or_assets"]==[ticker]
+    assert result["selection_candidate"] is None
+    assert result["live_order_authorized"] is False
+    assert secfetch.read_cohort()[0]["cik_10_digit"] != "0099999988"
