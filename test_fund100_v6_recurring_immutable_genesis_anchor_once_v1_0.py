@@ -259,3 +259,12 @@ def test_one_shot_workflow_has_no_auto_trigger_or_production_environment():
     assert "environment: fund100-live-broker" not in workflow
     assert "secrets.FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN" not in workflow
     assert "protected-main-publish-immutable-genesis-only:" not in workflow
+
+
+def test_retired_release_module_changes_always_trigger_full_live_pr_audit():
+    from pathlib import Path
+    audit = Path(".github/workflows/fund100-live-static-audit.yml").read_text()
+    assert audit.count("  pull_request:\n    paths:\n") == 1
+    pr_paths = audit.split("  pull_request:\n    paths:\n", 1)[1]
+    assert '      - "fund100_v6_recurring_immutable_genesis_anchor_once_v1_0.py"' in pr_paths
+    assert '      - "test_fund100_v6_recurring_immutable_genesis_anchor_once_v1_0.py"' in pr_paths
