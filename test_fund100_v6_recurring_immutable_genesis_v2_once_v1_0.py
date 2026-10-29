@@ -2,6 +2,7 @@
 from base64 import b64encode
 from hashlib import sha256
 from io import BytesIO
+from pathlib import Path
 import json
 from urllib.error import HTTPError
 from urllib.request import Request
@@ -90,7 +91,8 @@ class FakeGitHubRelease:
         if method == "POST" and url == mod.RELEASE_URL:
             payload = json.loads(req.data)
             assert payload["draft"] is True and payload["tag_name"] == mod.TAG
-            assert payload["make_latest"] == "false" and type(payload["make_latest"]) is str
+            if type(payload.get("make_latest")) is not str or payload["make_latest"] != "false":
+                raise HTTPError(url, 422, "Invalid enum", {}, None)
             assert payload["target_commitish"] == ENV["GITHUB_SHA"]
             # GitHub REST Create Release: make_latest is a STRING enum,
             # not a JSON boolean. A real 422 can otherwise be masked by
