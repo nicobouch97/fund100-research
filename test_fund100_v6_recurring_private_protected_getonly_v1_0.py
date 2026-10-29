@@ -210,3 +210,24 @@ def test_readonly_client_has_no_git_mutation_or_alpaca_credentials():
         "ALPACA_LIVE_SECRET", "urlopen(", "contents: write",
     ):
         assert forbidden not in src
+
+
+def test_original_acwi_reader_never_receives_private_write_candidate_token():
+    # The original 7-broker-GET workflow is an independent, narrow principal
+    # boundary. All candidate-WRITE PAT reads belong in a different existing
+    # principal-scope job; never relax the original workflow's allowlist.
+    source = Path(
+        ".github/workflows/fund100-v6-s1-original-one-attempt-protected-entrypoint.yml"
+    ).read_text()
+    scoped = Path(
+        ".github/workflows/fund100-v6-s1-first-execution-principals-getonly.yml"
+    ).read_text()
+    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in source
+    assert "fund100_v6_recurring_private_protected_getonly_v1_0.py" not in source
+    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}" in scoped
+    assert "python -B fund100_v6_recurring_private_protected_getonly_v1_0.py" in scoped
+    assert "environment: fund100-live-broker" in scoped
+    assert "ALPACA_LIVE_KEY" not in scoped and "ALPACA_LIVE_SECRET" not in scoped
+    assert "contents: write" not in scoped
+    assert "  workflow_dispatch:" in scoped
+    assert "  schedule:" not in scoped
