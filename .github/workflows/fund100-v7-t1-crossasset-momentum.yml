@@ -61,6 +61,16 @@ jobs:
           assert hashlib.sha256(raw).hexdigest()==doc['source_canonical_csv_sha256']
           assert doc['schema']==m.SCHEMA
           assert set(doc['fixed_era_results'])==set(m.REGISTERED_WINDOWS)
+          assert doc['exposure_matched_control_added_post_hoc_not_new_alpha_gate']
+          for era in doc['fixed_era_results'].values():
+            for cost in era.values():
+              assert 'EXPOSURE_MATCHED_FOUR_EQUAL' in cost
+              a=cost['CROSS_ASSET_12_1']['signal_trade_log']
+              b=cost['EXPOSURE_MATCHED_FOUR_EQUAL']['signal_trade_log']
+              assert len(a)==len(b)
+              assert all(x['close']==y['close'] and
+                         x['target_gross_fraction']==y['target_gross_fraction']
+                         for x,y in zip(a,b))
           assert doc['real_broker_gets']==doc['real_broker_posts']==doc['real_broker_orders']==0
           assert doc['trading_authorized'] is False
           assert doc['current_live_capital_ceiling_usd']=='130.30'

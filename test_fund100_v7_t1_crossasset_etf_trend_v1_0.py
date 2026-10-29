@@ -56,6 +56,41 @@ def test_exact_zero_positive_momentum_goes_to_cash_without_future_signals():
     assert r["modeled_fees_usd_per_100_initial_usd"]==pytest.approx(0.)
     assert r["net_annualized_return_pct"]==pytest.approx(0.)
 
+def test_posthoc_exposure_matched_four_equal_control_has_same_signal_budget():
+    df=sample(short=True)
+    trend=t.simulate(df,start="2014-01-02",end="2016-12-30",
+                     side_bps=15,strategy="CROSS_ASSET_12_1")
+    matched=t.simulate(df,start="2014-01-02",end="2016-12-30",
+                       side_bps=15,strategy="EXPOSURE_MATCHED_FOUR_EQUAL")
+    left,right=trend["signal_trade_log"],matched["signal_trade_log"]
+    assert len(left)==len(right)>10
+    assert trend["transaction_dates"]==matched["transaction_dates"]
+    for a,b in zip(left,right):
+        assert a["close"]==b["close"]
+        assert a["source_signal_previous_complete_session"]==(
+            b["source_signal_previous_complete_session"])
+        assert a["target_gross_fraction"]==b["target_gross_fraction"]
+        assert a["same_decision_positive_momentum_count"]==(
+            b["same_decision_positive_momentum_count"])
+        assert a["target_gross_fraction"]==.95
+        assert len(a["hypothetical_positions"])==2
+        assert b["hypothetical_positions"]==list(t.ASSETS)
+    # Four-ETF matched control incurs a separate costed trading path,
+    # rather than copying the trend strategy's return or fee drag.
+    assert matched["modeled_fees_usd_per_100_initial_usd"]>0
+    assert matched["net_total_return_pct"]!=trend["net_total_return_pct"]
+
+
+def test_exposure_matched_control_remains_all_cash_if_no_positive_momentum():
+    df=sample(decline=True,short=True)
+    result=t.simulate(df,start="2014-01-02",end="2016-12-30",
+                      side_bps=35,strategy="EXPOSURE_MATCHED_FOUR_EQUAL")
+    assert result["net_total_return_pct"]==0
+    assert result["modeled_fees_usd_per_100_initial_usd"]==0
+    assert all(x["target_gross_fraction"]==0 for x in result["signal_trade_log"])
+    assert all(x["hypothetical_positions"]==[] for x in result["signal_trade_log"])
+
+
 def test_same_asset_passive_four_vs_standalone_spy_friction_distinguished():
     df=sample(short=True)
     r=t.simulate(df,start="2014-01-02",end="2016-12-30",
@@ -161,9 +196,12 @@ def test_frozen_research_report_labels_not_forward_alpha_or_trade():
     assert r["trading_authorized"] is False
     assert r["real_broker_gets"]==r["real_broker_posts"]==r["real_broker_orders"]==0
     assert r["favorable_result_is_not_forward_alpha_qualification"] is True
+    assert r["exposure_matched_control_uses_same_momentum_equity_budget"] is True
+    assert r["exposure_matched_control_added_post_hoc_not_new_alpha_gate"] is True
     assert set(r["fixed_era_results"])==set(t.REGISTERED_WINDOWS)
     assert set(r["fixed_era_results"]["2014_2016"]["15"])=={
-        "CROSS_ASSET_12_1","STATIC_FOUR_EQUAL","STATIC_SPY"}
+        "CROSS_ASSET_12_1","EXPOSURE_MATCHED_FOUR_EQUAL",
+        "STATIC_FOUR_EQUAL","STATIC_SPY"}
     for row in r["fixed_era_results"].values():
         for v in row.values():
             for portfolio in v.values():

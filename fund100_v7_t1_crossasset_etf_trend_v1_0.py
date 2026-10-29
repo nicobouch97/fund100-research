@@ -122,7 +122,8 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
         raise CrossAssetTrendStop("Unregistered hindsight comparison interval")
     if side_bps not in COSTS or type(side_bps) is not int:
         raise CrossAssetTrendStop("Unregistered cost stress")
-    if strategy not in ("CROSS_ASSET_12_1","STATIC_FOUR_EQUAL","STATIC_SPY"):
+    if strategy not in ("CROSS_ASSET_12_1","EXPOSURE_MATCHED_FOUR_EQUAL",
+                      "STATIC_FOUR_EQUAL","STATIC_SPY"):
         raise CrossAssetTrendStop("Unknown candidate benchmark")
     panel=prices_validate(prices)
     view=panel.loc[start:end]
@@ -152,9 +153,21 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
             positions*=move
         nav=float(cash+sum(positions))
         month_first=j==0 or timestamp.month!=view.index[j-1].month or timestamp.year!=view.index[j-1].year
-        if (j==0 or (strategy=="CROSS_ASSET_12_1" and month_first)):
-            if strategy=="CROSS_ASSET_12_1":
-                target,winners=_selection(panel,current)
+        if (j==0 or (strategy in ("CROSS_ASSET_12_1",
+                                  "EXPOSURE_MATCHED_FOUR_EQUAL") and month_first)):
+            if strategy in ("CROSS_ASSET_12_1","EXPOSURE_MATCHED_FOUR_EQUAL"):
+                momentum_target,momentum_winners=_selection(panel,current)
+                if strategy=="CROSS_ASSET_12_1":
+                    target,winners=momentum_target,momentum_winners
+                else:
+                    # POST-HOC DIAGNOSTIC, not an independently specified
+                    # investable rule or a new promotion gate. Keep the
+                    # original momentum rule's exact monthly equity budget,
+                    # but allocate it evenly across all four ETFs. This
+                    # separates selection/rotation from market exposure.
+                    gross=float(momentum_target[:4].sum())
+                    target=np.array([gross/len(ASSETS)]*len(ASSETS)+[1.-gross])
+                    winners=list(ASSETS) if gross>0 else []
             elif strategy=="STATIC_FOUR_EQUAL":
                 target=np.array([.2375]*4+[.05])
                 winners=list(ASSETS)
@@ -169,6 +182,11 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
                                  "source_signal_previous_complete_session":
                                      panel.index[current-1].date().isoformat(),
                                  "hypothetical_positions":winners,
+                                 "target_gross_fraction":round(float(sum(target[:4])),8),
+                                 "same_decision_positive_momentum_count":
+                                     len(momentum_winners) if strategy in (
+                                         "CROSS_ASSET_12_1",
+                                         "EXPOSURE_MATCHED_FOUR_EQUAL") else None,
                                  "same_close_idealized_fee_charged":True})
         path.append(nav)
         peak=max(peak,nav)
@@ -219,7 +237,8 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
         "original_high_20pct_drawdown_exceeded":max_dd<-.20,
         "original_high_35pct_volatility_exceeded":v>.35,
         "no_actual_orders":True,
-        "signal_trade_log":selected_log if strategy=="CROSS_ASSET_12_1" else [],
+        "signal_trade_log":selected_log if strategy in (
+            "CROSS_ASSET_12_1","EXPOSURE_MATCHED_FOUR_EQUAL") else [],
     }
 
 def analyze(prices:pd.DataFrame,captured_utc:str):
@@ -238,7 +257,8 @@ def analyze(prices:pd.DataFrame,captured_utc:str):
         for bps in COSTS:
             result[era][str(bps)]={
                 name:simulate(panel,start=start,end=end,side_bps=bps,strategy=name)
-                for name in ("CROSS_ASSET_12_1","STATIC_FOUR_EQUAL","STATIC_SPY")}
+                for name in ("CROSS_ASSET_12_1","EXPOSURE_MATCHED_FOUR_EQUAL",
+                             "STATIC_FOUR_EQUAL","STATIC_SPY")}
     gate=all(
         result[era]["15"]["CROSS_ASSET_12_1"]["net_annualized_return_pct"]
         >result[era]["15"]["STATIC_FOUR_EQUAL"]["net_annualized_return_pct"]
@@ -255,6 +275,8 @@ def analyze(prices:pd.DataFrame,captured_utc:str):
         "fixed_monthly_rebalance_and_47_5pct_per_asset":True,
         "original_2026_vendor_vintage_not_time_independent":True,
         "matched_static_comparator_uses_same_ETFs":True,
+        "exposure_matched_control_uses_same_momentum_equity_budget":True,
+        "exposure_matched_control_added_post_hoc_not_new_alpha_gate":True,
         "passive_SPY_comparator_is_different_risk_profile":True,
         "tested_15bps_strong_all_three_eras":gate,
         "favorable_result_is_not_forward_alpha_qualification":True,
