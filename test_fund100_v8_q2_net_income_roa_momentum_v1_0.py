@@ -71,16 +71,16 @@ def test_new_vintage_complete_caller_supplied_roa_selection_never_authorizes_bro
 
 def test_original_identity_drift_is_not_relabeled_and_partial_coverage_explicit():
     rows=inputs()
-    for idx in range(4):
-        missing(rows[idx],drift=rows[idx]["symbol"]=="XOM")
+    for row in rows:
+        if row["symbol"] in {"AAPL","AMZN","CAT","XOM"}:
+            missing(row,drift=row["symbol"]=="XOM")
     result=evaluate(rows)
     assert result["matched_positive_annual_net_income_assets"]==20
     assert len(result["source_gaps"])==4
     assert len(result["selection_candidate"]["symbols"])==8
     assert not set(result["source_gaps"]) & set(
         result["selection_candidate"]["symbols"])
-    assert result["frozen_issuer_identity_quarantined"]==(
-        ["XOM"] if "XOM" in {x["symbol"] for x in rows[:4]} else [])
+    assert result["frozen_issuer_identity_quarantined"]==["XOM"]
 
 
 def test_less_than_18_positive_matching_annual_records_is_permanent_hold():
