@@ -219,8 +219,16 @@ def test_single_patch_recovery_workflow_no_post_no_broker_and_retired_v2_creator
     workflow=Path(".github/workflows/fund100-v6-recurring-immutable-genesis-v2-once.yml").read_text()
     assert "  push:" not in workflow and "environment: fund100-live-broker" not in workflow
     recovery=Path(".github/workflows/fund100-v6-recurring-immutable-genesis-v2-draft-finish-once.yml").read_text()
-    assert "  push:" in recovery and "  pull_request:" in recovery
-    assert "environment: fund100-live-broker" in recovery
-    assert "contents: write" in recovery
+    assert "  push:" not in recovery and "  pull_request:" in recovery
+    assert "  workflow_dispatch:" not in recovery and "  schedule:" not in recovery
+    assert "environment: fund100-live-broker" not in recovery
+    assert "contents: write" not in recovery
     assert "secrets.ALPACA_LIVE_KEY" not in recovery
-    assert ("FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: " + chr(36) + "{{ github.token }}") in recovery
+    assert ("FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: " + chr(36) + "{{ github.token }}") not in recovery
+
+
+def test_completed_original_draft_publish_runtime_unconditionally_retired():
+    with pytest.raises(mod.DraftStop,match="production RETIRED"):
+        mod.run_once(environ=ENV)
+    with pytest.raises(mod.DraftStop,match="production RETIRED"):
+        mod.main()
