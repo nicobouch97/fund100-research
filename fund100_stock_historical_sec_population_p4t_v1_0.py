@@ -260,7 +260,7 @@ def first_2017_10k_filing_events(rows: list[dict]) -> list[dict]:
             or type(filed) is not str or type(path) is not str
             or type(row["company_name_in_original_index"]) is not str
             or not row["company_name_in_original_index"].strip()
-            or not re.fullmatch(r"edgar/data/[0-9]+/[0-9-]+\\.txt", path)
+            or not re.fullmatch(r"edgar/data/[0-9]+/[0-9-]+\.txt", path)
             or int(path.split("/")[2]) != cik or path in seen_paths):
             raise PopulationStop("Unverifiable original 2017 filing event")
         try:
