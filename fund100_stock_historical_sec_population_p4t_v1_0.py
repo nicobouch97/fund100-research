@@ -445,8 +445,15 @@ def form25_index_manifest(index_by_quarter: dict[int, bytes]) -> list[dict]:
                 "quarter": f"2017_Q{quarter}",
                 "sec_archive_path": path,
                 "same_cik_in_full_2017_10k_filer_population": issuer in tenk_dates,
-                "same_cik_10k_filed_on_or_before_form25": any(
-                    date <= filed for date in tenk_dates.get(issuer, [])),
+                # Index dates have no intraday release time. Only STRICTLY earlier
+            # 10-K dates can support an as-of Form 25 crosscheck.
+            "same_cik_10k_filed_strictly_before_form25": any(
+                    day < filed for day in tenk_dates.get(issuer, [])),
+            "same_cik_10k_filed_same_day_as_form25": any(
+                    day == filed for day in tenk_dates.get(issuer, [])),
+            # Legacy descriptive count, NOT as-of available information.
+            "same_cik_10k_filed_on_or_before_form25": any(
+                    day <= filed for day in tenk_dates.get(issuer, [])),
             })
     events.sort(key=lambda row: (
         row["filing_date"], row["filer_cik"], row["sec_archive_path"]))
@@ -463,6 +470,12 @@ def evaluate_form25_index(index_by_quarter: dict[int, bytes]) -> dict:
                if row["same_cik_in_full_2017_10k_filer_population"]]
     prior = [row for row in matched
              if row["same_cik_10k_filed_on_or_before_form25"]]
+    strictly_prior = [row for row in matched
+                      if row["same_cik_10k_filed_strictly_before_form25"]]
+    same_day = [row for row in matched
+                if row["same_cik_10k_filed_same_day_as_form25"]]
+    same_day_without_prior = [row for row in same_day
+                              if not row["same_cik_10k_filed_strictly_before_form25"]]
     return {
         "schema": FORM25_INDEX_SCHEMA,
         "source_index_sha256": {
@@ -492,6 +505,12 @@ def evaluate_form25_index(index_by_quarter: dict[int, bytes]) -> dict:
                 "same_cik_prior_or_same_day_10k_entries": sum(
                     row["same_cik_10k_filed_on_or_before_form25"]
                     for row in group),
+                "same_cik_strictly_prior_10k_entries": sum(
+                    row["same_cik_10k_filed_strictly_before_form25"]
+                    for row in group),
+                "same_cik_same_day_10k_entries": sum(
+                    row["same_cik_10k_filed_same_day_as_form25"]
+                    for row in group),
                 "same_cik_2017_10k_distinct_ciks": len({
                     row["filer_cik"] for row in group
                     if row["same_cik_in_full_2017_10k_filer_population"]}),
@@ -507,6 +526,10 @@ def evaluate_form25_index(index_by_quarter: dict[int, bytes]) -> dict:
         "same_cik_2017_10k_filer_distinct_ciks": len({
             row["filer_cik"] for row in matched}),
         "same_cik_prior_or_same_day_10k_index_entries": len(prior),
+        "same_cik_strictly_prior_10k_index_entries": len(strictly_prior),
+        "same_cik_same_day_10k_index_entries": len(same_day),
+        "same_day_without_prior_10k_entries_embargoed": len(same_day_without_prior),
+        "same_day_sec_index_not_intraday_availability_proof": True,
         "current_ticker_registry_not_used": True,
         "form25_filing_date_not_effective_delisting_date": True,
         "form25_index_does_not_identify_security_class_or_common_stock": True,
