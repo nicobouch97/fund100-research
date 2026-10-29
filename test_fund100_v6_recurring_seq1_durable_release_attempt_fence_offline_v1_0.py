@@ -156,3 +156,86 @@ def test_no_external_authority_and_distinct_private_fence_path():
     assert not fence.PRODUCTION_RECOVERY_SOURCE_AUTHENTICATED
     assert not fence.LIVE_BROKER_ORDER_RELEASED
     assert fence.NO_GITHUB_NETWORK and fence.NO_PRIVATE_MUTATIONS
+
+
+class FakeFenceResponse:
+    status=200
+    def __init__(self,data):
+        from io import BytesIO
+        self.data=BytesIO(json.dumps(data).encode("ascii"))
+    def __enter__(self):return self
+    def __exit__(self,*args):return False
+    def read(self,n):return self.data.read(n)
+
+
+class FakeFenceHttp:
+    synthetic_only=True
+    def __init__(self,expected):
+        self.expected=expected
+        self.calls=[]
+        self.lost=False
+        self.bad_ack=False
+    def __call__(self,req,timeout):
+        assert timeout==12
+        assert req.get_method()=="PUT"
+        assert req.full_url==("https://api.github.com/repos/"
+            +fence.REPOSITORY+"/contents/"+fence.PATH)
+        d=json.loads(req.data)
+        assert set(d)=={"message","sha","branch","content"}
+        assert d["branch"]=="main"
+        assert d["content"]==self.expected["commit"]["content_base64"]
+        assert d["sha"]==self.expected["expected_prior_blob_sha"]
+        self.calls.append(d)
+        if self.lost:
+            raise TimeoutError("accepted but lost acknowledgment")
+        return FakeFenceResponse({
+            "content":{"path":fence.PATH,"sha":(
+                "0"*40 if self.bad_ack else self.expected["expected_new_blob_sha"])},
+            "commit":{"sha":"f"*40},
+        })
+
+
+def test_real_http_shape_fake_private_fence_cas_no_external_authority():
+    c,old=initial()
+    p=plan(c,old,"CLAIM_BEFORE_MUTATION","create")
+    fake=FakeFenceHttp(p)
+    report=fence._one_synthetic_fence_contents_put(
+        old_source=old,plan=p,candidate=c,target_commit=TARGET,
+        key=KEY,writer_token="synthetic-fence-write-principal",
+        transport=fake)
+    assert report["status"]=="SYNTHETIC_ONE_PRIVATE_FENCE_CAS_ACK_AWAIT_INDEPENDENT_READBACK"
+    assert report["new_private_fence_blob_sha"]==p["expected_new_blob_sha"]
+    assert not report["public_release_action_authorized"]
+    assert not report["private_CAS_readback_independently_verified"]
+    assert not report["retry_allowed"]
+    assert not report["broker_order_authorized"]
+    assert len(fake.calls)==1
+
+
+@pytest.mark.parametrize("failure",["lost","bad_ack"])
+def test_uncertain_fence_cas_never_repeats_http_put(failure):
+    c,old=initial()
+    p=plan(c,old,"CLAIM_BEFORE_MUTATION","create")
+    fake=FakeFenceHttp(p)
+    setattr(fake,failure,True)
+    with pytest.raises(fence.FenceHold,match="NEVER RETRY"):
+        fence._one_synthetic_fence_contents_put(
+            old_source=old,plan=p,candidate=c,target_commit=TARGET,key=KEY,
+            writer_token="synthetic-fence-write-principal",transport=fake)
+    assert len(fake.calls)==1
+
+
+def test_real_fence_transport_requires_future_production_integration():
+    c,old=initial()
+    p=plan(c,old,"CLAIM_BEFORE_MUTATION","create")
+    with pytest.raises(fence.FenceHold,match="HARD LOCKED"):
+        fence._one_synthetic_fence_contents_put(
+            old_source=old,plan=p,candidate=c,target_commit=TARGET,key=KEY,
+            writer_token="synthetic-fence-write-principal",transport=None)
+    fake=FakeFenceHttp(p)
+    fake.synthetic_only=False
+    with pytest.raises(fence.FenceHold,match="HARD LOCKED"):
+        fence._one_synthetic_fence_contents_put(
+            old_source=old,plan=p,candidate=c,target_commit=TARGET,key=KEY,
+            writer_token="synthetic-fence-write-principal",transport=fake)
+    assert fake.calls==[]
