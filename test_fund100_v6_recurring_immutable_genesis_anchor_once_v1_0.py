@@ -217,3 +217,20 @@ def test_disallow_any_private_write_broker_or_shared_original_acwi_release():
     assert "method=\"PUT\"" not in source
     assert mod.TAG != __import__(
         "fund100_v6_s1_immutable_release_anchor_v1_0").TAG
+
+
+def test_original_public_release_attempt_is_retired_without_network():
+    with pytest.raises(mod.AnchorStop, match="production RETIRED"):
+        mod.publish_once(environ=ENV)
+    with pytest.raises(mod.AnchorStop, match="production RETIRED"):
+        mod.main()
+
+
+def test_one_shot_workflow_has_no_auto_trigger_or_production_environment():
+    from pathlib import Path
+    workflow = Path(".github/workflows/fund100-v6-recurring-immutable-genesis-anchor-once.yml").read_text()
+    assert "  push:" not in workflow and "  workflow_dispatch:" not in workflow
+    assert "  schedule:" not in workflow
+    assert "environment: fund100-live-broker" not in workflow
+    assert "secrets.FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN" not in workflow
+    assert "protected-main-publish-immutable-genesis-only:" not in workflow
