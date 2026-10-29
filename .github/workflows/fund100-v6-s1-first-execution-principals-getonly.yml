@@ -10,6 +10,9 @@ on:
     paths:
       - ".github/workflows/fund100-v6-s1-first-execution-principals-getonly.yml"
       - "fund100_v6_s1_first_execution_principals_getonly_v1_0.py"
+      - "fund100_v6_recurring_private_protected_getonly_v1_0.py"
+      - "test_fund100_v6_recurring_private_protected_getonly_v1_0.py"
+      - "fund100_v6_recurring_event_signed_journal_v1_0.py"
   workflow_dispatch: # Safe recheck when protected secrets are rotated or added.
 
 permissions:
@@ -65,6 +68,16 @@ jobs:
         run: |
           set -euo pipefail
           python fund100_v6_s1_first_execution_principals_getonly_v1_0.py
+      - name: Check V2 recurring private journal with existing distinct principals (GET ONLY)
+        # Reuse the already isolated principal-checking job, NOT the
+        # original ACWI broker-read job (which forbids write-candidate PAT).
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+        run: |
+          set -euo pipefail
+          python -B fund100_v6_recurring_private_protected_getonly_v1_0.py
       - name: Confirm no real mutation released
         run: |
           set -euo pipefail
