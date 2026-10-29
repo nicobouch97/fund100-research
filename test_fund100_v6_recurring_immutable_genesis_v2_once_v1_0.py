@@ -259,17 +259,15 @@ def test_original_v1_release_remains_permanently_retired():
         old.publish_once(environ=ENV)
 
 
-def test_v2_workflow_is_main_only_for_realtime_publisher():
+def test_v2_original_release_creation_retired_and_recovery_separate():
     workflow = Path(".github/workflows/fund100-v6-recurring-immutable-genesis-v2-once.yml").read_text()
-    assert "  push:" in workflow and "  pull_request:" in workflow
-    assert "  schedule:" not in workflow and "  workflow_dispatch:" not in workflow
-    assert "environment: fund100-live-broker" in workflow
-    assert "secrets.ALPACA_LIVE_KEY" not in workflow
-    assert ("permissions:" + chr(10) + "  contents: write") in workflow
-    assert ("FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: " + chr(36) + "{{ github.token }}") in workflow
-    assert "secrets.FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN" not in workflow
-    assert "GITHUB_EVENT_NAME" in workflow
-    assert "fund100_v6_recurring_immutable_genesis_v2_once_v1_0.py" in workflow
+    assert "  push:" not in workflow
+    assert "  workflow_dispatch:" not in workflow and "  schedule:" not in workflow
+    assert "environment: fund100-live-broker" not in workflow
+    assert "contents: write" not in workflow
+    assert "secrets.FUND100_PRIVATE_STATE_READ_TOKEN" not in workflow
+    with pytest.raises(mod.AnchorStop,match="production RETIRED"):
+        mod.publish_once(environ=ENV)
 
 
 def test_v2_release_payload_has_correct_string_enum_and_unique_tag(monkeypatch):
