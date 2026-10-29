@@ -217,3 +217,67 @@ def test_risk_path_rejects_missing_or_fictitious_session_and_nonfinite_wealth():
         p4p._risk_path([1.0, .99], sessions=2)
     with pytest.raises(p4p.FeasibilityStop, match="wealth path"):
         p4p._risk_path([1.0, float("nan"), 1.0], sessions=2)
+
+
+def test_decision_exposure_spy_control_is_costed_and_uses_same_signal_budget():
+    # Three out of six names selected => 50% SPY, 50% zero-yield cash.
+    # The +20% SPY move then grows gross wealth by 10%, not 20%.
+    dates = pd.to_datetime(["2026-01-02", "2026-01-05",
+                            "2026-01-06", "2026-01-07"])
+    frame = pd.DataFrame({"SPY": [100.0, 100.0, 120.0, 120.0]}, index=dates)
+    selected = list(p4l.SECTORS)[:3]
+    decisions = [{"execution_close_session": "2026-01-05",
+                  "selected": selected}]
+    c = .0015
+    net = p4p._spy_at_strategy_decision_exposure(frame, 1, decisions, c)
+    gross = p4p._spy_at_strategy_decision_exposure(frame, 1, decisions, 0)
+    # At final close the SPY weight has drifted to 0.6 / 1.1.
+    expected = (1 - c * .5) * 1.1 * (1 - c * (.6 / 1.1))
+    assert gross["terminal_wealth"] == pytest.approx(1.1)
+    assert net["terminal_wealth"] == pytest.approx(expected)
+    assert net["one_way_turnover"] == pytest.approx(.5 + .6 / 1.1)
+    assert len(net["path"]) == 4
+    assert net["path"][-1] == pytest.approx(expected)
+
+
+def test_decision_exposure_spy_control_zero_equity_and_full_equity_boundaries():
+    dates = pd.to_datetime(["2026-01-02", "2026-01-05",
+                            "2026-01-06", "2026-01-07"])
+    frame = pd.DataFrame({"SPY": [100., 100., 120., 120.]}, index=dates)
+    empty = [{"execution_close_session": "2026-01-05", "selected": []}]
+    all_six = [{"execution_close_session": "2026-01-05",
+                "selected": list(p4l.SECTORS)[:p4l.MAX_NAMES]}]
+    zero = p4p._spy_at_strategy_decision_exposure(frame, 1, empty, .0015)
+    full = p4p._spy_at_strategy_decision_exposure(frame, 1, all_six, .0015)
+    assert zero["terminal_wealth"] == 1
+    assert zero["one_way_turnover"] == 0
+    assert full["terminal_wealth"] == pytest.approx(1.2 * (1 - .0015)**2)
+    assert full["one_way_turnover"] == pytest.approx(2.0)
+    with pytest.raises(p4p.FeasibilityStop, match="decision exposure"):
+        p4p._spy_at_strategy_decision_exposure(
+            frame, 1, all_six + all_six, .0015)
+
+
+def test_decision_exposure_comparator_is_reported_separately_from_full_spy():
+    scenarios = analyze(prices())["scenarios"]
+    for bps, row in scenarios.items():
+        assert row["spy_decision_exposure_control_not_daily_cash_matched"]
+        assert row["spy_decision_exposure_control_uses_same_strategy_signals"]
+        assert row["spy_decision_exposure_control_cash_zero_yield"]
+        assert row["spy_decision_exposure_one_way_turnover"] >= 0
+        assert row["spy_decision_exposure_modelled_cost_drag_pp"] >= 0
+        assert row["strategy_minus_spy_decision_exposure_net_pp"] == pytest.approx(
+            row["strategy_net_return_pct"] -
+            row["spy_decision_exposure_net_return_pct"], abs=2e-6)
+        assert row["spy_decision_exposure_annualized_volatility_fraction"] >= 0
+        assert row["spy_decision_exposure_max_drawdown_hypothetical_pct"] <= 0
+        assert row["spy_decision_exposure_worst_session_return_pct"] <= 1e6
+    assert scenarios["5"]["spy_decision_exposure_net_return_pct"] >= (
+        scenarios["15"]["spy_decision_exposure_net_return_pct"]) >= (
+        scenarios["35"]["spy_decision_exposure_net_return_pct"])
+    # When the strategy holds all cash, the matching SPY/cash control
+    # also holds cash and incurs no fictional equity entry/exit fees.
+    cash = analyze(prices(flat=True))["scenarios"]["15"]
+    assert cash["spy_decision_exposure_net_return_pct"] == 0
+    assert cash["spy_decision_exposure_one_way_turnover"] == 0
+    assert cash["strategy_minus_spy_decision_exposure_net_pp"] == 0
