@@ -52,3 +52,25 @@ remain null**. The 8-K is subsequent event evidence and cannot be
 used as a trading signal at the 27 October close. This is one
 independently sourced corporate-action outcome, not a representative
 historical universe or proof of investment alpha.
+
+
+## 29 October 2026 follow-up — ex-post contractual-right spread, not a return
+
+The original free vendor sample contains TWTR's last observed raw close on
+27 October 2022. The separately verified SEC 8-K reports a later-disclosed
+$54.20 contractual merger cash right for eligible ordinary shares. The
+existing P4Z audit now calculates the **ex-post arithmetic difference**
+(`54.20 - last raw close`) and its percentage of that raw close, only
+when the original SEC filing has independently passed verification. With
+no verified 8-K, both derived fields remain null. Positive and negative
+synthetic-price scenarios are tested, without replacing the original
+source data or changing the frozen research selection.
+
+This is a historical economic *comparison*, **not** an attainable trading
+return: the later SEC filing was not a signal at the 27 October close,
+market prices may have incorporated merger expectations, and the cash
+right was not an executable post-close quote. Actual broker proceeds,
+settlement timing, investor exceptions and post-delisting realised total
+return remain unknown/null. One chosen TWTR sample is not a representative
+point-in-time stock universe or evidence of alpha. No new broker, LIVE,
+capital, private-state or operator authority is introduced.
