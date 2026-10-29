@@ -209,11 +209,25 @@ def audit_zip(path: Path, *, sec_merger_filing: Path | None = None) -> dict:
             for d in dates
         ):
             raise DelistedSampleStop("KO documented cash distribution mismatch")
-    sec_evidence = {}
+    # The last trading bar and a subsequently documented merger right can
+    # be compared ex post. This is NOT a 27-Oct executable exit, a realized
+    # delisting return, or evidence that cash settled into a brokerage account.
+    last_twtr_close = float(rows["TWTR"][-1]["close"])
+    sec_evidence = {
+        "twtr_last_observed_raw_close_usd": last_twtr_close,
+        "twtr_sec_contractual_right_minus_last_close_usd": None,
+        "twtr_sec_contractual_right_vs_last_close_pct": None,
+        "twtr_contractual_spread_ex_post_not_tradeable_or_realized": True,
+    }
     if sec_merger_filing is not None:
         if not sec_merger_filing.is_file():
             raise DelistedSampleStop("Original SEC merger filing is missing")
-        sec_evidence = audit_twtr_sec_merger(sec_merger_filing.read_bytes())
+        sec_evidence.update(audit_twtr_sec_merger(sec_merger_filing.read_bytes()))
+        cash_right = sec_evidence["twtr_sec_verified_contractual_cash_consideration_usd"]
+        sec_evidence["twtr_sec_contractual_right_minus_last_close_usd"] = round(
+            cash_right - last_twtr_close, 6)
+        sec_evidence["twtr_sec_contractual_right_vs_last_close_pct"] = round(
+            100 * (cash_right / last_twtr_close - 1), 6)
     return {
         **sec_evidence,
         "schema": SCHEMA,
