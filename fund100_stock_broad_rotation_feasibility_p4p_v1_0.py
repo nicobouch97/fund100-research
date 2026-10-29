@@ -78,6 +78,64 @@ def _risk_path(path: list[float], sessions: int) -> dict:
     }
 
 
+
+def _spy_at_strategy_decision_exposure(
+    prices: pd.DataFrame, start: int, decisions: list[dict], cost: float,
+) -> dict:
+    """Costed SPY/cash control with the strategy's *decision-time* equity budget.
+
+    A selected stock consumes 1/MAX_NAMES of notional. At each strategy
+    execution close, the comparator sets SPY to that total target; between
+    decisions it drifts with SPY and earns zero on cash. This is NOT a
+    point-in-time historical investable strategy or an independently chosen
+    signal, nor is its daily cash weight exactly the strategy's daily weight.
+    """
+    if not 0 <= cost < 1 or start < 0 or start >= len(prices) - 1:
+        raise FeasibilityStop("Invalid exposure-matched comparator configuration")
+    targets = {}
+    for decision in decisions:
+        day = decision["execution_close_session"]
+        chosen = decision["selected"]
+        if (day in targets or len(chosen) > p4l.MAX_NAMES
+            or len(chosen) != len(set(chosen))
+            or any(s not in p4l.SECTORS for s in chosen)):
+            raise FeasibilityStop("Invalid comparator decision exposure")
+        targets[day] = len(chosen) / p4l.MAX_NAMES
+    sessions = [d.date().isoformat() for d in prices.index[start:]]
+    if set(targets) - set(sessions) or sessions[0] not in targets:
+        raise FeasibilityStop("Comparator decision outside observed sessions")
+    nav = 1.0
+    equity = 0.0
+    cash = 1.0
+    turnover = 0.0
+    path = [nav]
+    for t in range(start, len(prices)):
+        if t > start:
+            relative = float(prices[p4l.BENCHMARK].iloc[t] /
+                             prices[p4l.BENCHMARK].iloc[t - 1])
+            gross = cash + equity * relative
+            if not np.isfinite(gross) or gross <= 0:
+                raise FeasibilityStop("Invalid comparator SPY market return")
+            nav *= gross
+            equity = equity * relative / gross
+            cash /= gross
+        target = targets.get(sessions[t - start])
+        if target is not None:
+            traded = abs(target - equity)
+            nav *= 1 - cost * traded
+            turnover += traded
+            equity = target
+            cash = 1 - target
+        path.append(nav)
+    # Hypothetical terminal liquidation on the last REAL session.
+    nav *= 1 - cost * equity
+    turnover += equity
+    path[-1] = nav
+    if not np.isfinite(nav) or nav <= 0:
+        raise FeasibilityStop("Invalid costed comparator wealth")
+    return {"terminal_wealth": nav, "path": path, "one_way_turnover": turnover}
+
+
 def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
     if cost_bps not in SIDE_COSTS:
         raise FeasibilityStop("Only predeclared 5/15/35 bps per-side costs")
@@ -222,6 +280,14 @@ def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
     strategy_risk = _risk_path(path, sessions)
     spy_risk = _risk_path(spy_path, sessions)
     equal24_risk = _risk_path(equal24_path, sessions)
+    # Control for the strategy's varying equity budget without falsely
+    # treating a 100%-equity SPY benchmark as the same risk exposure.
+    exposure_spy = _spy_at_strategy_decision_exposure(prices, start, decisions, c)
+    exposure_spy_gross = _spy_at_strategy_decision_exposure(
+        prices, start, decisions, 0.0)
+    exposure_spy_risk = _risk_path(exposure_spy["path"], sessions)
+    if exposure_spy["terminal_wealth"] > exposure_spy_gross["terminal_wealth"] + 1e-10:
+        raise FeasibilityStop("Costed comparator exceeds its gross wealth")
     return {
         "entry_execution_close": prices.index[start].date().isoformat(),
         "last_exit_mark_close": prices.index[-1].date().isoformat(),
@@ -251,6 +317,26 @@ def _simulate(prices: pd.DataFrame, signal_i: int, cost_bps: int) -> dict:
         "risk_path_observed_sessions": sessions,
         "risk_paths_include_entry_and_exit_costs_on_actual_sessions": True,
         "passive_benchmarks_100pct_equity_not_cash_matched": True,
+        "spy_decision_exposure_control_not_daily_cash_matched": True,
+        "spy_decision_exposure_control_uses_same_strategy_signals": True,
+        "spy_decision_exposure_control_cash_zero_yield": True,
+        "spy_decision_exposure_net_return_pct": round(
+            100 * (exposure_spy["terminal_wealth"] - 1), 6),
+        "spy_decision_exposure_pre_cost_return_pct": round(
+            100 * (exposure_spy_gross["terminal_wealth"] - 1), 6),
+        "spy_decision_exposure_modelled_cost_drag_pp": round(
+            100 * (exposure_spy_gross["terminal_wealth"] -
+                   exposure_spy["terminal_wealth"]), 6),
+        "spy_decision_exposure_one_way_turnover": round(
+            exposure_spy["one_way_turnover"], 6),
+        "strategy_minus_spy_decision_exposure_net_pp": round(
+            100 * (nav - exposure_spy["terminal_wealth"]), 6),
+        "spy_decision_exposure_max_drawdown_hypothetical_pct": round(
+            100 * exposure_spy_risk["max_drawdown"], 4),
+        "spy_decision_exposure_annualized_volatility_fraction": round(
+            exposure_spy_risk["annualized_volatility"], 8),
+        "spy_decision_exposure_worst_session_return_pct": round(
+            100 * exposure_spy_risk["worst_session_return"], 6),
         "strategy_net_return_pct": round(100 * (nav - 1), 6),
         "strategy_pre_cost_return_pct": round(100 * (gross_nav - 1), 6),
         "spy_passive_pre_cost_return_pct": round(100 * (spy_gross - 1), 6),
@@ -324,6 +410,7 @@ def analyze(prices: pd.DataFrame, *, source_sha256: str) -> dict:
         "transaction_costs_exclude_market_impact_and_tax": True,
         "pre_cost_selection_vs_friction_attribution_same_decisions": True,
         "costed_drawdown_volatility_and_worst_day_for_all_three_arms": True,
+        "strategy_decision_exposure_spy_cash_control_is_descriptive": True,
         "gross_stock_sector_attribution_uses_same_decisions_and_prices": True,
         "pre_cost_is_not_a_tradeable_zero_friction_strategy": True,
         "initial_month_end_signal": data.index[first].date().isoformat(),
