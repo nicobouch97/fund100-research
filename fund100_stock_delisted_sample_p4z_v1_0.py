@@ -183,6 +183,41 @@ def _observed_close_return(first: dict, last: dict) -> dict:
     }
 
 
+def _reconstruct_corporate_action_return(rows: list[dict]) -> float:
+    """Independently chain raw closes, split share counts and cash distributions.
+
+    A hypothetical ex-date reinvestment convention, not certified total
+    return, executable fills or verified delisting proceeds. The first
+    observed close is the wealth anchor; only later dated actions count.
+    """
+    if len(rows) < 2:
+        raise DelistedSampleStop("Insufficient raw-close corporate-action window")
+    wealth = 1.0
+    for previous, current in zip(rows, rows[1:]):
+        if previous["date"] >= current["date"]:
+            raise DelistedSampleStop("Nonchronological corporate-action window")
+        marker = current["split"].strip()
+        if marker in ("", "0"):
+            share_multiplier = 1.0
+        elif marker == "1:3":
+            share_multiplier = 3.0
+        else:
+            raise DelistedSampleStop("Unsupported original split ratio")
+        dividend_text = current["dividend"].strip()
+        try:
+            dividend = float(dividend_text) if dividend_text else 0.0
+            before, after = float(previous["close"]), float(current["close"])
+        except (TypeError, ValueError) as exc:
+            raise DelistedSampleStop("Unparseable original cash distribution") from exc
+        if (not all(math.isfinite(x) for x in (before, after, dividend))
+                or min(before, after) <= 0 or dividend < 0):
+            raise DelistedSampleStop("Invalid original corporate-action cash flow")
+        wealth *= (share_multiplier * after + dividend) / before
+        if not math.isfinite(wealth) or wealth <= 0:
+            raise DelistedSampleStop("Invalid chained corporate-action wealth")
+    return 100 * (wealth - 1)
+
+
 def _corporate_action_return_diagnostics(rows: dict[str, list[dict]]) -> dict:
     """Expose historical split/dividend measurement bias without future filling.
 
@@ -192,6 +227,15 @@ def _corporate_action_return_diagnostics(rows: dict[str, list[dict]]) -> dict:
     """
     observed = {s: _observed_close_return(series[0], series[-1])
                 for s, series in rows.items()}
+    # A second, raw-close calculation uses original dated split and dividend
+    # fields rather than the vendor's opaque adjusted-close series.
+    for symbol, series in rows.items():
+        independent = _reconstruct_corporate_action_return(series)
+        vendor = observed[symbol]["vendor_adjusted_close_change_pct"]
+        observed[symbol]["raw_close_split_dividend_reconstructed_change_pct"] = round(
+            independent, 6)
+        observed[symbol]["reconstructed_minus_vendor_adjusted_change_pp"] = round(
+            independent - vendor, 6)
     twtr_end = rows["TWTR"][-1]["date"]
     spy_at_twtr_end = [r for r in rows["SPY"] if r["date"] == twtr_end]
     if len(spy_at_twtr_end) != 1:
@@ -214,6 +258,9 @@ def _corporate_action_return_diagnostics(rows: dict[str, list[dict]]) -> dict:
                 matched_twtr["vendor_adjusted_close_change_pct"] -
                 matched_spy["vendor_adjusted_close_change_pct"], 6),
         },
+        "corporate_action_reconstruction_uses_original_split_and_dividend_rows": True,
+        "corporate_action_reconstruction_is_hypothetical_ex_date_reinvestment": True,
+        "corporate_action_reconstruction_not_settled_or_investable_return": True,
         "vendor_adjusted_prices_not_independently_total_return_certified": True,
         "retrospectively_chosen_listings_not_a_point_in_time_universe": True,
         "no_twtr_mark_or_portfolio_return_after_last_trading_bar": True,
@@ -336,6 +383,9 @@ def main() -> None:
     print("Listing rows", {r["symbol"]: r["daily_rows"] for r in result["listings"]})
     print("TWTR actual settlement UNKNOWN; SEC contractual cash right:",
           result.get("twtr_sec_verified_contractual_cash_consideration_usd"))
+    print("Raw-close corporate-action reconstruction minus vendor adjustment (pp):", {
+        s: v["reconstructed_minus_vendor_adjusted_change_pp"] for s, v in
+        result["per_listing_observed_window"].items()})
     print("Source-adjusted versus raw price changes (pp):", {
         s: v["adjusted_minus_raw_change_pp"] for s, v in
         result["per_listing_observed_window"].items()})
