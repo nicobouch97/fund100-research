@@ -1047,7 +1047,7 @@ def test_2017_cover_sample_rejects_invalid_asof_filing_identity(tmp_path, tamper
     else:
         row["sec_archive_path"] = row["sec_archive_path"].replace(
             "/1001/", "/9999/")
-    raw = "".join(json.dumps(r, sort_keys=True) + "\\n" for r in rows).encode()
+    raw = "".join(json.dumps(r, sort_keys=True) + "\n" for r in rows).encode()
     path.write_bytes(raw)
     census = tmp_path / "historical-2017-annual-filer-census.json"
     annual = json.loads(census.read_text())
@@ -1064,7 +1064,7 @@ def test_2017_cover_sample_allows_legitimate_filing_agent_accession(tmp_path):
     path = tmp_path / "historical-2017-10k-filings.jsonl"
     rows = [json.loads(line) for line in path.read_text().splitlines()]
     rows[0]["sec_archive_path"] = "edgar/data/1001/0001193125-17-000001.txt"
-    raw = "".join(json.dumps(r, sort_keys=True) + "\\n" for r in rows).encode()
+    raw = "".join(json.dumps(r, sort_keys=True) + "\n" for r in rows).encode()
     path.write_bytes(raw)
     census = tmp_path / "historical-2017-annual-filer-census.json"
     annual = json.loads(census.read_text())
