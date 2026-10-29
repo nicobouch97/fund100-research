@@ -1,0 +1,52 @@
+name: Fund-100 V8 Q2 Prospective Net-Income ROA Momentum (RESEARCH ONLY)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v8_q2_net_income_roa_momentum_v1_0.py'
+      - 'test_fund100_v8_q2_net_income_roa_momentum_v1_0.py'
+      - 'research_lab/V8_Q2_NET_INCOME_ROA_MOMENTUM_NEXT_VINTAGE_PROTOCOL_2026_10_29.md'
+      - '.github/workflows/fund100-v8-q2-prospective-roa-momentum.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v8_q2_net_income_roa_momentum_v1_0.py'
+      - 'test_fund100_v8_q2_net_income_roa_momentum_v1_0.py'
+      - 'research_lab/V8_Q2_NET_INCOME_ROA_MOMENTUM_NEXT_VINTAGE_PROTOCOL_2026_10_29.md'
+      - '.github/workflows/fund100-v8-q2-prospective-roa-momentum.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  new-next-vintage-source-injection-is-nontrading:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install existing public research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test future-vintage-only original issuer source and locked no-order Q2 selector
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python -m pytest -q test_fund100_v8_q2_net_income_roa_momentum_v1_0.py
+          python - <<'PY'
+          import fund100_v8_q2_net_income_roa_momentum_v1_0 as q2
+          assert q2.MIN_COMPARABLE_24==18
+          assert q2.COHORT_COUNT==24
+          assert q2.SELECT_COUNT==8
+          assert q2.BROKER_GETS==q2.BROKER_POSTS==q2.BROKER_ORDERS==0
+          assert not q2.LIVE_STRATEGY_RELEASED
+          assert not q2.TRADING_AUTHORIZED
+          assert q2.PREDECLARED_EARLIEST_SOURCE_UTC=="2026-10-30T00:00:00Z"
+          PY
+      - name: Non-activation attestation
+        run: |
+          echo 'Q2 source-injected research rule only. No SEC, Alpaca, Git write, release, or orders.'
