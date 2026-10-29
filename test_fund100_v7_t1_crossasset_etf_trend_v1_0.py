@@ -209,3 +209,71 @@ def test_frozen_research_report_labels_not_forward_alpha_or_trade():
                 assert portfolio["transaction_dates"]>=1
     with pytest.raises(t.CrossAssetTrendStop):
         t.analyze(df,"2026-10-26T16:00:00Z")
+
+
+def test_yearly_log_wealth_reconciles_costed_entry_and_exit_without_fake_day():
+    # Flat SPY: only first-year entry fee and last-year liquidation fee.
+    df=sample(short=True)
+    df.loc[:,list(t.ASSETS)]=100.
+    out=t.simulate(df,start="2014-01-02",end="2016-12-30",
+                   side_bps=15,strategy="STATIC_SPY")
+    years=out["annual_net_log_wealth_pct"]
+    assert list(years)==["2014","2015","2016"]
+    assert years["2014"]<0 and years["2016"]<0
+    assert years["2015"]==pytest.approx(0,abs=1e-8)
+    assert sum(years.values())==pytest.approx(
+        out["terminal_net_log_wealth_pct"],abs=1e-7)
+    assert out["annual_log_wealth_includes_entry_and_exit_costs"]
+
+
+def test_paired_annual_relative_wealth_is_additive_and_diagnostic_only():
+    df=sample(short=True)
+    candidate=t.simulate(df,start="2014-01-02",end="2016-12-30",
+                         side_bps=15,strategy="CROSS_ASSET_12_1")
+    static=t.simulate(df,start="2014-01-02",end="2016-12-30",
+                      side_bps=15,strategy="STATIC_FOUR_EQUAL")
+    matched=t.simulate(df,start="2014-01-02",end="2016-12-30",
+                       side_bps=15,strategy="EXPOSURE_MATCHED_FOUR_EQUAL")
+    for control in (static,matched):
+        report=t._paired_yearly_relative_log_wealth(candidate,control)
+        annual=report["calendar_year_relative_net_log_wealth_pp"]
+        assert list(annual)==["2014","2015","2016"]
+        assert sum(annual.values())==pytest.approx(
+            report["terminal_relative_net_log_wealth_pp"],abs=1e-6)
+        assert report["terminal_relative_net_log_wealth_pp"]==pytest.approx(
+            candidate["terminal_net_log_wealth_pct"]
+            -control["terminal_net_log_wealth_pct"],abs=1e-7)
+        assert report["descriptive_posthoc_not_independent_alpha_evidence"]
+        if report["strongest_positive_year"] is not None:
+            y=report["strongest_positive_year"]
+            assert report["relative_log_wealth_ex_strongest_positive_year_pp"]==(
+                pytest.approx(report["terminal_relative_net_log_wealth_pp"]
+                              -annual[y],abs=1e-7))
+    bad=dict(matched)
+    bad["annual_net_log_wealth_pct"]={"2015":0.}
+    with pytest.raises(t.CrossAssetTrendStop,match="Nonmatching"):
+        t._paired_yearly_relative_log_wealth(candidate,bad)
+    tampered=dict(matched)
+    tampered["terminal_net_log_wealth_pct"]+=10.
+    with pytest.raises(t.CrossAssetTrendStop,match="reconciliation"):
+        t._paired_yearly_relative_log_wealth(candidate,tampered)
+
+
+def test_annual_diagnostic_does_not_change_original_all_era_promotion_rule():
+    df=sample()
+    report=t.analyze(df,"2026-10-27T11:00:00Z")
+    assert report["annual_concentration_diagnostic_not_promotion_gate"]
+    assert set(report["posthoc_15bps_annual_relative_log_wealth"])==(
+        set(t.REGISTERED_WINDOWS))
+    assert report["tested_15bps_strong_all_three_eras"]==all(
+        report["fixed_era_results"][era]["15"]["CROSS_ASSET_12_1"][
+            "net_annualized_return_pct"]>
+        report["fixed_era_results"][era]["15"]["STATIC_FOUR_EQUAL"][
+            "net_annualized_return_pct"]
+        for era in ("2014_2016","2017_2020","2021_2025"))
+    for controls in report["posthoc_15bps_annual_relative_log_wealth"].values():
+        assert set(controls)=={
+            "vs_original_static_four_equal",
+            "vs_posthoc_exposure_matched_four_equal"}
+        assert all(row["same_sessions_and_separately_costed"]
+                   for row in controls.values())
