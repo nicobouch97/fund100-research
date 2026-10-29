@@ -1,0 +1,102 @@
+name: Fund-100 V6 Real Signed Journal + Alpaca Broker + Strategy Readiness (GET ONLY)
+
+# Combine genuine current private dual-HMAC seq0, published immutable public
+# asset bytes, fresh Alpaca four-GET account proof and pinned F1/T1 HOLD.
+# No GitHub mutations, no trade, no brokerage identifiers/artifacts.
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_integrated_journal_broker_strategy_getonly_v1_0.py"
+      - "test_fund100_v6_integrated_journal_broker_strategy_getonly_v1_0.py"
+      - ".github/workflows/fund100-v6-integrated-journal-broker-strategy-getonly.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v6_integrated_journal_broker_strategy_getonly_v1_0.py"
+      - "test_fund100_v6_integrated_journal_broker_strategy_getonly_v1_0.py"
+      - ".github/workflows/fund100-v6-integrated-journal-broker-strategy-getonly.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-real-combined-read-only-launch-readiness
+  cancel-in-progress: false
+
+jobs:
+  credentialless-combined-launch-gate-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify combined private/broker/research HOLD policy using fake inputs
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_integrated_journal_broker_strategy_getonly_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+
+  protected-main-genuine-broker-private-public-getonly:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: credentialless-combined-launch-gate-tests
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Confirm exact main HIGH/STOP and no order or external write release
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "push"
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          test "$FUND100_RISK_LEVEL" = "HIGH"
+          test "$GITHUB_WORKFLOW_REF" = "nicobouch97/fund100-research/.github/workflows/fund100-v6-integrated-journal-broker-strategy-getonly.yml@refs/heads/main"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          python - <<'PY'
+          import fund100_v6_integrated_journal_broker_strategy_getonly_v1_0 as app
+          assert app.NO_PRIVATE_MUTATIONS and app.NO_PUBLIC_MUTATIONS
+          assert app.NO_BROKER_NON_GET and app.NO_ORDER_PERMIT
+          assert app.LIVE_TRADING_RELEASED is False
+          assert app.EXISTING_V7_F1_T1_APPROVED is False
+          print("Original signed HEAD, live account and strategy verdict: GET ONLY, HARD STOP")
+          PY
+      - name: Perform authenticated real private journal/immutable-asset and broker GETs
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}
+          FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ github.token }}
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          python -B fund100_v6_integrated_journal_broker_strategy_getonly_v1_0.py
+      - name: Reconfirm emergency STOP after all read-only calls
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'No GitHub mutation, no broker order and no private account data persisted.'
