@@ -88,11 +88,13 @@ def _one_conditional_put(*, writer_token, expected_old, expected_new,
     A real network attempt requires the internal production release switch
     and the separate reviewed caller to have verified a genuine event.
     """
-    if (transport is None and (
-        PRODUCTION_EVENT_CAS_RELEASED is not True
-        or AUTOMATIC_IMMUTABLE_NEXT_HEAD_RELEASED is not True
-        or REAL_STRATEGY_EVENT_SOURCE_AUTHENTICATED is not True)):
-        raise PrivateCasHold("Genuine recurring event production CAS HARD LOCKED")
+    if transport is None:
+        if (PRODUCTION_EVENT_CAS_RELEASED is not True
+            or AUTOMATIC_IMMUTABLE_NEXT_HEAD_RELEASED is not True
+            or REAL_STRATEGY_EVENT_SOURCE_AUTHENTICATED is not True):
+            raise PrivateCasHold("Genuine recurring event production CAS HARD LOCKED")
+    elif getattr(transport, "synthetic_only", None) is not True:
+        raise PrivateCasHold("Only explicitly synthetic fake transport may be injected")
     if (type(writer_token) is not str or len(writer_token) < 10
         or writer_token.strip() != writer_token
         or "\r" in writer_token or "\n" in writer_token):
