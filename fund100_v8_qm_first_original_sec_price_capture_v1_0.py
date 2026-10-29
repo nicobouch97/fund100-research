@@ -148,6 +148,24 @@ def _label(name):
     return label
 
 
+def _current_registry_with_original_identity_quarantine(registry):
+    """Keep first-eight ORIGINAL CIK immutable; quarantine current CIK drift.
+
+    A changed public ticker registry is NOT permission to relabel original
+    P4B/P4E source history. Capture the current SEC company separately,
+    but never join or score it as the frozen same issuer.
+    """
+    try:
+        mapping=sec.resolve_registry(registry,allow_frozen_drift=True)
+        frozen={row["ticker"]:row["cik_10_digit"]
+                for row in fetch.read_cohort()}
+    except Exception:
+        raise SourceHold("Official current registry or original CIK source invalid") from None
+    mismatches=sorted(ticker for ticker,cik in frozen.items()
+                      if mapping[ticker]!=cik)
+    return mapping,mismatches
+
+
 def analyze_sources(*,registry,source_files,price_panel,acquired_utc):
     """Join actual-format first-seen raw SEC bytes + COMPLETE price panel."""
     observed=model._utc(acquired_utc)
@@ -155,7 +173,7 @@ def analyze_sources(*,registry,source_files,price_panel,acquired_utc):
         raise SourceHold("First original V8 source cannot precede registered rule")
     names=_cohort()
     try:
-        ciks=sec.resolve_registry(registry)
+        ciks,drift=_current_registry_with_original_identity_quarantine(registry)
         frame=cohort.validate_prices(price_panel)
         cohort.p4g.verify_original_nyse_source_sessions(frame.index)
     except Exception:
@@ -191,7 +209,7 @@ def analyze_sources(*,registry,source_files,price_panel,acquired_utc):
         su=sha256(source_files[key2]).hexdigest()
         receipt.append({"symbol":ticker,"source_companyfacts_sha256":fa,
                         "source_submissions_sha256":su})
-        if found is None:
+        if found is None or ticker in drift:
             gaps.append(ticker)
             continue
         original_commitment=sha256(
@@ -231,6 +249,7 @@ def analyze_sources(*,registry,source_files,price_panel,acquired_utc):
         "last_completed_market_session":last.isoformat(),
         "frozen_existing_24_roster_source_sha1":PINNED_COHORT_MODULE_GIT_BLOB,
         "original_current_registry_sha256":sha256(registry).hexdigest(),
+        "frozen_original_eight_cik_identity_drift_quarantined":drift,
         "original_adjusted_price_panel_sha256":price_sha,
         "raw_sec_source_receipts":receipt,
         "issuer_count":MAX_COMPANIES,
@@ -259,7 +278,7 @@ def main():
         raise SourceHold("Never overwrite original source capture")
     names=_cohort()
     registry=sec.registry_bytes(agent)
-    ciks=sec.resolve_registry(registry)
+    ciks,drift=_current_registry_with_original_identity_quarantine(registry)
     raw={}
     for symbol in names:
         cik=ciks[symbol]
@@ -294,6 +313,7 @@ def main():
     print("Same-filing complete gross-profit/assets:",result[
           "latest_same_filing_10K_gross_profit_and_assets_available"])
     print("Absent source-covered issuers:",len(result["missing_comparable_sec_gross_profit_or_assets"]))
+    print("Frozen original identity drift quarantined:",len(result["frozen_original_eight_cik_identity_drift_quarantined"]))
     print("First original strategy status:",result["selection_status"])
     print("Any sample is UNVALIDATED RESEARCH; live orders 0.")
 
