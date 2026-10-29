@@ -446,13 +446,13 @@ def form25_index_manifest(index_by_quarter: dict[int, bytes]) -> list[dict]:
                 "sec_archive_path": path,
                 "same_cik_in_full_2017_10k_filer_population": issuer in tenk_dates,
                 # Index dates have no intraday release time. Only STRICTLY earlier
-            # 10-K dates can support an as-of Form 25 crosscheck.
-            "same_cik_10k_filed_strictly_before_form25": any(
+                # 10-K dates can support an as-of Form 25 crosscheck.
+                "same_cik_10k_filed_strictly_before_form25": any(
                     day < filed for day in tenk_dates.get(issuer, [])),
-            "same_cik_10k_filed_same_day_as_form25": any(
+                "same_cik_10k_filed_same_day_as_form25": any(
                     day == filed for day in tenk_dates.get(issuer, [])),
-            # Legacy descriptive count, NOT as-of available information.
-            "same_cik_10k_filed_on_or_before_form25": any(
+                # Legacy descriptive count, NOT as-of available information.
+                "same_cik_10k_filed_on_or_before_form25": any(
                     day <= filed for day in tenk_dates.get(issuer, [])),
             })
     events.sort(key=lambda row: (
