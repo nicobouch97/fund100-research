@@ -277,3 +277,107 @@ def test_annual_diagnostic_does_not_change_original_all_era_promotion_rule():
             "vs_posthoc_exposure_matched_four_equal"}
         assert all(row["same_sessions_and_separately_costed"]
                    for row in controls.values())
+
+
+def test_next_session_execution_stress_preserves_frozen_signals_and_fees():
+    df=sample(short=True)
+    base=t.simulate(df,start="2014-01-02",end="2016-12-30",
+                    side_bps=15,strategy="CROSS_ASSET_12_1")
+    delayed=t.simulate(df,start="2014-01-02",end="2016-12-30",
+                       side_bps=15,strategy="CROSS_ASSET_12_1_NEXT_CLOSE")
+    assert delayed["next_close_execution_diagnostic_only"]
+    assert not base["next_close_execution_diagnostic_only"]
+    assert delayed["unexecuted_terminal_decisions"]==0
+    assert delayed["transaction_dates"]==base["transaction_dates"]
+    for original,lagged in zip(base["signal_trade_log"],
+                               delayed["signal_trade_log"],strict=True):
+        for key in ("close","source_signal_previous_complete_session",
+                    "hypothetical_positions","target_gross_fraction",
+                    "same_decision_positive_momentum_count"):
+            assert original[key]==lagged[key]
+        decision=pd.Timestamp(lagged["close"])
+        assert lagged["modeled_execution_close"]==(
+            df.index[df.index.get_loc(decision)+1].date().isoformat())
+        assert original["modeled_execution_close"]==original["close"]
+        assert original["same_close_idealized_fee_charged"]
+        assert not lagged["same_close_idealized_fee_charged"]
+    assert delayed["modeled_fees_usd_per_100_initial_usd"]>0
+    assert delayed["no_actual_orders"]
+
+
+def test_next_session_stress_exposes_unfillable_first_close_shock():
+    df=sample(short=True)
+    # On the first modeled entry, DBC and GLD have the strongest positive
+    # predeclared momentum. A one-session 20% price jump is already earned
+    # by a same-close hypothetical fill, but NOT by the next-close fill.
+    day=pd.Timestamp("2014-01-03")
+    df.loc[day,["DBC","GLD"]]*=1.20
+    original=t.simulate(df,start="2014-01-02",end="2016-12-30",
+                        side_bps=15,strategy="CROSS_ASSET_12_1")
+    lagged=t.simulate(df,start="2014-01-02",end="2016-12-30",
+                      side_bps=15,strategy="CROSS_ASSET_12_1_NEXT_CLOSE")
+    assert original["signal_trade_log"][0]["hypothetical_positions"]==[
+        "DBC","GLD"]
+    assert lagged["net_total_return_pct"]<original["net_total_return_pct"]
+    assert lagged["signal_trade_log"][0]["modeled_execution_close"]=="2014-01-03"
+
+
+def test_terminal_month_first_decision_is_not_fabricated_as_filled(monkeypatch):
+    # If the study ends on a new month's first session, no future close
+    # exists in the registered window: record a pending, unfilled decision.
+    monkeypatch.setattr(t,"REGISTERED_WINDOWS",
+                        {"TEST":("2014-01-02","2014-04-01")})
+    result=t.simulate(sample(short=True),start="2014-01-02",
+                      end="2014-04-01",side_bps=35,
+                      strategy="CROSS_ASSET_12_1_NEXT_CLOSE")
+    assert result["unexecuted_terminal_decisions"]==1
+    assert result["signal_trade_log"][-1]["close"]=="2014-04-01"
+    assert result["signal_trade_log"][-1]["modeled_execution_close"] is None
+    assert result["transaction_dates"]==len(result["signal_trade_log"])-1
+
+
+def test_execution_stress_is_diagnostic_not_an_alpha_promotion_gate():
+    report=t.analyze(sample(),"2026-10-27T11:00:00Z")
+    assert report["next_close_stress_not_a_new_promotion_gate"]
+    assert set(report["next_close_execution_stress"])==set(t.REGISTERED_WINDOWS)
+    for era,fees in report["next_close_execution_stress"].items():
+        assert set(fees)=={"5","15","35"}
+        for bps,stress in fees.items():
+            assert stress["same_frozen_signal_decisions"]
+            assert stress["diagnostic_only_not_new_promotion_gate"]
+            delayed=stress["next_close_costed_path"]
+            base=report["fixed_era_results"][era][bps]["CROSS_ASSET_12_1"]
+            assert stress["next_close_minus_same_close_net_cagr_pp"]==pytest.approx(
+                delayed["net_annualized_return_pct"]-
+                base["net_annualized_return_pct"],abs=1e-6)
+            assert delayed["no_actual_orders"]
+    assert report["tested_15bps_strong_all_three_eras"]==all(
+        report["fixed_era_results"][era]["15"]["CROSS_ASSET_12_1"][
+            "net_annualized_return_pct"]>
+        report["fixed_era_results"][era]["15"]["STATIC_FOUR_EQUAL"][
+            "net_annualized_return_pct"]
+        for era in ("2014_2016","2017_2020","2021_2025"))
+    assert not report["trading_authorized"]
+
+
+def test_delayed_cross_asset_all_cash_regime_never_invents_trades():
+    # A negative-momentum regime must not turn an execution delay into
+    # invented buying, turnover or cost. It must respect the same frozen
+    # all-cash decision at all originally registered fee levels.
+    panel=sample(decline=True,short=True)
+    for bps in t.COSTS:
+        immediate=t.simulate(panel,start="2014-01-02",end="2016-12-30",
+                             side_bps=bps,strategy="CROSS_ASSET_12_1")
+        delayed=t.simulate(panel,start="2014-01-02",end="2016-12-30",
+                           side_bps=bps,strategy="CROSS_ASSET_12_1_NEXT_CLOSE")
+        assert immediate["net_total_return_pct"]==0
+        assert delayed["net_total_return_pct"]==0
+        assert delayed["modeled_fees_usd_per_100_initial_usd"]==0
+        assert delayed["gross_traded_notional_per_100_initial_usd"]==0
+        assert delayed["unexecuted_terminal_decisions"]==0
+        assert len(delayed["signal_trade_log"])==len(immediate["signal_trade_log"])
+        assert all(x["hypothetical_positions"]==[]
+                   and x["target_gross_fraction"]==0
+                   and x["modeled_execution_close"] is not None
+                   for x in delayed["signal_trade_log"])
+        assert delayed["no_actual_orders"]

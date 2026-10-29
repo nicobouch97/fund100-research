@@ -122,8 +122,8 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
         raise CrossAssetTrendStop("Unregistered hindsight comparison interval")
     if side_bps not in COSTS or type(side_bps) is not int:
         raise CrossAssetTrendStop("Unregistered cost stress")
-    if strategy not in ("CROSS_ASSET_12_1","EXPOSURE_MATCHED_FOUR_EQUAL",
-                      "STATIC_FOUR_EQUAL","STATIC_SPY"):
+    if strategy not in ("CROSS_ASSET_12_1","CROSS_ASSET_12_1_NEXT_CLOSE",
+                      "EXPOSURE_MATCHED_FOUR_EQUAL","STATIC_FOUR_EQUAL","STATIC_SPY"):
         raise CrossAssetTrendStop("Unknown candidate benchmark")
     panel=prices_validate(prices)
     view=panel.loc[start:end]
@@ -142,6 +142,8 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
     fees=0.
     trade_dates=0
     selected_log=[]
+    delayed=strategy=="CROSS_ASSET_12_1_NEXT_CLOSE"
+    pending=None  # Exact prior-session decision, never recomputed at execution.
     risk_breach={"single_50pct":0,"gross_95pct":0,"cash_below_5pct":0,
                  "account_day_below_minus_6pct":0}
     last_session=-1
@@ -152,12 +154,27 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
             move=bar.to_numpy(dtype=float)/prev
             positions*=move
         nav=float(cash+sum(positions))
+        # Diagnostic only: queue the FIRST session's decision and fill at
+        # the NEXT completed close, after that day's full price movement.
+        # Do not look at the next bar when selecting, and never silently
+        # execute a pending decision on the terminal date after liquidation.
+        if pending is not None:
+            nav,positions,cash,paid,dollars=_reweight(
+                nav,positions,pending["target"],fee)
+            fees+=paid
+            turnover+=dollars
+            trade_dates+=1
+            selected_log[pending["log_index"]]["modeled_execution_close"]=(
+                timestamp.date().isoformat())
+            pending=None
         month_first=j==0 or timestamp.month!=view.index[j-1].month or timestamp.year!=view.index[j-1].year
         if (j==0 or (strategy in ("CROSS_ASSET_12_1",
+                                  "CROSS_ASSET_12_1_NEXT_CLOSE",
                                   "EXPOSURE_MATCHED_FOUR_EQUAL") and month_first)):
-            if strategy in ("CROSS_ASSET_12_1","EXPOSURE_MATCHED_FOUR_EQUAL"):
+            if strategy in ("CROSS_ASSET_12_1","CROSS_ASSET_12_1_NEXT_CLOSE",
+                            "EXPOSURE_MATCHED_FOUR_EQUAL"):
                 momentum_target,momentum_winners=_selection(panel,current)
-                if strategy=="CROSS_ASSET_12_1":
+                if strategy in ("CROSS_ASSET_12_1","CROSS_ASSET_12_1_NEXT_CLOSE"):
                     target,winners=momentum_target,momentum_winners
                 else:
                     # POST-HOC DIAGNOSTIC, not an independently specified
@@ -174,10 +191,13 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
             else:
                 target=np.array([.95,0.,0.,0.,.05])
                 winners=["SPY"]
-            nav,positions,cash,paid,dollars=_reweight(nav,positions,target,fee)
-            fees+=paid
-            turnover+=dollars
-            trade_dates+=1
+            if delayed:
+                pending={"target":target.copy(),"log_index":len(selected_log)}
+            else:
+                nav,positions,cash,paid,dollars=_reweight(nav,positions,target,fee)
+                fees+=paid
+                turnover+=dollars
+                trade_dates+=1
             selected_log.append({"close":timestamp.date().isoformat(),
                                  "source_signal_previous_complete_session":
                                      panel.index[current-1].date().isoformat(),
@@ -186,8 +206,11 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
                                  "same_decision_positive_momentum_count":
                                      len(momentum_winners) if strategy in (
                                          "CROSS_ASSET_12_1",
+                                         "CROSS_ASSET_12_1_NEXT_CLOSE",
                                          "EXPOSURE_MATCHED_FOUR_EQUAL") else None,
-                                 "same_close_idealized_fee_charged":True})
+                                 "modeled_execution_close":(
+                                     None if delayed else timestamp.date().isoformat()),
+                                 "same_close_idealized_fee_charged":not delayed})
         path.append(nav)
         peak=max(peak,nav)
         gross=float(sum(positions))/nav
@@ -250,8 +273,11 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
         "original_high_20pct_drawdown_exceeded":max_dd<-.20,
         "original_high_35pct_volatility_exceeded":v>.35,
         "no_actual_orders":True,
+        "next_close_execution_diagnostic_only":delayed,
+        "unexecuted_terminal_decisions":int(pending is not None),
         "signal_trade_log":selected_log if strategy in (
-            "CROSS_ASSET_12_1","EXPOSURE_MATCHED_FOUR_EQUAL") else [],
+            "CROSS_ASSET_12_1","CROSS_ASSET_12_1_NEXT_CLOSE",
+            "EXPOSURE_MATCHED_FOUR_EQUAL") else [],
     }
 
 def _paired_yearly_relative_log_wealth(candidate:dict,control:dict)->dict:
@@ -324,6 +350,39 @@ def analyze(prices:pd.DataFrame,captured_utc:str):
             "vs_posthoc_exposure_matched_four_equal":_paired_yearly_relative_log_wealth(
                 candidate,at_15["EXPOSURE_MATCHED_FOUR_EQUAL"]),
         }
+    # A one-session execution delay is an EX-POST stress of the SAME
+    # frozen monthly signals, not an alternative fitted strategy. The
+    # original all-three-era promotion rule above remains untouched.
+    next_close_stress={}
+    for era,(start,end) in REGISTERED_WINDOWS.items():
+        next_close_stress[era]={}
+        for bps in COSTS:
+            original=result[era][str(bps)]["CROSS_ASSET_12_1"]
+            delayed=simulate(panel,start=start,end=end,side_bps=bps,
+                             strategy="CROSS_ASSET_12_1_NEXT_CLOSE")
+            original_log=original["signal_trade_log"]
+            delayed_log=delayed["signal_trade_log"]
+            keys=("close","source_signal_previous_complete_session",
+                  "hypothetical_positions","target_gross_fraction",
+                  "same_decision_positive_momentum_count")
+            if (len(original_log)!=len(delayed_log)
+                or any(tuple(a[k] for k in keys)!=tuple(b[k] for k in keys)
+                       for a,b in zip(original_log,delayed_log))
+                or any(b["modeled_execution_close"] is not None and
+                       b["modeled_execution_close"]<=b["close"]
+                       for b in delayed_log)):
+                raise CrossAssetTrendStop("Next-close stress changed original signal")
+            next_close_stress[era][str(bps)]={
+                "same_frozen_signal_decisions":True,
+                "next_close_minus_same_close_net_cagr_pp":round(
+                    delayed["net_annualized_return_pct"]-
+                    original["net_annualized_return_pct"],6),
+                "next_close_minus_same_close_net_total_return_pp":round(
+                    delayed["net_total_return_pct"]-
+                    original["net_total_return_pct"],6),
+                "next_close_costed_path":delayed,
+                "diagnostic_only_not_new_promotion_gate":True,
+            }
     return {
         "schema":SCHEMA,
         "status":"HISTORICAL_REPEATEDLY_STUDIED_CROSS_ASSET_NO_ALPHA_AUTHORITY",
@@ -341,6 +400,8 @@ def analyze(prices:pd.DataFrame,captured_utc:str):
         "tested_15bps_strong_all_three_eras":gate,
         "posthoc_15bps_annual_relative_log_wealth":annual_diagnostics,
         "annual_concentration_diagnostic_not_promotion_gate":True,
+        "next_close_execution_stress":next_close_stress,
+        "next_close_stress_not_a_new_promotion_gate":True,
         "favorable_result_is_not_forward_alpha_qualification":True,
         "DBC_methodology_changed_2025":True,
         "current_live_capital_ceiling_usd":"130.30",
