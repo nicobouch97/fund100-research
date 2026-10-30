@@ -6,12 +6,14 @@ on:
   pull_request:
     paths:
       - "fund100_v8_q2_frozen_forward_63_marks_v1_0.py"
+      - "research_lab/V8_Q2_FIRST_ORIGINAL_SOURCE_INDEPENDENT_PIN_2026_10_30.json"
       - "test_fund100_v8_q2_frozen_forward_63_marks_v1_0.py"
       - ".github/workflows/fund100-v8-q2-frozen-forward-mark.yml"
   push:
     branches: [main]
     paths:
       - "fund100_v8_q2_frozen_forward_63_marks_v1_0.py"
+      - "research_lab/V8_Q2_FIRST_ORIGINAL_SOURCE_INDEPENDENT_PIN_2026_10_30.json"
       - "test_fund100_v8_q2_frozen_forward_63_marks_v1_0.py"
       - ".github/workflows/fund100-v8-q2-frozen-forward-mark.yml"
   schedule:
@@ -99,6 +101,19 @@ jobs:
           gh run download "$SOURCE_RUN_ID" --name "$SOURCE_ARTIFACT_NAME" --dir /tmp/q2-first
           test -f /tmp/q2-first/first-new-vintage-q2-source-coverage-and-candidate-NO-LIVE.json
           test -f /tmp/q2-first/original-24-issuer-completed-adjusted-prices.csv
+      - name: Verify separately committed first source receipt BEFORE all future research
+        if: steps.first.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          python -B - <<'PY'
+          from pathlib import Path
+          from fund100_v8_q2_frozen_forward_63_marks_v1_0 import (
+              verify_independent_first_source_pin,
+          )
+          proof=verify_independent_first_source_pin(Path("/tmp/q2-first"))
+          assert proof["separate_git_pin_agrees_with_original_source"]
+          print("Independent 2026 first-source Git pin verified; no retroactive basket.")
+          PY
       - name: Audit original SEC coverage gaps without revising the frozen basket
         if: steps.first.outputs.available == 'true'
         run: |

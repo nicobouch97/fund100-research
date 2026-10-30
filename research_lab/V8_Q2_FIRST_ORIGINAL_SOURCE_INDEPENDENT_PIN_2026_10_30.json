@@ -1,0 +1,40 @@
+{
+  "schema": "FUND100_V8_Q2_INDEPENDENT_ORIGINAL_SOURCE_PIN_V1",
+  "recorded_after_source_capture": true,
+  "original_source_acquired_utc": "2026-10-30T08:16:19Z",
+  "original_source_workflow_run_id": 41025137794,
+  "original_source_artifact_id": 12962884465,
+  "original_source_artifact_name": "fund100-v8-q2-new-original-first",
+  "original_source_artifact_digest": "sha256:ecc9182c1576987e0a9c440139c693b00fe44445f499b1b9c5822586de8d8628",
+  "original_report_sha256": "c027ab01672ea70b0c5a150862e59d0b14bd39d38da203c87fa2361920fa670b",
+  "original_price_panel_sha256": "c425b79b978304c1dee3628428cf2cc6a527b117253f83f106f0712f7f61f7a0",
+  "original_sec_ticker_registry_sha256": "b5be63822ef78687908848b349820d9d6a962af9287e2164f44f4b217259f4ea",
+  "original_selection_source_fingerprint_sha256": "321a5b238f56549634fa6f822e62c17f999b75e4aa818ffada294b21bd4bb94b",
+  "original_last_completed_market_session": "2026-10-29",
+  "original_issuer_count": 24,
+  "original_positive_matched_net_income_assets_count": 20,
+  "original_source_missing_or_quarantined": [
+    "AVGO",
+    "CAT",
+    "MA",
+    "XOM"
+  ],
+  "original_stock_selection": [
+    "LLY",
+    "JNJ",
+    "GOOGL",
+    "AAPL",
+    "KO",
+    "CVX",
+    "AMZN",
+    "JPM"
+  ],
+  "frozen_original_sector_count": 7,
+  "cash_weight_fraction": "0.05",
+  "gross_investment_fraction": "0.95",
+  "original_63_session_future_marks_not_yet_observed": true,
+  "source_report_not_equivalent_to_authenticated_executable_trade": true,
+  "research_only_no_live_orders": true,
+  "origin": "Original GitHub Actions archive read and SHA256 checked on 2026-10-30 before 2026-10-30 NYSE close. This Git commit anchors first-source bytes separately; it is not a prior-to-source registration or permanent trusted third-party notarization.",
+  "source_experiment_registered_date_utc": "2026-10-29"
+}

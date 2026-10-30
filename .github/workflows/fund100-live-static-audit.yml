@@ -82,6 +82,7 @@ on:
       - "test_fund100_v8_prospective_stock_profitability_momentum_v1_0.py"
       - "fund100_v8_q2_net_income_roa_momentum_v1_0.py"
       - "test_fund100_v8_q2_net_income_roa_momentum_v1_0.py"
+      - "research_lab/V8_Q2_FIRST_ORIGINAL_SOURCE_INDEPENDENT_PIN_2026_10_30.json"
       - "fund100_v8_q2_frozen_forward_63_marks_v1_0.py"
       - "test_fund100_v8_q2_frozen_forward_63_marks_v1_0.py"
       - ".github/workflows/fund100-v8-q2-frozen-forward-mark.yml"

@@ -37,6 +37,79 @@ class MarkHold(ValueError):
     pass
 
 
+
+FIRST_SOURCE_INDEPENDENT_PIN = Path(
+    "research_lab/V8_Q2_FIRST_ORIGINAL_SOURCE_INDEPENDENT_PIN_2026_10_30.json")
+
+
+def verify_independent_first_source_pin(
+        original_root: Path,
+        pin_path: Path = FIRST_SOURCE_INDEPENDENT_PIN) -> dict:
+    """Fail if the source/carryforward bytes differ from the separate Git pin.
+
+    The first independent Git pin was committed AFTER observing the 08:16
+    acquisition but BEFORE the following first eligible NYSE close. This
+    check is external to both original and weekly copied ZIP payloads.
+    It is not prior-to-source registration or third-party notarization.
+    """
+    if not isinstance(original_root, Path) or not isinstance(pin_path, Path):
+        raise MarkHold("Independent original pin path not verified")
+    try:
+        pinned = json.loads(pin_path.read_bytes())
+        report_raw = (original_root/FIRST_SOURCE_REPORT).read_bytes()
+        registry_raw = (original_root/ORIGINAL_REGISTRY).read_bytes()
+        prices_raw = (original_root/ORIGINAL_PRICE_CSV).read_bytes()
+        report = json.loads(report_raw)
+    except (OSError, ValueError, TypeError) as exc:
+        raise MarkHold("Independent first-source pin or original bytes missing") from exc
+    if (type(pinned) is not dict
+        or pinned.get("schema") !=
+            "FUND100_V8_Q2_INDEPENDENT_ORIGINAL_SOURCE_PIN_V1"
+        or pinned.get("recorded_after_source_capture") is not True
+        or pinned.get("research_only_no_live_orders") is not True
+        or pinned.get("original_63_session_future_marks_not_yet_observed")
+            is not True):
+        raise MarkHold("Original independently committed Q2 pin invalid")
+    for path,expected in (
+        (report_raw, pinned.get("original_report_sha256")),
+        (registry_raw, pinned.get("original_sec_ticker_registry_sha256")),
+        (prices_raw, pinned.get("original_price_panel_sha256")),
+    ):
+        if (type(expected) is not str or len(expected) != 64
+            or sha256(path).hexdigest() != expected):
+            raise MarkHold("Independent original Q2 source digest mismatch")
+    if type(report) is not dict:
+        raise MarkHold("First-source report invalid")
+    screen=report.get("source_derived_research_selection")
+    if type(screen) is not dict:
+        raise MarkHold("First-source selection absent")
+    basket=screen.get("selection_candidate")
+    if (type(basket) is not dict
+        or report.get("source_acquired_utc") !=
+            pinned.get("original_source_acquired_utc")
+        or report.get("last_completed_market_session") !=
+            pinned.get("original_last_completed_market_session")
+        or len(report.get("complete_current_original_24_sec_source_receipts",[]))
+            != pinned.get("original_issuer_count")
+        or screen.get("matched_positive_annual_net_income_assets") !=
+            pinned.get("original_positive_matched_net_income_assets_count")
+        or screen.get("source_gaps") !=
+            pinned.get("original_source_missing_or_quarantined")
+        or basket.get("symbols") != pinned.get("original_stock_selection")
+        or basket.get("sector_count") != pinned.get("frozen_original_sector_count")
+        or basket.get("source_fingerprint_sha256") !=
+            pinned.get("original_selection_source_fingerprint_sha256")
+        or screen.get("live_order_authorized") is not False
+        or report.get("broker_orders") != 0):
+        raise MarkHold("Independent original issuer/source selection pin mismatch")
+    return {
+        "independent_original_report_sha256": sha256(report_raw).hexdigest(),
+        "source_first_public_run_id": pinned.get("original_source_workflow_run_id"),
+        "separate_git_pin_agrees_with_original_source": True,
+        "not_a_prior_to_source_or_third_party_notarization": True,
+    }
+
+
 def _read_source(root: Path):
     """Byte-check entire frozen source archive, not only copied ticker labels."""
     if not isinstance(root, Path):
@@ -433,10 +506,12 @@ def main():
     p.add_argument("--output",type=Path,required=True)
     p.add_argument("--later-price-csv",type=Path,required=True)
     a=p.parse_args()
+    verified_pin=verify_independent_first_source_pin(a.original_dir)
     current=market._later_original_public_prices()
     observed=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     analysis=evaluate(original_root=a.original_dir,
                       later_prices=current,observed_at_utc=observed)
+    analysis["independent_first_original_git_pin"]=verified_pin
     if a.output.exists() or a.later_price_csv.exists():
         raise MarkHold("Never overwrite independent forward-mark artifact")
     a.output.parent.mkdir(parents=True,exist_ok=True)
