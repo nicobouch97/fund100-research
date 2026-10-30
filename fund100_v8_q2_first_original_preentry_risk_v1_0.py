@@ -153,6 +153,169 @@ def _buy_once_costed_risk(returns:pd.DataFrame, weights:dict[str,float],
     }
 
 
+
+def _sector_aware_sell_only_repair(positions:dict[str,float],cash:float,fee:float):
+    """Minimum sell at next completed close; post-fee sector/name/gross caps."""
+    if (not positions or not all(s in cohort.SECTORS for s in positions)
+        or not math.isfinite(cash) or cash<0 or fee not in (.0005,.0015,.0035)
+        or any(not math.isfinite(v) or v<0 for v in positions.values())):
+        raise RiskHold("Invalid sector-aware funded sell-only input")
+    nav=cash+sum(positions.values())
+    if not math.isfinite(nav) or nav<=0:
+        raise RiskHold("Invalid sell-only pretrade NAV")
+    by_sector={}
+    for s in positions:
+        by_sector.setdefault(cohort.SECTORS[s],[]).append(s)
+    gross=sum(positions.values())
+    gross_floor=max(0.,(gross-.95*nav)/(1.-.95*fee))
+    sold=gross_floor
+    for _ in range(100):
+        post=nav-fee*sold
+        if post<=0 or sold>gross+1e-8:
+            raise RiskHold("Sector repair would overdraw NAV")
+        mandatory={s:max(0.,v-.50*post) for s,v in positions.items()}
+        sector_floor=sum(
+            max(sum(mandatory[s] for s in names),
+                max(0.,sum(positions[s] for s in names)-MAX_SECTOR*post))
+            for names in by_sector.values())
+        updated=max(gross_floor,sector_floor)
+        if abs(updated-sold)<1e-11:
+            sold=updated
+            break
+        sold=updated
+    else:
+        raise RiskHold("Sector-aware minimum sale did not converge")
+    post=nav-fee*sold
+    wanted={s:min(v,.50*post) for s,v in positions.items()}
+    for names in by_sector.values():
+        excess=max(0.,sum(wanted[s] for s in names)-MAX_SECTOR*post)
+        for s in sorted(names,key=lambda s:(-wanted[s],s)):
+            part=min(excess,wanted[s])
+            wanted[s]-=part
+            excess-=part
+            if excess<=1e-12:
+                break
+        if excess>1e-8:
+            raise RiskHold("Unfunded sector cap correction")
+    remainder=sold-sum(positions[s]-wanted[s] for s in positions)
+    if remainder < -1e-8:
+        raise RiskHold("Minimum sale underestimates mandatory sector sales")
+    for s in sorted(wanted,key=lambda s:(-wanted[s],s)):
+        part=min(max(0.,remainder),wanted[s])
+        wanted[s]-=part
+        remainder-=part
+        if remainder<=1e-12:
+            break
+    actual=sum(positions[s]-wanted[s] for s in positions)
+    charged=fee*actual
+    newcash=cash+actual-charged
+    newnav=newcash+sum(wanted.values())
+    if (remainder>1e-8 or abs(actual-sold)>1e-8
+        or abs(newnav-(nav-charged))>1e-8
+        or any(v< -1e-10 or v>positions[s]+1e-10 for s,v in wanted.items())
+        or sum(wanted.values())/newnav>.95+1e-9
+        or newcash/newnav<.05-1e-9
+        or max(wanted.values())/newnav>.50+1e-9
+        or any(sum(wanted[s] for s in names)/newnav>MAX_SECTOR+1e-9
+               for names in by_sector.values())):
+        raise RiskHold("Sector-aware repair violates post-fee policy proof")
+    return wanted,newcash,charged,actual
+
+
+def _next_close_sector_repair_path(returns:pd.DataFrame,weights:dict[str,float],
+                                    fee_bps:int,initial_invested:float):
+    """Buy once; detect at close t and repair at close t+1, no lookahead.
+
+    The original basket was selected using these same historical prices:
+    this is risk economics, not a tradeable backtest or alpha evidence.
+    """
+    if (initial_invested not in (.90,.95) or fee_bps not in COSTS_BPS
+        or type(weights) is not dict or len(weights)!=8
+        or not math.isclose(sum(weights.values()),1.,abs_tol=1e-12)
+        or any(s not in cohort.SECTORS for s in weights)
+        or any(type(w) not in (int,float) or not math.isfinite(w)
+               or w<0 or w>1 for w in weights.values())
+        or not isinstance(returns,pd.DataFrame) or len(returns)<2
+        or not set(weights)<=set(returns.columns)):
+        raise RiskHold("Invalid registered next-close repair study")
+    panel=returns[list(weights)]
+    if (panel.isna().any().any() or not np.isfinite(panel.to_numpy()).all()
+        or (panel<=-1).any().any()):
+        raise RiskHold("Invalid original close return in next-close repair")
+    fee=fee_bps/10000.
+    entry_nav=100./(1.+initial_invested*fee)
+    cash=(1.-initial_invested)*entry_nav
+    positions={s:initial_invested*entry_nav*w for s,w in weights.items()}
+    path=[100.,entry_nav]
+    daily=[]
+    repairs=0
+    repair_turnover=0.
+    repair_fees=0.
+    queued=False
+    before={"gross":0,"sector":0,"single":0}
+    after={"gross":0,"sector":0,"single":0}
+
+    def flags():
+        nav=cash+sum(positions.values())
+        sectors={}
+        for s,v in positions.items():
+            k=cohort.SECTORS[s]
+            sectors[k]=sectors.get(k,0.)+v
+        return {
+            "gross":sum(positions.values())/nav>.95+1e-10,
+            "sector":max(sectors.values())/nav>MAX_SECTOR+1e-10,
+            "single":max(positions.values())/nav>.50+1e-10,
+        }
+
+    for _,row in panel.iterrows():
+        for s in positions:
+            positions[s]*=1.+float(row[s])
+        prior=flags()
+        for k,v in prior.items():
+            before[k]+=int(v)
+        if queued:
+            positions,cash,charged,sold=_sector_aware_sell_only_repair(
+                positions,cash,fee)
+            if sold>1e-10:
+                repairs+=1
+                repair_turnover+=sold
+                repair_fees+=charged
+        current=flags()
+        for k,v in current.items():
+            after[k]+=int(v)
+        queued=any(current.values())
+        nav=cash+sum(positions.values())
+        daily.append(nav/path[-1]-1.)
+        path.append(nav)
+    arr=np.asarray(path,dtype=float)
+    drawdown=arr/np.maximum.accumulate(arr)-1.
+    return {
+        "initial_invested_fraction":initial_invested,
+        "initial_cash_fraction":1.-initial_invested,
+        "fee_bps_per_traded_side":fee_bps,
+        "marked_unrealized_return_after_all_costs_pct":_round(path[-1]-100.),
+        "annualized_close_to_close_volatility":_round(
+            np.std(daily,ddof=1)*math.sqrt(SESSIONS_PER_YEAR)),
+        "max_observed_compounded_close_drawdown":_round(drawdown.min()),
+        "worst_observed_daily_return":_round(min(daily)),
+        "gross_breach_close_count_before_repair":before["gross"],
+        "sector_breach_close_count_before_repair":before["sector"],
+        "single_breach_close_count_before_repair":before["single"],
+        "gross_breach_close_count_after_repair":after["gross"],
+        "sector_breach_close_count_after_repair":after["sector"],
+        "single_breach_close_count_after_repair":after["single"],
+        "additional_sell_only_repair_dates":repairs,
+        "additional_sell_only_turnover_usd_per_100":_round(repair_turnover),
+        "total_entry_and_repair_fees_usd_per_100":_round(
+            100.-entry_nav+repair_fees),
+        "last_close_queued_repair_not_executed":queued,
+        "terminal_exit_fee_not_charged":True,
+        "next_completed_close_only_no_intraday_guarantee":True,
+        "selected_on_same_historical_prices_not_alpha":True,
+        "research_only_no_live_execution":True,
+    }
+
+
 def _one_window(ret:pd.DataFrame, names:list[str]) -> dict:
     if (type(names) is not list or len(names)!=8
         or len(set(names))!=8 or not set(names)<=set(cohort.SECTORS)
@@ -201,6 +364,14 @@ def _one_window(ret:pd.DataFrame, names:list[str]) -> dict:
         "through_frozen_completed_price_session":ret.index[-1].date().isoformat(),
         "fixed_95pct_risky_5pct_cash_reference_risk":stats,
         "buy_once_costed_no_rebalance_close_risk":buy_once,
+        "next_close_sector_repair_cash_buffer_comparison":{
+            label:{str(bp):_next_close_sector_repair_path(
+                ret,selected,bp,invested) for bp in COSTS_BPS}
+            for label,invested in (
+                ("95pct_initial_invested",.95),
+                ("90pct_initial_invested",.90),
+            )
+        },
         "q2_eight_spy_beta":_round(beta) if beta is not None else None,
         "q2_eight_spy_correlation":_round(correlation) if correlation is not None else None,
         "issuer_pair_max_correlation":_round(max_pair) if max_pair is not None else None,
