@@ -79,14 +79,17 @@ def _same_original_live_account(account):
     return historical_policy.get("account_binding_sha256")==bound
 
 def _observe(request,*,signed_sources,now_utc):
-    if type(now_utc) is not str:
-        raise ReadStop("Postorder source observation missing")
-    try:
-        observed=proof._time(now_utc)
-        if observed>datetime.now(timezone.utc)+timedelta(minutes=1):
-            raise ReadStop("Future timestamp for postorder broker source")
-    except Exception:
-        raise ReadStop("Invalid broker observation timestamp") from None
+    if now_utc is not None:
+        # Explicit timestamps are test-only; validate before contacting a
+        # transport. Genuine broker observations are stamped AFTER all GETs.
+        if type(now_utc) is not str:
+            raise ReadStop("Postorder source observation missing")
+        try:
+            fixed=proof._time(now_utc)
+            if fixed>datetime.now(timezone.utc)+timedelta(minutes=1):
+                raise ReadStop("Future timestamp for postorder broker source")
+        except Exception:
+            raise ReadStop("Invalid broker observation timestamp") from None
     try:
         cid=original_ledger.CLIENT_IDS["ACWI"]
         docs=(
@@ -102,6 +105,12 @@ def _observe(request,*,signed_sources,now_utc):
         )
     except Exception:
         raise ReadStop("Original postorder broker GET unavailable; HOLD, no retry POST") from None
+    # A real broker market clock can be acquired *after* the beginning of
+    # the six GETs. Stamp the completed batch, never its start; otherwise
+    # valid late-acquired clock timestamps appear ahead of our observation.
+    if now_utc is None:
+        now_utc=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+    observed=proof._time(now_utc)
     receipt,fills,account,positions,open_orders,clock=docs
     if (type(receipt) is not dict or type(fills) is not list
         or len(fills)>=FILL_LIMIT
@@ -170,7 +179,7 @@ def inspect_original_acwi_after_first_attempt(*,signed_prepost_sources:dict,
         _scope()
         if now_utc is not None:
             raise ReadStop("Real broker observation time cannot be caller-provided")
-        stamp=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+        stamp=None  # _observe derives actual observation time AFTER six GETs.
         def get(*,path,params):
             return live.get_json(path=path,params=params,key=key,secret=secret)
     else:
