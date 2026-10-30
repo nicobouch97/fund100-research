@@ -276,6 +276,33 @@ def test_single_name_hard_cap_can_be_repaired_without_gross_cash_breach():
     # $8.25 on a $0.10 expected cost is >1% friction; choose $10.
     assert c["estimated_notional_usd"]=="10.00"
 
+def test_single_max_ticket_must_restore_all_limits_after_fee_or_hold():
+    # Entire NAV in one issuer, no cash: selling the capped $65 leaves
+    # $65 invested, but after a $0.10 fee the $129.90 NAV permits only
+    # $64.95 at the hard 50% single-name limit. Not a valid repair.
+    d=fixture(portfolio="hold")
+    d["position_values_usd"]={"XLK":"130.00","XLE":"0.00","IWM":"0.00"}
+    d["cash_usd"]="0.00"
+    d["settled_cash_usd"]="0.00"
+    r=run(d)
+    assert r["status"]=="HOLD_CASH_OR_EXPOSURE_REPAIR_INCOMPLETE_AFTER_TICKET_CAP"
+    assert r["hypothetical_candidate"] is None
+    assert r["broker_POSTs"]==r["private_Git_writes"]==0
+
+    # A smaller concentrated position is still repairable using one
+    # capped hypothetical sale, with every after-fee limit satisfied.
+    d["position_values_usd"]={"XLK":"129.80","XLE":"0.20","IWM":"0.00"}
+    r=run(d)
+    assert r["status"]=="HYPOTHETICAL_MONTHLY_CASH_OR_EXPOSURE_REPAIR_SELL_NO_TRANSPORT"
+    c=r["hypothetical_candidate"]
+    assert c["symbol"]=="XLK" and c["side"]=="sell"
+    assert c["estimated_notional_usd"]=="65.00"
+    nav_after=Decimal("129.90")
+    assert Decimal("129.80")-Decimal(c["estimated_notional_usd"])<=nav_after*Decimal(".50")
+    assert Decimal(c["estimated_notional_usd"])-Decimal(".10")>=nav_after*Decimal(".05")
+    assert r["candidate_executable"] is False
+
+
 def test_cash_floor_repair_cannot_guess_sell_shares_or_certify_continuous_cash():
     source=Path(m.__file__).read_text()
     assert "HYPOTHETICAL_MONTHLY_CASH_OR_EXPOSURE_REPAIR_SELL_NO_TRANSPORT" in source
