@@ -136,12 +136,25 @@ def build_snapshot(data: dict[str, Any], *, report_date: str) -> dict[str, Any]:
             "live_snapshot_same_utc_date": live_snapshot_same_utc_date,
         },
         "blockers": blockers,
-        "next_step": "Wait for a genuine V5 PAPER event and verified reconciliation; "
-                     "then obtain a fresh LIVE GET-only preflight and separate explicit "
-                     "operator approval before any possible LIVE release.",
-        "note": "Informational only. Same-day account evidence is not an execution "
-                "permit; historical preparation, synthetic tests, and the USD 130.30 "
-                "ceiling do not establish available buying power.",
+        # V5's old shadow-event blockers are descriptive only: they do
+        # NOT delay the first deliberately different funded V6 experiment.
+        # Paper broker mechanics were already actually demonstrated.
+        "legacy_v5_specific_blockers_not_a_v6_pilot_wait_gate": True,
+        "first_funded_active_experiment_requires_63_forward_sessions": False,
+        "first_funded_active_experiment_requires_months_of_paper_profit": False,
+        "repeat_verified_paper_order_mechanics_for_profit": False,
+        "standing_mandate_intent_no_per_order_approval_loop": True,
+        "project_launch_priority": "VERIFY_V6_PROTECTED_ONE_ATTEMPT_LIVE_ORDER_AND_SETTLED_REPLACEMENT_PATH",
+        "next_step": "Do not wait for V5 shadow events, weeks of PAPER profit or V8-Q2 "
+                     "63-session forward performance before the initial small active pilot. "
+                     "Prioritize current read-only V6 actual account/signed seq1 owner proof, "
+                     "reviewed legitimate standing HIGH-risk strategy and protected one-attempt "
+                     "SELL, fill reconciliation and settled-cash BUY execution. Existing operator "
+                     "STOP, broker kill switch, release locks and USD 130.30 ceiling stay binding; "
+                     "this advisory authorizes no execution.",
+        "note": "Historical V5-only evidence and blockers are not a current V6 readiness "
+                "certificate. Live account cash, order state and full broker permission must "
+                "be independently verified, and platform releases cannot be bypassed.",
     }
 
 
