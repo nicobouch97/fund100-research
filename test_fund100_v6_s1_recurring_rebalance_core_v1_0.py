@@ -376,3 +376,50 @@ def test_ordinary_band_trim_is_still_allowed_when_entire_after_fee_portfolio_pas
                for value in after_values.values())
     assert after_nav==after_cash+sum(after_values.values())
     assert result["candidate_executable"] is False
+
+
+def test_monthly_buy_tries_next_underweight_etf_when_top_choice_too_costly():
+    # Both XLK and XLE are >10pp underweight. XLK ranks first but its
+    # $5 fee fails the unchanged 1%-of-ticket cost limit; XLE is viable.
+    d=fixture(portfolio="buy")
+    d["position_values_usd"]={"XLK":"20.00","XLE":"15.00","IWM":"20.00"}
+    d["cash_usd"]="75.00";d["settled_cash_usd"]="75.00"
+    d["all_in_fee_buffers_usd"]["XLK"]="5.00"
+    result=run(d)
+    assert result["status"]=="HYPOTHETICAL_MONTHLY_REPLENISH_BUY_NO_TRANSPORT"
+    c=result["hypothetical_candidate"]
+    assert c["symbol"]=="XLE" and c["side"]=="buy"
+    assert c["estimated_notional_usd"]=="22.05"
+    assert c["stable_simulation_event_id"]==m._id("2026-10","XLE","buy")
+    after_nav=Decimal("129.90")
+    after_cash=Decimal("75.00")-Decimal("22.05")-Decimal(".10")
+    after_gross=Decimal("55.00")+Decimal("22.05")
+    assert after_cash>=after_nav*m.migration.CASH_FLOOR
+    assert after_gross<=after_nav*m.migration.MAX_GROSS
+    assert Decimal("15.00")+Decimal("22.05")<=after_nav*m.migration.MAX_SYMBOL
+    assert result["broker_POSTs"]==result["private_Git_writes"]==0
+
+def test_monthly_buy_tries_next_when_top_fee_consumes_settled_headroom():
+    d=fixture(portfolio="buy")
+    d["position_values_usd"]={"XLK":"20.00","XLE":"15.00","IWM":"20.00"}
+    d["cash_usd"]="75.00";d["settled_cash_usd"]="11.50"
+    d["all_in_fee_buffers_usd"]["XLK"]="5.00"
+    d["all_in_fee_buffers_usd"]["XLE"]="0.01"
+    result=run(d)
+    assert result["status"]=="HYPOTHETICAL_MONTHLY_REPLENISH_BUY_NO_TRANSPORT"
+    c=result["hypothetical_candidate"]
+    assert c["symbol"]=="XLE" and c["side"]=="buy"
+    assert Decimal(c["estimated_notional_usd"])>=m.migration.MIN_ORDER
+    assert (Decimal("11.50")-Decimal(c["estimated_notional_usd"])-Decimal(".01")
+            >=(Decimal("130.00")-Decimal(".01"))*m.migration.CASH_FLOOR)
+
+def test_monthly_buy_still_holds_when_all_underweight_choices_uneconomic():
+    d=fixture(portfolio="buy")
+    d["position_values_usd"]={"XLK":"20.00","XLE":"15.00","IWM":"20.00"}
+    d["cash_usd"]="75.00";d["settled_cash_usd"]="75.00"
+    d["all_in_fee_buffers_usd"]["XLK"]="5.00"
+    d["all_in_fee_buffers_usd"]["XLE"]="5.00"
+    result=run(d)
+    assert result["status"]=="HOLD_BUY_ALL_IN_COST_EXCEEDS_1PCT"
+    assert result["hypothetical_candidate"] is None
+    assert result["broker_POSTs"]==result["private_Git_writes"]==0
