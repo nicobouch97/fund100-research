@@ -187,6 +187,63 @@ def test_exact_one_attempt_all_valid_original_signed_heads_same_run(setup):
         assert secret not in str(report)
     assert report["original_qty"] is None
 
+@pytest.mark.parametrize("changed",["signed_ledger_seq2","signed_owner_fence"])
+def test_original_last_mile_private_head_changed_after_immutable_release_blocks_broker(
+        setup,monkeypatch,changed):
+    # A fully acknowledged original owner/seq2/public-immutable publication
+    # cannot authorize an order if the remote private HEAD was later rolled
+    # back or replaced. No re-publication, retry or broker POST is permitted.
+    state,args=setup
+    original=chain.publisher.publish_exact_acwi_signed_seq2_release_same_attempt_only
+    def changed_after_publish(**kwargs):
+        result=original(**kwargs)
+        name="ledger" if changed=="signed_ledger_seq2" else "owner"
+        state[name]=dict(state[name],sha="0"*40)
+        return result
+    monkeypatch.setattr(
+        chain.publisher,"publish_exact_acwi_signed_seq2_release_same_attempt_only",
+        changed_after_publish)
+    with pytest.raises(chain.ChainStop,match="NEVER RETRY"):
+        chain.run_exact_first_acwi_attempt(**args)
+    assert state["events"]==[
+        "setting","absent","broker_preflight","claim","seq2","publish"]
+    assert state["write_calls"]==3
+    assert "writer" not in state["events"]
+
+
+def test_last_mile_current_head_requires_both_distinct_principal_reads_after_release(
+        setup,monkeypatch):
+    state,args=setup
+    original=chain.ownership._get_bounded_json
+    bad_read=[]
+    def disagree_at_handoff(*,url,token,transport=None):
+        observed=original(url=url,token=token,transport=transport)
+        if ("publish" in state["events"] and token==WRITE
+            and url==chain.ownership.ORIGINAL_ORDER_LEDGER_URL+"?ref=main"):
+            bad_read.append("different_private_writer_principal")
+            return dict(observed,sha="f"*40)
+        return observed
+    monkeypatch.setattr(chain.ownership,"_get_bounded_json",disagree_at_handoff)
+    with pytest.raises(chain.ChainStop,match="NEVER RETRY"):
+        chain.run_exact_first_acwi_attempt(**args)
+    assert bad_read==["different_private_writer_principal"]
+    assert state["events"][-1]=="publish"
+    assert "writer" not in state["events"]
+    assert state["write_calls"]==3
+
+
+def test_private_order_head_revalidation_is_inside_last_handoff_not_only_preclaim():
+    from pathlib import Path
+    source=Path(chain.__file__).read_text()
+    assert source.index("last_seq2=_real_current(")>source.index(
+        "published=publisher.publish_exact_acwi_signed_seq2_release_same_attempt_only(")
+    assert source.index("last_owner=_real_current(")>source.index("last_seq2=_real_current(")
+    assert source.index("result=writer.submit_v6_s1_original_acwi_fractional_sell(")>source.index(
+        "last_owner=_real_current(")
+    assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
+    assert chain.RESTART_RECOVERY_CAN_RESEND is False
+
+
 @pytest.mark.parametrize("mode",[
     "bad_context","different_attempt","bad_main","duplicate_principal",
     "disabled_setting","tag_exists","broker_STOP","owner_already_claimed",
