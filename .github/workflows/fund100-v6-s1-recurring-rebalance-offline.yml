@@ -1,0 +1,35 @@
+name: Fund-100 V6-S1 Recurring Monthly Rebalance (OFFLINE, NO ORDERS)
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_recurring_rebalance_core_v1_0.py"
+      - "test_fund100_v6_s1_recurring_rebalance_core_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-recurring-rebalance-offline.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v6_s1_recurring_rebalance_core_v1_0.py"
+      - "test_fund100_v6_s1_recurring_rebalance_core_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-recurring-rebalance-offline.yml"
+permissions:
+  contents: read
+jobs:
+  fail-closed-recurring-maintenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Original V6 investment source and monthly recurring no-broker regression
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_s1_recurring_rebalance_core_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          grep -Eq '"first_original_acwi_sell_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'Recurring monthly high risk/cash maintenance math checked; ZERO broker or private state access.'
