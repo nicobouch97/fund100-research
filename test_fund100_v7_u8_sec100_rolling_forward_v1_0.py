@@ -10,7 +10,8 @@ import fund100_v7_u8_sec100_rolling_forward_v1_0 as rolling
 def _source(rows, prior=10):
     return {
         "deduplicated_stock_entry_exposures": [
-            {"ticker": symbol} for symbol in rows],
+            {"ticker": symbol, "entry_close": "2026-11-02",
+             "exit_close": "2026-11-03"} for symbol in rows],
         "previous_main_observer_run": prior,
         "broker_orders": 0,
         "trading_authorized": False,
@@ -154,3 +155,60 @@ def test_rolling_workflow_is_main_only_and_never_writes_private_or_broker():
     assert "actions/upload-artifact@v4" in text
     assert "if-no-files-found: error" in text
     assert "git push" not in text and "alpaca" not in text.lower()
+
+
+@pytest.mark.parametrize("completed", [False, True])
+def test_same_ticker_and_entry_from_distinct_sec_cohorts_counts_once(monkeypatch, completed):
+    """Separate SEC accessions on one date must not inflate economic sample N."""
+    def fake_evaluate(frozen, **kwargs):
+        n = len(frozen["deduplicated_stock_entry_exposures"])
+        return {"unique_model_exposures": n,
+                "priced_two_close_exposures": n if completed else 0,
+                "pending_two_close_exposures": 0 if completed else n}
+
+    monkeypatch.setattr(rolling.u7, "evaluate", fake_evaluate)
+    def cohort(run, ticker):
+        return {"previous_main_observer_run": run,
+                "deduplicated_stock_entry_exposures": [{
+                    "ticker": ticker, "entry_close": "2026-11-02",
+                    "exit_close": "2026-11-03"}]}
+    cohorts = [(10, 20, cohort(10, "AAPL")),
+               (20, 30, cohort(20, "AAPL")),
+               (30, 40, cohort(30, "MSFT"))]
+    prices = (pd.DataFrame({"AAPL": [100., 101.], "MSFT": [100., 102.],
+                            "SPY": [200., 201.], "RSP": [150., 151.]})
+              if completed else None)
+    out = rolling.mark_chain(
+        cohorts, prices=prices,
+        acquired_utc="2026-11-04T03:00:00Z" if completed else None,
+        provider_reference="independent source" if completed else None)
+    assert out["source_relative_distinct_exposures"] == 3
+    assert out["cohort_exposure_observations_not_independent_bets"] == 3
+    assert out["economic_unique_ticker_entry_exposures"] == 2
+    assert out["duplicate_ticker_entry_observations_across_cohorts"] == 1
+    assert out["economic_completed_ticker_entry_exposures"] == (2 if completed else 0)
+    assert out["economic_pending_ticker_entry_exposures"] == (0 if completed else 2)
+    assert out["statistically_proven_alpha"] is False
+    assert out["broker_orders"] == 0
+
+
+def test_same_economic_exposure_cannot_disagree_about_completion(monkeypatch):
+    def fake_evaluate(frozen, **kwargs):
+        done = frozen["previous_main_observer_run"] == 10
+        return {"unique_model_exposures": 1,
+                "priced_two_close_exposures": int(done),
+                "pending_two_close_exposures": int(not done)}
+
+    monkeypatch.setattr(rolling.u7, "evaluate", fake_evaluate)
+    row = {"ticker": "AAPL", "entry_close": "2026-11-02",
+           "exit_close": "2026-11-03"}
+    cohorts = [(10, 20, {"previous_main_observer_run": 10,
+                         "deduplicated_stock_entry_exposures": [row]}),
+               (20, 30, {"previous_main_observer_run": 20,
+                         "deduplicated_stock_entry_exposures": [row]})]
+    prices = pd.DataFrame({"AAPL": [100., 101.], "SPY": [200., 201.],
+                           "RSP": [150., 151.]})
+    with pytest.raises(rolling.RollingStop, match="conflicting future marks"):
+        rolling.mark_chain(cohorts, prices=prices,
+                           acquired_utc="2026-11-04T03:00:00Z",
+                           provider_reference="independent source")
