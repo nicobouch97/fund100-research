@@ -81,3 +81,39 @@ def test_missing_artifact_fails_closed():
     del data["live"]
     with pytest.raises(ValueError, match="missing or malformed"):
         build_snapshot(data, report_date="2026-10-14")
+
+
+def test_user_agreed_launch_first_no_forward_or_paper_profit_wait_gate():
+    report = load_snapshot(ROOT, report_date="2026-10-14")
+    # This report is deliberately V5-specific and does not gate the
+    # initial funded V6 active experiment or authorize any order.
+    assert report["strategy"] == "V5-002_SHADOW"
+    assert report["legacy_v5_specific_blockers_not_a_v6_pilot_wait_gate"]
+    assert not report["first_funded_active_experiment_requires_63_forward_sessions"]
+    assert not report["first_funded_active_experiment_requires_months_of_paper_profit"]
+    assert not report["repeat_verified_paper_order_mechanics_for_profit"]
+    assert report["standing_mandate_intent_no_per_order_approval_loop"]
+    assert report["project_launch_priority"] == (
+        "VERIFY_V6_PROTECTED_ONE_ATTEMPT_LIVE_ORDER_AND_SETTLED_REPLACEMENT_PATH")
+    assert "Do not wait" in report["next_step"]
+    assert "63-session forward performance" in report["next_step"]
+    assert report["live_order_authorized"] is False
+    assert report["broker_network_access"] == "NONE"
+
+
+def test_project_priority_correction_is_persisted_without_release_changes():
+    record = (ROOT / "research_lab" /
+              "FUND100_LAUNCH_FIRST_PARALLEL_RESEARCH_DECISION_2026_10_30.md")
+    content = record.read_text(encoding="utf-8")
+    roadmap = (ROOT / "FUND100_MULTI_ASSET_ROADMAP.md").read_text(
+        encoding="utf-8")
+    assert "63 sessions of V8-Q2 forward observation" in content
+    assert "not launch gates" in content
+    assert "LOW/MEDIUM/HIGH" in content
+    assert "initial small funded active HIGH-risk experiment" in roadmap
+    operator=json.loads((ROOT / "fund100_live_operator_control.json").read_text())
+    v6=json.loads((ROOT / "fund100_v6_s1_operator_control.json").read_text())
+    assert operator["trading_enabled"] is False
+    assert v6["trading_enabled"] is False
+    assert v6["first_original_acwi_sell_enabled"] is False
+    assert v6["pilot_capital_ceiling_usd"] == "130.30"
