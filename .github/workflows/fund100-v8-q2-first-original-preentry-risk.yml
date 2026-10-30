@@ -1,0 +1,97 @@
+name: Fund-100 V8 Q2 First Original Eight-Stock Preentry Risk (NO BROKER)
+
+# Entirely original 29 Oct completed NYSE price source, as captured
+# 30 Oct at 08:16 UTC. Main-push publication only, before post-entry
+# first independent 63-session forward marks. No quote/fill/order GET.
+on:
+  pull_request:
+    paths:
+      - "fund100_v8_q2_first_original_preentry_risk_v1_0.py"
+      - "test_fund100_v8_q2_first_original_preentry_risk_v1_0.py"
+      - ".github/workflows/fund100-v8-q2-first-original-preentry-risk.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v8_q2_first_original_preentry_risk_v1_0.py"
+      - "test_fund100_v8_q2_first_original_preentry_risk_v1_0.py"
+      - ".github/workflows/fund100-v8-q2-first-original-preentry-risk.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v8-q2-original-frozen-eight-stock-preentry-risk
+  cancel-in-progress: false
+
+jobs:
+  original-date-brokerless-preentry-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test source-pinned trailing 63 126 252 risk windows and no broker authority
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -m pytest -q test_fund100_v8_q2_first_original_preentry_risk_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+
+  actual-first-original-preentry-risk-readonly:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: original-date-brokerless-preentry-regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Resolve independently committed first original archived source
+        id: first
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          pin=research_lab/V8_Q2_FIRST_ORIGINAL_SOURCE_INDEPENDENT_PIN_2026_10_30.json
+          run=$(jq -r '.original_source_workflow_run_id' "$pin")
+          name=$(jq -r '.original_source_artifact_name' "$pin")
+          test "$run" = "41025137794"
+          test "$name" = "fund100-v8-q2-new-original-first"
+          mkdir -p /tmp/q2-first
+          gh run download "$run" --name "$name" --dir /tmp/q2-first
+          test -f /tmp/q2-first/first-new-vintage-q2-source-coverage-and-candidate-NO-LIVE.json
+          test -f /tmp/q2-first/original-24-issuer-completed-adjusted-prices.csv
+      - name: Run source-verified no-future-bars 63 126 252 portfolio risk attribution
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python -B fund100_v8_q2_first_original_preentry_risk_v1_0.py \
+            --original-dir /tmp/q2-first \
+            --output "/tmp/fund100-q2-risk-$GITHUB_RUN_ID/original-frozen-q2-trailing-risk.json"
+      - name: Preserve original-only risk report with run-bound evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v8-q2-first-original-preentry-risk-${{ github.run_id }}
+          path: /tmp/fund100-q2-risk-${{ github.run_id }}
+          retention-days: 90
+          if-no-files-found: error
+      - name: No private broker or journal mutation
+        run: |
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'Source-pinned pre-entry risk study only; no broker, no orders, no promotion.'
