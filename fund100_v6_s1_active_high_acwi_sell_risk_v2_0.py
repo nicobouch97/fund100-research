@@ -91,8 +91,10 @@ def evaluate_original_sell_only(*,account,positions,orders,clock,history,
             or type(clock) is not dict or type(activities) is not list):
             raise ActiveSellStop("Original account, open orders or 4 positions invalid")
         if (account.get("status")!="ACTIVE"
-            or account.get("account_blocked") is True
-            or account.get("trading_blocked") is True
+            # Missing, null, numeric or text flags are UNKNOWN, not proof
+            # that Alpaca permits an order. Require literal broker booleans.
+            or account.get("account_blocked") is not False
+            or account.get("trading_blocked") is not False
             or str(account.get("multiplier"))!="1"
             or type(account.get("id")) is not str
             or not account["id"].strip()):
