@@ -337,5 +337,19 @@ def test_ordinary_band_trim_is_still_allowed_when_entire_after_fee_portfolio_pas
     candidate=result["hypothetical_candidate"]
     assert candidate["symbol"]=="XLE"
     assert candidate["estimated_notional_usd"]=="13.95"
-    assert Decimal("64.90") <= (Decimal("130")-Decimal(".10"))*Decimal(".50")
+    # Check the complete returned single-sale portfolio, rather than only
+    # one hard-coded untouched issuer: after-fee cash, gross and all symbols.
+    fee=Decimal(d["all_in_fee_buffers_usd"][candidate["symbol"]])
+    sold=Decimal(candidate["estimated_notional_usd"])
+    after_nav=Decimal(d["equity_usd"])-fee
+    after_cash=Decimal(d["cash_usd"])+sold-fee
+    after_values={
+        sym: Decimal(value)-(sold if sym==candidate["symbol"] else Decimal(0))
+        for sym,value in d["position_values_usd"].items()
+    }
+    assert after_cash>=after_nav*m.migration.CASH_FLOOR
+    assert sum(after_values.values())<=after_nav*m.migration.MAX_GROSS
+    assert all(value<=after_nav*m.migration.MAX_SYMBOL
+               for value in after_values.values())
+    assert after_nav==after_cash+sum(after_values.values())
     assert result["candidate_executable"] is False
