@@ -329,3 +329,67 @@ def test_buy_once_invalid_cost_and_missing_source_fail_closed():
     ret.loc[idx[0],names[0]]=np.nan
     with pytest.raises(risk.RiskHold,match="Invalid buy-once original"):
         risk._buy_once_costed_risk(ret,weights,15)
+
+
+def test_next_close_sector_peer_control_supports_original_24_name_weights():
+    # The sector-matched peer benchmark is a basket, not an eight-stock
+    # portfolio. Both are subject to the SAME next-close caps and fees.
+    names=["AAPL","GOOGL","JNJ","LLY","KO","PG","JPM","CVX"]
+    peer=frozen._sector_neutral(names)
+    assert len(peer)>8
+    assert sum(peer.values())==pytest.approx(1.)
+    idx=pd.bdate_range("2026-06-01",periods=63)
+    ret=pd.DataFrame(0.,index=idx,columns=list(cohort.SECTORS))
+    result=risk._next_close_sector_repair_path(ret,peer,15,.90)
+    expected_entry=100/(1+.90*.0015)
+    assert result["marked_unrealized_return_after_all_costs_pct"]==pytest.approx(
+        expected_entry-100,abs=1e-8)
+    assert result["additional_sell_only_repair_dates"]==0
+    assert result["total_entry_and_repair_fees_usd_per_100"]==pytest.approx(
+        100-expected_entry,abs=1e-8)
+    assert result["gross_breach_close_count_after_repair"]==0
+    assert result["sector_breach_close_count_after_repair"]==0
+    assert result["research_only_no_live_execution"]
+
+
+def test_original_pinned_q2_peer_comparison_is_paired_costed_and_hindsight_labeled(tmp_path):
+    _,_,pin=setup_source(tmp_path)
+    report=risk.analyze(tmp_path,pin_path=pin)
+    for window in report["trailing_completed_source_windows"].values():
+        paired=window["next_close_sector_repair_paired_sector_peer_comparison"]
+        original=window["next_close_sector_repair_cash_buffer_comparison"]
+        assert set(paired)=={"95pct_initial_invested","90pct_initial_invested"}
+        for label,comparison in paired.items():
+            assert comparison["same_frozen_price_vintage_and_costs"]
+            assert comparison["preentry_selection_hindsight_conditioned_not_alpha"]
+            q2=comparison["frozen_q2_eight_equal"]
+            peer=comparison["same_sector_original_24_cohort"]
+            assert q2==original[label]
+            assert set(peer)==set(q2)=={"5","15","35"}
+            for bp in ("5","15","35"):
+                assert peer[bp]["fee_bps_per_traded_side"]==int(bp)
+                assert peer[bp]["initial_invested_fraction"]==(
+                    .95 if label.startswith("95") else .90)
+                assert peer[bp]["selected_on_same_historical_prices_not_alpha"]
+                assert peer[bp]["next_completed_close_only_no_intraday_guarantee"]
+                expected=(q2[bp]["marked_unrealized_return_after_all_costs_pct"]
+                          -peer[bp]["marked_unrealized_return_after_all_costs_pct"])
+                assert comparison[
+                    "q2_minus_sector_peer_after_cost_percentage_points"][bp]==pytest.approx(
+                        expected,abs=1e-8)
+
+
+def test_paired_peer_comparison_never_relaxes_source_or_weight_validation(tmp_path):
+    _,_,pin=setup_source(tmp_path)
+    assert risk.analyze(tmp_path,pin_path=pin)["broker_orders"]==0
+    names=["AAPL","GOOGL","JNJ","LLY","KO","PG","JPM","CVX"]
+    peer=frozen._sector_neutral(names)
+    idx=pd.bdate_range("2026-06-01",periods=63)
+    ret=pd.DataFrame(0.,index=idx,columns=list(cohort.SECTORS))
+    bad=dict(peer)
+    bad["AAPL"]+=.01
+    with pytest.raises(risk.RiskHold,match="Invalid registered"):
+        risk._next_close_sector_repair_path(ret,bad,15,.95)
+    ret.loc[idx[5],next(iter(peer))]=np.nan
+    with pytest.raises(risk.RiskHold,match="Invalid original close"):
+        risk._next_close_sector_repair_path(ret,peer,15,.95)
