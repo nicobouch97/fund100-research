@@ -158,7 +158,11 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
         # the NEXT completed close, after that day's full price movement.
         # Do not look at the next bar when selecting, and never silently
         # execute a pending decision on the terminal date after liquidation.
-        if pending is not None:
+        # A queued next-close trade on the LAST research session would
+        # buy and liquidate at that same close, earning no holding return
+        # while paying two unnecessary sides of fees. Preserve it as an
+        # unexecuted decision; do not manufacture a terminal round-trip.
+        if pending is not None and j < len(view)-1:
             nav,positions,cash,paid,dollars=_reweight(
                 nav,positions,pending["target"],fee)
             fees+=paid
