@@ -30,6 +30,7 @@ MAX_VOL=.35
 MAX_DAILY_LOSS=.06
 MAX_DRAWDOWN=.20
 MAX_SECTOR=.25
+COSTS_BPS=(5,15,35)
 BROKER_GETS=BROKER_POSTS=BROKER_ORDERS=0
 LIVE_AUTHORIZED=False
 
@@ -74,6 +75,84 @@ def _path_metrics(returns:pd.DataFrame, weights:dict[str,float]) -> dict:
     }
 
 
+
+def _buy_once_costed_risk(returns:pd.DataFrame, weights:dict[str,float],
+                          fee_bps:int) -> dict:
+    """Buy once at the pre-window close; hold drifting shares, no rebalances.
+
+    The first window return is earned AFTER the hypothetical purchase.
+    Entry fees are funded from the same initial $100. The pre-entry $100
+    high-water mark captures the fee drawdown. No terminal sale is assumed,
+    so this is an unrealized close-marked path, not a realized net return.
+    All selected securities were picked using these SAME historical prices.
+    """
+    if (fee_bps not in COSTS_BPS or type(weights) is not dict or not weights
+        or not math.isclose(sum(weights.values()),1.,abs_tol=1e-12)
+        or not set(weights)<=set(returns.columns)
+        or any(type(w) not in (float,int) or not math.isfinite(w)
+               or w<0 or w>1 for w in weights.values())
+        or len(returns)<2):
+        raise RiskHold("Invalid buy-once source weights or registered costs")
+    selected=returns[list(weights)]
+    if (selected.isna().any().any()
+        or not np.isfinite(selected.to_numpy()).all()
+        or (selected<=-1).any().any()):
+        raise RiskHold("Invalid buy-once original close returns")
+    fee=fee_bps/10000.
+    after_entry=100./(1.+INVESTED*fee)
+    cash=(1.-INVESTED)*after_entry
+    positions={s:INVESTED*after_entry*w for s,w in weights.items()}
+    path=[100.,after_entry]
+    daily=[]
+    gross=[]
+    largest=[]
+    sectors=[]
+    has_sector=all(s in cohort.SECTORS for s in weights)
+    for _,row in selected.iterrows():
+        for s in positions:
+            positions[s]*=1.+float(row[s])
+        risky=sum(positions.values())
+        nav=cash+risky
+        if not math.isfinite(nav) or nav<=0:
+            raise RiskHold("Nonfinite buy-once mark")
+        daily.append(nav/path[-1]-1.)
+        path.append(nav)
+        gross.append(risky/nav)
+        largest.append(max(positions.values())/nav)
+        if has_sector:
+            by_sector={}
+            for s,value in positions.items():
+                sector=cohort.SECTORS[s]
+                by_sector[sector]=by_sector.get(sector,0.)+value
+            sectors.append(max(by_sector.values())/nav)
+    maxima=np.maximum.accumulate(np.asarray(path,dtype=float))
+    drawdowns=np.asarray(path)/maxima-1.
+    return {
+        "entry_cost_bps_per_traded_side":fee_bps,
+        "initial_entry_cost_usd_per_100":_round(100.-after_entry),
+        "marked_unrealized_return_after_entry_cost_pct":
+            _round(path[-1]-100.),
+        "annualized_close_to_close_volatility":_round(
+            np.std(daily,ddof=1)*math.sqrt(SESSIONS_PER_YEAR)),
+        "worst_observed_daily_return":_round(min(daily)),
+        "max_observed_compounded_close_drawdown":_round(drawdowns.min()),
+        "max_observed_gross_exposure_fraction":_round(max(gross)),
+        "gross_over_95pct_completed_close_count":sum(
+            v>INVESTED+1e-10 for v in gross),
+        "max_observed_single_issuer_fraction":_round(max(largest)),
+        "single_issuer_over_50pct_completed_close_count":sum(
+            v>.50+1e-10 for v in largest),
+        "max_observed_sector_fraction":_round(max(sectors)) if has_sector else None,
+        "sector_over_25pct_completed_close_count":sum(
+            v>MAX_SECTOR+1e-10 for v in sectors) if has_sector else None,
+        "entry_fee_in_initial_high_water_drawdown":True,
+        "terminal_exit_cost_not_charged":True,
+        "no_rebalance_or_additional_turnover":True,
+        "selection_conditioned_historical_close_only_not_forward_alpha":True,
+        "not_an_executable_intraday_risk_control":True,
+    }
+
+
 def _one_window(ret:pd.DataFrame, names:list[str]) -> dict:
     if (type(names) is not list or len(names)!=8
         or len(set(names))!=8 or not set(names)<=set(cohort.SECTORS)
@@ -89,6 +168,12 @@ def _one_window(ret:pd.DataFrame, names:list[str]) -> dict:
         "passive_95_spy_5_cash":{"SPY":1.},
     }
     stats={key:_path_metrics(ret,w) for key,w in refs.items()}
+    # Unlike the daily fixed-weight covariance proxy, these paths purchase
+    # once and let exposures drift; costs are funded by initial capital.
+    buy_once={
+        key:{str(bp):_buy_once_costed_risk(ret,w,bp) for bp in COSTS_BPS}
+        for key,w in refs.items()
+    }
     q2ret=INVESTED*ret[names].mean(axis=1)
     spyret=INVESTED*ret["SPY"]
     selected_std=q2ret.std(ddof=1)
@@ -115,6 +200,7 @@ def _one_window(ret:pd.DataFrame, names:list[str]) -> dict:
         "from_completed_price_session":ret.index[0].date().isoformat(),
         "through_frozen_completed_price_session":ret.index[-1].date().isoformat(),
         "fixed_95pct_risky_5pct_cash_reference_risk":stats,
+        "buy_once_costed_no_rebalance_close_risk":buy_once,
         "q2_eight_spy_beta":_round(beta) if beta is not None else None,
         "q2_eight_spy_correlation":_round(correlation) if correlation is not None else None,
         "issuer_pair_max_correlation":_round(max_pair) if max_pair is not None else None,
@@ -188,6 +274,7 @@ def analyze(original_root:Path,*,pin_path:Path=frozen.FIRST_SOURCE_INDEPENDENT_P
         "trailing_completed_source_windows":windows,
         "lookback_selection_conditioned_not_independent_or_prospective_alpha":True,
         "no_real_execution_fill_or_rolling_intraday_stop_proven":True,
+        "buy_once_costed_risk_is_selection_conditioned_not_a_live_gate":True,
         "not_a_live_risk_gate_or_promotion_decision":True,
         "no_broker_orders_or_account_mutations":True,
         "live_authorized":False,"broker_gets":0,"broker_posts":0,"broker_orders":0,
