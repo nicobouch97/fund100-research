@@ -9,15 +9,35 @@ def original():
     return READONLY_WORKFLOW.read_text(encoding="utf-8")
 
 
-def test_weekday_automatic_readonly_no_manual_dispatch_requirement():
+def test_automatic_main_change_readonly_no_unattended_credentialed_schedule():
     w=original()
-    assert '  schedule:\n    - cron: "23 14 * * 1-5"' in w
-    assert '  workflow_dispatch:' in w  # optional explicit troubleshooting
+    assert '  schedule:' not in w  # Existing scoped-secret prohibition.
+    assert '  workflow_dispatch:' in w  # Optional investigation, not mandatory.
+    assert '  push:' in w
     assert '    branches: [main]' in w
-    assert 'github.ref == \'refs/heads/main\'' in w
+    assert "github.ref == 'refs/heads/main'" in w
     assert "if: github.event_name != 'pull_request'" in w
-    assert '      - ".github/workflows/fund100-v6-s1-original-one-attempt-protected-entrypoint.yml"' in w
+    for source in (
+        ".github/workflows/fund100-v6-s1-original-one-attempt-protected-entrypoint.yml",
+        "fund100_v6_s1_original_one_attempt_chain_locked_v1_0.py",
+        "fund100_v6_s1_one_time_owner_claim_cas_v1_0.py",
+        "fund100_v6_s1_immutable_release_publish_locked_v1_0.py",
+        "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py",
+        "fund100_alpaca_live_writer_candidate_v1_1.py",
+        "fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0.py",
+    ):
+        assert '      - "'+source+'"' in w
     assert "cancel-in-progress: false" in w
+
+
+def test_scoped_live_key_guard_rejects_adding_scheduled_broker_read():
+    import audit_fund100_live_boundary as audit
+    w=original()
+    path=".github/workflows/fund100-v6-s1-original-one-attempt-protected-entrypoint.yml"
+    script="fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
+    assert audit.approved_scoped_live_script(path,script,w)
+    assert not audit.approved_scoped_live_script(
+        path,script,w.replace("  push:", '  schedule:\n    - cron: "23 14 * * 1-5"\n  push:',1))
 
 
 def test_scheduled_credentialed_job_has_only_approved_read_principals():
