@@ -93,6 +93,10 @@ def mark_chain(cohorts: list[tuple[int, int, dict]], *,
         raise RollingStop("Original price receipt and provider required")
     results = []
     total_exposures = priced = pending = 0
+    # One ticker at one entry close is one economic exposure, even if two
+    # different SEC accession cohorts discover it on the same UTC date.
+    # Preserve every source cohort below, but never inflate effective N.
+    economic_exposures = {}
     for previous_id, current_id, frozen in cohorts:
         rows = frozen["deduplicated_stock_entry_exposures"]
         sub = None
@@ -107,9 +111,21 @@ def mark_chain(cohorts: list[tuple[int, int, dict]], *,
                 provider_reference=provider_reference if sub is not None else None)
         except Exception as exc:
             raise RollingStop("At least one original cohort cannot be priced safely") from exc
-        total_exposures += mark["unique_model_exposures"]
-        priced += mark["priced_two_close_exposures"]
-        pending += mark["pending_two_close_exposures"]
+        n = mark["unique_model_exposures"]
+        complete = mark["priced_two_close_exposures"]
+        waiting = mark["pending_two_close_exposures"]
+        if (n != len(rows) or complete + waiting != n
+            or complete not in (0, n)):
+            raise RollingStop("Incomplete or internally inconsistent original cohort marks")
+        for entry in rows:
+            key = (entry["ticker"], entry["entry_close"])
+            identity = (entry["exit_close"], complete == n)
+            if key in economic_exposures and economic_exposures[key] != identity:
+                raise RollingStop("Same economic exposure has conflicting future marks")
+            economic_exposures[key] = identity
+        total_exposures += n
+        priced += complete
+        pending += waiting
         results.append({
             "previous_main_source_run_id": previous_id,
             "current_main_source_run_id": current_id,
@@ -124,9 +140,18 @@ def mark_chain(cohorts: list[tuple[int, int, dict]], *,
         "archived_observer_pairs": len(cohorts),
         "rolling_window_not_entire_historical_population": True,
         "all_source_pairs_in_window_evaluated_without_success_filter": True,
+        # These legacy counts are *cohort observations*, not independent bets.
         "source_relative_distinct_exposures": total_exposures,
         "priced_two_close_exposures": priced,
         "pending_two_close_exposures": pending,
+        "cohort_exposure_observations_not_independent_bets": total_exposures,
+        "economic_unique_ticker_entry_exposures": len(economic_exposures),
+        "economic_completed_ticker_entry_exposures": sum(
+            1 for _, completed in economic_exposures.values() if completed),
+        "economic_pending_ticker_entry_exposures": sum(
+            1 for _, completed in economic_exposures.values() if not completed),
+        "duplicate_ticker_entry_observations_across_cohorts": (
+            total_exposures - len(economic_exposures)),
         "all_nonempty_cohorts_fully_priced": bool(total_exposures and not pending),
         "cohort_results": results,
         "independent_revisable_price_acquired_utc": acquired_utc,
@@ -174,8 +199,9 @@ def main():
         (args.output_dir / "original-later-revisable-market-vintage.csv").write_text(
             u7.canonical_csv(price))
     print("Original consecutive SEC100 cohort pairs:", len(frozen))
-    print("Frozen exposures:", result["source_relative_distinct_exposures"])
-    print("Completed two-close marks:", result["priced_two_close_exposures"])
+    print("Frozen cohort exposure observations:", result["source_relative_distinct_exposures"])
+    print("Unique economic ticker/entry exposures:", result["economic_unique_ticker_entry_exposures"])
+    print("Completed cohort two-close marks:", result["priced_two_close_exposures"])
     print("Still pending:", result["pending_two_close_exposures"])
     print("ROLLING WINDOW ONLY. NO proven alpha, broker orders or release.")
 
