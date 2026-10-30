@@ -171,7 +171,16 @@ def test_deployed_source_workflow_has_only_public_get_and_existing_sec_identity(
     assert "secrets.ALPACA_LIVE_KEY" not in workflow
     assert "fund100-live-broker" not in workflow
     assert "  workflow_dispatch:" not in workflow
-    assert "github.event_name == 'schedule'" in workflow
+    # A reviewed push to main is an idempotent first-source fallback if the
+    # scheduled GitHub Actions event is delayed. PRs cannot acquire sources.
+    assert ("if: (github.event_name == 'schedule' || "
+            "github.event_name == 'push') && "
+            "github.ref == 'refs/heads/main'") in workflow
+    assert 'if: steps.first.outputs.acquire == \'true\'' in workflow
+    assert '"20261030"' in workflow and '"20261106"' in workflow
+    assert 'actions/artifacts?name=fund100-v8-q2-new-original-first' in workflow
+    assert 'cancel-in-progress: false' in workflow
+    assert 'fund100-v8-q2-new-original-first' in workflow
     audit=Path(".github/workflows/fund100-live-static-audit.yml").read_text()
     for p in (
         "fund100_v8_q2_first_actual_sec_roa_price_source_v1_0.py",
