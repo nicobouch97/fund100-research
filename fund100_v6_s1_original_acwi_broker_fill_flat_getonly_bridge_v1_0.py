@@ -70,6 +70,14 @@ def _source_preflight(signed_sources):
         raise ReadStop("Signed original seq2 / ACWI order identity invalid") from None
     return source
 
+def _same_original_live_account(account):
+    # The frozen historical bootstrap policy supplies the account binding.
+    # No user-supplied account identifier or rebinding token is admissible.
+    historical_policy,_=origin.original(original_four.POLICY)
+    bound=sha256(("FUND100-LIVE-ACCOUNT|"+
+                  account["id"].strip()).encode()).hexdigest()
+    return historical_policy.get("account_binding_sha256")==bound
+
 def _observe(request,*,signed_sources,now_utc):
     if type(now_utc) is not str:
         raise ReadStop("Postorder source observation missing")
@@ -106,10 +114,7 @@ def _observe(request,*,signed_sources,now_utc):
     if type(account.get("id")) is not str or not account["id"].strip():
         raise ReadStop("Original postorder account identifier missing")
     try:
-        historical_policy,_=origin.original(original_four.POLICY)
-        bound=sha256(("FUND100-LIVE-ACCOUNT|"+
-                      account["id"].strip()).encode()).hexdigest()
-        if historical_policy.get("account_binding_sha256")!=bound:
+        if not _same_original_live_account(account):
             raise ReadStop("Broker postorder account not bound to original LIVE pilot")
         broker_clock=proof._time(clock.get("timestamp"))
         if not timedelta(0)<=observed-broker_clock<=timedelta(minutes=2):
