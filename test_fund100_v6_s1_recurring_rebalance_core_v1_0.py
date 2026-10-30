@@ -309,3 +309,47 @@ def test_cash_floor_repair_cannot_guess_sell_shares_or_certify_continuous_cash()
     assert "after_fee_entire_portfolio_risk_repair_proven" in source
     assert "requires_independent_order_and_settlement_reconciliation" in source
     assert m.LIVE_RECURRING_EXECUTION_RELEASED is False
+
+
+def test_ordinary_band_trim_must_not_push_other_name_over_50pct_after_fee():
+    # Initially all hard limits pass: 95% gross, 5% cash and XLK
+    # exactly at 50%. XLE alone is >10pp above its target, so it is
+    # the ordinary monthly SELL candidate, not a hard-risk repair.
+    # Its $0.10 fee reduces NAV and would put untouched XLK at
+    # 65 / 129.90 = 50.03849%: never advertise an unsafe one-ticket trim.
+    d=fixture(portfolio="sell")
+    d["position_values_usd"]={"XLK":"65.00","XLE":"51.00","IWM":"7.50"}
+    d["cash_usd"]="6.50"
+    d["settled_cash_usd"]="6.50"
+    result=run(d)
+    assert result["status"]=="HOLD_MONTHLY_TRIM_POST_FEE_HARD_LIMIT"
+    assert result["hypothetical_candidate"] is None
+    assert result["broker_POSTs"]==result["private_Git_writes"]==0
+
+
+def test_ordinary_band_trim_is_still_allowed_when_entire_after_fee_portfolio_passes():
+    d=fixture(portfolio="sell")
+    d["position_values_usd"]={"XLK":"64.90","XLE":"51.00","IWM":"7.60"}
+    d["cash_usd"]="6.50"
+    d["settled_cash_usd"]="6.50"
+    result=run(d)
+    assert result["status"]=="HYPOTHETICAL_MONTHLY_TRIM_SELL_NO_TRANSPORT"
+    candidate=result["hypothetical_candidate"]
+    assert candidate["symbol"]=="XLE"
+    assert candidate["estimated_notional_usd"]=="13.95"
+    # Check the complete returned single-sale portfolio, rather than only
+    # one hard-coded untouched issuer: after-fee cash, gross and all symbols.
+    fee=Decimal(d["all_in_fee_buffers_usd"][candidate["symbol"]])
+    sold=Decimal(candidate["estimated_notional_usd"])
+    after_nav=Decimal(d["equity_usd"])-fee
+    after_cash=Decimal(d["cash_usd"])+sold-fee
+    after_values={
+        sym: Decimal(value)-(sold if sym==candidate["symbol"] else Decimal(0))
+        for sym,value in d["position_values_usd"].items()
+    }
+    assert after_cash>=after_nav*m.migration.CASH_FLOOR
+    assert sum(after_values.values())<=after_nav*m.migration.MAX_GROSS
+    assert all(value<=after_nav*m.migration.MAX_SYMBOL
+               for value in after_values.values())
+    assert after_nav==after_cash+sum(after_values.values())
+    assert result["candidate_executable"] is False
