@@ -114,7 +114,7 @@ def test_identical_issuer_returns_cannot_fake_eight_independent_risk_factors():
 def test_missing_prices_and_invalid_rebalance_weights_fail_closed():
     idx=pd.bdate_range("2026-06-01",periods=63)
     names=list(cohort.SECTORS)[:8]
-    ret=pd.Data({s:np.full(63,.0001) for s in cohort.SECTORS},index=idx)
+    ret=pd.DataFrame({s:np.full(63,.0001) for s in cohort.SECTORS},index=idx)
     ret["SPY"]=.0002
     ret["SHY"]=0.
     ret.loc[idx[0],names[0]]=np.nan
