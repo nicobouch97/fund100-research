@@ -124,6 +124,98 @@ def original_signed_anchor_asset(*,signed_owner_sources:dict,prepost_source:dict
         raise AnchorStop("Public release commitment exceeded bounded size")
     return public_bytes
 
+def original_signed_anchor_asset_after_owner_run(*,signed_owner_sources:dict,
+                                                   prepost_source:dict)->bytes:
+    """Read-only postorder recovery from durable HMAC sources, WITHOUT raw nonce.
+
+    The random owner_nonce only existed in the first single-attempt process.
+    The signed owner claim stores its SHA256 commitment, not that random
+    value. Recovery in a NEW process therefore must verify the current
+    canonical owner HMAC, its seq1 -> seq2 binding and immutable exact asset
+    rather than demand the unrecoverable raw nonce. No other owner or
+    duplicate order is thereby authorised.
+
+    Caller must separately GET the CURRENT private owner and seq2 heads
+    with both original independent principals before using this function.
+    """
+    keys={
+        "current_fence_source","reserved_source","genesis_comment",
+        "first_comment","first_comment_id","first_run_id","original_qty",
+        "key","owner_run_id","owner_attempt","current_main_sha",
+        "source_broker_run_id"}
+    if (type(signed_owner_sources) is not dict or set(signed_owner_sources)!=keys
+        or PUBLIC_RELEASE_CREATION_RELEASED is not False
+        or PRIVATE_HEAD_CAS_RELEASED is not False
+        or LIVE_BROKER_POST_RELEASED is not False):
+        raise AnchorStop("Original postorder recovery source not exact or released")
+    a=signed_owner_sources
+    try:
+        w,bound,plan=owner._original_prepost(**{
+            k:a[k] for k in (
+                "reserved_source","genesis_comment","first_comment",
+                "first_comment_id","first_run_id","original_qty","key"
+            )})
+        verified=ledger.verify_remote_commit(
+            plan,prepost_source,
+            private_genesis=w["original_public_genesis_nonce"],
+            account_binding_sha256=w["original_live_account_binding_sha256"],
+            key=a["key"])
+        seq_sha,seq_doc=ledger._read_source(
+            prepost_source,
+            private_genesis=w["original_public_genesis_nonce"],
+            account_binding_sha256=w["original_live_account_binding_sha256"],
+            key=a["key"])
+        owner_sha,owner_doc=owner._read(
+            a["current_fence_source"],
+            private_genesis=w["original_public_genesis_nonce"],
+            account_binding_sha256=w["original_live_account_binding_sha256"],
+            key=a["key"])
+        claim=owner_doc["claim"]
+        expected_client=sha256((
+            "fund100-original-ACWI-owner-client-id-v1|"+ledger.CLIENT_IDS["ACWI"]
+        ).encode("ascii")).hexdigest()
+        if (verified.get("stage")!=
+            "REMOTE_STATE_CAS_COMMIT_CONFIRMED_NO_TRADE_AUTHORIZATION"
+            or verified.get("live_order_authorized") is not False
+            or seq_sha!=plan["new_blob_sha"]
+            or seq_doc.get("sequence")!=2
+            or seq_doc.get("prior_document_sha")!=bound["source_sha"]
+            or set(seq_doc.get("entries",{}))!={"ACWI"}
+            or seq_doc["entries"]["ACWI"]["state"]!="POST_MAY_HAVE_BEEN_SENT"
+            or owner_doc["sequence"]!=1
+            or type(claim) is not dict
+            or claim["symbol"]!="ACWI"
+            or claim["owner_attempt"]!=1
+            or a["owner_attempt"]!=1
+            or claim["owner_workflow_run_id"]!=_run_id(a["owner_run_id"])
+            or claim["source_broker_run_id"]!=_run_id(a["source_broker_run_id"])
+            or claim["source_main_sha"]!=_exact_hex(a["current_main_sha"],40,"main SHA")
+            or claim["signed_reserved_blob_sha"]!=bound["source_sha"]
+            or claim["signed_prepost_blob_sha"]!=seq_sha
+            or claim["client_id_commitment"]!=expected_client
+            or claim["nonce_sha256"]=="0"*64
+            or _exact_hex(claim["nonce_sha256"],64,"signed nonce commitment") is None):
+            raise AnchorStop("Durable HMAC owner claim differs from signed seq2")
+    except Exception:
+        raise AnchorStop("Durable postorder ACWI signed owner/seq2 invalid") from None
+
+    asset=json.dumps({
+        "schema":SCHEMA,
+        "subject":"FIRST_ORIGINAL_ACWI_SIGNED_PREPOST_HEAD_NO_RETRY",
+        "source_repository":REPOSITORY,
+        "source_main_sha":a["current_main_sha"],
+        "original_workflow_run_id":a["owner_run_id"],
+        "signed_private_reserved_blob_sha":bound["source_sha"],
+        "signed_private_possible_post_blob_sha":seq_sha,
+        "signed_private_unique_owner_blob_sha":owner_sha,
+        "private_source_or_credentials_disclosed":False,
+        "live_broker_order_authorized":False,
+    },sort_keys=True,separators=(",",":"),ensure_ascii=True).encode("ascii")+b"\n"
+    if len(asset)>=MAX_ASSET_BYTES:
+        raise AnchorStop("Durable original public commitment too large")
+    return asset
+
+
 def _get(*,url:str,token:str,accept:str,limit:int,transport=None)->bytes:
     if url not in (RELEASE_URL,DOWNLOAD_URL):
         raise AnchorStop("Untrusted external anchor host or endpoint")

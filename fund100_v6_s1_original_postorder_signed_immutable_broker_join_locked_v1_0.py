@@ -39,6 +39,9 @@ def inspect_postorder(*,signed_sources:dict,owner_sources:dict,
                       broker_transport=None,now_utc=None)->dict:
     """Require independently fresh private HEADs and immutable asset.
 
+    The original random owner nonce was never saved, so signed owner SOURCES
+    MUST NOT require it after that one-shot process exits. Cross-run HMAC
+    claim verification and the immutable asset replace the ephemeral nonce.
     Mock mode: ALL three transports explicitly provided, including test
     timestamp; output never asserts genuine provider or Alpaca authentication.
     Real mode: NO transport injection, source-level HARD LOCK first.
@@ -66,7 +69,7 @@ def inspect_postorder(*,signed_sources:dict,owner_sources:dict,
         or type(broker_key) is not str or not broker_key
         or type(broker_secret) is not str or not broker_secret):
         raise JoinStop("Missing original signed HMAC or broker GET source")
-    if (set(owner_sources)!=first.EXPECTED_CONTEXT|{"current_fence_source"}
+    if (set(owner_sources)!=(first.EXPECTED_CONTEXT|{"current_fence_source"})-{"owner_nonce"}
         or set(signed_sources)!={
             "reserved_source","prepost_source","genesis_comment","first_comment",
             "prepost_comment","first_comment_id","first_run_id",
@@ -97,7 +100,7 @@ def inspect_postorder(*,signed_sources:dict,owner_sources:dict,
             raise JoinStop("Original current HMAC seq2/owner HEAD mismatch")
         # Cryptographically cross-bind the exact owner-fence claim, HMAC seq2
         # and signed seq1; then read actual release+asset, not editable notes.
-        expected_asset=anchor.original_signed_anchor_asset(
+        expected_asset=anchor.original_signed_anchor_asset_after_owner_run(
             signed_owner_sources=owner_sources,
             prepost_source=current_ledger_read)
         anchored=anchor.verify_published_immutable_anchor(
