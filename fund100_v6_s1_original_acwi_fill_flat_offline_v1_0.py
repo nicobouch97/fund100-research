@@ -189,6 +189,16 @@ def assess(*,signed_prepost_sources:dict,closed_receipt:dict,
     if (not filled_once or target_count==0 or cumulative!=expected[ORIGINAL]
         or spend<=0):
         raise FillFlatStop("Incomplete activity-to-receipt first SELL reconciliation")
+    # A filled order receipt is not a trustworthy cash/proceeds basis unless
+    # its reported volume-weighted execution price agrees with the COMPLETE
+    # matching broker FILL activities. Alpaca may round the reported average
+    # to cents, so allow at most half a cent per share; never infer settlement.
+    try:
+        reported_average=_quantity(closed_receipt.get("filled_avg_price"))
+    except FillFlatStop:
+        raise FillFlatStop("Missing or invalid broker filled average price") from None
+    if abs(reported_average-spend/cumulative)>Decimal("0.005"):
+        raise FillFlatStop("Receipt filled average price disagrees with FILL activities")
     if type(open_orders) is not list or open_orders:
         raise FillFlatStop("No open orders allowed after the original first SELL")
     if type(post_positions) is not list or len(post_positions)!=len(RETAIN):
@@ -212,6 +222,7 @@ def assess(*,signed_prepost_sources:dict,closed_receipt:dict,
         "signed_original_prepost_HMAC_and_public_chain_verified":True,
         "first_symbol":"ACWI",
         "broker_receipt_to_complete_FILLS_structurally_linked":True,
+        "receipt_average_price_matches_FILLS":True,
         "original_ACWI_absent_in_post_positions":True,
         "EEM_XLE_XLV_retained_in_original_quantities":True,
         "all_hypothetical_fill_pages_complete":True,
