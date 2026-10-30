@@ -68,7 +68,7 @@ def test_scheduled_entrypoint_checks_current_risk_and_remains_hard_locked():
     assert "assert first['owner_claim_or_broker_POST_authorized'] is False" in w
     assert "chain.ONE_ATTEMPT_EXECUTION_RELEASED is False" in w
     assert "owner.SIGNED_OWNER_CLAIM_TRANSPORT_RELEASED is False" in w
-    assert "publisher" in w and "PUBLISH_SIGNED_HEAD_RELEASED" in w
+    assert "assert publish.PUBLISH_SIGNED_HEAD_RELEASED is False" in w
     assert "p._request(method='GET'" in w
     assert "chain.prepare_original_acwi_context_getonly(" in w
     # A context preload for optional operator-dispatch is NOT a LIVE send.
