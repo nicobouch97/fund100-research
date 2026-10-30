@@ -230,7 +230,7 @@ def _next_close_sector_repair_path(returns:pd.DataFrame,weights:dict[str,float],
     this is risk economics, not a tradeable backtest or alpha evidence.
     """
     if (initial_invested not in (.90,.95) or fee_bps not in COSTS_BPS
-        or type(weights) is not dict or len(weights)!=8
+        or type(weights) is not dict or not 2<=len(weights)<=len(cohort.SECTORS)
         or not math.isclose(sum(weights.values()),1.,abs_tol=1e-12)
         or any(s not in cohort.SECTORS for s in weights)
         or any(type(w) not in (int,float) or not math.isfinite(w)
@@ -337,6 +337,43 @@ def _one_window(ret:pd.DataFrame, names:list[str]) -> dict:
         key:{str(bp):_buy_once_costed_risk(ret,w,bp) for bp in COSTS_BPS}
         for key,w in refs.items()
     }
+    # Evaluate the same dated, original-sector peer cohort under identical
+    # fee-funded next-close repairs. This is a counterfactual risk/cost
+    # comparison, NOT independent alpha: the Q2 names were selected using
+    # these exact preentry prices and the peer roster is contemporaneous.
+    repaired_q2={
+        label:{str(bp):_next_close_sector_repair_path(
+            ret,selected,bp,invested) for bp in COSTS_BPS}
+        for label,invested in (
+            ("95pct_initial_invested",.95),
+            ("90pct_initial_invested",.90),
+        )
+    }
+    repaired_peer={
+        label:{str(bp):_next_close_sector_repair_path(
+            ret,sector,bp,invested) for bp in COSTS_BPS}
+        for label,invested in (
+            ("95pct_initial_invested",.95),
+            ("90pct_initial_invested",.90),
+        )
+    }
+    paired={
+        label:{
+            "frozen_q2_eight_equal":repaired_q2[label],
+            "same_sector_original_24_cohort":repaired_peer[label],
+            "q2_minus_sector_peer_after_cost_percentage_points":{
+                str(bp):_round(
+                    repaired_q2[label][str(bp)][
+                        "marked_unrealized_return_after_all_costs_pct"]-
+                    repaired_peer[label][str(bp)][
+                        "marked_unrealized_return_after_all_costs_pct"])
+                for bp in COSTS_BPS
+            },
+            "same_frozen_price_vintage_and_costs":True,
+            "preentry_selection_hindsight_conditioned_not_alpha":True,
+        }
+        for label in repaired_q2
+    }
     q2ret=INVESTED*ret[names].mean(axis=1)
     spyret=INVESTED*ret["SPY"]
     selected_std=q2ret.std(ddof=1)
@@ -364,14 +401,8 @@ def _one_window(ret:pd.DataFrame, names:list[str]) -> dict:
         "through_frozen_completed_price_session":ret.index[-1].date().isoformat(),
         "fixed_95pct_risky_5pct_cash_reference_risk":stats,
         "buy_once_costed_no_rebalance_close_risk":buy_once,
-        "next_close_sector_repair_cash_buffer_comparison":{
-            label:{str(bp):_next_close_sector_repair_path(
-                ret,selected,bp,invested) for bp in COSTS_BPS}
-            for label,invested in (
-                ("95pct_initial_invested",.95),
-                ("90pct_initial_invested",.90),
-            )
-        },
+        "next_close_sector_repair_cash_buffer_comparison":repaired_q2,
+        "next_close_sector_repair_paired_sector_peer_comparison":paired,
         "q2_eight_spy_beta":_round(beta) if beta is not None else None,
         "q2_eight_spy_correlation":_round(correlation) if correlation is not None else None,
         "issuer_pair_max_correlation":_round(max_pair) if max_pair is not None else None,
