@@ -682,3 +682,63 @@ def test_policy_repair_both_concentration_and_gross_bind_without_overselling():
         gross_floor=(sum(positions)-95.)/(1.-.95*fee)
         assert sold>=gross_floor-1e-9
         assert sold<6.  # Do not liquidate every position pro rata.
+
+
+def test_fixed_10pct_cash_buffer_preserves_original_winners_and_costs():
+    # This is a post-hoc *risk* stress, not a fitted strategy or LIVE policy.
+    df=sample(short=True)
+    unbuffered=t.simulate(df,start="2014-01-02",end="2016-12-30",
+        side_bps=15,strategy="CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR")
+    buffered=t.simulate(df,start="2014-01-02",end="2016-12-30",
+        side_bps=15,strategy=t.BUFFERED_RISK_STRATEGY)
+    a,b=unbuffered["signal_trade_log"],buffered["signal_trade_log"]
+    assert len(a)==len(b)>10
+    for original,stress in zip(a,b):
+        assert stress["close"]==original["close"]
+        assert stress["source_signal_previous_complete_session"]==(
+            original["source_signal_previous_complete_session"])
+        assert stress["hypothetical_positions"]==original["hypothetical_positions"]
+        assert stress["same_decision_positive_momentum_count"]==(
+            original["same_decision_positive_momentum_count"])
+        count=len(stress["hypothetical_positions"])
+        assert stress["target_gross_fraction"]==pytest.approx(.45*count)
+        assert original["target_gross_fraction"]==pytest.approx(.475*count)
+        if stress["modeled_execution_close"] is not None:
+            assert stress["modeled_execution_close"]>stress["close"]
+    assert buffered["no_actual_orders"]
+    assert buffered["risk_repair_posthoc_policy_feasibility_not_alpha"]
+    assert buffered["modeled_fees_usd_per_100_initial_usd"]>0
+    assert buffered["original_high_risk_breach_sessions"]["single_50pct"]>=0
+
+
+def test_buffered_repair_stays_all_cash_when_original_has_no_winners():
+    df=sample(decline=True,short=True)
+    result=t.simulate(df,start="2014-01-02",end="2016-12-30",
+        side_bps=35,strategy=t.BUFFERED_RISK_STRATEGY)
+    assert result["net_total_return_pct"]==0
+    assert result["modeled_fees_usd_per_100_initial_usd"]==0
+    assert result["risk_repair_actual_sell_closes"]==0
+    assert all(r["target_gross_fraction"]==0 for r in result["signal_trade_log"])
+    assert result["no_actual_orders"]
+
+
+def test_buffered_repair_report_is_separately_costed_and_not_promotion():
+    report=t.analyze(sample(),"2026-10-27T11:00:00Z")
+    assert report["buffer_stress_not_a_new_promotion_gate"]
+    assert not report["trading_authorized"]
+    assert set(report["posthoc_predeclared_10pct_cash_buffer_repair"])==(
+        set(t.REGISTERED_WINDOWS))
+    for era,by_cost in report["posthoc_predeclared_10pct_cash_buffer_repair"].items():
+        assert set(by_cost)=={"5","15","35"}
+        for cost,comparison in by_cost.items():
+            assert comparison["same_original_asset_and_calendar_decisions"]
+            assert comparison["posthoc_risk_feasibility_not_alpha_or_live_authority"]
+            assert comparison["per_selected_asset_target_weight"]==.45
+            assert comparison["initial_cash_floor_if_two_names"]==.10
+            path=comparison["buffered_sell_only_next_close_path"]
+            assert path["side_cost_bps"]==int(cost)
+            assert path["no_actual_orders"]
+            assert path["strategy"]==t.BUFFERED_RISK_STRATEGY
+            assert path["risk_repair_posthoc_policy_feasibility_not_alpha"]
+            assert path["signal_trade_log"]
+    assert report["real_broker_orders"]==0

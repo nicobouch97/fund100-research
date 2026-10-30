@@ -23,6 +23,11 @@ COSTS=(5,15,35)
 MAX_NAMES=2
 SLOT_WEIGHT=.475
 CASH_MIN=.05
+# Predeclared post-hoc stress: leave 5pp extra gross headroom below HIGH's
+# 95% gross ceiling; 45% per selected name and at least 10% initial cash.
+BUFFERED_SLOT_WEIGHT=.45
+BUFFERED_CASH_MIN=.10
+BUFFERED_RISK_STRATEGY="CROSS_ASSET_12_1_NEXT_CLOSE_BUFFERED_RISK_REPAIR"
 PAST_LONG=253
 PAST_SHORT=22
 SOURCE_START="2012-01-03"
@@ -197,7 +202,8 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
         raise CrossAssetTrendStop("Unregistered cost stress")
     if strategy not in ("CROSS_ASSET_12_1","CROSS_ASSET_12_1_NEXT_CLOSE",
                       "EXPOSURE_MATCHED_FOUR_EQUAL","STATIC_FOUR_EQUAL","STATIC_SPY",
-                      "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR"):
+                      "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR",
+                      BUFFERED_RISK_STRATEGY):
         raise CrossAssetTrendStop("Unknown candidate benchmark")
     panel=prices_validate(prices)
     view=panel.loc[start:end]
@@ -216,9 +222,12 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
     fees=0.
     trade_dates=0
     selected_log=[]
-    policy_repair=strategy=="CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR"
+    buffered=strategy==BUFFERED_RISK_STRATEGY
+    policy_repair=strategy in ("CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR",
+                               BUFFERED_RISK_STRATEGY)
     delayed=strategy in ("CROSS_ASSET_12_1_NEXT_CLOSE",
-                         "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR")
+                         "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR",
+                         BUFFERED_RISK_STRATEGY)
     repair_log=[]
     repair_trades=0
     pending=None  # Monthly signal or prior-close risk-repair request; never future data.
@@ -268,14 +277,25 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
         if (j==0 or (strategy in ("CROSS_ASSET_12_1",
                                   "CROSS_ASSET_12_1_NEXT_CLOSE",
                                   "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR",
+                                  BUFFERED_RISK_STRATEGY,
                                   "EXPOSURE_MATCHED_FOUR_EQUAL") and month_first)):
             if strategy in ("CROSS_ASSET_12_1","CROSS_ASSET_12_1_NEXT_CLOSE",
                             "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR",
+                            BUFFERED_RISK_STRATEGY,
                             "EXPOSURE_MATCHED_FOUR_EQUAL"):
                 momentum_target,momentum_winners=_selection(panel,current)
                 if strategy in ("CROSS_ASSET_12_1","CROSS_ASSET_12_1_NEXT_CLOSE",
-                                "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR"):
-                    target,winners=momentum_target,momentum_winners
+                                "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR",
+                                BUFFERED_RISK_STRATEGY):
+                    target,winners=momentum_target.copy(),momentum_winners
+                    if buffered:
+                        # Do not refit winners or look at the execution bar.
+                        # Only reduce original slot weights to leave a
+                        # 5pp predeclared cash buffer for future drift.
+                        target[:4]*=BUFFERED_SLOT_WEIGHT/SLOT_WEIGHT
+                        target[-1]=1.-float(sum(target[:4]))
+                        if target[-1]<BUFFERED_CASH_MIN-1e-12:
+                            raise CrossAssetTrendStop("Buffered target lost cash headroom")
                 else:
                     # POST-HOC DIAGNOSTIC, not an independently specified
                     # investable rule or a new promotion gate. Keep the
@@ -309,6 +329,7 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
                                          "CROSS_ASSET_12_1",
                                          "CROSS_ASSET_12_1_NEXT_CLOSE",
                                          "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR",
+                                         BUFFERED_RISK_STRATEGY,
                                          "EXPOSURE_MATCHED_FOUR_EQUAL") else None,
                                  "modeled_execution_close":(
                                      None if delayed else timestamp.date().isoformat()),
@@ -403,6 +424,7 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
         "signal_trade_log":selected_log if strategy in (
             "CROSS_ASSET_12_1","CROSS_ASSET_12_1_NEXT_CLOSE",
             "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR",
+            BUFFERED_RISK_STRATEGY,
             "EXPOSURE_MATCHED_FOUR_EQUAL") else [],
     }
 
@@ -543,6 +565,49 @@ def analyze(prices:pd.DataFrame,captured_utc:str):
                 "sell_only_next_close_policy_repair_path":repaired,
                 "posthoc_not_promotion_or_broker_risk_enforcement":True,
             }
+    # One fixed, not optimized, 5pp gross / 2.5pp per-slot safety buffer.
+    # Compare to the already repaired next-close path at the same fee.
+    # It is not a new investment promotion rule or independent evidence.
+    buffered_diagnostic={}
+    for era,(start,end) in REGISTERED_WINDOWS.items():
+        buffered_diagnostic[era]={}
+        for bps in COSTS:
+            baseline=policy_repair_diagnostic[era][str(bps)][
+                "sell_only_next_close_policy_repair_path"]
+            buffered=simulate(panel,start=start,end=end,side_bps=bps,
+                              strategy=BUFFERED_RISK_STRATEGY)
+            original_log=baseline["signal_trade_log"]
+            buffered_log=buffered["signal_trade_log"]
+            keys=("close","source_signal_previous_complete_session",
+                  "hypothetical_positions","same_decision_positive_momentum_count")
+            if (len(original_log)!=len(buffered_log)
+                or any(tuple(a[k] for k in keys)!=tuple(b[k] for k in keys)
+                       for a,b in zip(original_log,buffered_log))
+                or any(b["target_gross_fraction"] >
+                       a["target_gross_fraction"]+1e-12
+                       for a,b in zip(original_log,buffered_log))):
+                raise CrossAssetTrendStop("Cash buffer changed original momentum decisions")
+            buffered_diagnostic[era][str(bps)]={
+                "predeclared_cash_buffer_above_5pct_minimum_pp":5,
+                "per_selected_asset_target_weight":BUFFERED_SLOT_WEIGHT,
+                "initial_cash_floor_if_two_names":BUFFERED_CASH_MIN,
+                "same_original_asset_and_calendar_decisions":True,
+                "buffer_minus_unbuffered_repaired_net_cagr_pp":round(
+                    buffered["net_annualized_return_pct"]-
+                    baseline["net_annualized_return_pct"],6),
+                "buffer_minus_unbuffered_repaired_max_drawdown_pp":round(
+                    buffered["max_drawdown_pct"]-
+                    baseline["max_drawdown_pct"],6),
+                "buffer_minus_unbuffered_repaired_turnover_per_100":round(
+                    buffered["gross_traded_notional_per_100_initial_usd"]-
+                    baseline["gross_traded_notional_per_100_initial_usd"],5),
+                "unbuffered_repaired_high_breach_sessions":
+                    baseline["original_high_risk_breach_sessions"],
+                "buffered_high_breach_sessions":
+                    buffered["original_high_risk_breach_sessions"],
+                "buffered_sell_only_next_close_path":buffered,
+                "posthoc_risk_feasibility_not_alpha_or_live_authority":True,
+            }
     return {
         "schema":SCHEMA,
         "status":"HISTORICAL_REPEATEDLY_STUDIED_CROSS_ASSET_NO_ALPHA_AUTHORITY",
@@ -564,6 +629,8 @@ def analyze(prices:pd.DataFrame,captured_utc:str):
         "next_close_stress_not_a_new_promotion_gate":True,
         "posthoc_next_close_high_policy_repair":policy_repair_diagnostic,
         "policy_repair_not_a_new_promotion_gate":True,
+        "posthoc_predeclared_10pct_cash_buffer_repair":buffered_diagnostic,
+        "buffer_stress_not_a_new_promotion_gate":True,
         "favorable_result_is_not_forward_alpha_qualification":True,
         "DBC_methodology_changed_2025":True,
         "current_live_capital_ceiling_usd":"130.30",
