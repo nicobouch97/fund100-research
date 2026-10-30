@@ -127,11 +127,23 @@ def _buy_once_costed_risk(returns:pd.DataFrame, weights:dict[str,float],
             sectors.append(max(by_sector.values())/nav)
     maxima=np.maximum.accumulate(np.asarray(path,dtype=float))
     drawdowns=np.asarray(path)/maxima-1.
+    # Separate last-close liquidation sensitivity from the existing
+    # unrealized mark. The same completed close is assumed for all sells:
+    # this does NOT model a future fill, spread, impact or broker order.
+    terminal_fee=fee*sum(positions.values())
+    terminal_nav=path[-1]-terminal_fee
+    if not math.isfinite(terminal_nav) or terminal_nav<=0:
+        raise RiskHold("Invalid hypothetical buy-once terminal liquidation")
     return {
         "entry_cost_bps_per_traded_side":fee_bps,
         "initial_entry_cost_usd_per_100":_round(100.-after_entry),
         "marked_unrealized_return_after_entry_cost_pct":
             _round(path[-1]-100.),
+        "hypothetical_terminal_liquidation_fee_usd_per_100":
+            _round(terminal_fee),
+        "hypothetical_fully_liquidated_return_after_all_costs_pct":
+            _round(terminal_nav-100.),
+        "terminal_liquidation_same_last_close_no_fill_or_spread":True,
         "annualized_close_to_close_volatility":_round(
             np.std(daily,ddof=1)*math.sqrt(SESSIONS_PER_YEAR)),
         "worst_observed_daily_return":_round(min(daily)),
@@ -289,11 +301,23 @@ def _next_close_sector_repair_path(returns:pd.DataFrame,weights:dict[str,float],
         path.append(nav)
     arr=np.asarray(path,dtype=float)
     drawdown=arr/np.maximum.accumulate(arr)-1.
+    # All remaining risky positions are hypothetically sold at the
+    # last observed close. This is a cost sensitivity, not an executable
+    # order or a guarantee that the closing price was available to trade.
+    terminal_fee=fee*sum(positions.values())
+    terminal_nav=path[-1]-terminal_fee
+    if not math.isfinite(terminal_nav) or terminal_nav<=0:
+        raise RiskHold("Invalid hypothetical repaired terminal liquidation")
     return {
         "initial_invested_fraction":initial_invested,
         "initial_cash_fraction":1.-initial_invested,
         "fee_bps_per_traded_side":fee_bps,
         "marked_unrealized_return_after_all_costs_pct":_round(path[-1]-100.),
+        "hypothetical_terminal_liquidation_fee_usd_per_100":
+            _round(terminal_fee),
+        "hypothetical_fully_liquidated_return_after_all_costs_pct":
+            _round(terminal_nav-100.),
+        "terminal_liquidation_same_last_close_no_fill_or_spread":True,
         "annualized_close_to_close_volatility":_round(
             np.std(daily,ddof=1)*math.sqrt(SESSIONS_PER_YEAR)),
         "max_observed_compounded_close_drawdown":_round(drawdown.min()),
@@ -367,6 +391,14 @@ def _one_window(ret:pd.DataFrame, names:list[str]) -> dict:
                         "marked_unrealized_return_after_all_costs_pct"]-
                     repaired_peer[label][str(bp)][
                         "marked_unrealized_return_after_all_costs_pct"])
+                for bp in COSTS_BPS
+            },
+            "q2_minus_sector_peer_after_full_liquidation_cost_percentage_points":{
+                str(bp):_round(
+                    repaired_q2[label][str(bp)][
+                        "hypothetical_fully_liquidated_return_after_all_costs_pct"]-
+                    repaired_peer[label][str(bp)][
+                        "hypothetical_fully_liquidated_return_after_all_costs_pct"])
                 for bp in COSTS_BPS
             },
             "same_frozen_price_vintage_and_costs":True,
