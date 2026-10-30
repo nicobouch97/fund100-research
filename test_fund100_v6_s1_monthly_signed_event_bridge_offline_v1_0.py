@@ -120,6 +120,21 @@ def test_existing_monthly_signed_reservation_blocks_same_event_even_different_ma
     assert again["monthly_event_id"]==seen["monthly_event_id"]
     assert again["status"]=="HOLD_EXISTING_SIGNED_MONTHLY_EVENT_NO_RETRY"
 
+@pytest.mark.parametrize("changed",[
+    {"strategy_release_sha256":"5"*64},
+    {"standing_mandate_sha256":"6"*64},
+    {"strategy_release_sha256":"5"*64,"standing_mandate_sha256":"6"*64},
+])
+def test_signed_monthly_signal_blocks_second_event_after_release_or_mandate_change(changed):
+    # The journal event ID incorporates both hashes, but the monthly signal
+    # is already consumed even if a later release creates a different ID.
+    committed,_=signed_reservation()
+    seen=call(src=committed,**changed)
+    assert seen["status"]=="HOLD_SIGNED_MONTHLY_SIGNAL_ACROSS_RELEASES_NO_RETRY"
+    assert seen["monthly_event_id"] is None
+    assert seen["existing_signed_recurring_journal_used"] is True
+    assert seen["hypothetical_cas_reservation_proposed"] is False
+
 def test_existing_possible_post_stops_different_new_monthly_signal():
     first,ctx=signed_reservation()
     planned=journal.plan_possible_post(first,**ctx)
