@@ -189,7 +189,6 @@ def original_signed_anchor_asset_after_owner_run(*,signed_owner_sources:dict,
             or a["owner_attempt"]!=1
             or claim["owner_workflow_run_id"]!=_run_id(a["owner_run_id"])
             or claim["source_broker_run_id"]!=_run_id(a["source_broker_run_id"])
-            or claim["source_broker_run_id"]!=claim["owner_workflow_run_id"]
             or claim["source_main_sha"]!=_exact_hex(a["current_main_sha"],40,"main SHA")
             or claim["signed_reserved_blob_sha"]!=bound["source_sha"]
             or claim["signed_prepost_blob_sha"]!=seq_sha
