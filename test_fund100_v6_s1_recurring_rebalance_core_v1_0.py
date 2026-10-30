@@ -81,14 +81,18 @@ def test_recurring_monthly_buy_uses_actual_cash_and_gross_headroom_only_as_synth
 
 def test_unsettled_money_not_reused_for_rebalance():
     d=fixture(portfolio="buy")
-    d["settled_cash_usd"]="8.00"
+    d["settled_cash_usd"]="7.00"
     assert run(d)["status"]=="HOLD_BUY_REQUIRES_SETTLED_CASH_OR_RISK_HEADROOM"
+    d["settled_cash_usd"]="8.00"
+    assert run(d)["status"]=="HOLD_BUY_ALL_IN_COST_EXCEEDS_1PCT"
     d["settled_cash_usd"]="40.00"
     d["all_in_fee_buffers_usd"]["XLK"]="4.99"
+    assert run(d)["status"]=="HOLD_BUY_ALL_IN_COST_EXCEEDS_1PCT"
+    d["all_in_fee_buffers_usd"]["XLK"]="0.10"
     r=run(d)
     assert r["status"]=="HYPOTHETICAL_MONTHLY_REPLENISH_BUY_NO_TRANSPORT"
     buy=Decimal(r["hypothetical_candidate"]["estimated_notional_usd"])
-    assert Decimal("40.00")-buy-Decimal("4.99") >= (Decimal("130.00")-Decimal("4.99"))*Decimal(".05")
+    assert Decimal("40.00")-buy-Decimal("0.10") >= (Decimal("130.00")-Decimal("0.10"))*Decimal(".05")
 
 def test_one_month_same_symbol_side_cannot_be_submitted_twice_even_after_restart():
     d=fixture(portfolio="sell")
@@ -188,3 +192,17 @@ def test_no_new_broker_writer_secret_access_or_real_order_identity():
                       "method=\"POST\"", "GITHUB_TOKEN"):
         assert forbidden not in src
     assert m._id("2026-10","XLK","buy").startswith("SIM-")
+
+
+def test_economically_expensive_sector_trim_does_not_create_needless_churn():
+    d=fixture(portfolio="sell")
+    d["all_in_fee_buffers_usd"]["XLE"]="0.20"
+    assert run(d)["status"]=="HOLD_SELL_TOO_SMALL_OR_TOO_COSTLY"
+    d["all_in_fee_buffers_usd"]["XLE"]="0.10"
+    assert run(d)["status"]=="HYPOTHETICAL_MONTHLY_TRIM_SELL_NO_TRANSPORT"
+
+
+def test_boolean_contribution_count_is_not_an_authenticated_single_deposit():
+    d=fixture(portfolio="buy")
+    d["original_contribution_events"]=True
+    assert run(d)["status"]=="HOLD_ORIGINAL_PILOT_FUNDING_NOT_PROVEN"
