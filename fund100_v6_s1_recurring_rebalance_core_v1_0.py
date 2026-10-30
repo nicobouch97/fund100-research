@@ -14,7 +14,7 @@ a unique broker client ID and separate event/settlement safety release.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation, ROUND_DOWN
+from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_UP
 from hashlib import sha256
 from zoneinfo import ZoneInfo
 import re
@@ -167,11 +167,14 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
         return _report("HOLD_ACCOUNT_RISK_SOURCE_INVALID",period=period)
     if daily<=Decimal("-.06") or dd<=Decimal("-.20") or vol>Decimal(".35"):
         return _report("HOLD_HIGH_RISK_LOSS_DRAWDOWN_OR_VOL_STOP",period=period)
-    # An account beyond the gross or issuer cap must not be represented as
-    # safely executable by this strategy-maintenance research module.
-    if gross>nav*migration.MAX_GROSS or any(
-        value>nav*migration.MAX_SYMBOL for value in values.values()):
-        return _report("HOLD_EXISTING_HIGH_ACCOUNT_EXPOSURE_BREACH",period=period)
+    # Existing gross, symbol or minimum-cash breaches must NEVER enable a
+    # new BUY. But an offline SELL-only cash/risk repair may be assessed
+    # *after* exact event-ledger and conservative fee checks below. The
+    # original monthly 10pp target band alone left cash <5% on many closes.
+    gross_breach=gross>nav*migration.MAX_GROSS
+    symbol_breaches={sym for sym in UNIVERSE
+                    if values[sym]>nav*migration.MAX_SYMBOL}
+    cash_breach=cash<nav*migration.CASH_FLOOR
     history=snapshot.get("monthly_seen_client_ids")
     completed=snapshot.get("monthly_fully_reconciled_client_ids")
     if (type(history) is not list or type(completed) is not list
@@ -193,6 +196,65 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
     fees={symbol:_num(value,symbol+" all-in fee") for symbol,value in quotes.items()}
     if any(f>MAX_FEE for f in fees.values()):
         return _report("HOLD_UNBOUNDED_BROKER_FRICTION",period=period)
+    # Risk-reducing maintenance is separate from the 10pp *alpha/turnover*
+    # band: a passive cash-floor or gross drift must not persist forever
+    # solely because no sector exceeds its discretionary month-end band.
+    # The proposed SELL is STILL UNAUTHENTICATED and NONEXECUTABLE. Live
+    # runner must source genuine fractional quantity, price, fees and a
+    # signed client ID before any order; settlement is required before BUY.
+    if gross_breach or symbol_breaches or cash_breach:
+        ranked=sorted(UNIVERSE,key=lambda sym:(
+            sym in symbol_breaches,
+            values[sym]/nav-TARGET[sym],
+            values[sym]),reverse=True)
+        for sym in ranked:
+            # Keep already-underweight sectors untouched unless they alone
+            # exceed the hard 50% single-name limit.
+            surplus=values[sym]-TARGET[sym]*nav
+            if surplus<=0 and sym not in symbol_breaches:
+                continue
+            ident=_id(period,sym,"sell")
+            if ident in history:
+                # Never regenerate a same-month SELL with changed sizing.
+                continue
+            fee=fees[sym]
+            # A sale consumes fees from NAV; all three constraints must be
+            # evaluated on conservative AFTER-FEE quantities.
+            needed_cash=max(Decimal(0),
+                            nav*migration.CASH_FLOOR-cash+fee)
+            needed_gross=max(Decimal(0),
+                             gross-migration.MAX_GROSS*(nav-fee))
+            needed_symbol=max(Decimal(0),
+                              values[sym]-migration.MAX_SYMBOL*(nav-fee))
+            required=max(needed_cash,needed_gross,needed_symbol,
+                         max(Decimal(0),surplus))
+            # Round needed proceeds UP to cents; rounding down would leave
+            # small mathematical breaches. A partial sale <= $65 does NOT
+            # certify that all constraints were repaired.
+            size=min(required.quantize(CENTS,rounding=ROUND_UP),
+                     migration.MAX_ORDER,values[sym])
+            if (size<migration.MIN_ORDER
+                or fee>=size or fee>MAX_SIDE_COST_FRACTION*size):
+                return _report("HOLD_CASH_OR_EXPOSURE_REPAIR_TOO_SMALL_OR_COSTLY",
+                               period=period)
+            if (cash+size-fee<=cash
+                or gross-size>=gross
+                or values[sym]-size<0):
+                raise RecurringStop("Hypothetical risk repair not reducing risk")
+            return _report(
+                "HYPOTHETICAL_MONTHLY_CASH_OR_EXPOSURE_REPAIR_SELL_NO_TRANSPORT",
+                period=period,candidate={
+                    "symbol":sym,"side":"sell",
+                    "estimated_notional_usd":format(size,".2f"),
+                    "stable_simulation_event_id":ident,
+                    "repair_reason":(
+                        "HARD_SYMBOL_LIMIT" if sym in symbol_breaches else
+                        "MINIMUM_CASH_OR_GROSS_DRIFT"),
+                    "requires_independent_order_and_settlement_reconciliation":True,
+                    "after_fee_entire_portfolio_risk_repair_proven":False,
+                    "executable":False})
+        return _report("HOLD_CASH_OR_EXPOSURE_REPAIR_ALREADY_ATTEMPTED_OR_NOT_FEASIBLE",
+                       period=period)
     # Existing original monthly +/- 10 percentage-point tolerance. SELL
     # the biggest excess first; existing XLE is NOT a forced legacy exit.
     excess=[]
