@@ -213,6 +213,32 @@ def test_risk_break_cannot_authorize_sell(monkeypatch,risk):
 
 
 
+@pytest.mark.parametrize("field",["account_blocked","trading_blocked"])
+@pytest.mark.parametrize("value",[None,"false",0,1,True])
+def test_original_first_sell_requires_explicit_false_broker_unblocked_flags(
+        monkeypatch,field,value):
+    # A missing/null/mistyped account flag is not evidence that the
+    # broker permits execution. These are all no-POST source-only tests.
+    def mutate(docs):
+        docs[0][field]=value
+    state,_=mock_sources(monkeypatch,mutations=mutate)
+    with pytest.raises(active.ActiveSellStop):
+        active.inspect_active_original_acwi_sell(
+            original_qty=QTY,key=KEY,secret=SECRET)
+    assert state["reads"]==7
+
+
+@pytest.mark.parametrize("field",["account_blocked","trading_blocked"])
+def test_original_first_sell_missing_broker_block_flag_fails_closed(monkeypatch,field):
+    def mutate(docs):
+        docs[0].pop(field)
+    state,_=mock_sources(monkeypatch,mutations=mutate)
+    with pytest.raises(active.ActiveSellStop):
+        active.inspect_active_original_acwi_sell(
+            original_qty=QTY,key=KEY,secret=SECRET)
+    assert state["reads"]==7
+
+
 def test_full_existing_acwi_inventory_exit_can_exceed_new_order_65_without_expanding_exposure(monkeypatch):
     """Original bootstrap ACWI was > $65; an authenticated full exit is not a new buy."""
     def owned_inventory(docs):
