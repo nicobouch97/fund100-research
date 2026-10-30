@@ -203,6 +203,13 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
     # runner must source genuine fractional quantity, price, fees and a
     # signed client ID before any order; settlement is required before BUY.
     if gross_breach or symbol_breaches or cash_breach:
+        # One corrective monthly SALE at most, even if the original SELL
+        # filled but a later snapshot still shows a smaller cash deficit.
+        # A new independently reviewed later-period event can reconsider.
+        if any(_id(period,sym,"sell") in history for sym in UNIVERSE):
+            return _report(
+                "HOLD_CASH_OR_EXPOSURE_REPAIR_ALREADY_ATTEMPTED_OR_NOT_FEASIBLE",
+                period=period)
         ranked=sorted(UNIVERSE,key=lambda sym:(
             sym in symbol_breaches,
             values[sym]/nav-TARGET[sym],
