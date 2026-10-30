@@ -27,10 +27,14 @@ def source(monkeypatch):
         [],
         {"timestamp":"2026-10-22T13:32:40Z","is_open":True},
     ]
-    valid_policy={"account_binding_sha256":sha256(
-        ("FUND100-LIVE-ACCOUNT|"+FAKE_ACCOUNT).encode()).hexdigest()}
-    monkeypatch.setattr(bridge.origin,"original",
-                        lambda path:(deepcopy(valid_policy),"fake-git-hash"))
+    # Fake only the adapter's exact account SHA comparator. The signed
+    # seq1/seq2 HMAC proof and pinned historical quantity source remain real.
+    expected_sha=sha256(("FUND100-LIVE-ACCOUNT|"+
+                         FAKE_ACCOUNT).encode()).hexdigest()
+    def binding(account):
+        return sha256(("FUND100-LIVE-ACCOUNT|"+
+                       account["id"].strip()).encode()).hexdigest()==expected_sha
+    monkeypatch.setattr(bridge,"_same_original_live_account",binding)
     expected=[
         ("/v2/orders:by_client_order_id",
          {"client_order_id":bridge.original_ledger.CLIENT_IDS["ACWI"]}),
