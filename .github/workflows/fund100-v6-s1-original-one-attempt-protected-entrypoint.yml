@@ -2,6 +2,10 @@ name: Fund-100 V6-S1 Protected Single-Job Original ACWI Entry (GET ONLY; STOP)
 
 on:
   workflow_dispatch:
+  # No operator dispatch needed for ordinary protected source freshness.
+  # This does not authorize first ACWI SELL, change STOP, or expose WRITE.
+  schedule:
+    - cron: "23 14 * * 1-5"
   push:
     branches: [main]
     paths:
@@ -146,3 +150,16 @@ jobs:
           grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
           echo 'ONE protected job checked real account and signed state GET only.'
           echo 'Original first ACWI one-attempt coordinator NOT CALLED; NO LIVE orders.'
+          # This check runs on the main branch automatically on trading
+          # weekdays, with only original GET principals and protected STOP.
+          # GitHub's summary is non-sensitive and not an execution permit.
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ### Fund-100 V6 first ACWI readiness (READ ONLY)
+          - Actual protected broker account/risk GET source: **PASS**
+          - Original signed ACWI seq1 and unclaimed owner HMAC GET: **PASS**
+          - Provider immutable release administration GET: **PASS**
+          - LIVE first original ACWI order transport: **HARD LOCKED**
+          - Operator STOP / broker kill switch: **ENGAGED**
+          - New orders or private writes: **ZERO**
+          - Status: **Launch source checks up to date; execution not released**
+          EOF
