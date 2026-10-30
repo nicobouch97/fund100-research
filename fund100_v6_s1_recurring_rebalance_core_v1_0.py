@@ -302,6 +302,22 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
         if (size<migration.MIN_ORDER or fees[sym]>=size
             or fees[sym]>MAX_SIDE_COST_FRACTION*size):
             return _report("HOLD_SELL_TOO_SMALL_OR_TOO_COSTLY",period=period)
+        # Even an ordinary band trim reduces NAV by its fee. Another
+        # holding exactly at the 50% hard limit can therefore become
+        # over-concentrated *after* an otherwise risk-reducing sale.
+        # A one-ticket monthly decision must not advertise such a trim
+        # as safe; do not assume a second sale or free execution.
+        after_nav=nav-fees[sym]
+        after_cash=cash+size-fees[sym]
+        after_gross=gross-size
+        if (after_nav<=0
+            or after_cash<after_nav*migration.CASH_FLOOR
+            or after_gross>after_nav*migration.MAX_GROSS
+            or any(value-(size if other==sym else Decimal(0))
+                   >after_nav*migration.MAX_SYMBOL
+                   for other,value in values.items())):
+            return _report("HOLD_MONTHLY_TRIM_POST_FEE_HARD_LIMIT",
+                           period=period)
         return _report("HYPOTHETICAL_MONTHLY_TRIM_SELL_NO_TRANSPORT",
             period=period,candidate={
                 "symbol":sym,"side":"sell","estimated_notional_usd":format(size,".2f"),
