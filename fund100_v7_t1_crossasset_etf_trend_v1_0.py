@@ -425,7 +425,62 @@ def analyze(prices:pd.DataFrame,captured_utc:str):
         "fixed_era_results":result,
     }
 
-def download_prices(*,rejected_source_csv:Path|None=None):
+def _accept_recent_incomplete_vendor_tail(frame:pd.DataFrame, *,
+                                          observed_utc:datetime):
+    """Allow only a *recent* terminal NaN row, never a historical gap.
+
+    Vendor publication may lag the last completed NYSE close. Preserve the
+    full raw vendor panel separately; no row is interpolated, forward-filled
+    or used for a signal. Any old, nonterminal, extreme or calendar-invalid
+    observation still fails closed. This is source-lag handling, not alpha.
+    """
+    try:
+        return prices_validate(frame), None
+    except CrossAssetTrendStop:
+        pass
+    if (not isinstance(observed_utc,datetime)
+        or observed_utc.tzinfo is None
+        or not isinstance(frame,pd.DataFrame)
+        or len(frame)<451
+        or not isinstance(frame.index,pd.DatetimeIndex)
+        or frame.index.tz is not None
+        or frame.index.has_duplicates
+        or not frame.index.is_monotonic_increasing
+        or set(frame.columns)!=set(ASSETS)):
+        return prices_validate(frame), None  # Re-raise original failure.
+    latest=frame.loc[:,list(ASSETS)].iloc[-1].to_numpy(dtype=float)
+    # Only absent vendor observations (NaN), never zero, infinity, an
+    # implausible return or an actual price correction, can be excluded.
+    if not np.isnan(latest).any() or np.isinf(latest).any():
+        return prices_validate(frame), None
+    observed=observed_utc.astimezone(timezone.utc)
+    try:
+        import exchange_calendars as xcals
+        cal=xcals.get_calendar("XNYS")
+        _calendar(frame.index)  # Also reject historical missing/extra sessions.
+        last=frame.index[-1]
+        close=cal.session_close(last).to_pydatetime()
+    except Exception as exc:
+        raise CrossAssetTrendStop(
+            "Cannot authenticate recent NYSE vendor-tail calendar") from exc
+    seconds=(observed-close).total_seconds()
+    if not (0<=seconds<=12*3600):
+        raise CrossAssetTrendStop(
+            f"Terminal missing vendor session {last.date()} is not within "
+            "12 hours of its completed NYSE close")
+    previous=frame.loc[:,list(ASSETS)].iloc[-2].to_numpy(dtype=float)
+    good=~np.isnan(latest)
+    if (np.any(latest[good]<=0) or np.any(latest[good]>=1e7)
+        or np.any(np.abs(latest[good]/previous[good]-1)>.45)):
+        raise CrossAssetTrendStop(
+            "Incomplete vendor tail also contains invalid adjusted prices")
+    complete=prices_validate(frame.iloc[:-1])
+    _calendar(complete.index)
+    return complete, last.date().isoformat()
+
+
+def download_prices(*,rejected_source_csv:Path|None=None,
+                    raw_vendor_csv:Path|None=None):
     import yfinance as yf
     data=yf.download(tickers=list(ASSETS),start=SOURCE_START,
                      end=datetime.now(timezone.utc).date().isoformat(),
@@ -443,8 +498,18 @@ def download_prices(*,rejected_source_csv:Path|None=None):
             raise CrossAssetTrendStop("Original source missing "+a)
     frame=pd.DataFrame(mapping)
     frame.index=pd.DatetimeIndex(frame.index).tz_localize(None).normalize()
+    observed=_now_utc()
     try:
-        return prices_validate(frame)
+        complete,excluded=_accept_recent_incomplete_vendor_tail(
+            frame,observed_utc=observed)
+        raw=frame.to_csv(index_label="Date",date_format="%Y-%m-%d",
+                         float_format="%.10f").encode()
+        complete.attrs["vendor_raw_csv_sha256"]=sha256(raw).hexdigest()
+        complete.attrs["excluded_recent_incomplete_vendor_session"]=excluded
+        if raw_vendor_csv is not None:
+            raw_vendor_csv.parent.mkdir(parents=True,exist_ok=True)
+            raw_vendor_csv.write_bytes(raw)
+        return complete
     except CrossAssetTrendStop:
         # Quarantine the *unvalidated* extracted vendor panel separately.
         # Never write it to the accepted source path or issue a performance report.
@@ -459,10 +524,16 @@ def main():
     p.add_argument("--output",type=Path,required=True)
     p.add_argument("--source-csv",type=Path,required=True)
     p.add_argument("--rejected-source-csv",type=Path)
+    p.add_argument("--raw-vendor-csv",type=Path)
     a=p.parse_args()
-    data=download_prices(rejected_source_csv=a.rejected_source_csv)
+    data=download_prices(rejected_source_csv=a.rejected_source_csv,
+                         raw_vendor_csv=a.raw_vendor_csv)
     acquired=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     results=analyze(data,acquired)
+    results["raw_vendor_csv_sha256"]=data.attrs.get("vendor_raw_csv_sha256")
+    results["excluded_recent_incomplete_vendor_session"]=data.attrs.get(
+        "excluded_recent_incomplete_vendor_session")
+    results["recent_vendor_tail_exclusion_is_not_alpha_evidence"]=True
     a.output.parent.mkdir(parents=True,exist_ok=True)
     a.source_csv.parent.mkdir(parents=True,exist_ok=True)
     a.source_csv.write_text(data.to_csv(
