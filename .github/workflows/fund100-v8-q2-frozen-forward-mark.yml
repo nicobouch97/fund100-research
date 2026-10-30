@@ -99,6 +99,14 @@ jobs:
           gh run download "$SOURCE_RUN_ID" --name "$SOURCE_ARTIFACT_NAME" --dir /tmp/q2-first
           test -f /tmp/q2-first/first-new-vintage-q2-source-coverage-and-candidate-NO-LIVE.json
           test -f /tmp/q2-first/original-24-issuer-completed-adjusted-prices.csv
+      - name: Audit original SEC coverage gaps without revising the frozen basket
+        if: steps.first.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "/tmp/fund100-q2-forward-$GITHUB_RUN_ID"
+          python -B fund100_v8_q2_first_actual_sec_roa_price_source_v1_0.py \
+            --audit-original-dir /tmp/q2-first \
+            --audit-output "/tmp/fund100-q2-forward-$GITHUB_RUN_ID/q2-original-sec-gap-audit.json"
       - name: GET independent completed following NYSE price vintage, charge original fee path
         if: steps.first.outputs.available == 'true'
         run: |
