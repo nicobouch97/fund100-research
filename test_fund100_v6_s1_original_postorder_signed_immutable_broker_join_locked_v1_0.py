@@ -41,6 +41,14 @@ def fixtures(monkeypatch):
     owner=dict(ctx,current_fence_source=claimed)
     asset=join.anchor.original_signed_anchor_asset(
         signed_owner_sources=owner,prepost_source=seq2)
+    # Simulate the true cross-run recovery: the first-run random nonce is
+    # gone; only the signed HMAC owner fence, first-run IDs and immutable
+    # commitment still exist. No guessing or recreation of the nonce.
+    owner=dict(owner)
+    owner.pop("owner_nonce")
+    recovered=join.anchor.original_signed_anchor_asset_after_owner_run(
+        signed_owner_sources=owner,prepost_source=seq2)
+    assert recovered==asset
     public=GitHubImmutable(asset)
     fake,docs,broker_calls,broker_transport=fake_broker(monkeypatch)
     # This source is in a closed fixture: synthetic account binding, exact
@@ -133,6 +141,25 @@ def test_bad_or_stale_source_blocks_reconciliation_no_second_order(monkeypatch,m
         docs[3].append({"symbol":"ACWI","qty":"1"})
     with pytest.raises(join.JoinStop,match="HOLD"):
         join.inspect_postorder(**params)
+
+def test_original_owner_ephemeral_nonce_is_not_required_after_process_exit(monkeypatch):
+    params,_,_,_,private_calls,_=fixtures(monkeypatch)
+    assert "owner_nonce" not in params["owner_sources"]
+    outcome=join.inspect_postorder(**params)
+    assert outcome["mock_transport_used"] is True
+    assert outcome["real_remote_authentication_proven_by_this_run"] is False
+    assert outcome["next_original_sell_or_buy_authorized"] is False
+    assert len(private_calls)==4
+
+
+def test_future_recovery_rejects_caller_reintroduced_or_guessed_owner_nonce(monkeypatch):
+    params,_,_,_,private_calls,_=fixtures(monkeypatch)
+    params["owner_sources"]=dict(
+        params["owner_sources"],owner_nonce="0"*64)
+    with pytest.raises(join.JoinStop,match="not same first attempt"):
+        join.inspect_postorder(**params)
+    assert private_calls==[]
+
 
 def test_different_private_principals_are_not_optional(monkeypatch):
     params,_,_,_,private_calls,_=fixtures(monkeypatch)
