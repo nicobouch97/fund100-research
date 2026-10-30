@@ -155,6 +155,8 @@ on:
       # receive the same LIVE boundary safety audit as the first-order writer.
       - "fund100_v6_s1_original_acwi_fill_flat_offline_v1_0.py"
       - "test_fund100_v6_s1_original_acwi_fill_flat_offline_v1_0.py"
+      - "fund100_v6_s1_original_acwi_broker_fill_flat_getonly_bridge_v1_0.py"
+      - "test_fund100_v6_s1_original_acwi_broker_fill_flat_getonly_bridge_v1_0.py"
       - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "test_fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0.py"
@@ -424,6 +426,8 @@ on:
       # receive the same LIVE boundary safety audit as the first-order writer.
       - "fund100_v6_s1_original_acwi_fill_flat_offline_v1_0.py"
       - "test_fund100_v6_s1_original_acwi_fill_flat_offline_v1_0.py"
+      - "fund100_v6_s1_original_acwi_broker_fill_flat_getonly_bridge_v1_0.py"
+      - "test_fund100_v6_s1_original_acwi_broker_fill_flat_getonly_bridge_v1_0.py"
       - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "test_fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0.py"
