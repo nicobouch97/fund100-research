@@ -111,6 +111,21 @@ def test_first_order_complete_only_after_broker_final_fill_and_flat_both_exist(m
             key=KEY,secret=SECRET,transport=transport,now_utc=OBSERVED)
     assert len(calls)==6
 
+def test_real_clock_observation_occurs_after_final_get_not_before(monkeypatch):
+    # A late final broker clock GET is valid, although it happens after
+    # the first order/activities GET. A pre-GET observation timestamp would
+    # be earlier and falsely reject the clock as future.
+    _original,docs,calls,transport=source(monkeypatch)
+    docs[5]["timestamp"]=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+    def read(*,path,params):
+        return transport(path=path,params=params,key=KEY,secret=SECRET)
+    out=bridge._observe(
+        read,signed_sources=_original["signed_prepost_sources"],now_utc=None)
+    assert out["status"]=="SIX_BROKER_GET_ORIGINAL_ACWI_FILL_AND_FLAT_STRUCTURALLY_MATCH"
+    assert len(calls)==6
+    assert out["broker_POST_count"]==0
+
+
 def test_real_broker_network_is_source_hard_locked_before_any_get(monkeypatch):
     original,_,_,_=source(monkeypatch)
     events=[]
