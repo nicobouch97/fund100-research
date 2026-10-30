@@ -112,6 +112,51 @@ def test_signed_one_time_owner_and_exact_seq2_create_only_public_sha_commitment(
     assert b"account_binding" not in asset
     assert len(asset)<anchor.MAX_ASSET_BYTES
 
+def test_durable_owner_hmac_reconstructs_same_immutable_asset_without_original_raw_nonce():
+    signed,seq2=original()
+    in_run=anchor.original_signed_anchor_asset(
+        signed_owner_sources=signed,prepost_source=seq2)
+    # The first-run owner nonce is never durably stored. Postorder
+    # recovery cannot know it and MUST NOT guess or require it.
+    later=deepcopy(signed)
+    later.pop("owner_nonce")
+    recovered=anchor.original_signed_anchor_asset_after_owner_run(
+        signed_owner_sources=later,prepost_source=seq2)
+    assert recovered==in_run
+    assert b"nonce_sha256" not in recovered
+    assert b"owner_nonce" not in recovered
+    assert anchor.LIVE_BROKER_POST_RELEASED is False
+    assert anchor.PRIVATE_HEAD_CAS_RELEASED is False
+
+
+@pytest.mark.parametrize("changed",[
+    "owner_run_id","owner_attempt","current_main_sha",
+    "source_broker_run_id","reserved_source","current_fence_source",
+    "extra_nonce",
+])
+def test_postorder_no_nonce_recovery_rejects_forged_durable_owner_sources(changed):
+    signed,seq2=original()
+    later=deepcopy(signed)
+    later.pop("owner_nonce")
+    if changed=="owner_run_id":
+        later["owner_run_id"]="39812340002"
+    elif changed=="owner_attempt":
+        later["owner_attempt"]=2
+    elif changed=="current_main_sha":
+        later["current_main_sha"]="f"*40
+    elif changed=="source_broker_run_id":
+        later["source_broker_run_id"]="39812340003"
+    elif changed=="reserved_source":
+        later["reserved_source"]["sha"]="0"*40
+    elif changed=="current_fence_source":
+        later["current_fence_source"]["sha"]="0"*40
+    elif changed=="extra_nonce":
+        later["owner_nonce"]="1"*64
+    with pytest.raises(anchor.AnchorStop):
+        anchor.original_signed_anchor_asset_after_owner_run(
+            signed_owner_sources=later,prepost_source=seq2)
+
+
 def test_exact_published_immutable_release_asset_verified_without_any_writes():
     signed,seq2=original()
     asset=anchor.original_signed_anchor_asset(
