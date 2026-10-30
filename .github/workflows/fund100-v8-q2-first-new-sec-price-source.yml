@@ -43,7 +43,11 @@ jobs:
           grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
 
   acquire-first-post-registration-original-sec-roa-and-adjusted-price:
-    if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+    # GitHub's first scheduled run can be delayed or missed. A reviewed
+    # workflow-file push to main may capture the same one-time research source;
+    # PRs still run only offline tests. The date/artifact gates below apply
+    # equally to both triggers, and no broker credentials are present.
+    if: (github.event_name == 'schedule' || github.event_name == 'push') && github.ref == 'refs/heads/main'
     needs: source-causality-and-no-broker-regression
     runs-on: ubuntu-latest
     timeout-minutes: 30
