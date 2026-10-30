@@ -19,6 +19,34 @@ def _source(rows, prior=10):
     }
 
 
+
+def _fake_evaluation(frozen, *, completed):
+    rows = frozen["deduplicated_stock_entry_exposures"]
+    fields = ("stock_net_minus_spy_net_percentage_points",
+              "stock_net_minus_rsp_net_percentage_points",
+              "stock_net_minus_gross_spy_percentage_points",
+              "stock_net_minus_gross_rsp_percentage_points")
+    observations = []
+    for row in rows:
+        ticker = row["ticker"]
+        values = (2., 1., 1.5, .5) if ticker == "AAPL" else (-1., -2., -1.5, -2.5)
+        mark = {
+            "ticker": ticker, "frozen_entry_close": row["entry_close"],
+            "frozen_exit_close": row["exit_close"],
+            "original_earnings_accessions": row.get("accessions"),
+            "status": ("TWO_COMPLETED_CLOSES_COSTED_DESCRIPTIVE_NOT_ALPHA" if completed
+                       else "WAITING_FOR_INDEPENDENT_FUTURE_COMPLETED_PRICE_SOURCE"),
+        }
+        for field, value in zip(fields, values):
+            mark[field] = {str(bp): value for bp in (5, 15, 35)} if completed else None
+        observations.append(mark)
+    return {
+        "unique_model_exposures": len(rows),
+        "priced_two_close_exposures": len(rows) if completed else 0,
+        "pending_two_close_exposures": 0 if completed else len(rows),
+        "source_dated_return_observations": observations,
+    }
+
 def test_every_consecutive_source_pair_is_replayed_before_prices(monkeypatch):
     seen = []
 
@@ -43,9 +71,7 @@ def test_rolling_marks_all_cohorts_and_does_not_promote_alpha(monkeypatch):
     def fake_evaluate(frozen, *, prices, later_price_acquired_utc,
                       provider_reference):
         seen.append((frozen["previous_main_observer_run"], list(prices.columns)))
-        return {"unique_model_exposures": 1,
-                "priced_two_close_exposures": 1,
-                "pending_two_close_exposures": 0}
+        return _fake_evaluation(frozen, completed=True)
 
     monkeypatch.setattr(rolling.u7, "evaluate", fake_evaluate)
     cohorts = [(10, 20, _source(["AAPL"], 10)),
@@ -81,9 +107,7 @@ def test_zero_event_cohorts_do_not_acquire_prices(monkeypatch):
     def fake_evaluate(frozen, *, prices, later_price_acquired_utc,
                       provider_reference):
         calls.append((prices, later_price_acquired_utc, provider_reference))
-        return {"unique_model_exposures": 0,
-                "priced_two_close_exposures": 0,
-                "pending_two_close_exposures": 0}
+        return _fake_evaluation(frozen, completed=False)
 
     monkeypatch.setattr(rolling.u7, "evaluate", fake_evaluate)
     cohorts = [(10, 20, _source([], 10)), (20, 30, _source([], 20))]
@@ -129,9 +153,7 @@ def test_any_forward_evaluation_failure_aborts_without_subset_result(monkeypatch
         calls.append(frozen["previous_main_observer_run"])
         if len(calls) == 2:
             raise ValueError("future stock close missing")
-        return {"unique_model_exposures": 1,
-                "priced_two_close_exposures": 1,
-                "pending_two_close_exposures": 0}
+        return _fake_evaluation(frozen, completed=True)
 
     monkeypatch.setattr(rolling.u7, "evaluate", fake_evaluate)
     cohorts = [(10, 20, _source(["AAPL"], 10)),
@@ -162,9 +184,7 @@ def test_same_ticker_and_entry_from_distinct_sec_cohorts_counts_once(monkeypatch
     """Separate SEC accessions on one date must not inflate economic sample N."""
     def fake_evaluate(frozen, **kwargs):
         n = len(frozen["deduplicated_stock_entry_exposures"])
-        return {"unique_model_exposures": n,
-                "priced_two_close_exposures": n if completed else 0,
-                "pending_two_close_exposures": 0 if completed else n}
+        return _fake_evaluation(frozen, completed=completed)
 
     monkeypatch.setattr(rolling.u7, "evaluate", fake_evaluate)
     def cohort(run, ticker):
@@ -195,9 +215,7 @@ def test_same_ticker_and_entry_from_distinct_sec_cohorts_counts_once(monkeypatch
 def test_same_economic_exposure_cannot_disagree_about_completion(monkeypatch):
     def fake_evaluate(frozen, **kwargs):
         done = frozen["previous_main_observer_run"] == 10
-        return {"unique_model_exposures": 1,
-                "priced_two_close_exposures": int(done),
-                "pending_two_close_exposures": int(not done)}
+        return _fake_evaluation(frozen, completed=done)
 
     monkeypatch.setattr(rolling.u7, "evaluate", fake_evaluate)
     row = {"ticker": "AAPL", "entry_close": "2026-11-02",
@@ -212,3 +230,79 @@ def test_same_economic_exposure_cannot_disagree_about_completion(monkeypatch):
         rolling.mark_chain(cohorts, prices=prices,
                            acquired_utc="2026-11-04T03:00:00Z",
                            provider_reference="independent source")
+
+
+def test_completed_economic_date_cohort_deduplicates_and_compares_after_costs(monkeypatch):
+    monkeypatch.setattr(rolling.u7, "evaluate",
+                        lambda frozen, **kwargs: _fake_evaluation(frozen, completed=True))
+    cohorts = [(10, 20, _source(["AAPL"], 10)),
+               (20, 30, _source(["AAPL"], 20)),
+               (30, 40, _source(["MSFT"], 30))]
+    panel = pd.DataFrame({"AAPL": [100., 101.], "MSFT": [90., 91.],
+                          "SPY": [200., 202.], "RSP": [150., 151.]})
+    result = rolling.mark_chain(
+        cohorts, prices=panel, acquired_utc="2026-11-04T03:00:00Z",
+        provider_reference="independent original prices")
+    dates = result["economic_entry_date_costed_comparisons"]
+    assert dates["unique_entry_date_clusters"] == 1
+    assert dates["pending_entry_date_clusters"] == []
+    completed = dates["completed_entry_date_clusters"]
+    assert len(completed) == 1 and completed[0]["unique_stock_exposures"] == 2
+    assert completed[0]["stock_net_minus_spy_net_percentage_points"]["15"] == .5
+    assert completed[0]["stock_net_minus_rsp_net_percentage_points"]["35"] == -.5
+    assert dates["date_clustered_descriptive_returns_not_investable_portfolio_or_alpha"]
+    assert result["statistically_proven_alpha"] is False
+
+
+def test_partly_completed_entry_date_never_publishes_subset_return(monkeypatch):
+    def fake(frozen, **kwargs):
+        return _fake_evaluation(
+            frozen, completed=frozen["previous_main_observer_run"] == 10)
+    monkeypatch.setattr(rolling.u7, "evaluate", fake)
+    cohorts = [(10, 20, _source(["AAPL"], 10)),
+               (20, 30, _source(["MSFT"], 20))]
+    panel = pd.DataFrame({"AAPL": [100., 101.], "MSFT": [90., 91.],
+                          "SPY": [200., 202.], "RSP": [150., 151.]})
+    result = rolling.mark_chain(
+        cohorts, prices=panel, acquired_utc="2026-11-04T03:00:00Z",
+        provider_reference="independent original prices")
+    dates = result["economic_entry_date_costed_comparisons"]
+    assert dates["completed_entry_date_clusters"] == []
+    assert dates["pending_entry_date_clusters"] == [{
+        "entry_close": "2026-11-02", "unique_stock_exposures": 2,
+        "completed_stock_exposures": 1, "no_partial_cohort_return": True}]
+
+
+def test_duplicate_economic_exposure_cannot_change_costed_return(monkeypatch):
+    def fake(frozen, **kwargs):
+        result = _fake_evaluation(frozen, completed=True)
+        if frozen["previous_main_observer_run"] == 20:
+            result["source_dated_return_observations"][0][
+                "stock_net_minus_spy_net_percentage_points"]["15"] += .25
+        return result
+    monkeypatch.setattr(rolling.u7, "evaluate", fake)
+    cohorts = [(10, 20, _source(["AAPL"], 10)),
+               (20, 30, _source(["AAPL"], 20))]
+    panel = pd.DataFrame({"AAPL": [100., 101.], "SPY": [200., 202.],
+                          "RSP": [150., 151.]})
+    with pytest.raises(rolling.RollingStop, match="conflicting returns"):
+        rolling.mark_chain(
+            cohorts, prices=panel, acquired_utc="2026-11-04T03:00:00Z",
+            provider_reference="independent original prices")
+
+
+@pytest.mark.parametrize("bad_value", [float("nan"), True, None])
+def test_corrupt_costed_stock_mark_fails_closed(monkeypatch, bad_value):
+    def fake(frozen, **kwargs):
+        result = _fake_evaluation(frozen, completed=True)
+        result["source_dated_return_observations"][0][
+            "stock_net_minus_spy_net_percentage_points"]["5"] = bad_value
+        return result
+    monkeypatch.setattr(rolling.u7, "evaluate", fake)
+    cohorts = [(10, 20, _source(["AAPL"], 10))]
+    panel = pd.DataFrame({"AAPL": [100., 101.], "SPY": [200., 202.],
+                          "RSP": [150., 151.]})
+    with pytest.raises(rolling.RollingStop, match="nonfinite"):
+        rolling.mark_chain(
+            cohorts, prices=panel, acquired_utc="2026-11-04T03:00:00Z",
+            provider_reference="independent original prices")
