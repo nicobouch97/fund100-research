@@ -24,3 +24,23 @@ The original report, SEC raw receipts, price panel and frozen eight-stock select
 For a future **separately registered** source vintage, evaluate a principled `ProfitLoss`/noncontrolling-interest reconciliation and an issuer succession/ordinary-share continuity mapping *before* freezing a new selection. Maintain a separate, genuinely independent historical universe with delisted returns; this 24-company contemporary cohort is not survivorship-safe historical evidence. The 90-day source artifact remains a durability risk even with weekly hashed carryforward; a provider-immutable independent archive would improve long-run provenance but must not be represented as completed.
 
 This source investigation does not authorize trading, modify capital or risk controls, or validate expected returns.
+
+## Follow-up: independently labeled parent-earnings source bridge (30 October)
+
+The gap audit now records two **separate, same-accession, annual USD** GAAP concepts when they exist: `NetIncomeLossAvailableToCommonStockholdersBasic` (earnings available to common shareholders) and `NetIncomeLossAttributableToNoncontrollingInterest` (reported minority interest). Only when the latter and `ProfitLoss` are both explicitly present does it print `ProfitLoss - reported NCI` as a **partial arithmetic diagnostic**. Missing NCI is never interpreted as zero. This arithmetic is not certified parent earnings: redeemable noncontrolling interests and preferred distributions can prevent direct comparability. Conflicting duplicate SEC values stop the audit.
+
+The existing Q2 `NetIncomeLoss / Assets` screen and frozen eight-stock selection are **not** changed, and neither alternative is permitted to backfill missing values. The newly added tests are synthetic provenance regressions; the first-source AVGO/CAT/MA bridge amounts and completeness must still be read from the original archived SEC files on the next original-source diagnostic. Any future economic definition needs independent registration and historical source validation before a new selection vintage. Reference taxonomy: [XBRL US noncontrolling-interest guidance](https://xbrl.us/guidance/specific-non-controlling-interest-elements/).
+
+### Verified original SEC receipt results (same frozen 30 October archive)
+
+I re-opened the **original** artifact ZIP from run 41025137794, verified its SHA-256 `ecc9182c1576987e0a9c440139c693b00fe44445f499b1b9c5822586de8d8628`, and inspected the *latest annual duration within each original 10-K accession* (not an older comparative year):
+
+| Issuer | Same-10K `ProfitLoss` | Same-10K common-stockholder income | Same-10K reported noncontrolling income | Partial `ProfitLoss - NCI` |
+|---|---:|---:|---:|---:|
+| AVGO | $23.126bn | absent | absent | not calculable |
+| CAT | $8.882bn | $8.884bn | **−$0.002bn** | **$8.884bn** |
+| MA | $14.968bn | absent | $0.021bn | **$14.947bn** |
+
+CAT's exact $8.884bn agreement between two independently tagged facts is useful evidence of a plausible bridge for **that accession**, not a general substitution rule. MA has historical redeemable-noncontrolling-interest facts, but no matching latest-annual fact in this original accession; therefore the $14.947bn subtraction is explicitly **partial**. AVGO has no matching current annual NCI or common-stockholder tag. These outcomes show why simply replacing missing `NetIncomeLoss` with `ProfitLoss` would be unsound.
+
+All three remain **excluded from the already frozen Q2 basket**. A separate future preregistered economic factor and broader historical coverage assessment are required before any change to investment selection. No new post-freeze return evidence or alpha is implied.

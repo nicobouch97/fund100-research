@@ -264,6 +264,9 @@ def audit_frozen_source_coverage(original_root: Path) -> dict:
             entry["reason"] = "ORIGINAL_ISSUER_CIK_DRIFT_QUARANTINED"
             entry["latest_eligible_10k_accession"] = None
             entry["same_filing_profit_loss_usd"] = None
+            entry["same_filing_common_stockholder_income_usd"] = None
+            entry["same_filing_noncontrolling_income_usd"] = None
+            entry["profit_less_reported_nci_usd_diagnostic_only"] = None
             observations.append(entry)
             continue
         if row["frozen_issuer_identity_status"] != "FROZEN_ORIGINAL_ID_MATCH":
@@ -300,6 +303,9 @@ def audit_frozen_source_coverage(original_root: Path) -> dict:
                 "reason": "NO_ELIGIBLE_ORIGINAL_10K",
                 "latest_eligible_10k_accession": None,
                 "same_filing_profit_loss_usd": None,
+                "same_filing_common_stockholder_income_usd": None,
+                "same_filing_noncontrolling_income_usd": None,
+                "profit_less_reported_nci_usd_diagnostic_only": None,
             })
             observations.append(entry)
             continue
@@ -310,6 +316,21 @@ def audit_frozen_source_coverage(original_root: Path) -> dict:
             facts, accession, filed, end, "Assets", annual=False)
         alternative = _same_filing_usd(
             facts, accession, filed, end, "ProfitLoss", annual=True)
+        # Independent accounting concepts, never substituted into Q2.
+        # Common-stockholder earnings may differ from parent earnings due
+        # to preferred dividends. Reported NCI can be incomplete (e.g.
+        # redeemable NCI), so even an arithmetic bridge is not certified
+        # parent net income. Never treat an absent NCI fact as zero.
+        common_income = _same_filing_usd(
+            facts, accession, filed, end,
+            "NetIncomeLossAvailableToCommonStockholdersBasic", annual=True)
+        noncontrolling_income = _same_filing_usd(
+            facts, accession, filed, end,
+            "NetIncomeLossAttributableToNoncontrollingInterest", annual=True)
+        partial_bridge = (
+            alternative - noncontrolling_income
+            if alternative is not None and noncontrolling_income is not None
+            else None)
         if income is not None and assets is not None and assets > 0:
             raise Q2SourceHold("SEC diagnostic contradicts frozen source gap")
         missing = []
@@ -328,6 +349,15 @@ def audit_frozen_source_coverage(original_root: Path) -> dict:
                 str(assets) if assets is not None else None),
             "same_filing_profit_loss_usd": (
                 str(alternative) if alternative is not None else None),
+            "same_filing_common_stockholder_income_usd": (
+                str(common_income) if common_income is not None else None),
+            "same_filing_noncontrolling_income_usd": (
+                str(noncontrolling_income)
+                if noncontrolling_income is not None else None),
+            "profit_less_reported_nci_usd_diagnostic_only": (
+                str(partial_bridge) if partial_bridge is not None else None),
+            "missing_nci_never_assumed_zero": True,
+            "partial_nci_bridge_not_certified_parent_income": True,
             "profit_loss_is_not_substituted_for_frozen_net_income_loss": True,
         })
         observations.append(entry)
