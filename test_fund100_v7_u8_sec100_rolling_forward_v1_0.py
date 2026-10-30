@@ -10,7 +10,8 @@ import fund100_v7_u8_sec100_rolling_forward_v1_0 as rolling
 def _source(rows, prior=10):
     return {
         "deduplicated_stock_entry_exposures": [
-            {"ticker": symbol} for symbol in rows],
+            {"ticker": symbol, "entry_close": "2026-11-02",
+             "exit_close": "2026-11-03"} for symbol in rows],
         "previous_main_observer_run": prior,
         "broker_orders": 0,
         "trading_authorized": False,
