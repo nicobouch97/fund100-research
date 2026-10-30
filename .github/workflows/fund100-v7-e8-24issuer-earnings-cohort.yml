@@ -1,6 +1,11 @@
 name: Fund-100 V7 E8 Rolling Original SEC Earnings Cohort (NO BROKER)
 
 on:
+  workflow_run:
+    workflows:
+      - 'Fund-100 V7 E6 Expanded 24-Issuer SEC Earnings Capture (NO BROKER)'
+    types: [completed]
+    branches: [main]
   pull_request:
     paths:
       - 'fund100_v7_e8_24issuer_sec_event_cohort_v1_0.py'
@@ -26,6 +31,11 @@ concurrency:
 
 jobs:
   original-filing-cohort-research:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 18
     env:
@@ -45,26 +55,29 @@ jobs:
             test_fund100_v7_e8_24issuer_sec_event_cohort_v1_0.py \
             test_fund100_v7_e7_24issuer_earnings_forward_v1_0.py
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
-      - name: Fetch all available successful main E6 original SEC source bundles
+      - name: Fetch all successful main E6 captures without silently truncating first-seen history
+        env:
+          E6_TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/fund100-v7-e8-all-original-e6
+          # Fetch one more SUCCESSFUL run than the bounded evaluator accepts.
+          # Otherwise newest-N truncation silently changes earliest event receipt.
           gh run list --workflow fund100-v7-e6-24issuer-sec-earnings.yml \
-            --branch main --limit 40 \
+            --branch main --status success --limit 42 \
             --json databaseId,status,conclusion > /tmp/fund100-v7-e8-source-runs.json
           python - <<'PY'
-          import json
+          import json, os
           from pathlib import Path
+          import fund100_v7_e8_24issuer_sec_event_cohort_v1_0 as e8
           source=json.loads(Path('/tmp/fund100-v7-e8-source-runs.json').read_text())
-          good={int(row['databaseId']) for row in source if (
-              row['status']=='completed' and row['conclusion']=='success')}
-          # Always retain the first original 24-issuer observed SEC source.
-          good.add(40365882558)
-          assert len(good)<=41
-          assert all(x>0 for x in good)
+          run_ids=e8.complete_successful_main_run_ids(source)
+          triggered=os.getenv('E6_TRIGGER_RUN_ID','')
+          if triggered and int(triggered) not in run_ids:
+              raise e8.CohortStop('Just-completed original E6 source absent from complete roster')
           Path('/tmp/fund100-v7-e8-run-ids.txt').write_text(
-              ''.join(str(x)+'\n' for x in sorted(good)))
-          print('Original main-branch SEC sources to independently replay:',len(good))
+              ''.join(str(x)+'\n' for x in run_ids))
+          print('Complete successful original main SEC captures:',len(run_ids))
           PY
           while IFS= read -r run_id; do
             [[ "$run_id" =~ ^[0-9]+$ ]] || exit 1
