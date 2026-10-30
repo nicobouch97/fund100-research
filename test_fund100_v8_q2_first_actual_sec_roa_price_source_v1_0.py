@@ -247,6 +247,71 @@ def test_frozen_gap_audit_reports_profitloss_without_retroactive_substitution(tm
     assert audit["original_frozen_selection_symbols"] == frozen_symbols
 
 
+def test_frozen_gap_audit_explicit_nci_and_common_income_are_diagnostic_only(tmp_path):
+    registry, raw, panel = sources()
+    cik = sec.resolve_registry(registry)["AVGO"]
+    key = f"raw/CIK{cik}-AVGO-companyfacts.json"
+    obj = json.loads(raw[key])
+    gaap = obj["facts"]["us-gaap"]
+    annual = dict(gaap["NetIncomeLoss"]["units"]["USD"][0])
+    del gaap["NetIncomeLoss"]
+    gaap["ProfitLoss"] = {"units": {"USD": [dict(annual)]}}
+    nci = dict(annual, val=2_000_000)
+    common = dict(annual, val=annual["val"] - nci["val"])
+    gaap["NetIncomeLossAttributableToNoncontrollingInterest"] = {
+        "units": {"USD": [nci]}}
+    gaap["NetIncomeLossAvailableToCommonStockholdersBasic"] = {
+        "units": {"USD": [common]}}
+    raw[key] = json.dumps(obj).encode()
+    report = _write_frozen_audit_archive(tmp_path, registry, raw, panel)
+    frozen = report["source_derived_research_selection"]["selection_candidate"]["symbols"]
+    assert "AVGO" not in frozen
+    audit = app.audit_frozen_source_coverage(tmp_path)
+    gap = audit["source_gaps"][0]
+    assert gap["same_filing_profit_loss_usd"] == str(annual["val"])
+    assert gap["same_filing_noncontrolling_income_usd"] == "2000000"
+    assert gap["same_filing_common_stockholder_income_usd"] == str(common["val"])
+    assert gap["profit_less_reported_nci_usd_diagnostic_only"] == str(common["val"])
+    assert gap["partial_nci_bridge_not_certified_parent_income"]
+    assert gap["missing_nci_never_assumed_zero"]
+    assert audit["original_frozen_selection_symbols"] == frozen
+    assert not audit["live_order_authorized"]
+
+
+def test_frozen_gap_audit_missing_nci_is_not_implicitly_zero(tmp_path):
+    registry, raw, panel = sources()
+    cik = sec.resolve_registry(registry)["AVGO"]
+    key = f"raw/CIK{cik}-AVGO-companyfacts.json"
+    obj = json.loads(raw[key])
+    gaap = obj["facts"]["us-gaap"]
+    annual = dict(gaap["NetIncomeLoss"]["units"]["USD"][0])
+    gaap["ProfitLoss"] = {"units": {"USD": [annual]}}
+    del gaap["NetIncomeLoss"]
+    raw[key] = json.dumps(obj).encode()
+    _write_frozen_audit_archive(tmp_path, registry, raw, panel)
+    gap = app.audit_frozen_source_coverage(tmp_path)["source_gaps"][0]
+    assert gap["same_filing_noncontrolling_income_usd"] is None
+    assert gap["same_filing_common_stockholder_income_usd"] is None
+    assert gap["profit_less_reported_nci_usd_diagnostic_only"] is None
+
+
+def test_frozen_gap_audit_conflicting_nci_facts_fail_closed(tmp_path):
+    registry, raw, panel = sources()
+    cik = sec.resolve_registry(registry)["AVGO"]
+    key = f"raw/CIK{cik}-AVGO-companyfacts.json"
+    obj = json.loads(raw[key])
+    gaap = obj["facts"]["us-gaap"]
+    annual = dict(gaap["NetIncomeLoss"]["units"]["USD"][0])
+    gaap["ProfitLoss"] = {"units": {"USD": [annual]}}
+    del gaap["NetIncomeLoss"]
+    gaap["NetIncomeLossAttributableToNoncontrollingInterest"] = {
+        "units": {"USD": [dict(annual, val=1), dict(annual, val=2)]}}
+    raw[key] = json.dumps(obj).encode()
+    _write_frozen_audit_archive(tmp_path, registry, raw, panel)
+    with pytest.raises(app.Q2SourceHold, match="Conflicting same-10K"):
+        app.audit_frozen_source_coverage(tmp_path)
+
+
 def test_frozen_gap_audit_preserves_identity_quarantine(tmp_path):
     registry, raw, panel = sources()
     mapping = sec.resolve_registry(registry)
