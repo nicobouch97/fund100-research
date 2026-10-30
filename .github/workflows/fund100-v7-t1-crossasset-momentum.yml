@@ -52,6 +52,7 @@ jobs:
           python fund100_v7_t1_crossasset_etf_trend_v1_0.py \
             --source-csv /tmp/fund100-t1-actual-price-source.csv \
             --rejected-source-csv /tmp/fund100-t1-rejected-vendor-panel.csv \
+            --raw-vendor-csv /tmp/fund100-t1-raw-vendor-panel.csv \
             --output /tmp/fund100-t1-costed-stress-report.json
           python - <<'PY'
           import json,hashlib
@@ -60,6 +61,18 @@ jobs:
           raw=Path('/tmp/fund100-t1-actual-price-source.csv').read_bytes()
           doc=json.loads(Path('/tmp/fund100-t1-costed-stress-report.json').read_text())
           assert hashlib.sha256(raw).hexdigest()==doc['source_canonical_csv_sha256']
+          vendor=Path('/tmp/fund100-t1-raw-vendor-panel.csv').read_bytes()
+          assert hashlib.sha256(vendor).hexdigest()==doc['raw_vendor_csv_sha256']
+          assert doc['recent_vendor_tail_exclusion_is_not_alpha_evidence']
+          if doc['excluded_recent_incomplete_vendor_session']:
+            import pandas as pd
+            full=pd.read_csv('/tmp/fund100-t1-raw-vendor-panel.csv')
+            accepted=pd.read_csv('/tmp/fund100-t1-actual-price-source.csv')
+            assert full['Date'].iloc[-1]==doc['excluded_recent_incomplete_vendor_session']
+            assert len(full)==len(accepted)+1
+            assert full['Date'].iloc[:-1].tolist()==accepted['Date'].tolist()
+          else:
+            assert vendor==raw
           assert doc['schema']==m.SCHEMA
           assert set(doc['fixed_era_results'])==set(m.REGISTERED_WINDOWS)
           assert doc['exposure_matched_control_added_post_hoc_not_new_alpha_gate']
@@ -85,6 +98,7 @@ jobs:
           name: fund100-v7-t1-crossasset-real-12minus1-${{ github.run_id }}
           path: |
             /tmp/fund100-t1-actual-price-source.csv
+            /tmp/fund100-t1-raw-vendor-panel.csv
             /tmp/fund100-t1-costed-stress-report.json
           retention-days: 90
           if-no-files-found: error
