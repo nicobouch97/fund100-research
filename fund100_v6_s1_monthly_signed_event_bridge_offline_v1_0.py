@@ -147,6 +147,14 @@ def inspect(*,snapshot,now_utc,private_source,key,
         # fresh event or permit resubmission within the same month/side.
         return _result("HOLD_EXISTING_SIGNED_MONTHLY_EVENT_NO_RETRY",
                        event_id=event_id,private_source_valid=True,slot=slot)
+    # Event IDs bind the deployed release and standing mandate. A changed
+    # release/mandate must NOT turn an already signed monthly symbol/side
+    # signal into a second reservation with a different client order ID.
+    # The original signed signal digest is release-independent by design.
+    if any(item["signal_sha256"]==signal
+           for item in doc["events"].values()):
+        return _result("HOLD_SIGNED_MONTHLY_SIGNAL_ACROSS_RELEASES_NO_RETRY",
+                       private_source_valid=True,slot=slot)
     if any(item["stage"]=="POST_MAY_HAVE_BEEN_SENT"
            for item in doc["events"].values()):
         return _result("HOLD_PREVIOUS_SIGNED_EVENT_POSSIBLY_SENT",
