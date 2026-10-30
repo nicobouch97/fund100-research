@@ -14,7 +14,6 @@ ROOT=Path(__file__).resolve().parent
 ACTIVE_WRITERS=(
  ".github/workflows/fund100-v5-live-production.yml",
  ".github/workflows/fund100-live-bootstrap.yml",
- ".github/workflows/fund100-live-micro-pilot-prepare.yml",
 )
 V6_INSPECTION=".github/workflows/fund100-v6-s1-original-acwi-one-attempt-locked.yml"
 V6_FUNDING="release_candidates/fund100-v6-s1-original-first-acwi-funded-once.REVIEW-ONLY.yml"
