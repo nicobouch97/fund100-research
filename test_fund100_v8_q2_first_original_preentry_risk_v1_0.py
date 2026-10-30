@@ -150,6 +150,108 @@ def test_preentry_risk_program_never_imports_broker_or_is_promotion():
         assert '      - "'+path+'"' in audit
 
 
+
+
+def _sector_test_names():
+    return ["AAPL","MSFT","GOOGL","META","JNJ","LLY","KO","PG"]
+
+
+def test_sector_repair_exact_minimum_post_fee_and_no_unrelated_sales():
+    names=_sector_test_names()
+    positions={s:5. for s in names}
+    positions["AAPL"]=30.
+    positions["MSFT"]=30.
+    # NAV=100, gross=90; technology alone is 60% of NAV.
+    wanted,cash,fee_paid,sold=risk._sector_aware_sell_only_repair(
+        positions,10.,.0015)
+    exact=(60.-.25*100.)/(1.-.25*.0015)
+    assert sold==pytest.approx(exact,abs=1e-8)
+    assert cash==pytest.approx(10.+sold-fee_paid)
+    assert fee_paid==pytest.approx(sold*.0015)
+    assert all(wanted[s]==positions[s] for s in names if s not in ("AAPL","MSFT"))
+    nav=cash+sum(wanted.values())
+    assert (wanted["AAPL"]+wanted["MSFT"])/nav==pytest.approx(.25,abs=1e-9)
+    assert max(wanted.values())/nav<.5
+
+
+def test_sector_repair_gross_only_and_recovered_breach_do_not_overtrade():
+    names=_sector_test_names()
+    positions={s:12. for s in names}
+    wanted,cash,charged,sold=risk._sector_aware_sell_only_repair(
+        positions,4.,.0015)
+    assert sold==pytest.approx((96.-95.)/(1.-.95*.0015),abs=1e-8)
+    assert sum(wanted.values())/(cash+sum(wanted.values()))==pytest.approx(.95)
+    assert charged==pytest.approx(sold*.0015)
+    unchanged,cash2,charged2,sold2=risk._sector_aware_sell_only_repair(
+        {s:10. for s in names},20.,.0015)
+    assert sold2==charged2==0.
+    assert cash2==20.
+    assert unchanged=={s:10. for s in names}
+
+
+def test_next_close_repair_waits_one_bar_and_charges_real_sell_cost():
+    names=_sector_test_names()
+    idx=pd.bdate_range("2026-06-01",periods=63)
+    returns=pd.DataFrame(0.,index=idx,columns=names)
+    returns.loc[idx[0],["AAPL","MSFT"]]=.30
+    weights={s:1/8 for s in names}
+    base=risk._next_close_sector_repair_path(returns,weights,15,.95)
+    buffer=risk._next_close_sector_repair_path(returns,weights,15,.90)
+    assert base["sector_breach_close_count_before_repair"]>=1
+    assert base["sector_breach_close_count_after_repair"]==1
+    assert base["additional_sell_only_repair_dates"]==1
+    assert base["additional_sell_only_turnover_usd_per_100"]>0
+    assert base["total_entry_and_repair_fees_usd_per_100"] > (
+        100.-100./(1.+.95*.0015))
+    assert base["gross_breach_close_count_after_repair"]<=1
+    assert buffer["additional_sell_only_repair_dates"]>=0
+    assert base["research_only_no_live_execution"]
+
+
+def test_next_close_terminal_breach_never_trades_future_close():
+    names=_sector_test_names()
+    idx=pd.bdate_range("2026-06-01",periods=63)
+    returns=pd.DataFrame(0.,index=idx,columns=names)
+    returns.loc[idx[-1],["AAPL","MSFT"]]=.40
+    out=risk._next_close_sector_repair_path(
+        returns,{s:1/8 for s in names},15,.95)
+    assert out["sector_breach_close_count_after_repair"]==1
+    assert out["additional_sell_only_repair_dates"]==0
+    assert out["last_close_queued_repair_not_executed"]
+    assert out["additional_sell_only_turnover_usd_per_100"]==0
+
+
+def test_new_repair_comparison_is_source_pinned_and_costed(tmp_path):
+    _,_,pin=setup_source(tmp_path)
+    report=risk.analyze(tmp_path,pin_path=pin)
+    for window in report["trailing_completed_source_windows"].values():
+        by_buffer=window["next_close_sector_repair_cash_buffer_comparison"]
+        assert set(by_buffer)=={"95pct_initial_invested","90pct_initial_invested"}
+        for label,by_cost in by_buffer.items():
+            assert set(by_cost)=={"5","15","35"}
+            for item in by_cost.values():
+                assert item["initial_invested_fraction"]==(
+                    .90 if label.startswith("90") else .95)
+                assert item["next_completed_close_only_no_intraday_guarantee"]
+                assert item["selected_on_same_historical_prices_not_alpha"]
+                assert item["terminal_exit_fee_not_charged"]
+                assert item["research_only_no_live_execution"]
+                assert item["additional_sell_only_repair_dates"]>=0
+
+
+def test_sector_repair_invalid_inputs_fail_closed():
+    names=_sector_test_names()
+    with pytest.raises(risk.RiskHold,match="Invalid sector-aware"):
+        risk._sector_aware_sell_only_repair({names[0]:-1.},100.,.0015)
+    with pytest.raises(risk.RiskHold,match="Invalid sector-aware"):
+        risk._sector_aware_sell_only_repair({names[0]:10.},90.,.02)
+    idx=pd.bdate_range("2026-06-01",periods=63)
+    ret=pd.DataFrame(0.,index=idx,columns=names)
+    ret.iloc[2,0]=np.nan
+    with pytest.raises(risk.RiskHold,match="Invalid original close"):
+        risk._next_close_sector_repair_path(
+            ret,{s:1/8 for s in names},15,.95)
+
 def test_buy_once_entry_costs_and_no_rebalance_are_separate_from_daily_proxy(tmp_path):
     _,_,pin=setup_source(tmp_path)
     result=risk.analyze(tmp_path,pin_path=pin)
