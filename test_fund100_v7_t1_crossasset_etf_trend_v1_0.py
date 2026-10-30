@@ -381,3 +381,45 @@ def test_delayed_cross_asset_all_cash_regime_never_invents_trades():
                    and x["modeled_execution_close"] is not None
                    for x in delayed["signal_trade_log"])
         assert delayed["no_actual_orders"]
+
+
+def test_next_close_queued_trade_on_terminal_session_is_not_round_tripped(monkeypatch):
+    # April 1 is the first trading session of the month. Its target is
+    # queued for April 2, but April 2 is also the study's terminal close.
+    # A buy followed by an immediate liquidation has zero holding period,
+    # and must not incur artificial two-sided churn.
+    df=sample(short=True)
+    df.loc[pd.Timestamp("2014-04-02"),list(t.ASSETS)]=(
+        df.loc[pd.Timestamp("2014-04-01"),list(t.ASSETS)].to_numpy())
+    monkeypatch.setattr(t,"REGISTERED_WINDOWS",
+                        {"BEFORE":("2014-01-02","2014-04-01"),
+                         "TERMINAL":("2014-01-02","2014-04-02")})
+    before=t.simulate(df,start="2014-01-02",end="2014-04-01",
+                      side_bps=35,strategy="CROSS_ASSET_12_1_NEXT_CLOSE")
+    terminal=t.simulate(df,start="2014-01-02",end="2014-04-02",
+                        side_bps=35,strategy="CROSS_ASSET_12_1_NEXT_CLOSE")
+    assert terminal["unexecuted_terminal_decisions"]==1
+    assert terminal["signal_trade_log"][-1]["close"]=="2014-04-01"
+    assert terminal["signal_trade_log"][-1]["modeled_execution_close"] is None
+    assert terminal["transaction_dates"]==before["transaction_dates"]
+    assert terminal["gross_traded_notional_per_100_initial_usd"]==(
+        before["gross_traded_notional_per_100_initial_usd"])
+    assert terminal["modeled_fees_usd_per_100_initial_usd"]==(
+        before["modeled_fees_usd_per_100_initial_usd"])
+    assert terminal["net_total_return_pct"]==pytest.approx(
+        before["net_total_return_pct"],abs=1e-6)
+
+
+def test_next_close_nonterminal_session_still_executes_queued_trade(monkeypatch):
+    # A real intervening holding interval is different: the April 1
+    # decision executes on April 2 if April 3 remains in the window.
+    monkeypatch.setattr(t,"REGISTERED_WINDOWS",
+                        {"INTERVAL":("2014-01-02","2014-04-03")})
+    result=t.simulate(sample(short=True),start="2014-01-02",
+                      end="2014-04-03",side_bps=15,
+                      strategy="CROSS_ASSET_12_1_NEXT_CLOSE")
+    assert result["unexecuted_terminal_decisions"]==0
+    assert result["signal_trade_log"][-1]["close"]=="2014-04-01"
+    assert result["signal_trade_log"][-1]["modeled_execution_close"]=="2014-04-02"
+    assert result["transaction_dates"]==len(result["signal_trade_log"])
+    assert result["no_actual_orders"]
