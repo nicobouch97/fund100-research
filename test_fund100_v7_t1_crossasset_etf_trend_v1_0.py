@@ -430,7 +430,7 @@ def test_invalid_vendor_adjusted_return_identifies_asset_and_dates_fail_closed()
     date=pd.Timestamp("2015-05-05")
     panel.loc[date,"GLD"]*=1.6
     with pytest.raises(t.CrossAssetTrendStop,
-                       match=r"GLD 2015-05-04 to 2015-05-05 adjusted_return=\\+0\\.600000"):
+                       match=r"GLD 2015-05-04 to 2015-05-05 adjusted_return=\+0\.60"):
         t.prices_validate(panel)
 
 
