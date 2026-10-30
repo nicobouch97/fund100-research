@@ -52,7 +52,7 @@ def verify_independent_first_source_pin(
     check is external to both original and weekly copied ZIP payloads.
     It is not prior-to-source registration or third-party notarization.
     """
-    if type(original_root) is not Path or type(pin_path) is not Path:
+    if not isinstance(original_root, Path) or not isinstance(pin_path, Path):
         raise MarkHold("Independent original pin path not verified")
     try:
         pinned = json.loads(pin_path.read_bytes())
