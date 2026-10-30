@@ -60,7 +60,15 @@ def test_two_principal_private_immutable_asset_and_actual_broker_adapter_join(mo
     # Stage-count assertions on the fake clients identify an unexpected
     # boundary rejection without printing private HMAC or broker material.
     try:
-        result=join.inspect_postorder(**params)
+        # Verify the underlying six-GET adapter independently first. This
+    # isolates source-shape integration from the private/immutable join.
+    direct=join.broker.inspect_original_acwi_after_first_attempt(
+        signed_prepost_sources=params["signed_sources"],
+        key=params["broker_key"],secret=params["broker_secret"],
+        transport=params["broker_transport"],now_utc=params["now_utc"])
+    assert direct["status"]=="SIX_BROKER_GET_ORIGINAL_ACWI_FILL_AND_FLAT_STRUCTURALLY_MATCH"
+    broker_calls.clear()
+    result=join.inspect_postorder(**params)
     except join.JoinStop:
         assert len(private_calls)==4, ("private source GET stage",len(private_calls))
         assert len(public.requests)==2, ("immutable source stage",len(public.requests))
