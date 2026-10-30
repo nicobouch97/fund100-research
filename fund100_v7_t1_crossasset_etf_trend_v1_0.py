@@ -115,48 +115,65 @@ def _reweight(nav,positions,target,fee):
 
 
 def _sell_only_policy_repair(nav, positions, fee):
-    """Minimum proportional close-time SELL to restore HIGH position/cash caps.
+    """Minimum-NOTIONAL next-close SELL to restore HIGH concentration/cash.
 
-    A breach was detected at the PREVIOUS close. The next close is the
-    hypothetical execution observation. Never buy or use future bars; the
-    exact post-fee 50% single / 95% gross caps are solved together.
-    If the breach healed before execution, no trade occurs.
+    The previous close detected the breach; this function uses only the
+    hypothetical execution close. Sell as few dollars as possible while
+    enforcing post-fee <=50% per asset and <=95% gross / >=5% cash.
+    First cover compulsory overweight sales, then allocate any additional
+    gross-limit sale to the largest remaining position (stable asset order).
+    This is a post-hoc research diagnostic, NOT the LIVE risk controller.
     """
     positions=np.asarray(positions,dtype=float)
     if (not np.isfinite(nav) or nav<=0 or positions.shape!=(4,)
         or not np.isfinite(positions).all() or (positions<0).any()
         or sum(positions)>nav+1e-8 or fee not in (.0005,.0015,.0035)):
         raise CrossAssetTrendStop("Invalid funded sell-only policy repair")
-    post=float(nav)
+    gross=float(sum(positions))
+    # Gross <= 0.95*(nav-fee*sold) requires the exact lower bound below.
+    gross_floor=max(0.,(gross-.95*nav)/(1.-.95*fee))
+    sold=max(gross_floor,float(np.maximum(positions-.50*nav,0.).sum()))
+    # Each overweight asset needs at least p_i - 0.50*post_fee_NAV sold.
+    # This monotone fixed point has slope <= 4*0.5*fee < 0.01.
     for _ in range(100):
-        largest=float(max(positions))
-        gross=float(sum(positions))
-        factor=min(1.,.50*post/largest if largest else 1.,
-                   .95*post/gross if gross else 1.)
-        wanted=positions*factor
-        charged=fee*float(sum(positions-wanted))
-        updated=nav-charged
-        if updated<=0:
+        post=nav-fee*sold
+        if post<=0 or sold>gross+1e-8:
             raise CrossAssetTrendStop("Policy repair fees deplete NAV")
-        if abs(updated-post)<1e-12:
-            post=updated
+        mandatory=np.maximum(positions-.50*post,0.)
+        updated=max(gross_floor,float(sum(mandatory)))
+        if abs(updated-sold)<1e-12:
+            sold=updated
             break
-        post=updated
+        sold=updated
     else:
-        raise CrossAssetTrendStop("Policy repair cannot conserve fee-funded NAV")
-    factor=min(1.,.50*post/max(positions) if max(positions)>0 else 1.,
-               .95*post/sum(positions) if sum(positions)>0 else 1.)
-    wanted=positions*factor
-    sold=float(sum(positions-wanted))
-    charged=fee*sold
-    cash=post-float(sum(wanted))
-    if (np.any(wanted>positions+1e-10) or cash/post<.05-1e-9
-        or max(wanted)/post>.50+1e-9
-        or sum(wanted)/post>.95+1e-9
+        raise CrossAssetTrendStop("Minimum-notional repair did not converge")
+    post=nav-fee*sold
+    mandatory=np.maximum(positions-.50*post,0.)
+    wanted=positions-mandatory
+    residual=sold-float(sum(mandatory))
+    if residual < -1e-8:
+        raise CrossAssetTrendStop("Minimum-notional repair underfunded")
+    # Gross-only extra sales are needed only if the aggregate 95% cap binds.
+    # Stable largest-first sales are deterministic; they do not buy or short.
+    for idx in np.argsort(-wanted,kind="stable"):
+        if residual<=1e-12:
+            break
+        reduction=min(max(0.,residual),wanted[idx])
+        wanted[idx]-=reduction
+        residual-=reduction
+    actual_sold=float(sum(positions-wanted))
+    charged=fee*actual_sold
+    cash=nav-charged-float(sum(wanted))
+    if (residual>1e-8 or np.any(wanted< -1e-10)
+        or np.any(wanted>positions+1e-10)
+        or cash/(nav-charged)<.05-1e-9
+        or max(wanted)/(nav-charged)>.50+1e-9
+        or sum(wanted)/(nav-charged)>.95+1e-9
         or abs(nav-post-charged)>1e-8
-        or abs(cash+sum(wanted)-post)>1e-8):
-        raise CrossAssetTrendStop("Policy repair violates sell-only/cash/cap proof")
-    return post,wanted,cash,charged,sold
+        or abs(actual_sold-sold)>1e-8
+        or abs(cash+sum(wanted)-(nav-charged))>1e-8):
+        raise CrossAssetTrendStop("Minimum-notional repair violates sell-only/cash/cap proof")
+    return nav-charged,wanted,cash,charged,actual_sold
 
 def _selection(prices, idx):
     # At first session close t, selection uses only completed prior closes:

@@ -623,3 +623,62 @@ def test_policy_repair_all_cash_never_invents_trades_or_promotion():
                 "signal_trade_log"]==report["next_close_execution_stress"][era][bps][
                     "next_close_costed_path"]["signal_trade_log"]
     assert not report["trading_authorized"]
+
+
+def test_policy_repair_sells_only_overweight_name_not_healthy_assets():
+    # Previous proportional liquidation unnecessarily sold all three assets.
+    # The binding 50% cap requires a sale of only the overweight position.
+    for bps in t.COSTS:
+        fee=bps/10000.
+        nav,pos,cash,charged,sold=t._sell_only_policy_repair(
+            100.,np.array([60.,20.,10.,0.]),fee)
+        assert pos[1]==pytest.approx(20.)
+        assert pos[2]==pytest.approx(10.)
+        assert pos[3]==pytest.approx(0.)
+        assert pos[0]==pytest.approx(.50*nav,abs=1e-9)
+        assert sold==pytest.approx((60.-50.)/(1.-.50*fee),abs=1e-9)
+        assert charged==pytest.approx(fee*sold,abs=1e-9)
+        assert cash==pytest.approx(nav-sum(pos),abs=1e-9)
+        assert sold<15.  # Old proportional model sold ~15, unnecessarily.
+
+
+def test_policy_repair_exact_minimum_gross_cap_and_deterministic_allocation():
+    for bps in t.COSTS:
+        fee=bps/10000.
+        positions=np.array([40.,35.,20.,0.])
+        nav,pos,cash,charged,sold=t._sell_only_policy_repair(
+            100.,positions,fee)
+        # Gross is exactly 95% pre-fee; fee-free rebalance is unnecessary.
+        assert sold==pytest.approx(0.,abs=1e-9)
+        assert np.array_equal(pos,positions)
+        # Above 95% gross, no single name above 50%: minimum aggregate sale
+        # goes to largest name only; healthy other positions are preserved.
+        positions=np.array([40.,35.,22.,0.])
+        nav,pos,cash,charged,sold=t._sell_only_policy_repair(
+            100.,positions,fee)
+        expected=(sum(positions)-95.)/(1.-.95*fee)
+        assert sold==pytest.approx(expected,abs=1e-9)
+        assert pos[0]==pytest.approx(40.-expected,abs=1e-9)
+        assert pos[1]==pytest.approx(35.)
+        assert pos[2]==pytest.approx(22.)
+        assert sum(pos)/nav==pytest.approx(.95,abs=1e-9)
+        assert cash/nav==pytest.approx(.05,abs=1e-9)
+        assert charged==pytest.approx(sold*fee,abs=1e-9)
+
+
+def test_policy_repair_both_concentration_and_gross_bind_without_overselling():
+    for bps in t.COSTS:
+        fee=bps/10000.
+        positions=np.array([52.,44.,3.,0.])
+        nav,pos,cash,charged,sold=t._sell_only_policy_repair(
+            100.,positions,fee)
+        assert pos[0]/nav<=.50+1e-9
+        assert sum(pos)/nav<=.95+1e-9
+        assert cash/nav>=.05-1e-9
+        assert (pos<=positions+1e-10).all()
+        assert sold==pytest.approx(sum(positions-pos),abs=1e-9)
+        assert nav==pytest.approx(100.-fee*sold,abs=1e-9)
+        # This lower bound is unavoidable for any sell-only feasible repair.
+        gross_floor=(sum(positions)-95.)/(1.-.95*fee)
+        assert sold>=gross_floor-1e-9
+        assert sold<6.  # Do not liquidate every position pro rata.
