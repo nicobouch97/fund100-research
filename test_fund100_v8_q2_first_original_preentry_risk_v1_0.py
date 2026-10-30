@@ -148,3 +148,82 @@ def test_preentry_risk_program_never_imports_broker_or_is_promotion():
                  "test_fund100_v8_q2_first_original_preentry_risk_v1_0.py",
                  ".github/workflows/fund100-v8-q2-first-original-preentry-risk.yml"):
         assert '      - "'+path+'"' in audit
+
+
+def test_buy_once_entry_costs_and_no_rebalance_are_separate_from_daily_proxy(tmp_path):
+    _,_,pin=setup_source(tmp_path)
+    result=risk.analyze(tmp_path,pin_path=pin)
+    assert result["buy_once_costed_risk_is_selection_conditioned_not_a_live_gate"]
+    for window in result["trailing_completed_source_windows"].values():
+        observed=window["buy_once_costed_no_rebalance_close_risk"]
+        assert set(observed)=={
+            "frozen_q2_eight_equal",
+            "same_sector_original_24_cohort",
+            "passive_95_spy_5_cash",
+        }
+        for comparator,by_cost in observed.items():
+            assert set(by_cost)=={"5","15","35"}
+            for bp in (5,15,35):
+                item=by_cost[str(bp)]
+                assert item["entry_cost_bps_per_traded_side"]==bp
+                assert item["no_rebalance_or_additional_turnover"]
+                assert item["terminal_exit_cost_not_charged"]
+                assert item["entry_fee_in_initial_high_water_drawdown"]
+                assert item["not_an_executable_intraday_risk_control"]
+                assert 0<=item["max_observed_gross_exposure_fraction"]<=1
+                assert 0<=item["max_observed_single_issuer_fraction"]<=1
+                assert 0<=item["gross_over_95pct_completed_close_count"]<=(
+                    window["price_return_window_sessions"])
+                if comparator=="passive_95_spy_5_cash":
+                    assert item["max_observed_sector_fraction"] is None
+                    assert item["sector_over_25pct_completed_close_count"] is None
+                else:
+                    assert item["max_observed_sector_fraction"] is not None
+            assert by_cost["5"]["marked_unrealized_return_after_entry_cost_pct"] > (
+                by_cost["15"]["marked_unrealized_return_after_entry_cost_pct"])
+            assert by_cost["15"]["marked_unrealized_return_after_entry_cost_pct"] > (
+                by_cost["35"]["marked_unrealized_return_after_entry_cost_pct"])
+
+
+def test_buy_once_cash_and_entry_fee_accounting_without_rebalance():
+    idx=pd.bdate_range("2026-06-01",periods=63)
+    names=list(cohort.SECTORS)[:8]
+    ret=pd.DataFrame({s:np.full(63,.01) for s in names},index=idx)
+    fee=15/10000
+    answer=risk._buy_once_costed_risk(ret,{s:1/8 for s in names},15)
+    entry_nav=100/(1+.95*fee)
+    final_nav=entry_nav*(.05+.95*1.01**63)
+    assert answer["initial_entry_cost_usd_per_100"]==pytest.approx(
+        100-entry_nav,abs=1e-8)
+    assert answer["marked_unrealized_return_after_entry_cost_pct"]==pytest.approx(
+        final_nav-100,abs=1e-8)
+    assert answer["gross_over_95pct_completed_close_count"]==63
+    assert answer["max_observed_gross_exposure_fraction"]>.95
+    assert answer["single_issuer_over_50pct_completed_close_count"]==0
+
+
+def test_buy_once_drifting_position_detects_gross_name_and_sector_breaches():
+    idx=pd.bdate_range("2026-06-01",periods=63)
+    names=list(cohort.SECTORS)[:8]
+    ret=pd.DataFrame({s:np.zeros(63) for s in names},index=idx)
+    ret.loc[idx[0],names[0]]=9.
+    result=risk._buy_once_costed_risk(ret,{s:1/8 for s in names},15)
+    assert result["gross_over_95pct_completed_close_count"]==63
+    assert result["single_issuer_over_50pct_completed_close_count"]==63
+    assert result["sector_over_25pct_completed_close_count"]==63
+    assert result["max_observed_single_issuer_fraction"]>.5
+    assert result["no_rebalance_or_additional_turnover"]
+
+
+def test_buy_once_invalid_cost_and_missing_source_fail_closed():
+    idx=pd.bdate_range("2026-06-01",periods=63)
+    names=list(cohort.SECTORS)[:8]
+    ret=pd.DataFrame({s:np.zeros(63) for s in names},index=idx)
+    weights={s:1/8 for s in names}
+    with pytest.raises(risk.RiskHold,match="Invalid buy-once"):
+        risk._buy_once_costed_risk(ret,weights,50)
+    with pytest.raises(risk.RiskHold,match="Invalid buy-once"):
+        risk._buy_once_costed_risk(ret,{names[0]:.6,names[1]:.5},15)
+    ret.loc[idx[0],names[0]]=np.nan
+    with pytest.raises(risk.RiskHold,match="Invalid buy-once original"):
+        risk._buy_once_costed_risk(ret,weights,15)
