@@ -35,6 +35,8 @@ TARGET=dict(migration.TARGETS)
 UNIVERSE=frozenset(TARGET)
 CENTS=Decimal(".01")
 MAX_FEE=Decimal("5.00")
+# Do not pay >100bps estimated all-in cost merely to place a dust trade.
+MAX_SIDE_COST_FRACTION=Decimal(".01")
 MAX_HISTORY=100
 
 class RecurringStop(ValueError): pass
@@ -141,7 +143,9 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
     settled=_num(snapshot.get("settled_cash_usd"),"settled USD")
     deposit=_num(snapshot.get("original_contributed_principal_usd"),
                  "original pilot contribution",positive=True)
-    if deposit>migration.CAP or snapshot.get("original_contribution_events")!=1:
+    if (deposit>migration.CAP
+        or type(snapshot.get("original_contribution_events")) is not int
+        or snapshot.get("original_contribution_events")!=1):
         return _report("HOLD_ORIGINAL_PILOT_FUNDING_NOT_PROVEN",period=period)
     if cash>nav or settled>cash:
         return _report("HOLD_CASH_MORE_THAN_NAV_OR_UNRECONCILED",period=period)
@@ -201,7 +205,8 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
         if ident in history:continue
         trim=(values[sym]-TARGET[sym]*nav).quantize(CENTS,rounding=ROUND_DOWN)
         size=min(trim,migration.MAX_ORDER).quantize(CENTS,rounding=ROUND_DOWN)
-        if size<migration.MIN_ORDER or fees[sym]>=size:
+        if (size<migration.MIN_ORDER or fees[sym]>=size
+            or fees[sym]>MAX_SIDE_COST_FRACTION*size):
             return _report("HOLD_SELL_TOO_SMALL_OR_TOO_COSTLY",period=period)
         return _report("HYPOTHETICAL_MONTHLY_TRIM_SELL_NO_TRANSPORT",
             period=period,candidate={
@@ -230,6 +235,8 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
         if size<migration.MIN_ORDER:
             return _report("HOLD_BUY_REQUIRES_SETTLED_CASH_OR_RISK_HEADROOM",
                            period=period)
+        if fee>MAX_SIDE_COST_FRACTION*size:
+            return _report("HOLD_BUY_ALL_IN_COST_EXCEEDS_1PCT",period=period)
         if (min(cash,settled)-size-fee<migration.CASH_FLOOR*(nav-fee)
             or gross+size>migration.MAX_GROSS*(nav-fee)
             or values[sym]+size>migration.MAX_SYMBOL*(nav-fee)):
