@@ -4,25 +4,40 @@ from pathlib import Path
 import pytest
 
 import fund100_v6_s1_original_postorder_signed_immutable_broker_join_locked_v1_0 as join
+from base64 import b64decode
 from test_fund100_v6_s1_original_one_attempt_chain_locked_v1_0 import (
-    context_and_heads,READ,WRITE,KEY,SECRET)
+    READ,WRITE,KEY,SECRET)
+from test_fund100_v6_s1_original_acwi_fill_flat_offline_v1_0 import (
+    signed_sources as original_filled_qty_sources)
+from test_fund100_v6_s1_acwi_unique_owner_fence_offline_v1_0 import (
+    as_fence)
+import fund100_v6_s1_acwi_unique_owner_fence_offline_v1_0 as fence
+import fund100_v6_s1_public_genesis_witness_v1_0 as witness
 from test_fund100_v6_s1_immutable_release_anchor_v1_0 import (
     GitHubImmutable,READ as PUBLIC)
 from test_fund100_v6_s1_original_acwi_broker_fill_flat_getonly_bridge_v1_0 import (
     source as fake_broker, KEY as BROKER_KEY, SECRET as BROKER_SECRET)
 
 def fixtures(monkeypatch):
-    ctx,_initial,claimed,seq2,cid,comment=context_and_heads()
-    signed={
-        "reserved_source":ctx["reserved_source"],"prepost_source":seq2,
-        "genesis_comment":ctx["genesis_comment"],
-        "first_comment":ctx["first_comment"],"prepost_comment":comment,
-        "first_comment_id":ctx["first_comment_id"],
-        "first_run_id":ctx["first_run_id"],
-        "prepost_comment_id":cid,
-        "prepost_run_id":ctx["owner_run_id"],
-        "original_qty":ctx["original_qty"],"key":ctx["key"],
-    }
+    # Use the original frozen LIVE bootstrap quantity for BOTH signed
+    # seq2 and broker FILL source. The standalone owner fence tests use a
+    # different invented quantity, which cannot reconcile actual holdings.
+    signed=original_filled_qty_sources()
+    seq2=signed["prepost_source"]
+    ctx={k:signed[k] for k in (
+        "reserved_source","genesis_comment","first_comment","first_comment_id",
+        "first_run_id","original_qty","key")}
+    ctx.update(
+        owner_run_id=signed["prepost_run_id"],owner_attempt=1,
+        owner_nonce="1"*64,current_main_sha="a"*40,
+        source_broker_run_id=signed["prepost_run_id"])
+    pin=witness.verify()
+    init=as_fence(fence.synthetic_fence_genesis(
+        private_genesis=pin["original_public_genesis_nonce"],
+        account_binding_sha256=pin["original_live_account_binding_sha256"],
+        key=signed["key"]))
+    claim=fence.plan_unique_owner(fence_source=init,**ctx)
+    claimed=as_fence(b64decode(claim["fake_only_commit"]["content_base64"]))
     owner=dict(ctx,current_fence_source=claimed)
     asset=join.anchor.original_signed_anchor_asset(
         signed_owner_sources=owner,prepost_source=seq2)
