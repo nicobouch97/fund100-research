@@ -377,6 +377,13 @@ def test_original_pinned_q2_peer_comparison_is_paired_costed_and_hindsight_label
                 assert comparison[
                     "q2_minus_sector_peer_after_cost_percentage_points"][bp]==pytest.approx(
                         expected,abs=1e-8)
+                full=(q2[bp]["hypothetical_fully_liquidated_return_after_all_costs_pct"]
+                      -peer[bp]["hypothetical_fully_liquidated_return_after_all_costs_pct"])
+                assert comparison[
+                    "q2_minus_sector_peer_after_full_liquidation_cost_percentage_points"
+                ][bp]==pytest.approx(full,abs=1e-8)
+                assert q2[bp]["terminal_liquidation_same_last_close_no_fill_or_spread"]
+                assert peer[bp]["terminal_liquidation_same_last_close_no_fill_or_spread"]
 
 
 def test_paired_peer_comparison_never_relaxes_source_or_weight_validation(tmp_path):
@@ -393,3 +400,49 @@ def test_paired_peer_comparison_never_relaxes_source_or_weight_validation(tmp_pa
     ret.loc[idx[5],next(iter(peer))]=np.nan
     with pytest.raises(risk.RiskHold,match="Invalid original close"):
         risk._next_close_sector_repair_path(ret,peer,15,.95)
+
+
+def test_hypothetical_full_liquidation_is_fee_funded_and_keeps_original_marks():
+    names=["AAPL","GOOGL","JNJ","LLY","KO","PG","JPM","CVX"]
+    idx=pd.bdate_range("2026-06-01",periods=63)
+    returns=pd.DataFrame(0.,index=idx,columns=names)
+    weights={s:1/8 for s in names}
+    fee=.0015
+    once=risk._buy_once_costed_risk(returns,weights,15)
+    once_entry=100/(1+.95*fee)
+    once_exit_fee=.95*once_entry*fee
+    assert once["marked_unrealized_return_after_entry_cost_pct"]==pytest.approx(
+        once_entry-100,abs=1e-8)
+    assert once["hypothetical_terminal_liquidation_fee_usd_per_100"]==pytest.approx(
+        once_exit_fee,abs=1e-8)
+    assert once["hypothetical_fully_liquidated_return_after_all_costs_pct"]==pytest.approx(
+        once_entry-once_exit_fee-100,abs=1e-8)
+    assert once["terminal_exit_cost_not_charged"]
+    assert once["terminal_liquidation_same_last_close_no_fill_or_spread"]
+    repaired=risk._next_close_sector_repair_path(returns,weights,15,.90)
+    entry=100/(1+.90*fee)
+    exit_fee=.90*entry*fee
+    assert repaired["additional_sell_only_repair_dates"]==0
+    assert repaired["marked_unrealized_return_after_all_costs_pct"]==pytest.approx(
+        entry-100,abs=1e-8)
+    assert repaired["hypothetical_terminal_liquidation_fee_usd_per_100"]==pytest.approx(
+        exit_fee,abs=1e-8)
+    assert repaired["hypothetical_fully_liquidated_return_after_all_costs_pct"]==pytest.approx(
+        entry-exit_fee-100,abs=1e-8)
+    assert repaired["terminal_exit_fee_not_charged"]
+    assert repaired["terminal_liquidation_same_last_close_no_fill_or_spread"]
+
+
+def test_terminal_exit_sensitivity_does_not_execute_queued_last_close_repair():
+    names=["AAPL","GOOGL","JNJ","LLY","KO","PG","JPM","CVX"]
+    idx=pd.bdate_range("2026-06-01",periods=63)
+    returns=pd.DataFrame(0.,index=idx,columns=names)
+    returns.loc[idx[-1],["AAPL","GOOGL"]]=.40
+    out=risk._next_close_sector_repair_path(
+        returns,{s:1/8 for s in names},35,.95)
+    assert out["last_close_queued_repair_not_executed"]
+    assert out["additional_sell_only_repair_dates"]==0
+    assert out["hypothetical_terminal_liquidation_fee_usd_per_100"]>0
+    assert (out["hypothetical_fully_liquidated_return_after_all_costs_pct"] <
+            out["marked_unrealized_return_after_all_costs_pct"])
+    assert out["research_only_no_live_execution"]
