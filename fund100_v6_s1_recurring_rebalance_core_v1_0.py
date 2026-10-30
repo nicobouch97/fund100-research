@@ -210,6 +210,11 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
             return _report(
                 "HOLD_CASH_OR_EXPOSURE_REPAIR_ALREADY_ATTEMPTED_OR_NOT_FEASIBLE",
                 period=period)
+        # Try another economically feasible ETF before abandoning a
+        # cash-floor repair. Each candidate must still satisfy every
+        # unchanged after-fee hard portfolio constraint.
+        rejected_cost=False
+        rejected_postfee=False
         ranked=sorted(UNIVERSE,key=lambda sym:(
             sym in symbol_breaches,
             values[sym]/nav-TARGET[sym],
@@ -250,8 +255,8 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
                 or fee>=size or fee>MAX_SIDE_COST_FRACTION*size
                 or (sym not in symbol_breaches
                     and values[sym]-size<lowest_within_band)):
-                return _report("HOLD_CASH_OR_EXPOSURE_REPAIR_TOO_SMALL_OR_COSTLY",
-                               period=period)
+                rejected_cost=True
+                continue
             if (cash+size-fee<=cash
                 or gross-size>=gross
                 or values[sym]-size<0):
@@ -270,9 +275,8 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
                 or after_gross>after_nav*migration.MAX_GROSS
                 or any(value>after_nav*migration.MAX_SYMBOL
                        for value in after_marks.values())):
-                return _report(
-                    "HOLD_CASH_OR_EXPOSURE_REPAIR_INCOMPLETE_AFTER_TICKET_CAP",
-                    period=period)
+                rejected_postfee=True
+                continue
             return _report(
                 "HYPOTHETICAL_MONTHLY_CASH_OR_EXPOSURE_REPAIR_SELL_NO_TRANSPORT",
                 period=period,candidate={
@@ -285,6 +289,12 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
                     "requires_independent_order_and_settlement_reconciliation":True,
                     "after_fee_entire_portfolio_risk_repair_proven":False,
                     "executable":False})
+        if rejected_postfee:
+            return _report("HOLD_CASH_OR_EXPOSURE_REPAIR_INCOMPLETE_AFTER_TICKET_CAP",
+                           period=period)
+        if rejected_cost:
+            return _report("HOLD_CASH_OR_EXPOSURE_REPAIR_TOO_SMALL_OR_COSTLY",
+                           period=period)
         return _report("HOLD_CASH_OR_EXPOSURE_REPAIR_ALREADY_ATTEMPTED_OR_NOT_FEASIBLE",
                        period=period)
     # Existing original monthly +/- 10 percentage-point tolerance. SELL

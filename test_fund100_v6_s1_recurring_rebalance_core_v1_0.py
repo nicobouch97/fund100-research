@@ -263,7 +263,30 @@ def test_cash_repair_suppressed_when_all_possible_trims_cost_too_much():
     d["position_values_usd"]={"XLK":"62.00","XLE":"37.00","IWM":"25.00"}
     d["cash_usd"]="6.00";d["settled_cash_usd"]="6.00"
     d["all_in_fee_buffers_usd"]["IWM"]="3.00"
+    d["all_in_fee_buffers_usd"]["XLK"]="3.00"
     assert run(d)["status"]=="HOLD_CASH_OR_EXPOSURE_REPAIR_TOO_SMALL_OR_COSTLY"
+
+
+def test_cash_floor_repair_tries_next_eligible_name_when_first_is_uneconomic():
+    # IWM has the largest excess weight, but its $3 fee is >1% of
+    # any permitted ticket. XLK has a smaller surplus but can safely
+    # sell $10 for $0.10 and restore cash/gross within the same caps.
+    d=fixture(portfolio="hold")
+    d["position_values_usd"]={"XLK":"62.00","XLE":"37.00","IWM":"25.00"}
+    d["cash_usd"]="6.00"; d["settled_cash_usd"]="6.00"
+    d["all_in_fee_buffers_usd"]["IWM"]="3.00"
+    result=run(d)
+    assert result["status"]=="HYPOTHETICAL_MONTHLY_CASH_OR_EXPOSURE_REPAIR_SELL_NO_TRANSPORT"
+    c=result["hypothetical_candidate"]
+    assert c["symbol"]=="XLK" and c["side"]=="sell"
+    assert c["estimated_notional_usd"]=="10.00"
+    assert c["stable_simulation_event_id"]==m._id("2026-10","XLK","sell")
+    nav=Decimal("129.90")
+    assert Decimal("6.00")+Decimal("10.00")-Decimal(".10")>=nav*m.migration.CASH_FLOOR
+    assert Decimal("124.00")-Decimal("10.00")<=nav*m.migration.MAX_GROSS
+    assert Decimal("52.00")<=nav*m.migration.MAX_SYMBOL
+    assert c["executable"] is False
+    assert result["broker_POSTs"]==result["private_Git_writes"]==0
 
 def test_single_name_hard_cap_can_be_repaired_without_gross_cash_breach():
     d=fixture(portfolio="hold")
