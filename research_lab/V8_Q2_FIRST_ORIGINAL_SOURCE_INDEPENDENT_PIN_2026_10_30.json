@@ -1,7 +1,6 @@
 {
   "schema": "FUND100_V8_Q2_INDEPENDENT_ORIGINAL_SOURCE_PIN_V1",
   "recorded_after_source_capture": true,
-  "source_experiment_registration_utc": "2026-10-29T00:00:00Z",
   "original_source_acquired_utc": "2026-10-30T08:16:19Z",
   "original_source_workflow_run_id": 41025137794,
   "original_source_artifact_id": 12962884465,
@@ -36,5 +35,6 @@
   "original_63_session_future_marks_not_yet_observed": true,
   "source_report_not_equivalent_to_authenticated_executable_trade": true,
   "research_only_no_live_orders": true,
-  "origin": "Original GitHub Actions archive read and SHA256 checked on 2026-10-30 before 2026-10-30 NYSE close. This Git commit anchors first-source bytes separately; it is not a prior-to-source registration or permanent trusted third-party notarization."
+  "origin": "Original GitHub Actions archive read and SHA256 checked on 2026-10-30 before 2026-10-30 NYSE close. This Git commit anchors first-source bytes separately; it is not a prior-to-source registration or permanent trusted third-party notarization.",
+  "source_experiment_registered_date_utc": "2026-10-29"
 }
