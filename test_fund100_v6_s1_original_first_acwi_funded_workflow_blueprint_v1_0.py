@@ -79,7 +79,7 @@ def test_authorisation_is_standing_high_pilot_once_not_per_trade():
 def test_one_protected_job_has_exact_writer_mutex_and_tiny_issue_write_scope():
     s=source()
     assert s.count("environment: fund100-live-broker")==1
-    assert s.count("group: fund100-v5-002-live-production")==1
+    assert s.count("group: fund100-alpaca-live-account-writer")==1
     assert "cancel-in-progress: false" in s
     assert "timeout-minutes: 10" in s
     assert "persist-credentials: false" in s
