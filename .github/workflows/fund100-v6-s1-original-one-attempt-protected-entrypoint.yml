@@ -12,6 +12,14 @@ on:
       - "fund100_v6_s1_operator_control.json"
       - "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       - "fund100_v6_s1_owner_fence_private_getonly_v1_0.py"
+      # Refresh the original protected readiness automatically only when
+      # relevant reviewed launch code changes on main, never via cron.
+      - "fund100_v6_s1_original_one_attempt_chain_locked_v1_0.py"
+      - "fund100_v6_s1_one_time_owner_claim_cas_v1_0.py"
+      - "fund100_v6_s1_immutable_release_publish_locked_v1_0.py"
+      - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
+      - "fund100_alpaca_live_writer_candidate_v1_1.py"
+      - "fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0.py"
 
 # Deliberately incapable of writing to public GitHub or the private ledger.
 # The signed first-ACWI coordinator has NO invocation in this version.
@@ -146,3 +154,16 @@ jobs:
           grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
           echo 'ONE protected job checked real account and signed state GET only.'
           echo 'Original first ACWI one-attempt coordinator NOT CALLED; NO LIVE orders.'
+          # This runs on the main branch following relevant reviewed code
+          # changes or explicit dispatch; NO credentialed cron scheduling.
+          # GitHub's summary is non-sensitive and not an execution permit.
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ### Fund-100 V6 first ACWI readiness (READ ONLY)
+          - Actual protected broker account/risk GET source: **PASS**
+          - Original signed ACWI seq1 and unclaimed owner HMAC GET: **PASS**
+          - Provider immutable release administration GET: **PASS**
+          - LIVE first original ACWI order transport: **HARD LOCKED**
+          - Operator STOP / broker kill switch: **ENGAGED**
+          - New orders or private writes: **ZERO**
+          - Status: **Launch source checks up to date; execution not released**
+          EOF
