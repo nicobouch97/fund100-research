@@ -273,7 +273,8 @@ def test_single_name_hard_cap_can_be_repaired_without_gross_cash_breach():
     assert r["status"]=="HYPOTHETICAL_MONTHLY_CASH_OR_EXPOSURE_REPAIR_SELL_NO_TRANSPORT"
     c=r["hypothetical_candidate"]
     assert c["symbol"]=="XLK" and c["repair_reason"]=="HARD_SYMBOL_LIMIT"
-    assert c["estimated_notional_usd"]=="8.25"
+    # $8.25 on a $0.10 expected cost is >1% friction; choose $10.
+    assert c["estimated_notional_usd"]=="10.00"
 
 def test_cash_floor_repair_cannot_guess_sell_shares_or_certify_continuous_cash():
     source=Path(m.__file__).read_text()
