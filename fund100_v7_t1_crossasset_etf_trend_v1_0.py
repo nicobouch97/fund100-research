@@ -54,9 +54,20 @@ def prices_validate(frame:pd.DataFrame):
         raise CrossAssetTrendStop("Invalid four-ETF original complete-price panel")
     data=frame.loc[:,list(ASSETS)].copy()
     v=data.to_numpy(dtype=float)
-    if (not np.isfinite(v).all() or (v<=0).any() or (v>=1e7).any()
-        or (np.abs(v[1:]/v[:-1]-1)>.45).any()):
-        raise CrossAssetTrendStop("Missing/implausible adjusted close or corporate-action break")
+    invalid=np.argwhere(~np.isfinite(v) | (v<=0) | (v>=1e7))
+    if len(invalid):
+        row,col=map(int,invalid[0])
+        raise CrossAssetTrendStop(
+            "Missing/implausible adjusted close or corporate-action break: "
+            f"{ASSETS[col]} {data.index[row].date()} value={v[row,col]:.8g}")
+    returns=v[1:]/v[:-1]-1.
+    jumps=np.argwhere(np.abs(returns)>.45)
+    if len(jumps):
+        row,col=map(int,jumps[0])
+        raise CrossAssetTrendStop(
+            "Missing/implausible adjusted close or corporate-action break: "
+            f"{ASSETS[col]} {data.index[row].date()} to "
+            f"{data.index[row+1].date()} adjusted_return={returns[row,col]:+.6f}")
     return data
 
 def _calendar(index):
@@ -414,7 +425,7 @@ def analyze(prices:pd.DataFrame,captured_utc:str):
         "fixed_era_results":result,
     }
 
-def download_prices():
+def download_prices(*,rejected_source_csv:Path|None=None):
     import yfinance as yf
     data=yf.download(tickers=list(ASSETS),start=SOURCE_START,
                      end=datetime.now(timezone.utc).date().isoformat(),
@@ -432,14 +443,24 @@ def download_prices():
             raise CrossAssetTrendStop("Original source missing "+a)
     frame=pd.DataFrame(mapping)
     frame.index=pd.DatetimeIndex(frame.index).tz_localize(None).normalize()
-    return prices_validate(frame)
+    try:
+        return prices_validate(frame)
+    except CrossAssetTrendStop:
+        # Quarantine the *unvalidated* extracted vendor panel separately.
+        # Never write it to the accepted source path or issue a performance report.
+        if rejected_source_csv is not None:
+            rejected_source_csv.parent.mkdir(parents=True,exist_ok=True)
+            rejected_source_csv.write_text(frame.to_csv(
+                index_label="Date",date_format="%Y-%m-%d",float_format="%.10f"))
+        raise
 
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--output",type=Path,required=True)
     p.add_argument("--source-csv",type=Path,required=True)
+    p.add_argument("--rejected-source-csv",type=Path)
     a=p.parse_args()
-    data=download_prices()
+    data=download_prices(rejected_source_csv=a.rejected_source_csv)
     acquired=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     results=analyze(data,acquired)
     a.output.parent.mkdir(parents=True,exist_ok=True)

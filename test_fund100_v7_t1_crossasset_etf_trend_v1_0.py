@@ -423,3 +423,44 @@ def test_next_close_nonterminal_session_still_executes_queued_trade(monkeypatch)
     assert result["signal_trade_log"][-1]["modeled_execution_close"]=="2014-04-02"
     assert result["transaction_dates"]==len(result["signal_trade_log"])
     assert result["no_actual_orders"]
+
+
+def test_invalid_vendor_adjusted_return_identifies_asset_and_dates_fail_closed():
+    panel=sample(short=True)
+    date=pd.Timestamp("2015-05-05")
+    panel.loc[date,"GLD"]*=1.6
+    with pytest.raises(t.CrossAssetTrendStop,
+                       match=r"GLD 2015-05-04 to 2015-05-05 adjusted_return=\+0\.60"):
+        t.prices_validate(panel)
+
+
+def test_invalid_vendor_nonfinite_value_identifies_asset_and_date():
+    panel=sample(short=True)
+    panel.loc[pd.Timestamp("2015-05-05"),"TLT"]=float("nan")
+    with pytest.raises(t.CrossAssetTrendStop,match=r"TLT 2015-05-05 value=nan"):
+        t.prices_validate(panel)
+
+
+def test_rejected_vendor_panel_is_quarantined_not_accepted(monkeypatch,tmp_path):
+    import sys
+    from types import SimpleNamespace
+    panel=sample(short=True)
+    panel.loc[pd.Timestamp("2015-05-05"),"DBC"]*=1.6
+    vendor=pd.DataFrame({("Close",asset):panel[asset] for asset in t.ASSETS})
+    monkeypatch.setitem(sys.modules,"yfinance",SimpleNamespace(
+        download=lambda **kwargs: vendor))
+    rejected=tmp_path/"quarantine"/"rejected.csv"
+    accepted=tmp_path/"accepted.csv"
+    with pytest.raises(t.CrossAssetTrendStop,match="DBC"):
+        t.download_prices(rejected_source_csv=rejected)
+    assert rejected.is_file()
+    assert not accepted.exists()
+    actual=pd.read_csv(rejected,index_col="Date")
+    assert actual.loc["2015-05-05","DBC"]==pytest.approx(
+        panel.loc[pd.Timestamp("2015-05-05"),"DBC"])
+    panel.loc[pd.Timestamp("2015-05-05"),"DBC"]/=1.6
+    clean=pd.DataFrame({("Close",asset):panel[asset] for asset in t.ASSETS})
+    monkeypatch.setitem(sys.modules,"yfinance",SimpleNamespace(
+        download=lambda **kwargs: clean))
+    t.download_prices(rejected_source_csv=tmp_path/"clean-must-not-exist.csv")
+    assert not (tmp_path/"clean-must-not-exist.csv").exists()
