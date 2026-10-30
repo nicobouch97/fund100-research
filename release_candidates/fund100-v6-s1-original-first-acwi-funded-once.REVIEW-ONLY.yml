@@ -31,7 +31,7 @@ permissions:
 # MUST match the existing V5 writer's exact mutex group and the current V6
 # locked first-original workflow; never run two writers concurrently.
 concurrency:
-  group: fund100-v5-002-live-production
+  group: fund100-alpaca-live-account-writer
   cancel-in-progress: false
 
 jobs:
