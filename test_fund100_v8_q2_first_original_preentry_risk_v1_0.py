@@ -86,7 +86,7 @@ def test_6pct_loss_and_high_35pct_volatility_flags_are_historical_only():
     data.update({"SPY":np.linspace(-.002,.002,63),"SHY":np.zeros(63)})
     for s in names:
         arr=data[s].copy()
-        arr[8]=-.10
+        arr[8:20:2]=-.10
         data[s]=arr
     ret=pd.DataFrame(data,index=index)
     result=risk._one_window(ret,names)
