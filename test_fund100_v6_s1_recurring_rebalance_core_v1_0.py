@@ -138,12 +138,20 @@ def test_impossible_risk_data_holds_without_order(field,val):
     d["risk_metrics"][field]=val
     assert run(d)["status"]=="HOLD_ACCOUNT_RISK_SOURCE_INVALID"
 
-def test_cash_floor_or_gross_cap_existing_breach_is_not_marked_broker_safe():
+def test_existing_cash_gross_and_50pct_issuer_breach_proposes_only_safe_repair_sell():
     d=fixture(portfolio="buy")
     d["cash_usd"]="4.00"
     d["settled_cash_usd"]="4.00"
     d["position_values_usd"]["XLK"]="76.00"
-    assert run(d)["status"]=="HOLD_EXISTING_HIGH_ACCOUNT_EXPOSURE_BREACH"
+    result=run(d)
+    assert result["status"]=="HYPOTHETICAL_MONTHLY_CASH_OR_EXPOSURE_REPAIR_SELL_NO_TRANSPORT"
+    order=result["hypothetical_candidate"]
+    assert order["side"]=="sell" and order["symbol"]=="XLK"
+    assert order["repair_reason"]=="HARD_SYMBOL_LIMIT"
+    assert order["after_fee_entire_portfolio_risk_repair_proven"] is False
+    assert order["estimated_notional_usd"]=="14.25"
+    assert order["stable_simulation_event_id"]==m._id("2026-10","XLK","sell")
+    assert result["broker_POSTs"]==result["private_Git_writes"]==0
 
 def test_funding_cap_is_principal_not_current_nav_ceiling():
     d=fixture(portfolio="buy")
@@ -206,3 +214,71 @@ def test_boolean_contribution_count_is_not_an_authenticated_single_deposit():
     d=fixture(portfolio="buy")
     d["original_contribution_events"]=True
     assert run(d)["status"]=="HOLD_ORIGINAL_PILOT_FUNDING_NOT_PROVEN"
+
+
+def test_undramatic_cash_floor_drift_needs_repair_even_inside_10pp_band():
+    # A nominal 95%-invested portfolio can pass the 10pp sector band
+    # while falling below the hard 5% cash buffer as equity appreciates.
+    d=fixture(portfolio="hold")
+    d["position_values_usd"]={"XLK":"62.00","XLE":"37.00","IWM":"25.00"}
+    d["cash_usd"]="6.00"
+    d["settled_cash_usd"]="6.00"
+    r=run(d)
+    assert r["status"]=="HYPOTHETICAL_MONTHLY_CASH_OR_EXPOSURE_REPAIR_SELL_NO_TRANSPORT"
+    c=r["hypothetical_candidate"]
+    assert c["symbol"]=="IWM" and c["side"]=="sell"
+    # $0.10 of all-in drag on a $1 sale is uneconomic. Min $10.
+    assert c["estimated_notional_usd"]=="10.00"
+    fee=Decimal(".10")
+    trim=Decimal(c["estimated_notional_usd"])
+    assert Decimal("6.00")+trim-fee >= (Decimal("130")-fee)*Decimal(".05")
+    assert Decimal("25")-trim >= (m.TARGET["IWM"]-m.BAND)*Decimal("130")
+    assert c["after_fee_entire_portfolio_risk_repair_proven"] is False
+
+def test_monthly_cash_repair_never_forces_loss_stop_broker_trade():
+    d=fixture(portfolio="hold")
+    d["position_values_usd"]={"XLK":"62.00","XLE":"37.00","IWM":"25.00"}
+    d["cash_usd"]="6.00"
+    d["settled_cash_usd"]="6.00"
+    d["risk_metrics"]["daily_return"]="-0.07"
+    assert run(d)["status"]=="HOLD_HIGH_RISK_LOSS_DRAWDOWN_OR_VOL_STOP"
+    d["risk_metrics"]["daily_return"]="-0.005"
+    d["unresolved_broker_orders"]=1
+    assert run(d)["status"]=="HOLD_UNRECONCILED_ORDER"
+
+def test_risk_repair_does_not_repeat_stable_same_month_sell():
+    d=fixture(portfolio="hold")
+    d["position_values_usd"]={"XLK":"62.00","XLE":"37.00","IWM":"25.00"}
+    d["cash_usd"]="6.00";d["settled_cash_usd"]="6.00"
+    ident=m._id("2026-10","IWM","sell")
+    d["monthly_seen_client_ids"]=[ident]
+    assert run(d)["status"]=="HOLD_UNRECONCILED_PREVIOUS_MONTHLY_ACTION"
+    d["monthly_fully_reconciled_client_ids"]=[ident]
+    # No same-side replay, and the other ETFs are not automatically sold
+    # below their target to chase the cash floor.
+    assert run(d)["status"]=="HOLD_CASH_OR_EXPOSURE_REPAIR_ALREADY_ATTEMPTED_OR_NOT_FEASIBLE"
+
+def test_cash_repair_suppressed_when_all_possible_trims_cost_too_much():
+    d=fixture(portfolio="hold")
+    d["position_values_usd"]={"XLK":"62.00","XLE":"37.00","IWM":"25.00"}
+    d["cash_usd"]="6.00";d["settled_cash_usd"]="6.00"
+    d["all_in_fee_buffers_usd"]["IWM"]="3.00"
+    assert run(d)["status"]=="HOLD_CASH_OR_EXPOSURE_REPAIR_TOO_SMALL_OR_COSTLY"
+
+def test_single_name_hard_cap_can_be_repaired_without_gross_cash_breach():
+    d=fixture(portfolio="hold")
+    d["position_values_usd"]={"XLK":"70.00","XLE":"25.00","IWM":"20.00"}
+    d["cash_usd"]="15.00";d["settled_cash_usd"]="15.00"
+    r=run(d)
+    assert r["status"]=="HYPOTHETICAL_MONTHLY_CASH_OR_EXPOSURE_REPAIR_SELL_NO_TRANSPORT"
+    c=r["hypothetical_candidate"]
+    assert c["symbol"]=="XLK" and c["repair_reason"]=="HARD_SYMBOL_LIMIT"
+    # $8.25 on a $0.10 expected cost is >1% friction; choose $10.
+    assert c["estimated_notional_usd"]=="10.00"
+
+def test_cash_floor_repair_cannot_guess_sell_shares_or_certify_continuous_cash():
+    source=Path(m.__file__).read_text()
+    assert "HYPOTHETICAL_MONTHLY_CASH_OR_EXPOSURE_REPAIR_SELL_NO_TRANSPORT" in source
+    assert "after_fee_entire_portfolio_risk_repair_proven" in source
+    assert "requires_independent_order_and_settlement_reconciliation" in source
+    assert m.LIVE_RECURRING_EXECUTION_RELEASED is False

@@ -114,7 +114,8 @@ def inspect(*,snapshot,now_utc,private_source,key,
                        private_source_valid=True)
     if decision["status"] not in (
             "HYPOTHETICAL_MONTHLY_TRIM_SELL_NO_TRANSPORT",
-            "HYPOTHETICAL_MONTHLY_REPLENISH_BUY_NO_TRANSPORT"):
+            "HYPOTHETICAL_MONTHLY_REPLENISH_BUY_NO_TRANSPORT",
+            "HYPOTHETICAL_MONTHLY_CASH_OR_EXPOSURE_REPAIR_SELL_NO_TRANSPORT"):
         raise BridgeStop("Not a recognised nonexecutable S1 monthly decision")
     if (type(candidate) is not dict or candidate.get("executable") is not False
         or candidate.get("requires_independent_order_and_settlement_reconciliation") is not True

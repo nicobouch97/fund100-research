@@ -240,3 +240,16 @@ def test_current_live_operator_remains_stopped_and_no_secret_or_network_trading_
         "ALPACA_LIVE_KEY","ALPACA_LIVE_SECRET",
         "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"):
         assert forbidden not in s
+
+
+def test_cash_floor_repair_reuses_monthly_signed_event_without_inventing_sell_qty():
+    d=snapshot("hold")
+    d["position_values_usd"]={"XLK":"62.00","XLE":"37.00","IWM":"25.00"}
+    d["cash_usd"]="6.00"
+    d["settled_cash_usd"]="6.00"
+    x=call(s=d)
+    assert x["status"]=="HOLD_SELL_NEEDS_AUTHENTICATED_SHARE_QUANTITY"
+    assert x["monthly_event_id"]==slot_event(sym="IWM",side="sell")[2]
+    assert x["broker_original_share_qty_sourced"] is False
+    assert x["broker_client_order_id_or_order_body_returned"] is None
+    assert x["hypothetical_cas_reservation_proposed"] is False
