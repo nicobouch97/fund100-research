@@ -72,6 +72,96 @@ def required_symbols(cohorts: list[tuple[int, int, dict]]) -> set[str]:
     return symbols | {u7.BENCHMARK, u7.EQUAL_WEIGHT_BENCHMARK} if symbols else set()
 
 
+
+def _economic_entry_date_comparisons(results: list[dict]) -> dict:
+    """Unique ticker/entry costed comparisons clustered by entry date.
+
+    Never reweight a partly observed entry-date cohort or promote alpha.
+    """
+    from math import isfinite
+
+    fields = ("stock_net_minus_spy_net_percentage_points",
+              "stock_net_minus_rsp_net_percentage_points",
+              "stock_net_minus_gross_spy_percentage_points",
+              "stock_net_minus_gross_rsp_percentage_points")
+    costs = tuple(str(x) for x in u7.COSTS)
+    unique = {}
+    for cohort in results:
+        rows = cohort["original_frozen_source"]["deduplicated_stock_entry_exposures"]
+        mark = cohort["source_relative_two_close_marks"]
+        observations = mark.get("source_dated_return_observations")
+        if not isinstance(observations, list) or len(observations) != len(rows):
+            raise RollingStop("Original costed stock marks missing or inconsistent")
+        by_key = {}
+        for observation in observations:
+            if not isinstance(observation, dict):
+                raise RollingStop("Malformed original forward stock mark")
+            key = (observation.get("ticker"), observation.get("frozen_entry_close"))
+            if key in by_key:
+                raise RollingStop("Duplicate original forward stock mark")
+            by_key[key] = observation
+        if set(by_key) != {(r["ticker"], r["entry_close"]) for r in rows}:
+            raise RollingStop("Original forward marks do not match frozen stocks")
+        complete = mark["priced_two_close_exposures"] == len(rows)
+        for row in rows:
+            key = (row["ticker"], row["entry_close"])
+            observation = by_key[key]
+            if (observation.get("frozen_exit_close") != row["exit_close"]
+                or observation.get("original_earnings_accessions") != row.get("accessions")):
+                raise RollingStop("Original forward mark changed frozen entry identity")
+            metrics = {}
+            if complete:
+                if observation.get("status") != "TWO_COMPLETED_CLOSES_COSTED_DESCRIPTIVE_NOT_ALPHA":
+                    raise RollingStop("Completed original stock mark has pending status")
+                for field in fields:
+                    values = observation.get(field)
+                    if (not isinstance(values, dict) or set(values) != set(costs)
+                        or any(type(values[b]) not in (int, float)
+                               or not isfinite(values[b]) for b in costs)):
+                        raise RollingStop("Missing or nonfinite costed original stock return")
+                    metrics[field] = {b: values[b] for b in costs}
+            else:
+                if (observation.get("status") !=
+                    "WAITING_FOR_INDEPENDENT_FUTURE_COMPLETED_PRICE_SOURCE"
+                    or any(observation.get(field) is not None for field in fields)):
+                    raise RollingStop("Pending original stock mark contains future return")
+            record = {"ticker": row["ticker"], "entry_close": row["entry_close"],
+                      "exit_close": row["exit_close"], "completed": complete,
+                      "metrics": metrics}
+            if key in unique and unique[key] != record:
+                raise RollingStop("Duplicate economic stock exposure has conflicting returns")
+            unique[key] = record
+
+    clusters = {}
+    for record in unique.values():
+        clusters.setdefault(record["entry_close"], []).append(record)
+    completed_dates, pending_dates = [], []
+    for entry_date, positions in sorted(clusters.items()):
+        if len({r["exit_close"] for r in positions}) != 1:
+            raise RollingStop("Entry-date economic cluster has inconsistent exits")
+        if not all(r["completed"] for r in positions):
+            pending_dates.append({
+                "entry_close": entry_date,
+                "unique_stock_exposures": len(positions),
+                "completed_stock_exposures": sum(r["completed"] for r in positions),
+                "no_partial_cohort_return": True})
+            continue
+        summary = {"entry_close": entry_date,
+                   "exit_close": positions[0]["exit_close"],
+                   "unique_stock_exposures": len(positions),
+                   "equal_weight_unique_stock_exposures": True}
+        for field in fields:
+            summary[field] = {
+                b: round(sum(r["metrics"][field][b] for r in positions) /
+                         len(positions), 9) for b in costs}
+        completed_dates.append(summary)
+    return {
+        "unique_entry_date_clusters": len(clusters),
+        "completed_entry_date_clusters": completed_dates,
+        "pending_entry_date_clusters": pending_dates,
+        "date_clustered_descriptive_returns_not_investable_portfolio_or_alpha": True,
+    }
+
 def mark_chain(cohorts: list[tuple[int, int, dict]], *,
                prices: pd.DataFrame | None,
                acquired_utc: str | None = None,
@@ -134,6 +224,11 @@ def mark_chain(cohorts: list[tuple[int, int, dict]], *,
         })
     if priced + pending != total_exposures:
         raise RollingStop("Incomplete cohort coverage or fabricated marks")
+    date_comparisons = _economic_entry_date_comparisons(results)
+    if len(economic_exposures) != sum(
+            r["unique_stock_exposures"] for r in date_comparisons["completed_entry_date_clusters"] +
+            date_comparisons["pending_entry_date_clusters"]):
+        raise RollingStop("Date-clustered economic exposure coverage mismatch")
     return {
         "schema": SCHEMA,
         "status": "ROLLING_SOURCE_RELATIVE_DESCRIPTIVE_RESEARCH_ONLY",
@@ -153,6 +248,7 @@ def mark_chain(cohorts: list[tuple[int, int, dict]], *,
         "duplicate_ticker_entry_observations_across_cohorts": (
             total_exposures - len(economic_exposures)),
         "all_nonempty_cohorts_fully_priced": bool(total_exposures and not pending),
+        "economic_entry_date_costed_comparisons": date_comparisons,
         "cohort_results": results,
         "independent_revisable_price_acquired_utc": acquired_utc,
         "no_portfolio_alpha_from_overlapping_or_partial_cohorts": True,
