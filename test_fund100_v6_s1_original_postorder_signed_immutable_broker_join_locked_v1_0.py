@@ -57,7 +57,15 @@ def fixtures(monkeypatch):
 
 def test_two_principal_private_immutable_asset_and_actual_broker_adapter_join(monkeypatch):
     params,remote,docs,public,private_calls,broker_calls=fixtures(monkeypatch)
-    result=join.inspect_postorder(**params)
+    # Stage-count assertions on the fake clients identify an unexpected
+    # boundary rejection without printing private HMAC or broker material.
+    try:
+        result=join.inspect_postorder(**params)
+    except join.JoinStop:
+        assert len(private_calls)==4, ("private source GET stage",len(private_calls))
+        assert len(public.requests)==2, ("immutable source stage",len(public.requests))
+        assert len(broker_calls)==6, ("broker source stage",len(broker_calls))
+        raise
     assert result["status"]=="TEST_ONLY_ALL_SOURCES_STRUCTURALLY_JOINED_NO_LIVE_AUTHORITY"
     assert len(private_calls)==4
     assert {token for _,token in private_calls}=={READ,WRITE}
