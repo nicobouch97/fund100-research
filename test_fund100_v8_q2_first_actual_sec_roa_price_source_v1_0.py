@@ -286,3 +286,13 @@ def test_frozen_gap_audit_rejects_changed_original_sec_bytes(tmp_path):
     import fund100_v8_q2_frozen_forward_63_marks_v1_0 as marks
     with pytest.raises(marks.MarkHold, match="source bytes changed"):
         app.audit_frozen_source_coverage(tmp_path)
+
+
+def test_frozen_gap_audit_is_research_only_and_wired_to_existing_forward_run():
+    workflow = Path(".github/workflows/fund100-v8-q2-frozen-forward-mark.yml").read_text()
+    assert "--audit-original-dir /tmp/q2-first" in workflow
+    assert "q2-original-sec-gap-audit.json" in workflow
+    assert "contents: write" not in workflow
+    assert "secrets.ALPACA_LIVE_KEY" not in workflow
+    assert "fund100-live-broker" not in workflow
+    assert "  workflow_dispatch:" not in workflow
