@@ -81,7 +81,7 @@ def base():
     qty=source["original_qty"]
     receipt=pure.build_exact_sell_payload(original_qty=qty)
     receipt.update({"id":OID,"status":"filled","filled_qty":qty,
-                    "filled_at":COMPLETED,"notional":None})
+                    "filled_at":COMPLETED,"filled_avg_price":"1","notional":None})
     fill={"id":"acwi-fill::1","activity_type":"FILL",
           "order_id":OID,"transaction_time":FILL1,
           "symbol":"ACWI","side":"sell","type":"fill",
@@ -108,6 +108,7 @@ def test_valid_original_first_sell_is_only_a_structural_synthetic_proof():
     assert v["first_symbol"]=="ACWI"
     assert v["signed_original_prepost_HMAC_and_public_chain_verified"]
     assert v["broker_receipt_to_complete_FILLS_structurally_linked"]
+    assert v["receipt_average_price_matches_FILLS"]
     assert v["original_ACWI_absent_in_post_positions"]
     assert v["EEM_XLE_XLV_retained_in_original_quantities"]
     assert v["all_hypothetical_fill_pages_complete"]
@@ -133,6 +134,44 @@ def test_two_original_partial_and_final_fill_activities_sum_exactly():
                  "cum_qty":format(qty,"f"),"leaves_qty":"0"})
     a["fill_pages"][0].append(last)
     assert m.assess(**a)["broker_receipt_to_complete_FILLS_structurally_linked"]
+
+
+@pytest.mark.parametrize("bad",[None,"NaN","Infinity","0","-1","1.02",2])
+def test_filled_receipt_average_price_must_be_present_finite_and_match_fills(bad):
+    a=base()
+    a["closed_receipt"]["filled_avg_price"]=bad
+    with pytest.raises(m.FillFlatStop,match="average price"):
+        m.assess(**a)
+
+
+def test_weighted_partial_fill_prices_must_match_receipt_average():
+    from decimal import Decimal
+    a=base()
+    qty=Decimal(a["signed_prepost_sources"]["original_qty"])
+    half=format(qty/2,"f")
+    first_fill=a["fill_pages"][0][0]
+    first_fill.update(qty=half,cum_qty=half,leaves_qty=half,
+                      type="partial_fill",price="1")
+    second_fill=deepcopy(first_fill)
+    second_fill.update(id="acwi-fill::2",transaction_time=FILL2,
+                       qty=half,cum_qty=format(qty,"f"),leaves_qty="0",
+                       type="fill",price="2")
+    a["fill_pages"][0].append(second_fill)
+    a["closed_receipt"]["filled_avg_price"]="1.50"
+    assert m.assess(**a)["receipt_average_price_matches_FILLS"] is True
+    a["closed_receipt"]["filled_avg_price"]="1.51"
+    with pytest.raises(m.FillFlatStop,match="disagrees with FILL"):
+        m.assess(**a)
+
+
+def test_broker_cent_rounding_tolerance_not_permission_to_ignore_price():
+    a=base()
+    a["closed_receipt"]["filled_avg_price"]="1.00"
+    a["fill_pages"][0][0]["price"]="1.004"
+    assert m.assess(**a)["receipt_average_price_matches_FILLS"] is True
+    a["fill_pages"][0][0]["price"]="1.006"
+    with pytest.raises(m.FillFlatStop,match="disagrees with FILL"):
+        m.assess(**a)
 
 
 def test_first_full_page_requires_second_page_even_if_one_order_filled():
@@ -271,6 +310,7 @@ def test_completed_original_acwi_inventory_exit_above_65_is_reconciled_not_a_new
     # may exceed the new BUY order limit without granting fresh exposure.
     price=(Decimal("80")/qty).quantize(Decimal("0.01"))
     a["fill_pages"][0][0]["price"]=format(price,"f")
+    a["closed_receipt"]["filled_avg_price"]=format(price,"f")
     assert qty*price>Decimal("65")
     report=m.assess(**a)
     assert report["stage"]=="SYNTHETIC_ACWI_SELL_RECEIPT_FILLS_AND_FLAT_STRUCTURALLY_MATCH"
