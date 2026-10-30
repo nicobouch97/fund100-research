@@ -1,0 +1,37 @@
+name: Fund-100 Multi-Asset Strategy Evidence Status (NO BROKER)
+on:
+  pull_request:
+    paths:
+      - "research_lab/STRATEGY_EVIDENCE_AND_LAUNCH_PRIORITY_SNAPSHOT_2026_10_30.md"
+      - "test_fund100_strategy_evidence_snapshot_2026_10_30.py"
+      - "FUND100_MULTI_ASSET_ROADMAP.md"
+      - ".github/workflows/fund100-strategy-evidence-status-20261030.yml"
+  push:
+    branches: [main]
+    paths:
+      - "research_lab/STRATEGY_EVIDENCE_AND_LAUNCH_PRIORITY_SNAPSHOT_2026_10_30.md"
+      - "test_fund100_strategy_evidence_snapshot_2026_10_30.py"
+      - "FUND100_MULTI_ASSET_ROADMAP.md"
+      - ".github/workflows/fund100-strategy-evidence-status-20261030.yml"
+permissions:
+  contents: read
+jobs:
+  dated-economic-verdicts-no-launch-delay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify original economic decisions and preserved HIGH operator STOP
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_strategy_evidence_snapshot_2026_10_30.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          grep -Eq '"first_original_acwi_sell_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'Historical strategy evidence reviewed, no LIVE order authority.'
