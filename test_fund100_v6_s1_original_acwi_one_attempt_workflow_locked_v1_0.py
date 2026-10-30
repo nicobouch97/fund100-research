@@ -24,7 +24,7 @@ def test_new_manual_workflow_scoped_main_environment_and_original_writer_mutex()
     assert "github.ref == 'refs/heads/main'" in w
     assert "test \"$GITHUB_RUN_ATTEMPT\" = '1'" in w
     assert w.count("environment: fund100-live-broker")==1
-    assert "group: fund100-v5-002-live-production" in w
+    assert "group: fund100-alpaca-live-account-writer" in w
     assert "cancel-in-progress: false" in w
     assert "persist-credentials: false" in w
     assert "timeout-minutes: 10" in w

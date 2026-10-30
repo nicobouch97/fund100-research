@@ -18,7 +18,7 @@ permissions:
 # Share the EXISTING V5 real execution mutex, not a parallel competing one.
 # Retain the mutex when this V6 workflow is ever separately authorised.
 concurrency:
-  group: fund100-v5-002-live-production
+  group: fund100-alpaca-live-account-writer
   cancel-in-progress: false
 
 jobs:
