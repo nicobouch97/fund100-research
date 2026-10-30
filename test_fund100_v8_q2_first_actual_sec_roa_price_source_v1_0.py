@@ -361,3 +361,70 @@ def test_frozen_gap_audit_is_research_only_and_wired_to_existing_forward_run():
     assert "secrets.ALPACA_LIVE_KEY" not in workflow
     assert "fund100-live-broker" not in workflow
     assert "  workflow_dispatch:" not in workflow
+
+
+def test_all_issuer_parent_taxonomy_uses_complete_frozen_denominator(tmp_path):
+    registry, raw, panel = sources()
+    report = _write_frozen_audit_archive(tmp_path, registry, raw, panel)
+    audit = app.audit_frozen_source_coverage(tmp_path)
+    coverage = audit["all_issuer_parent_earnings_coverage"]
+    assert coverage["original_issuer_denominator"] == 24
+    assert coverage["latest_eligible_10k_issuers"] == 24
+    assert coverage["issuer_identity_quarantined"] == 0
+    assert coverage["same_10k_concept_presence_counts"]["net_income_loss"] == 24
+    assert coverage["positive_earnings_with_positive_assets_counts"][
+        "net_income_loss"] == 24
+    assert len(coverage["issuer_concept_presence_not_ranks"]) == 24
+    assert coverage["no_retroactive_factor_or_basket_reselection"]
+    assert coverage["no_historical_survivorship_or_alpha_claim"]
+    assert audit["original_frozen_selection_symbols"] == report[
+        "source_derived_research_selection"]["selection_candidate"]["symbols"]
+
+
+def test_all_issuer_parent_income_bridge_is_distinct_from_common_income(tmp_path):
+    registry, raw, panel = sources()
+    cik = sec.resolve_registry(registry)["AAPL"]
+    key = f"raw/CIK{cik}-AAPL-companyfacts.json"
+    doc = json.loads(raw[key])
+    gaap = doc["facts"]["us-gaap"]
+    annual = dict(gaap["NetIncomeLoss"]["units"]["USD"][0])
+    parent = annual["val"]
+    gaap["ProfitLoss"] = {"units": {"USD": [
+        dict(annual, val=parent + 100)]}}
+    gaap["NetIncomeLossAttributableToNoncontrollingInterest"] = {
+        "units": {"USD": [dict(annual, val=100)]}}
+    gaap["NetIncomeLossAttributableToParent"] = {
+        "units": {"USD": [dict(annual, val=parent)]}}
+    gaap["NetIncomeLossAvailableToCommonStockholdersBasic"] = {
+        "units": {"USD": [dict(annual, val=parent - 10)]}}
+    raw[key] = json.dumps(doc).encode()
+    report = _write_frozen_audit_archive(tmp_path, registry, raw, panel)
+    coverage = app.audit_frozen_source_coverage(
+        tmp_path)["all_issuer_parent_earnings_coverage"]
+    assert coverage["same_10k_concept_presence_counts"]["parent_income"] == 1
+    assert coverage["same_10k_concept_presence_counts"][
+        "reported_noncontrolling_income"] == 1
+    assert coverage["positive_earnings_with_positive_assets_counts"][
+        "parent_income"] == 1
+    assert coverage["explicit_profit_minus_nci_bridge_comparable"] == {
+        "parent": 1, "common": 1}
+    assert coverage["explicit_profit_minus_nci_bridge_exact"] == {
+        "parent": 1, "common": 0}
+    assert coverage["explicit_bridge_mismatch_symbols"]["common"] == ["AAPL"]
+    assert coverage["missing_nci_never_assumed_zero"]
+    assert coverage["parent_and_common_income_not_interchangeable"]
+    assert report["source_derived_research_selection"]["selection_candidate"]
+
+
+def test_all_issuer_parent_taxonomy_conflicting_original_facts_fail_closed(tmp_path):
+    registry, raw, panel = sources()
+    cik = sec.resolve_registry(registry)["AAPL"]
+    key = f"raw/CIK{cik}-AAPL-companyfacts.json"
+    doc = json.loads(raw[key])
+    annual = dict(doc["facts"]["us-gaap"]["NetIncomeLoss"]["units"]["USD"][0])
+    doc["facts"]["us-gaap"]["NetIncomeLossAttributableToParent"] = {
+        "units": {"USD": [dict(annual, val=1), dict(annual, val=2)]}}
+    raw[key] = json.dumps(doc).encode()
+    _write_frozen_audit_archive(tmp_path, registry, raw, panel)
+    with pytest.raises(app.Q2SourceHold, match="Conflicting same-10K"):
+        app.audit_frozen_source_coverage(tmp_path)

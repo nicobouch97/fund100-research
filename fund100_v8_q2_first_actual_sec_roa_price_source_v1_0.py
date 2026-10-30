@@ -230,6 +230,134 @@ def analyze_sources(*, registry: bytes, source_files: dict[str, bytes],
 
 
 
+
+def audit_all_issuer_parent_earnings_coverage(
+        original_root: Path, rows: dict, receipts: dict, now: datetime) -> dict:
+    """Measure taxonomy coverage on ALL frozen issuers, not only source gaps.
+
+    This is a non-ranking, read-only audit of the same latest eligible 10-K
+    used by the original Q2 selection. Parent income, common-shareholder
+    income and consolidated income are distinct concepts. A partial bridge
+    is never imputed where reported NCI is absent.
+    """
+    tags = {
+        "net_income_loss": "NetIncomeLoss",
+        "profit_loss": "ProfitLoss",
+        "parent_income": "NetIncomeLossAttributableToParent",
+        "common_stockholder_income":
+            "NetIncomeLossAvailableToCommonStockholdersBasic",
+        "reported_noncontrolling_income":
+            "NetIncomeLossAttributableToNoncontrollingInterest",
+    }
+    if set(rows) != set(receipts) or len(rows) != MAX_COMPANIES:
+        raise Q2SourceHold("Incomplete all-issuer original SEC taxonomy cohort")
+    counts = {key: 0 for key in tags}
+    counts["assets"] = 0
+    matched_positive = {key: 0 for key in (
+        "net_income_loss", "profit_loss", "parent_income",
+        "common_stockholder_income")}
+    comparable = {"parent": 0, "common": 0}
+    exact = {"parent": 0, "common": 0}
+    mismatches = {"parent": [], "common": []}
+    by_symbol = []
+    latest_count = 0
+    quarantined = 0
+    for symbol in sorted(rows):
+        row, receipt = rows[symbol], receipts[symbol]
+        if row["frozen_issuer_identity_status"] == "QUARANTINED_ID_DRIFT":
+            quarantined += 1
+            by_symbol.append({
+                "symbol": symbol, "status": "IDENTITY_QUARANTINED",
+                "present": None, "positive_assets": False})
+            continue
+        if row["frozen_issuer_identity_status"] != "FROZEN_ORIGINAL_ID_MATCH":
+            raise Q2SourceHold("Unknown original issuer identity in taxonomy audit")
+        cik = receipt["current_registry_cik"]
+        prefix = original_root / f"raw/CIK{cik}-{symbol}"
+        try:
+            facts = intake.decode_source(
+                Path(str(prefix) + "-companyfacts.json").read_bytes(),
+                expected_cik=cik)
+            subs = intake.decode_source(
+                Path(str(prefix) + "-submissions.json").read_bytes(),
+                expected_cik=cik)
+            quality.validate_identity(facts, subs, cik)
+            index = quality.submissions_index(subs)
+        except Exception as exc:
+            raise Q2SourceHold("All-issuer SEC taxonomy source invalid") from exc
+        eligible = []
+        for accession, item in index.items():
+            if item["form"] != "10-K":
+                continue
+            try:
+                filed = date.fromisoformat(item["filed"])
+                end = date.fromisoformat(item["end"])
+            except (ValueError, TypeError) as exc:
+                raise Q2SourceHold("All-issuer SEC chronology invalid") from exc
+            available = datetime.combine(
+                filed + timedelta(days=1), datetime.min.time(),
+                tzinfo=timezone.utc)
+            if (end <= filed and now.date() > filed
+                    and now - timedelta(days=540) <= available <= now):
+                eligible.append((end, filed, accession))
+        if not eligible:
+            by_symbol.append({
+                "symbol": symbol, "status": "NO_ELIGIBLE_10K",
+                "present": None, "positive_assets": False})
+            continue
+        latest_count += 1
+        end, filed, accession = max(eligible)
+        values = {
+            key: _same_filing_usd(
+                facts, accession, filed, end, tag, annual=True)
+            for key, tag in tags.items()
+        }
+        assets = _same_filing_usd(
+            facts, accession, filed, end, "Assets", annual=False)
+        positive_assets = assets is not None and assets > 0
+        if positive_assets:
+            counts["assets"] += 1
+        for key, value in values.items():
+            if value is not None:
+                counts[key] += 1
+                if key in matched_positive and value > 0 and positive_assets:
+                    matched_positive[key] += 1
+        profit, nci = (values["profit_loss"],
+                       values["reported_noncontrolling_income"])
+        for kind, key in (("parent", "parent_income"),
+                          ("common", "common_stockholder_income")):
+            other = values[key]
+            if profit is not None and nci is not None and other is not None:
+                comparable[kind] += 1
+                if profit - nci == other:
+                    exact[kind] += 1
+                else:
+                    mismatches[kind].append(symbol)
+        by_symbol.append({
+            "symbol": symbol, "status": "LATEST_ELIGIBLE_10K",
+            "present": {key: value is not None for key, value in values.items()},
+            "positive_assets": positive_assets,
+        })
+    if len(by_symbol) != MAX_COMPANIES:
+        raise Q2SourceHold("All-issuer SEC taxonomy denominator changed")
+    return {
+        "original_issuer_denominator": MAX_COMPANIES,
+        "latest_eligible_10k_issuers": latest_count,
+        "issuer_identity_quarantined": quarantined,
+        "same_10k_concept_presence_counts": counts,
+        "positive_earnings_with_positive_assets_counts": matched_positive,
+        "explicit_profit_minus_nci_bridge_comparable": comparable,
+        "explicit_profit_minus_nci_bridge_exact": exact,
+        "explicit_bridge_mismatch_symbols": mismatches,
+        "issuer_concept_presence_not_ranks": by_symbol,
+        "missing_nci_never_assumed_zero": True,
+        "parent_and_common_income_not_interchangeable": True,
+        "no_retroactive_factor_or_basket_reselection": True,
+        "no_historical_survivorship_or_alpha_claim": True,
+    }
+
+
+
 def audit_frozen_source_coverage(original_root: Path) -> dict:
     """Explain first-source gaps without changing the frozen selection.
 
@@ -367,6 +495,9 @@ def audit_frozen_source_coverage(original_root: Path) -> dict:
         "original_source_report_sha256": sha256(
             (original_root / marks.FIRST_SOURCE_REPORT).read_bytes()).hexdigest(),
         "source_gap_count": len(observations),
+        "all_issuer_parent_earnings_coverage":
+            audit_all_issuer_parent_earnings_coverage(
+                original_root, rows, receipts, now),
         "source_gaps": observations,
         "original_frozen_selection_symbols": (
             screen["selection_candidate"]["symbols"]
