@@ -228,13 +228,21 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
                               values[sym]-migration.MAX_SYMBOL*(nav-fee))
             required=max(needed_cash,needed_gross,needed_symbol,
                          max(Decimal(0),surplus))
-            # Round needed proceeds UP to cents; rounding down would leave
-            # small mathematical breaches. A partial sale <= $65 does NOT
-            # certify that all constraints were repaired.
-            size=min(required.quantize(CENTS,rounding=ROUND_UP),
+            # Very small reserve breaches cannot justify a 10%+ all-in
+            # execution drag. Seek one economical ticket only if that can
+            # remain inside the original +/-10pp underweight tolerance.
+            # Do not simulate repeated $1 repairs or free zero-cost fills.
+            economical=(fee/MAX_SIDE_COST_FRACTION).quantize(
+                CENTS,rounding=ROUND_UP)
+            desired=max(required,economical,migration.MIN_ORDER)
+            size=min(desired.quantize(CENTS,rounding=ROUND_UP),
                      migration.MAX_ORDER,values[sym])
+            lowest_within_band=max(
+                Decimal(0),(TARGET[sym]-BAND)*nav)
             if (size<migration.MIN_ORDER
-                or fee>=size or fee>MAX_SIDE_COST_FRACTION*size):
+                or fee>=size or fee>MAX_SIDE_COST_FRACTION*size
+                or (sym not in symbol_breaches
+                    and values[sym]-size<lowest_within_band)):
                 return _report("HOLD_CASH_OR_EXPOSURE_REPAIR_TOO_SMALL_OR_COSTLY",
                                period=period)
             if (cash+size-fee<=cash
