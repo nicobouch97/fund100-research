@@ -553,3 +553,73 @@ def test_original_vendor_bytes_and_excluded_date_are_preserved(monkeypatch,tmp_p
     assert vendor_rows["Date"].iloc[-1]=="2026-10-29"
     assert pd.isna(vendor_rows["SPY"].iloc[-1])
     assert len(vendor_rows)==len(accepted)+1
+
+
+def test_next_close_policy_repair_sells_only_after_prior_breach():
+    # Original top-two monthly signal selects GLD/DBC. A persistent 25%
+    # GLD repricing creates >50% single-name weight after the entry.
+    # Repair must be requested on a completed prior close and sold only
+    # at a subsequent close, with post-fee caps and no new purchases.
+    df=sample(short=True)
+    shock=pd.Timestamp("2014-01-07")
+    df.loc[df.index>=shock,"GLD"]*=1.25
+    baseline=t.simulate(df,start="2014-01-02",end="2016-12-30",
+                        side_bps=15,strategy="CROSS_ASSET_12_1_NEXT_CLOSE")
+    repaired=t.simulate(df,start="2014-01-02",end="2016-12-30",
+                        side_bps=15,
+                        strategy="CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR")
+    assert repaired["risk_repair_requested_closes"]>=1
+    assert repaired["risk_repair_actual_sell_closes"]>=1
+    completed=[r for r in repaired["risk_repair_log"]
+               if r["sell_only_notional_per_100_initial_usd"] is not None
+               and r["sell_only_notional_per_100_initial_usd"]>0]
+    assert completed
+    for row in completed:
+        assert row["modeled_execution_close"]>row["breach_observed_close"]
+        assert row["post_repair_max_single_weight"]<=.5+1e-8
+        assert row["post_repair_gross_weight"]<=.95+1e-8
+        assert row["repair_cost_per_100_initial_usd"]>0
+    assert repaired["modeled_fees_usd_per_100_initial_usd"]>0
+    assert repaired["signal_trade_log"]==baseline["signal_trade_log"]
+    assert repaired["no_actual_orders"]
+    assert repaired["risk_repair_posthoc_policy_feasibility_not_alpha"]
+
+
+def test_policy_repair_is_sell_only_fee_conserving_and_skips_healed_breach():
+    pos=np.array([60.,20.,10.,0.])
+    for bps in t.COSTS:
+        post,new,cash,paid,sold=t._sell_only_policy_repair(100.,pos,bps/10000.)
+        assert (new<=pos+1e-10).all()
+        assert max(new)/post<=.5+1e-9
+        assert sum(new)/post<=.95+1e-9
+        assert cash/post>=.05-1e-9
+        assert 100.-post==pytest.approx(paid,abs=1e-8)
+        assert paid==pytest.approx(sold*bps/10000.,abs=1e-8)
+    post,new,cash,paid,sold=t._sell_only_policy_repair(
+        100.,np.array([40.,35.,10.,0.]),.0015)
+    assert post==100. and paid==sold==0.
+    assert np.array_equal(new,np.array([40.,35.,10.,0.]))
+    with pytest.raises(t.CrossAssetTrendStop):
+        t._sell_only_policy_repair(100.,np.array([120.,0.,0.,0.]),.0015)
+
+
+def test_policy_repair_all_cash_never_invents_trades_or_promotion():
+    df=sample(decline=True,short=True)
+    repaired=t.simulate(df,start="2014-01-02",end="2016-12-30",
+        side_bps=35,strategy="CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR")
+    assert repaired["risk_repair_requested_closes"]==0
+    assert repaired["risk_repair_actual_sell_closes"]==0
+    assert repaired["net_total_return_pct"]==0
+    assert repaired["modeled_fees_usd_per_100_initial_usd"]==0
+    report=t.analyze(sample(),"2026-10-27T11:00:00Z")
+    assert report["policy_repair_not_a_new_promotion_gate"]
+    assert set(report["posthoc_next_close_high_policy_repair"])==set(t.REGISTERED_WINDOWS)
+    for era,by_cost in report["posthoc_next_close_high_policy_repair"].items():
+        assert set(by_cost)=={"5","15","35"}
+        for bps,diagnostic in by_cost.items():
+            assert diagnostic["posthoc_not_promotion_or_broker_risk_enforcement"]
+            assert diagnostic["sell_only_next_close_policy_repair_path"]["no_actual_orders"]
+            assert diagnostic["sell_only_next_close_policy_repair_path"][
+                "signal_trade_log"]==report["next_close_execution_stress"][era][bps][
+                    "next_close_costed_path"]["signal_trade_log"]
+    assert not report["trading_authorized"]
