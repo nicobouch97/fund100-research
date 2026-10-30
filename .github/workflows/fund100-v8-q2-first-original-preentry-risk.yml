@@ -39,6 +39,16 @@ jobs:
           set -euo pipefail
           python -m pip install -r requirements.txt
           python -m pytest -q test_fund100_v8_q2_first_original_preentry_risk_v1_0.py
+          # This PR's original base-branch full-audit path filter predates
+          # the Q2 risk module. Verify the EXACT proposed head before merge.
+          # On main, the normal full LIVE static audit is separately triggered.
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            export FUND100_BROKER_KILL_SWITCH=ENGAGED
+            python -m pytest -q
+            python -B fund100_v6_frozen_opportunity_forward_diagnostic_v1_0.py
+            python audit_fund100_live_boundary_v1_17.py
+            python audit_fund100_live_boundary_v1_18.py
+          fi
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
           grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
 
