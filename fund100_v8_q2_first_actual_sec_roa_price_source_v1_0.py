@@ -229,14 +229,148 @@ def analyze_sources(*, registry: bytes, source_files: dict[str, bytes],
     }, prices_bytes
 
 
+
+def audit_frozen_source_coverage(original_root: Path) -> dict:
+    """Explain first-source gaps without changing the frozen selection.
+
+    This is a separately dated, reproducible *diagnostic*, not a substitute
+    taxonomy for the preregistered NetIncomeLoss / Assets Q2 factor. First
+    independently rederive the exact original report from its 48 SEC files.
+    """
+    import fund100_v8_q2_frozen_forward_63_marks_v1_0 as marks
+
+    report, screen, _, captured = marks._read_source(original_root)
+    receipts = {r["symbol"]: r for r in
+                report["complete_current_original_24_sec_source_receipts"]}
+    rows = {r["symbol"]: r for r in report["source_rows"]}
+    gaps = screen["source_gaps"]
+    if (type(gaps) is not list or len(set(gaps)) != len(gaps)
+        or any(s not in receipts or s not in rows for s in gaps)):
+        raise Q2SourceHold("Frozen Q2 gap roster inconsistent with original SEC archive")
+    observations = []
+    now = q2._utc(captured)
+    for symbol in sorted(gaps):
+        row, receipt = rows[symbol], receipts[symbol]
+        cik = receipt["current_registry_cik"]
+        entry = {
+            "symbol": symbol,
+            "frozen_issuer_identity_status": row["frozen_issuer_identity_status"],
+            "current_registry_cik": cik,
+            "original_raw_sec_receipt_sha256": row["original_raw_sec_receipt_sha256"],
+            "diagnostic_only_not_retroactive_eligibility": True,
+        }
+        if row["frozen_issuer_identity_status"] == "QUARANTINED_ID_DRIFT":
+            # Never use facts from a new CIK as the original issuer's facts.
+            entry["reason"] = "ORIGINAL_ISSUER_CIK_DRIFT_QUARANTINED"
+            entry["latest_eligible_10k_accession"] = None
+            entry["same_filing_profit_loss_usd"] = None
+            observations.append(entry)
+            continue
+        if row["frozen_issuer_identity_status"] != "FROZEN_ORIGINAL_ID_MATCH":
+            raise Q2SourceHold("Unknown frozen issuer status in source gap")
+        prefix = original_root / f"raw/CIK{cik}-{symbol}"
+        try:
+            facts = intake.decode_source(
+                (Path(str(prefix) + "-companyfacts.json")).read_bytes(),
+                expected_cik=cik)
+            subs = intake.decode_source(
+                (Path(str(prefix) + "-submissions.json")).read_bytes(),
+                expected_cik=cik)
+            quality.validate_identity(facts, subs, cik)
+            index = quality.submissions_index(subs)
+        except Exception as exc:
+            raise Q2SourceHold("Original SEC diagnostic issuer facts invalid") from exc
+        eligible = []
+        for accession, item in index.items():
+            if item["form"] != "10-K":
+                continue
+            try:
+                filed = date.fromisoformat(item["filed"])
+                end = date.fromisoformat(item["end"])
+            except (TypeError, ValueError) as exc:
+                raise Q2SourceHold("Original diagnostic 10-K chronology invalid") from exc
+            available = datetime.combine(
+                filed + timedelta(days=1), datetime.min.time(),
+                tzinfo=timezone.utc)
+            if (end <= filed and now.date() > filed
+                and now - timedelta(days=540) <= available <= now):
+                eligible.append((end, filed, accession))
+        if not eligible:
+            entry.update({
+                "reason": "NO_ELIGIBLE_ORIGINAL_10K",
+                "latest_eligible_10k_accession": None,
+                "same_filing_profit_loss_usd": None,
+            })
+            observations.append(entry)
+            continue
+        end, filed, accession = max(eligible)
+        income = _same_filing_usd(
+            facts, accession, filed, end, "NetIncomeLoss", annual=True)
+        assets = _same_filing_usd(
+            facts, accession, filed, end, "Assets", annual=False)
+        alternative = _same_filing_usd(
+            facts, accession, filed, end, "ProfitLoss", annual=True)
+        if income is not None and assets is not None and assets > 0:
+            raise Q2SourceHold("SEC diagnostic contradicts frozen source gap")
+        missing = []
+        if income is None:
+            missing.append("NET_INCOME_LOSS")
+        if assets is None or assets <= 0:
+            missing.append("POSITIVE_ASSETS")
+        entry.update({
+            "reason": "MISSING_SAME_10K_" + "_AND_".join(missing),
+            "latest_eligible_10k_accession": accession,
+            "latest_eligible_10k_filed": filed.isoformat(),
+            "latest_eligible_10k_report_end": end.isoformat(),
+            "same_filing_net_income_loss_usd": (
+                str(income) if income is not None else None),
+            "same_filing_assets_usd": (
+                str(assets) if assets is not None else None),
+            "same_filing_profit_loss_usd": (
+                str(alternative) if alternative is not None else None),
+            "profit_loss_is_not_substituted_for_frozen_net_income_loss": True,
+        })
+        observations.append(entry)
+    return {
+        "schema": "FUND100_V8_Q2_FROZEN_ORIGINAL_SEC_GAP_DIAGNOSTIC_V1",
+        "original_source_acquired_utc": captured,
+        "original_source_report_sha256": sha256(
+            (original_root / marks.FIRST_SOURCE_REPORT).read_bytes()).hexdigest(),
+        "source_gap_count": len(observations),
+        "source_gaps": observations,
+        "original_frozen_selection_symbols": (
+            screen["selection_candidate"]["symbols"]
+            if screen["selection_candidate"] is not None else None),
+        "frozen_selection_and_original_source_unchanged": True,
+        "alternative_taxonomy_not_approved_for_original_selection": True,
+        "survivorship_safe_or_alpha_proven": False,
+        "live_order_authorized": False,
+        "broker_gets": 0, "broker_posts": 0, "broker_orders": 0,
+    }
+
+
 def main():
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument("--output-dir", required=True, type=Path)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--output-dir", type=Path)
+    mode.add_argument("--audit-original-dir", type=Path)
+    parser.add_argument("--audit-output", type=Path)
     args = parser.parse_args()
     if not (NO_BROKER_HTTP and NO_PRIVATE_GITHUB_WRITES and
             NO_PUBLIC_GITHUB_RELEASES and NO_TRADING):
         raise Q2SourceHold("Original research-only no-broker source policy changed")
+    if args.audit_original_dir is not None:
+        if args.audit_output is None:
+            raise Q2SourceHold("Original archive diagnostic requires output path")
+        audit = audit_frozen_source_coverage(args.audit_original_dir)
+        args.audit_output.parent.mkdir(parents=True, exist_ok=True)
+        args.audit_output.write_text(
+            json.dumps(audit, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        print("Q2 frozen original SEC coverage audited; original basket unchanged.")
+        return
+    if args.audit_output is not None:
+        raise Q2SourceHold("Source acquisition cannot write diagnostic output")
     now = datetime.now(timezone.utc)
     if now < q2._utc(MIN_NEW_SOURCE):
         raise Q2SourceHold("Cannot acquire pre-registration Q2 evidence")

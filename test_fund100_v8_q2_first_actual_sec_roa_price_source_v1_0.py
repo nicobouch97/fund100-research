@@ -188,3 +188,111 @@ def test_deployed_source_workflow_has_only_public_get_and_existing_sec_identity(
         ".github/workflows/fund100-v8-q2-first-new-sec-price-source.yml",
     ):
         assert '      - "'+p+'"' in audit
+
+
+def _write_frozen_audit_archive(root, registry, raw, panel):
+    """Synthetic first-source archive, byte-for-byte like the original layout."""
+    report, prices = app.analyze_sources(
+        registry=registry, source_files=raw, price_panel=panel,
+        acquired_utc=NEW)
+    root.mkdir(parents=True, exist_ok=True)
+    (root/"current-official-sec-registry.json").write_bytes(registry)
+    (root/"original-24-issuer-completed-adjusted-prices.csv").write_bytes(prices)
+    (root/"first-new-vintage-q2-source-coverage-and-candidate-NO-LIVE.json").write_text(
+        json.dumps(report, sort_keys=True, indent=2)+"\n")
+    for name, data in raw.items():
+        path=root/name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    return report
+
+
+def test_frozen_gap_audit_has_no_new_selection_or_source_changes(tmp_path):
+    registry, raw, panel = sources()
+    report = _write_frozen_audit_archive(tmp_path, registry, raw, panel)
+    before = (tmp_path/"first-new-vintage-q2-source-coverage-and-candidate-NO-LIVE.json").read_bytes()
+    audit = app.audit_frozen_source_coverage(tmp_path)
+    assert audit["source_gap_count"] == 0
+    assert audit["original_source_report_sha256"] == sha256(before).hexdigest()
+    assert audit["original_frozen_selection_symbols"] == report[
+        "source_derived_research_selection"]["selection_candidate"]["symbols"]
+    assert audit["frozen_selection_and_original_source_unchanged"]
+    assert not audit["live_order_authorized"]
+    assert audit["broker_gets"] == audit["broker_posts"] == audit["broker_orders"] == 0
+    assert (tmp_path/"first-new-vintage-q2-source-coverage-and-candidate-NO-LIVE.json").read_bytes() == before
+
+
+def test_frozen_gap_audit_reports_profitloss_without_retroactive_substitution(tmp_path):
+    registry, raw, panel = sources()
+    cik = sec.resolve_registry(registry)["AVGO"]
+    key = f"raw/CIK{cik}-AVGO-companyfacts.json"
+    obj = json.loads(raw[key])
+    same_10k = dict(obj["facts"]["us-gaap"]["NetIncomeLoss"]["units"]["USD"][0])
+    obj["facts"]["us-gaap"]["ProfitLoss"] = {"units": {"USD": [same_10k]}}
+    del obj["facts"]["us-gaap"]["NetIncomeLoss"]
+    raw[key] = json.dumps(obj).encode()
+    report = _write_frozen_audit_archive(tmp_path, registry, raw, panel)
+    assert "AVGO" in report["source_derived_research_selection"]["source_gaps"]
+    frozen_symbols = report["source_derived_research_selection"][
+        "selection_candidate"]["symbols"]
+    assert "AVGO" not in frozen_symbols
+    audit = app.audit_frozen_source_coverage(tmp_path)
+    assert audit["source_gap_count"] == 1
+    gap = audit["source_gaps"][0]
+    assert gap["symbol"] == "AVGO"
+    assert gap["reason"] == "MISSING_SAME_10K_NET_INCOME_LOSS"
+    assert gap["same_filing_profit_loss_usd"] == str(same_10k["val"])
+    assert gap["same_filing_assets_usd"] is not None
+    assert gap["profit_loss_is_not_substituted_for_frozen_net_income_loss"]
+    assert audit["original_frozen_selection_symbols"] == frozen_symbols
+
+
+def test_frozen_gap_audit_preserves_identity_quarantine(tmp_path):
+    registry, raw, panel = sources()
+    mapping = sec.resolve_registry(registry)
+    original_cik = mapping["XOM"]
+    replacement = "0099999988"
+    reg = json.loads(registry)
+    for entry in reg.values():
+        if entry["ticker"] == "XOM":
+            entry["cik_str"] = int(replacement)
+            break
+    for kind in ("companyfacts", "submissions"):
+        oldkey = f"raw/CIK{original_cik}-XOM-{kind}.json"
+        newkey = f"raw/CIK{replacement}-XOM-{kind}.json"
+        data = json.loads(raw.pop(oldkey))
+        data["cik"] = int(replacement)
+        if kind == "companyfacts":
+            for tag in ("GrossProfit", "NetIncomeLoss", "Assets"):
+                data["facts"]["us-gaap"][tag]["units"]["USD"][0]["accn"] = (
+                    f"{replacement}-26-000001")
+        else:
+            data["filings"]["recent"]["accessionNumber"] = [
+                f"{replacement}-26-000001"]
+        raw[newkey] = json.dumps(data).encode()
+    _write_frozen_audit_archive(tmp_path, json.dumps(reg).encode(), raw, panel)
+    audit = app.audit_frozen_source_coverage(tmp_path)
+    assert audit["source_gap_count"] == 1
+    assert audit["source_gaps"][0]["reason"] == "ORIGINAL_ISSUER_CIK_DRIFT_QUARANTINED"
+    assert audit["source_gaps"][0]["same_filing_profit_loss_usd"] is None
+    assert "XOM" not in audit["original_frozen_selection_symbols"]
+
+
+def test_frozen_gap_audit_rejects_changed_original_sec_bytes(tmp_path):
+    registry, raw, panel = sources()
+    _write_frozen_audit_archive(tmp_path, registry, raw, panel)
+    file = next((tmp_path/"raw").glob("*companyfacts.json"))
+    file.write_bytes(file.read_bytes()+b"\n")
+    import fund100_v8_q2_frozen_forward_63_marks_v1_0 as marks
+    with pytest.raises(marks.MarkHold, match="source bytes changed"):
+        app.audit_frozen_source_coverage(tmp_path)
+
+
+def test_frozen_gap_audit_is_research_only_and_wired_to_existing_forward_run():
+    workflow = Path(".github/workflows/fund100-v8-q2-frozen-forward-mark.yml").read_text()
+    assert "--audit-original-dir /tmp/q2-first" in workflow
+    assert "q2-original-sec-gap-audit.json" in workflow
+    assert "contents: write" not in workflow
+    assert "secrets.ALPACA_LIVE_KEY" not in workflow
+    assert "fund100-live-broker" not in workflow
+    assert "  workflow_dispatch:" not in workflow
