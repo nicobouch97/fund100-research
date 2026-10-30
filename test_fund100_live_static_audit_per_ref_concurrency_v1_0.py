@@ -18,7 +18,7 @@ V6_LOCKED=ROOT/".github/workflows/fund100-v6-s1-original-acwi-one-attempt-locked
 
 def _group(path):
     text=path.read_text(encoding="utf-8")
-    hit=re.search(r"(?m)^concurrency:\\s*\\n\\s+group: ([^\\n]+)\\n\\s+cancel-in-progress: false\\s*$",text)
+    hit=re.search(r"(?m)^concurrency:\s*\n\s+group: ([^\n]+)\n\s+cancel-in-progress: false\s*$",text)
     assert hit is not None, f"Missing fail-closed workflow concurrency in {path}"
     return hit.group(1).strip(),text
 
