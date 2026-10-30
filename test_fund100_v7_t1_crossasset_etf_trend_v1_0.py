@@ -464,3 +464,92 @@ def test_rejected_vendor_panel_is_quarantined_not_accepted(monkeypatch,tmp_path)
         download=lambda **kwargs: clean))
     t.download_prices(rejected_source_csv=tmp_path/"clean-must-not-exist.csv")
     assert not (tmp_path/"clean-must-not-exist.csv").exists()
+
+
+def _recent_vendor_panel():
+    # Complete genuine XNYS dates through 29 Oct 2026; only the terminal
+    # SPY observation is withheld to model the observed vendor defect.
+    df=sample()
+    for day in ("2026-10-27","2026-10-28","2026-10-29"):
+        df.loc[pd.Timestamp(day),list(t.ASSETS)]=(
+            df.iloc[-1].to_numpy(dtype=float)*1.0001)
+    return df.sort_index()
+
+
+def test_recent_terminal_missing_vendor_value_excludes_only_last_session():
+    raw=_recent_vendor_panel()
+    raw.loc[pd.Timestamp("2026-10-29"),"SPY"]=float("nan")
+    complete,excluded=t._accept_recent_incomplete_vendor_tail(
+        raw,observed_utc=datetime(2026,10,30,2,0,tzinfo=timezone.utc))
+    assert excluded=="2026-10-29"
+    assert complete.index[-1]==pd.Timestamp("2026-10-28")
+    assert len(complete)==len(raw)-1
+    assert complete.notna().all().all()
+    assert list(complete.columns)==list(t.ASSETS)
+    t._calendar(complete.index)
+    assert not t.TRADING_AUTHORIZED
+
+
+def test_vendor_tail_exclusion_rejects_stale_and_not_yet_closed_sessions():
+    raw=_recent_vendor_panel()
+    raw.loc[pd.Timestamp("2026-10-29"),"SPY"]=float("nan")
+    for stamp in (datetime(2026,10,30,13,0,tzinfo=timezone.utc),
+                  datetime(2026,10,29,19,0,tzinfo=timezone.utc)):
+        with pytest.raises(t.CrossAssetTrendStop,match="12 hours"):
+            t._accept_recent_incomplete_vendor_tail(raw,observed_utc=stamp)
+
+
+def test_vendor_tail_never_hides_historical_gap_or_two_missing_sessions():
+    raw=_recent_vendor_panel()
+    raw.loc[pd.Timestamp("2026-10-29"),"SPY"]=float("nan")
+    raw.loc[pd.Timestamp("2019-01-03"),"TLT"]=float("nan")
+    with pytest.raises(t.CrossAssetTrendStop,match="TLT 2019-01-03"):
+        t._accept_recent_incomplete_vendor_tail(
+            raw,observed_utc=datetime(2026,10,30,2,0,tzinfo=timezone.utc))
+    raw.loc[pd.Timestamp("2019-01-03"),"TLT"]=sample().loc[
+        pd.Timestamp("2019-01-03"),"TLT"]
+    raw.loc[pd.Timestamp("2026-10-28"),"GLD"]=float("nan")
+    with pytest.raises(t.CrossAssetTrendStop,match="GLD 2026-10-28"):
+        t._accept_recent_incomplete_vendor_tail(
+            raw,observed_utc=datetime(2026,10,30,2,0,tzinfo=timezone.utc))
+
+
+def test_vendor_tail_does_not_hide_price_jump_or_missing_market_session():
+    raw=_recent_vendor_panel()
+    raw.loc[pd.Timestamp("2026-10-29"),"SPY"]=float("nan")
+    raw.loc[pd.Timestamp("2026-10-29"),"DBC"]*=1.6
+    with pytest.raises(t.CrossAssetTrendStop,match="also contains invalid"):
+        t._accept_recent_incomplete_vendor_tail(
+            raw,observed_utc=datetime(2026,10,30,2,0,tzinfo=timezone.utc))
+    raw.loc[pd.Timestamp("2026-10-29"),"DBC"]/=1.6
+    raw=raw.drop(pd.Timestamp("2026-10-27"))
+    with pytest.raises(t.CrossAssetTrendStop,match="calendar"):
+        t._accept_recent_incomplete_vendor_tail(
+            raw,observed_utc=datetime(2026,10,30,2,0,tzinfo=timezone.utc))
+
+
+def test_original_vendor_bytes_and_excluded_date_are_preserved(monkeypatch,tmp_path):
+    import sys
+    from hashlib import sha256
+    from types import SimpleNamespace
+    raw=_recent_vendor_panel()
+    raw.loc[pd.Timestamp("2026-10-29"),"SPY"]=float("nan")
+    vendor=pd.DataFrame({("Close",asset):raw[asset] for asset in t.ASSETS})
+    monkeypatch.setitem(sys.modules,"yfinance",SimpleNamespace(
+        download=lambda **kwargs: vendor))
+    monkeypatch.setattr(t,"_now_utc",lambda:datetime(
+        2026,10,30,2,0,tzinfo=timezone.utc))
+    original=tmp_path/"raw-vendor.csv"
+    rejected=tmp_path/"rejected.csv"
+    accepted=t.download_prices(rejected_source_csv=rejected,
+                               raw_vendor_csv=original)
+    assert accepted.index[-1]==pd.Timestamp("2026-10-28")
+    assert accepted.attrs["excluded_recent_incomplete_vendor_session"]==(
+        "2026-10-29")
+    assert original.is_file() and not rejected.exists()
+    assert sha256(original.read_bytes()).hexdigest()==(
+        accepted.attrs["vendor_raw_csv_sha256"])
+    vendor_rows=pd.read_csv(original)
+    assert vendor_rows["Date"].iloc[-1]=="2026-10-29"
+    assert pd.isna(vendor_rows["SPY"].iloc[-1])
+    assert len(vendor_rows)==len(accepted)+1
