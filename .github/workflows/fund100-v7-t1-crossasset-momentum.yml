@@ -51,6 +51,7 @@ jobs:
           set -euo pipefail
           python fund100_v7_t1_crossasset_etf_trend_v1_0.py \
             --source-csv /tmp/fund100-t1-actual-price-source.csv \
+            --rejected-source-csv /tmp/fund100-t1-rejected-vendor-panel.csv \
             --output /tmp/fund100-t1-costed-stress-report.json
           python - <<'PY'
           import json,hashlib
@@ -87,3 +88,12 @@ jobs:
             /tmp/fund100-t1-costed-stress-report.json
           retention-days: 90
           if-no-files-found: error
+
+      - name: Quarantine rejected public vendor panel for source diagnosis
+        if: failure() && steps.source.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v7-t1-rejected-vendor-panel-${{ github.run_id }}
+          path: /tmp/fund100-t1-rejected-vendor-panel.csv
+          retention-days: 30
+          if-no-files-found: ignore
