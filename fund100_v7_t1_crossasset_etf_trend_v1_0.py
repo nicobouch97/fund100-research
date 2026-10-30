@@ -113,6 +113,51 @@ def _reweight(nav,positions,target,fee):
         raise CrossAssetTrendStop("Missing synthetic cash after modeled fees")
     return new,wanted,cash,cost,turnover
 
+
+def _sell_only_policy_repair(nav, positions, fee):
+    """Minimum proportional close-time SELL to restore HIGH position/cash caps.
+
+    A breach was detected at the PREVIOUS close. The next close is the
+    hypothetical execution observation. Never buy or use future bars; the
+    exact post-fee 50% single / 95% gross caps are solved together.
+    If the breach healed before execution, no trade occurs.
+    """
+    positions=np.asarray(positions,dtype=float)
+    if (not np.isfinite(nav) or nav<=0 or positions.shape!=(4,)
+        or not np.isfinite(positions).all() or (positions<0).any()
+        or sum(positions)>nav+1e-8 or fee not in (.0005,.0015,.0035)):
+        raise CrossAssetTrendStop("Invalid funded sell-only policy repair")
+    post=float(nav)
+    for _ in range(100):
+        largest=float(max(positions))
+        gross=float(sum(positions))
+        factor=min(1.,.50*post/largest if largest else 1.,
+                   .95*post/gross if gross else 1.)
+        wanted=positions*factor
+        charged=fee*float(sum(positions-wanted))
+        updated=nav-charged
+        if updated<=0:
+            raise CrossAssetTrendStop("Policy repair fees deplete NAV")
+        if abs(updated-post)<1e-12:
+            post=updated
+            break
+        post=updated
+    else:
+        raise CrossAssetTrendStop("Policy repair cannot conserve fee-funded NAV")
+    factor=min(1.,.50*post/max(positions) if max(positions)>0 else 1.,
+               .95*post/sum(positions) if sum(positions)>0 else 1.)
+    wanted=positions*factor
+    sold=float(sum(positions-wanted))
+    charged=fee*sold
+    cash=post-float(sum(wanted))
+    if (np.any(wanted>positions+1e-10) or cash/post<.05-1e-9
+        or max(wanted)/post>.50+1e-9
+        or sum(wanted)/post>.95+1e-9
+        or abs(nav-post-charged)>1e-8
+        or abs(cash+sum(wanted)-post)>1e-8):
+        raise CrossAssetTrendStop("Policy repair violates sell-only/cash/cap proof")
+    return post,wanted,cash,charged,sold
+
 def _selection(prices, idx):
     # At first session close t, selection uses only completed prior closes:
     # t-22 / t-253. NEVER t's market close in the target rule.
@@ -134,7 +179,8 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
     if side_bps not in COSTS or type(side_bps) is not int:
         raise CrossAssetTrendStop("Unregistered cost stress")
     if strategy not in ("CROSS_ASSET_12_1","CROSS_ASSET_12_1_NEXT_CLOSE",
-                      "EXPOSURE_MATCHED_FOUR_EQUAL","STATIC_FOUR_EQUAL","STATIC_SPY"):
+                      "EXPOSURE_MATCHED_FOUR_EQUAL","STATIC_FOUR_EQUAL","STATIC_SPY",
+                      "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR"):
         raise CrossAssetTrendStop("Unknown candidate benchmark")
     panel=prices_validate(prices)
     view=panel.loc[start:end]
@@ -153,8 +199,12 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
     fees=0.
     trade_dates=0
     selected_log=[]
-    delayed=strategy=="CROSS_ASSET_12_1_NEXT_CLOSE"
-    pending=None  # Exact prior-session decision, never recomputed at execution.
+    policy_repair=strategy=="CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR"
+    delayed=strategy in ("CROSS_ASSET_12_1_NEXT_CLOSE",
+                         "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR")
+    repair_log=[]
+    repair_trades=0
+    pending=None  # Monthly signal or prior-close risk-repair request; never future data.
     risk_breach={"single_50pct":0,"gross_95pct":0,"cash_below_5pct":0,
                  "account_day_below_minus_6pct":0}
     last_session=-1
@@ -174,22 +224,40 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
         # while paying two unnecessary sides of fees. Preserve it as an
         # unexecuted decision; do not manufacture a terminal round-trip.
         if pending is not None and j < len(view)-1:
-            nav,positions,cash,paid,dollars=_reweight(
-                nav,positions,pending["target"],fee)
+            if pending["kind"]=="monthly":
+                nav,positions,cash,paid,dollars=_reweight(
+                    nav,positions,pending["target"],fee)
+                trade_dates+=1
+                selected_log[pending["log_index"]]["modeled_execution_close"]=(
+                    timestamp.date().isoformat())
+            else:
+                nav,positions,cash,paid,dollars=_sell_only_policy_repair(
+                    nav,positions,fee)
+                item=repair_log[pending["log_index"]]
+                item["modeled_execution_close"]=timestamp.date().isoformat()
+                item["sell_only_notional_per_100_initial_usd"]=round(dollars,8)
+                item["repair_cost_per_100_initial_usd"]=round(paid,8)
+                item["post_repair_max_single_weight"]=round(
+                    float(max(positions))/nav,9)
+                item["post_repair_gross_weight"]=round(
+                    float(sum(positions))/nav,9)
+                if dollars>1e-10:
+                    repair_trades+=1
+                    trade_dates+=1
             fees+=paid
             turnover+=dollars
-            trade_dates+=1
-            selected_log[pending["log_index"]]["modeled_execution_close"]=(
-                timestamp.date().isoformat())
             pending=None
         month_first=j==0 or timestamp.month!=view.index[j-1].month or timestamp.year!=view.index[j-1].year
         if (j==0 or (strategy in ("CROSS_ASSET_12_1",
                                   "CROSS_ASSET_12_1_NEXT_CLOSE",
+                                  "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR",
                                   "EXPOSURE_MATCHED_FOUR_EQUAL") and month_first)):
             if strategy in ("CROSS_ASSET_12_1","CROSS_ASSET_12_1_NEXT_CLOSE",
+                            "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR",
                             "EXPOSURE_MATCHED_FOUR_EQUAL"):
                 momentum_target,momentum_winners=_selection(panel,current)
-                if strategy in ("CROSS_ASSET_12_1","CROSS_ASSET_12_1_NEXT_CLOSE"):
+                if strategy in ("CROSS_ASSET_12_1","CROSS_ASSET_12_1_NEXT_CLOSE",
+                                "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR"):
                     target,winners=momentum_target,momentum_winners
                 else:
                     # POST-HOC DIAGNOSTIC, not an independently specified
@@ -207,7 +275,8 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
                 target=np.array([.95,0.,0.,0.,.05])
                 winners=["SPY"]
             if delayed:
-                pending={"target":target.copy(),"log_index":len(selected_log)}
+                pending={"kind":"monthly","target":target.copy(),
+                         "log_index":len(selected_log)}
             else:
                 nav,positions,cash,paid,dollars=_reweight(nav,positions,target,fee)
                 fees+=paid
@@ -222,10 +291,28 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
                                      len(momentum_winners) if strategy in (
                                          "CROSS_ASSET_12_1",
                                          "CROSS_ASSET_12_1_NEXT_CLOSE",
+                                         "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR",
                                          "EXPOSURE_MATCHED_FOUR_EQUAL") else None,
                                  "modeled_execution_close":(
                                      None if delayed else timestamp.date().isoformat()),
                                  "same_close_idealized_fee_charged":not delayed})
+        # A separate post-hoc HIGH-policy feasibility stress. Detect drift
+        # at this completed close; only request a SELL at the NEXT close.
+        # Never replace a queued monthly target, act on the terminal close,
+        # or revise the original monthly signal after seeing market prices.
+        if (policy_repair and not month_first and pending is None
+            and j < len(view)-1 and
+            (max(positions)/nav>.50+1e-10 or
+             sum(positions)/nav>.95+1e-10)):
+            pending={"kind":"repair","log_index":len(repair_log)}
+            repair_log.append({
+                "breach_observed_close":timestamp.date().isoformat(),
+                "modeled_execution_close":None,
+                "sell_only_notional_per_100_initial_usd":None,
+                "repair_cost_per_100_initial_usd":None,
+                "post_repair_max_single_weight":None,
+                "post_repair_gross_weight":None,
+            })
         path.append(nav)
         peak=max(peak,nav)
         gross=float(sum(positions))/nav
@@ -290,8 +377,15 @@ def simulate(prices:pd.DataFrame,*,start:str,end:str|None,
         "no_actual_orders":True,
         "next_close_execution_diagnostic_only":delayed,
         "unexecuted_terminal_decisions":int(pending is not None),
+        "risk_repair_requested_closes":len(repair_log),
+        "risk_repair_actual_sell_closes":repair_trades,
+        "unexecuted_terminal_risk_repair":int(
+            pending is not None and pending["kind"]=="repair"),
+        "risk_repair_log":repair_log if policy_repair else [],
+        "risk_repair_posthoc_policy_feasibility_not_alpha":policy_repair,
         "signal_trade_log":selected_log if strategy in (
             "CROSS_ASSET_12_1","CROSS_ASSET_12_1_NEXT_CLOSE",
+            "CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR",
             "EXPOSURE_MATCHED_FOUR_EQUAL") else [],
     }
 
@@ -398,6 +492,40 @@ def analyze(prices:pd.DataFrame,captured_utc:str):
                 "next_close_costed_path":delayed,
                 "diagnostic_only_not_new_promotion_gate":True,
             }
+
+    # The original T1 signal and promotion gate remain untouched. This
+    # post-hoc, sell-only HIGH-policy stress answers whether a monthly
+    # trend implementation can survive daily cap drift and repair costs.
+    policy_repair_diagnostic={}
+    for era,(start,end) in REGISTERED_WINDOWS.items():
+        policy_repair_diagnostic[era]={}
+        for bps in COSTS:
+            lagged=next_close_stress[era][str(bps)]["next_close_costed_path"]
+            repaired=simulate(panel,start=start,end=end,side_bps=bps,
+                strategy="CROSS_ASSET_12_1_NEXT_CLOSE_RISK_REPAIR")
+            keys=("close","source_signal_previous_complete_session",
+                  "hypothetical_positions","target_gross_fraction",
+                  "same_decision_positive_momentum_count")
+            if (len(lagged["signal_trade_log"])!=len(repaired["signal_trade_log"])
+                or any(tuple(a[k] for k in keys)!=tuple(b[k] for k in keys)
+                       for a,b in zip(lagged["signal_trade_log"],
+                                      repaired["signal_trade_log"]))):
+                raise CrossAssetTrendStop("Policy repair changed original monthly signal")
+            policy_repair_diagnostic[era][str(bps)]={
+                "risk_repair_minus_delayed_net_cagr_pp":round(
+                    repaired["net_annualized_return_pct"]-
+                    lagged["net_annualized_return_pct"],6),
+                "risk_repair_minus_delayed_max_drawdown_pp":round(
+                    repaired["max_drawdown_pct"]-
+                    lagged["max_drawdown_pct"],6),
+                "risk_repair_minus_delayed_gross_traded_per_100":round(
+                    repaired["gross_traded_notional_per_100_initial_usd"]-
+                    lagged["gross_traded_notional_per_100_initial_usd"],5),
+                "delayed_baseline_high_breach_sessions":
+                    lagged["original_high_risk_breach_sessions"],
+                "sell_only_next_close_policy_repair_path":repaired,
+                "posthoc_not_promotion_or_broker_risk_enforcement":True,
+            }
     return {
         "schema":SCHEMA,
         "status":"HISTORICAL_REPEATEDLY_STUDIED_CROSS_ASSET_NO_ALPHA_AUTHORITY",
@@ -417,6 +545,8 @@ def analyze(prices:pd.DataFrame,captured_utc:str):
         "annual_concentration_diagnostic_not_promotion_gate":True,
         "next_close_execution_stress":next_close_stress,
         "next_close_stress_not_a_new_promotion_gate":True,
+        "posthoc_next_close_high_policy_repair":policy_repair_diagnostic,
+        "policy_repair_not_a_new_promotion_gate":True,
         "favorable_result_is_not_forward_alpha_qualification":True,
         "DBC_methodology_changed_2025":True,
         "current_live_capital_ceiling_usd":"130.30",

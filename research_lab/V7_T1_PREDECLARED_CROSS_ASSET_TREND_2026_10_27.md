@@ -128,3 +128,26 @@ an independently held-out test or an alpha p-value. It diagnoses whether
 retrospective excess wealth is concentrated in a small number of years.
 No model tuning, capital authority, operator controls, LIVE credentials
 or broker requests are introduced.
+
+## 30 October 2026 — after-cost HIGH-policy next-close drift-repair stress (post-hoc)
+
+The original T1 rule, original three-era 15 bp static-four promotion gate,
+monthly 12-1 signals and registered costs remain **unchanged**. This separate
+post-hoc feasibility stress replays the same original monthly decisions at the
+next close, detects any completed-close drift beyond the existing HIGH 50%
+single-name / 95% gross (5% cash) limits, and requests a **sell-only**
+proportional repair for the *next* completed close. At that next close, it
+sells only if the breach persists; a healed breach incurs no artificial trade.
+Actual sell dollars and post-fee cash/caps reconcile under 5/15/35 bp costs.
+No intraday fills, guaranteed limit compliance between closes, broker orders
+or stop-loss fills are assumed. Terminal-close requests never manufacture
+buy/sell roundtrips. Daily -6% loss, -20% drawdown and 35% volatility remain
+reported diagnostics, not executable automatic stop orders.
+
+Compare fee-inclusive CAGR, max drawdown, turnover and residual breach
+sessions against the **already implemented next-close delayed T1 path**,
+not a cherry-picked new winner. A risk-repair stress may underperform and
+still reveal a genuine execution-feasibility cost. All source years were
+already examined, so this is **not independent validation or a new alpha
+promotion gate**. Existing operator STOP, $130.30 LIVE ceiling, HIGH
+risk policy, kill switch and all release locks remain unchanged.
