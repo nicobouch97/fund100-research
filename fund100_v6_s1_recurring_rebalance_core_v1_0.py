@@ -256,6 +256,23 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
                 or gross-size>=gross
                 or values[sym]-size<0):
                 raise RecurringStop("Hypothetical risk repair not reducing risk")
+            # A $65 maximum ticket or limited position quantity may make
+            # a one-sale repair impossible. Do not label a partial reduction
+            # a repair when ANY hard portfolio limit still fails after
+            # conservative fees. The caller must HOLD; no second monthly
+            # sale, automatic order, or fabricated continuous cash promise.
+            after_nav=nav-fee
+            after_cash=cash+size-fee
+            after_gross=gross-size
+            after_marks={**values,sym:values[sym]-size}
+            if (after_nav<=0
+                or after_cash<after_nav*migration.CASH_FLOOR
+                or after_gross>after_nav*migration.MAX_GROSS
+                or any(value>after_nav*migration.MAX_SYMBOL
+                       for value in after_marks.values())):
+                return _report(
+                    "HOLD_CASH_OR_EXPOSURE_REPAIR_INCOMPLETE_AFTER_TICKET_CAP",
+                    period=period)
             return _report(
                 "HYPOTHETICAL_MONTHLY_CASH_OR_EXPOSURE_REPAIR_SELL_NO_TRANSPORT",
                 period=period,candidate={
