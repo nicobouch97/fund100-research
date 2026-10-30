@@ -3,6 +3,10 @@
 Status: engineering plan, 14 October 2026. This document is **not**
 authority to trade or expand LIVE permissions.
 
+## 30 October 2026 user-priority clarification — launch first, research in parallel
+
+**See research_lab/FUND100_LAUNCH_FIRST_PARALLEL_RESEARCH_DECISION_2026_10_30.md.** It preserves the user's repeated decision: DO NOT delay the initial small funded active HIGH-risk experiment to accumulate 21/63 future closes or months of PAPER profitability. Execute a defensible strategy only when the *real* broker writer/one-attempt signed-state, account, settlement, cap and STOP constraints are satisfied. Existing completed PAPER order-mechanics tests should be reused. After an approved standing mandate, no per-trade approval loop. Existing technical releases, operator STOP and original USD130.30 mandate remain locked; this clarification does not approve any order. Later research still competes for scaled capital on genuine after-cost evidence.
+
 ## Mission
 
 One operator-selected LOW / MEDIUM / HIGH risk level governs the
