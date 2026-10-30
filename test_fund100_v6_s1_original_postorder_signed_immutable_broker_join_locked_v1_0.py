@@ -9,7 +9,7 @@ from test_fund100_v6_s1_original_one_attempt_chain_locked_v1_0 import (
 from test_fund100_v6_s1_immutable_release_anchor_v1_0 import (
     GitHubImmutable,READ as PUBLIC)
 from test_fund100_v6_s1_original_acwi_broker_fill_flat_getonly_bridge_v1_0 import (
-    source as fake_broker)
+    source as fake_broker, KEY as BROKER_KEY, SECRET as BROKER_SECRET)
 
 def fixtures(monkeypatch):
     ctx,_initial,claimed,seq2,cid,comment=context_and_heads()
@@ -47,7 +47,7 @@ def fixtures(monkeypatch):
     params={
         "signed_sources":signed,"owner_sources":owner,
         "private_read_token":READ,"private_write_token":WRITE,
-        "public_read_token":PUBLIC,"broker_key":KEY,"broker_secret":SECRET,
+        "public_read_token":PUBLIC,"broker_key":BROKER_KEY,"broker_secret":BROKER_SECRET,
         "private_transport":fake_get,
         "public_transport":public.transport,
         "broker_transport":broker_transport,
