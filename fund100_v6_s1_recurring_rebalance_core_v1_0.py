@@ -340,6 +340,11 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
     for sym in sorted(UNIVERSE):
         delta=TARGET[sym]-values[sym]/nav
         if delta>BAND:shortage.append((delta,sym))
+    # A costly or cash-constrained highest-ranked underweight ETF must
+    # not suppress a different independently safe, economical purchase.
+    # Preserve the original ranking and every unchanged post-fee bound.
+    rejected_buy_cost=False
+    rejected_buy_headroom=False
     for _,sym in sorted(shortage,key=lambda x:(-x[0],x[1])):
         ident=_id(period,sym,"buy")
         if ident in history:continue
@@ -353,10 +358,11 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
         )
         size=headroom.quantize(CENTS,rounding=ROUND_DOWN)
         if size<migration.MIN_ORDER:
-            return _report("HOLD_BUY_REQUIRES_SETTLED_CASH_OR_RISK_HEADROOM",
-                           period=period)
+            rejected_buy_headroom=True
+            continue
         if fee>MAX_SIDE_COST_FRACTION*size:
-            return _report("HOLD_BUY_ALL_IN_COST_EXCEEDS_1PCT",period=period)
+            rejected_buy_cost=True
+            continue
         if (min(cash,settled)-size-fee<migration.CASH_FLOOR*(nav-fee)
             or gross+size>migration.MAX_GROSS*(nav-fee)
             or values[sym]+size>migration.MAX_SYMBOL*(nav-fee)):
@@ -367,4 +373,9 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
                 "stable_simulation_event_id":ident,
                 "requires_independent_order_and_settlement_reconciliation":True,
                 "executable":False})
+    if rejected_buy_cost:
+        return _report("HOLD_BUY_ALL_IN_COST_EXCEEDS_1PCT",period=period)
+    if rejected_buy_headroom:
+        return _report("HOLD_BUY_REQUIRES_SETTLED_CASH_OR_RISK_HEADROOM",
+                       period=period)
     return _report("HOLD_WITHIN_MONTHLY_10PP_BAND_NO_FORCED_CHURN",period=period)
