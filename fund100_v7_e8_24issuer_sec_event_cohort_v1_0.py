@@ -32,6 +32,31 @@ BROKER_GETS=BROKER_POSTS=BROKER_ORDERS=0
 
 class CohortStop(ValueError):pass
 
+def complete_successful_main_run_ids(rows:list[dict])->list[int]:
+    """Fail closed rather than silently discard older original SEC captures.
+
+    The workflow requests MAX_ORIGINAL_RUNS+1 successful main-branch E6
+    runs. If the provider returns one more than our bounded source capacity,
+    stop the study: a rolling newest-N sample would rewrite first-observed
+    event dates and contaminate prospective performance.
+    """
+    if not isinstance(rows,list) or not rows or len(rows)>MAX_ORIGINAL_RUNS:
+        raise CohortStop("Original SEC successful run history absent or exceeds bounded capacity")
+    ids=[]
+    for row in rows:
+        if (not isinstance(row,dict)
+            or type(row.get("databaseId")) is not int
+            or row["databaseId"]<=0
+            or row.get("status")!="completed"
+            or row.get("conclusion")!="success"):
+            raise CohortStop("Unverified original SEC successful main run")
+        ids.append(row["databaseId"])
+    if len(set(ids))!=len(ids):
+        raise CohortStop("Duplicate original SEC run ID")
+    if e7.PINNED_E6_MAIN_RUN not in ids:
+        raise CohortStop("Foundational original SEC capture missing from complete run roster")
+    return sorted(ids)
+
 def verified_source_dirs(root:Path)->list[dict]:
     """Only real original SEC directories named by original main run ID.
 
