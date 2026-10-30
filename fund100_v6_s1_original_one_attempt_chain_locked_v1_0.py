@@ -395,6 +395,28 @@ def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
             or published.get("live_order_authorized") is not False
             or published.get("retry_permitted") is not False):
             raise ChainStop("Immutable original signed HEAD not proven")
+        # FINAL LIVE-BROKER HANDOFF: publication and independent asset
+        # read-back do not prevent a later private-state rollback or an
+        # unexpected different original ACWI owner. Re-read BOTH current
+        # signed private HEADs with the existing distinct READ/WRITE
+        # principals after publication, immediately before the broker
+        # writer. No new owner claim, release POST or order retry.
+        last_seq2=_real_current(
+            url=ownership.ORIGINAL_ORDER_LEDGER_URL,
+            source=seq2,read=private_read_token,write=private_write_token,
+            transport=t["private_get"])
+        last_owner=_real_current(
+            url=ownership.PRIVATE_CONTENTS_URL,
+            source=owner1,read=private_read_token,write=private_write_token,
+            transport=t["private_get"])
+        final_ownerproof=fence.verify_claimed_owner(
+            **dict(context,current_fence_source=last_owner))
+        if (last_seq2["sha"]!=seq2["sha"]
+            or last_owner["sha"]!=owner1["sha"]
+            or final_ownerproof.get("unique_original_workflow_owner_HMAC_recognized")
+                is not True
+            or final_ownerproof.get("LIVE_order_released") is not False):
+            raise ChainStop("Original signed private HEAD changed after immutable release")
         result=writer.submit_v6_s1_original_acwi_fractional_sell(
             original_qty=context["original_qty"],
             signed_sources=signed,
