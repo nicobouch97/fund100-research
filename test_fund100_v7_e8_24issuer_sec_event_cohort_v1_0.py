@@ -188,3 +188,25 @@ def test_real_security_boundary_research_only():
     for bad in ("TradingClient","ALPACA_LIVE_KEY","ALPACA_LIVE_SECRET",
                 "api.alpaca.markets","place_order","submit_order"):
         assert bad not in source
+
+def test_complete_successful_run_roster_never_silently_drops_earlier_captures():
+    base=e7.PINNED_E6_MAIN_RUN
+    row=lambda run: {"databaseId":run,"status":"completed","conclusion":"success"}
+    assert e8.complete_successful_main_run_ids([row(base),row(base+1)]) == [base,base+1]
+    # At the 41-run boundary the original is still included and provable.
+    assert len(e8.complete_successful_main_run_ids(
+        [row(base+i) for i in range(e8.MAX_ORIGINAL_RUNS)]))==41
+    # A newest-40 rolling selection would silently redate historical events.
+    with pytest.raises(e8.CohortStop,match="exceeds bounded capacity"):
+        e8.complete_successful_main_run_ids(
+            [row(base+i) for i in range(e8.MAX_ORIGINAL_RUNS+1)])
+    with pytest.raises(e8.CohortStop,match="Foundational"):
+        e8.complete_successful_main_run_ids([row(base+1)])
+    with pytest.raises(e8.CohortStop,match="Duplicate"):
+        e8.complete_successful_main_run_ids([row(base),row(base)])
+    with pytest.raises(e8.CohortStop,match="Unverified"):
+        e8.complete_successful_main_run_ids([row(base),{"databaseId":base+1,
+            "status":"completed","conclusion":"failure"}])
+    with pytest.raises(e8.CohortStop,match="Unverified"):
+        e8.complete_successful_main_run_ids([row(base),{"databaseId":True,
+            "status":"completed","conclusion":"success"}])
