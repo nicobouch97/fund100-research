@@ -468,6 +468,10 @@ def evaluate(*,original_manifest:dict,original_prices:pd.DataFrame,
         "fixed_exit_close_session":final.date().isoformat(),
         "completed_price_session":last,
         "later_price_observed_utc":captured_utc,
+        # Bind every observed price row to the same archived JSON report.
+        # This is a reproducibility checksum, NOT exchange authentication.
+        "later_price_csv_sha256":sha256(
+            p4l.canonical_csv(data).encode("utf-8")).hexdigest(),
         "original_later_source_completed_nyse_close_evidence":source_close,
         "observed_holding_intervals":periods,
         "required_holding_intervals":HOLD_SESSIONS,
