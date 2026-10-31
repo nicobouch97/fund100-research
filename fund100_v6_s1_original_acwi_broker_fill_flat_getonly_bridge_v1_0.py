@@ -32,7 +32,8 @@ NO_SETTLED_CASH_OR_NEXT_TRADE_AUTHORITY=True
 FILL_QUERY_AFTER="2026-10-01"
 FILL_QUERY_AFTER_UTC="2026-10-01T00:00:00Z"
 FILL_LIMIT=100
-GET_COUNT=6
+GET_COUNT=6  # Minimum: five non-FILL GETs plus one FILL page.
+MAX_GET_COUNT=5+proof.MAX_PAGES
 
 class ReadStop(RuntimeError):
     pass
@@ -78,6 +79,33 @@ def _same_original_live_account(account):
                   account["id"].strip()).encode()).hexdigest()
     return historical_policy.get("account_binding_sha256")==bound
 
+def _fill_pages(request):
+    """Read every bounded ascending FILL page using Alpaca's last-ID token.
+
+    A full page is never evidence that the history ended. A missing,
+    repeated or unbounded continuation must HOLD rather than silently
+    treating the first 100 activities as the complete account history.
+    """
+    pages=[]
+    tokens=set()
+    params={"after":FILL_QUERY_AFTER,"direction":"asc","page_size":FILL_LIMIT}
+    for _ in range(proof.MAX_PAGES):
+        page=request(path="/v2/account/activities/FILL",params=params)
+        if type(page) is not list or len(page)>FILL_LIMIT:
+            raise ReadStop("Original FILL page missing or malformed")
+        pages.append(page)
+        if len(page)<FILL_LIMIT:
+            return pages
+        tail=page[-1]
+        token=tail.get("id") if type(tail) is dict else None
+        if (type(token) is not str or not token or len(token)>256
+            or token in tokens):
+            raise ReadStop("Original FILL continuation token invalid or repeated")
+        tokens.add(token)
+        params={**params,"page_token":token}
+    raise ReadStop("Original FILL history exceeds bounded pagination; HOLD")
+
+
 def _observe(request,*,signed_sources,now_utc):
     if now_utc is not None:
         # Explicit timestamps are test-only; validate before contacting a
@@ -92,17 +120,13 @@ def _observe(request,*,signed_sources,now_utc):
             raise ReadStop("Invalid broker observation timestamp") from None
     try:
         cid=original_ledger.CLIENT_IDS["ACWI"]
-        docs=(
-            request(path="/v2/orders:by_client_order_id",
-                    params={"client_order_id":cid}),
-            request(path="/v2/account/activities/FILL",params={
-                    "after":FILL_QUERY_AFTER,"direction":"asc",
-                    "page_size":FILL_LIMIT}),
-            request(path="/v2/account",params=None),
-            request(path="/v2/positions",params=None),
-            request(path="/v2/orders",params={"status":"open","limit":100}),
-            request(path="/v2/clock",params=None),
-        )
+        receipt=request(path="/v2/orders:by_client_order_id",
+                        params={"client_order_id":cid})
+        fill_pages=_fill_pages(request)
+        account=request(path="/v2/account",params=None)
+        positions=request(path="/v2/positions",params=None)
+        open_orders=request(path="/v2/orders",params={"status":"open","limit":100})
+        clock=request(path="/v2/clock",params=None)
     except Exception:
         raise ReadStop("Original postorder broker GET unavailable; HOLD, no retry POST") from None
     # A real broker market clock can be acquired *after* the beginning of
@@ -111,9 +135,7 @@ def _observe(request,*,signed_sources,now_utc):
     if now_utc is None:
         now_utc=datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
     observed=proof._time(now_utc)
-    receipt,fills,account,positions,open_orders,clock=docs
-    if (type(receipt) is not dict or type(fills) is not list
-        or len(fills)>=FILL_LIMIT
+    if (type(receipt) is not dict
         or type(account) is not dict or type(positions) is not list
         or type(open_orders) is not list or type(clock) is not dict
         or type(clock.get("is_open")) is not bool):
@@ -130,7 +152,7 @@ def _observe(request,*,signed_sources,now_utc):
             raise ReadStop("Postorder LIVE broker clock stale or future")
         report=proof.assess(
             signed_prepost_sources=signed_sources,
-            closed_receipt=receipt,fill_pages=[fills],
+            closed_receipt=receipt,fill_pages=fill_pages,
             post_positions=positions,open_orders=open_orders,
             observed_at_utc=now_utc,fill_query_after_utc=FILL_QUERY_AFTER_UTC)
         if (report["stage"]!=
@@ -142,7 +164,7 @@ def _observe(request,*,signed_sources,now_utc):
         raise ReadStop("Original signed ACWI receipt/FILL/flat source mismatch") from None
     return {
         "schema":SCHEMA,
-        "status":"SIX_BROKER_GET_ORIGINAL_ACWI_FILL_AND_FLAT_STRUCTURALLY_MATCH",
+        "status":"BOUNDED_BROKER_GET_ORIGINAL_ACWI_FILL_AND_FLAT_STRUCTURALLY_MATCH",
         "real_broker_source_authenticated_by_this_adapter":False,
         "credentialless_injected_transport_used":True,
         "signed_ACWI_seq2_public_witness_structure_verified":True,
@@ -153,7 +175,7 @@ def _observe(request,*,signed_sources,now_utc):
         "provider_immutable_postsend_HEAD_independently_verified":False,
         "original_sale_T_plus_one_settled":False,
         "next_legacy_sell_or_any_live_buy_released":False,
-        "broker_GET_count":GET_COUNT,
+        "broker_GET_count":5+len(fill_pages),
         "broker_POST_count":0,
         "private_Git_PUT_count":0,
         "resend_original_ACWI_permitted":False,
