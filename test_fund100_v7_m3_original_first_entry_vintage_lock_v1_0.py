@@ -247,7 +247,6 @@ def test_dividend_crosscheck_rejects_unrelated_duplicate_and_invalid_events():
         [_dividend_event(ex_date="2026-10-27")],
         [_dividend_event(ex_date="2026-11-02")],
         [_dividend_event(),_dividend_event()],
-        [{**_dividend_event(),"symbol":"AAPL"}],
         [{**_dividend_event(),"cash_dividend_usd":-1.47}],
         [{**_dividend_event(),"independent_close_url":"http://invalid"}],
     ):
@@ -255,3 +254,19 @@ def test_dividend_crosscheck_rejects_unrelated_duplicate_and_invalid_events():
             m3.entry_revision_diagnostic(
                 initial_prices=p,subsequent_prices=altered,
                 dividend_events=events)
+
+
+def test_unrelated_or_future_dividend_input_does_not_erase_price_drift_report():
+    _,p,_,q=samples()
+    altered=q.copy()
+    altered.loc["2026-10-27","COST"]*=1-1.47/996.08
+    for event in ({**_dividend_event(),"symbol":"AAPL"},
+                  _dividend_event(ex_date="2026-10-30")):
+        result=m3.entry_revision_diagnostic(
+            initial_prices=p,subsequent_prices=altered,dividend_events=[event])
+        assert result["changed_entry_symbols"]==1
+        cross=result["dividend_factor_crosscheck"]
+        assert cross["status"]=="INCOMPLETE_OR_CONTRADICTORY"
+        assert cross["irrelevant_or_future_events_ignored"]==1
+        assert cross["events_considered"]==0
+        assert cross["does_not_qualify_returns"]
