@@ -312,6 +312,30 @@ def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
         if subsequent_report.get("secondary_frozen_sector_control_weights")!={
                 t:round(w,12) for t,w in control.items()}:
             raise EntryAnchorStop("Original sector weights changed after entry")
+        # The original M3 check authenticated primary and sector terminal
+        # economics, but did not validate the saved conditional sector rank
+        # or the secondary risk-matched score. Both are performance claims.
+        # Recalculate the rank from the same pinned 24-issuer price panel.
+        expected_rank=m1._sector_conditional_rank(selected,entry,exit_prices)
+        if subsequent_report.get("secondary_exact_sector_conditional_selection_rank")!=expected_rank:
+            raise EntryAnchorStop("Reported sector-conditional rank disagrees with source prices")
+        # The first-entry artifact predates all exits. Its original preentry
+        # risk estimate is immutable; later reports may not refit risk using
+        # future returns or quietly change exposure fractions.
+        risk=initial_report.get("secondary_frozen_preentry_volatility_match")
+        if (type(risk) is not dict or risk!=subsequent_report.get(
+                "secondary_frozen_preentry_volatility_match")
+            or risk.get("pinned_through")!=m1.ORIGINAL_LAST_SESSION
+            or risk.get("lookback_completed_returns")!=p4l.LOOKBACK):
+            raise EntryAnchorStop("Reported preentry risk changed after first entry")
+        if risk.get("status")=="PREENTRY_RISK_MATCHED_NO_LEVERAGE_RESEARCH_ONLY":
+            sw=risk.get("stock_risky_fraction")
+            bw=risk.get("spy_risky_fraction")
+            if (type(sw) not in (int,float) or type(bw) not in (int,float)
+                or not 0<sw<=.95 or not 0<bw<=.95):
+                raise EntryAnchorStop("Invalid original risk-matched fractions")
+        elif risk.get("status")!="UNAVAILABLE_ZERO_PREENTRY_VOLATILITY":
+            raise EntryAnchorStop("Unrecognised original preentry risk state")
         results=subsequent_report.get("costed_95pct_stocks_versus_95pct_spy")
         if type(results) is not dict or set(results)!={str(b) for b in m1.COST_BPS}:
             raise EntryAnchorStop("Missing predeclared transaction-cost scenarios")
@@ -332,6 +356,26 @@ def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
                 or control_row.get("selected_minus_same_sector_net_percentage_points")!=round(
                     risky*(stock_growth-sector_growth)*(1-fee),8)):
                 raise EntryAnchorStop("Reported after-cost return disagrees with source prices")
+            secondary=row.get("secondary_preentry_volatility_matched")
+            if risk["status"]=="PREENTRY_RISK_MATCHED_NO_LEVERAGE_RESEARCH_ONLY":
+                sw,bw=risk["stock_risky_fraction"],risk["spy_risky_fraction"]
+                sr=m1.INITIAL_NAV*sw/(1+fee)
+                br=m1.INITIAL_NAV*bw/(1+fee)
+                expected_stock=round(m1.INITIAL_NAV*(1-sw)+sr*stock_growth*(1-fee),8)
+                expected_spy=round(m1.INITIAL_NAV*(1-bw)+br*spy_growth*(1-fee),8)
+                expected_delta=round(
+                    m1.INITIAL_NAV*(bw-sw)+
+                    (sr*stock_growth-br*spy_growth)*(1-fee),8)
+                if (type(secondary) is not dict
+                    or secondary.get("stock_risky_fraction")!=sw
+                    or secondary.get("spy_risky_fraction")!=bw
+                    or secondary.get("stock_final_after_costs_usd")!=expected_stock
+                    or secondary.get("spy_final_after_costs_usd")!=expected_spy
+                    or secondary.get("stock_minus_spy_net_percentage_points")!=expected_delta
+                    or secondary.get("preentry_only_no_future_risk_fit") is not True):
+                    raise EntryAnchorStop("Reported risk-matched after-cost return disagrees with pinned risk")
+            elif secondary is not None:
+                raise EntryAnchorStop("Unavailable risk match cannot report synthetic returns")
     except (KeyError,TypeError,IndexError,ValueError) as exc:
         if isinstance(exc,EntryAnchorStop):
             raise
@@ -350,6 +394,7 @@ def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
         "anchor_source_stage_before_any_exit":"ENTRY_CLOSE_OBSERVED_AWAITING_FIRST_FUTURE_MARK",
         "checked_later_complete_intervals":subsequent_report["observed_holding_intervals"],
         "independently_recomputed_primary_and_sector_costed_returns":True,
+        "independently_recomputed_sector_rank_and_risk_matched_returns":True,
         "verified_original_exchange_close_receipts":True,
         "source_prices_are_vendor_adjusted_not_executable_fills":True,
         "no_alpha_established":True,
