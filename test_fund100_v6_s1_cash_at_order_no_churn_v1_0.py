@@ -136,6 +136,37 @@ def test_no_trade_can_push_a_sector_above_50pct_of_post_cost_nav():
     assert x["status"]=="BLOCK_HYPOTHETICAL_BUY_SINGLE_SYMBOL_CONCENTRATION"
     assert not x["new_live_buy_authorized"]
 
+@pytest.mark.parametrize("buy_symbol",["XLE","IWM"])
+def test_untouched_etf_at_50pct_must_not_exceed_post_fee_nav(buy_symbol):
+    # Before the hypothetical BUY, XLK is exactly 50% of $130 NAV.
+    # A $0.10 cost reduces NAV to $129.90, so the untouched $65 XLK
+    # becomes 50.0385%. Screening only the purchased ETF used to pass.
+    s=snap(cash="35.00",equity="130.00",
+           positions={"XLK":"65.00","XLE":"15.00","IWM":"15.00"})
+    blocked=check(s,hypothetical_buy_symbol=buy_symbol,
+                  hypothetical_new_buy_usd="10.00",
+                  hypothetical_worst_case_total_cost_usd="0.10")
+    assert blocked["status"]=="BLOCK_HYPOTHETICAL_BUY_SINGLE_SYMBOL_CONCENTRATION"
+    assert blocked["new_orders"]==blocked["broker_requests"]==0
+    assert blocked["executable_order_payload"] is None
+
+    # The same purchase with no fee does not breach the original 50% cap.
+    no_fee=check(s,hypothetical_buy_symbol=buy_symbol,
+                 hypothetical_new_buy_usd="10.00",
+                 hypothetical_worst_case_total_cost_usd="0.00")
+    assert no_fee["status"]=="HYPOTHETICAL_BUY_SCREEN_CLEARED_NOT_AUTHORIZED"
+
+    # A $0.10 smaller untouched XLK position remains below the cap
+    # even after the conservative execution fee.
+    s["positions_market_value_usd"]["XLK"]="64.90"
+    s["cash_usd"]="35.10"
+    s["settled_cash_usd"]="35.10"
+    safe=check(s,hypothetical_buy_symbol=buy_symbol,
+               hypothetical_new_buy_usd="10.00",
+               hypothetical_worst_case_total_cost_usd="0.10")
+    assert safe["status"]=="HYPOTHETICAL_BUY_SCREEN_CLEARED_NOT_AUTHORIZED"
+
+
 def test_missing_or_wrong_buy_symbol_is_not_accepted_as_research_intent():
     s=snap()
     with pytest.raises(c.CashStop):

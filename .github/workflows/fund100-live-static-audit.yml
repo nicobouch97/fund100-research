@@ -54,6 +54,9 @@ on:
       - "test_fund100_v6_s1_autonomous_original_readiness_schedule_v1_0.py"
       - "fund100_v6_s1_recurring_rebalance_core_v1_0.py"
       - "test_fund100_v6_s1_recurring_rebalance_core_v1_0.py"
+      # Post-fee account-wide S1 order-time cash/concentration checks.
+      - "fund100_v6_s1_cash_at_order_no_churn_v1_0.py"
+      - "test_fund100_v6_s1_cash_at_order_no_churn_v1_0.py"
       - "fund100_v6_s1_monthly_signed_event_bridge_offline_v1_0.py"
       - "test_fund100_v6_s1_monthly_signed_event_bridge_offline_v1_0.py"
       - ".github/workflows/fund100-v6-s1-monthly-signed-event-bridge-offline.yml"
@@ -332,6 +335,9 @@ on:
       - "test_fund100_v6_s1_autonomous_original_readiness_schedule_v1_0.py"
       - "fund100_v6_s1_recurring_rebalance_core_v1_0.py"
       - "test_fund100_v6_s1_recurring_rebalance_core_v1_0.py"
+      # Post-fee account-wide S1 order-time cash/concentration checks.
+      - "fund100_v6_s1_cash_at_order_no_churn_v1_0.py"
+      - "test_fund100_v6_s1_cash_at_order_no_churn_v1_0.py"
       - "fund100_v6_s1_monthly_signed_event_bridge_offline_v1_0.py"
       - "test_fund100_v6_s1_monthly_signed_event_bridge_offline_v1_0.py"
       - ".github/workflows/fund100-v6-s1-monthly-signed-event-bridge-offline.yml"

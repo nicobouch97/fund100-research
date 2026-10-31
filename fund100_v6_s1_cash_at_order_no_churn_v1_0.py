@@ -110,13 +110,20 @@ def check(*, snapshot:dict, now_utc:str, hypothetical_new_buy_usd:str|None=None,
             raise CashStop("Only $1-$65 cent-precision notional/cost research examples")
         if not reasons:
             remaining=settled-buy-friction
+            # Fees reduce NAV for EVERY holding, including untouched ETFs.
+            # The proposed BUY must leave the complete portfolio below the
+            # original 50% per-symbol cap, not just the purchased symbol.
+            after_marks=dict(marks)
+            after_marks[hypothetical_buy_symbol]=(
+                after_marks.get(hypothetical_buy_symbol,Decimal(0))+buy)
             # Cash floor tested against pre-spend NAV (conservative for
             # friction), and mark-to-market gross exposure after purchase.
             if remaining<equity*MIN_CASH:
                 stage="BLOCK_HYPOTHETICAL_BUY_RESERVED_CASH"
             elif equity<=friction or (gross+buy)/(equity-friction)>TARGET_GROSS:
                 stage="BLOCK_HYPOTHETICAL_BUY_GROSS_EXPOSURE"
-            elif (marks.get(hypothetical_buy_symbol,Decimal(0))+buy)/(equity-friction)>MAX_SYMBOL:
+            elif any(value>MAX_SYMBOL*(equity-friction)
+                     for value in after_marks.values()):
                 stage="BLOCK_HYPOTHETICAL_BUY_SINGLE_SYMBOL_CONCENTRATION"
             elif gross+buy>CAP:
                 # CAUTION: Market values do not prove cumulative cost basis.
