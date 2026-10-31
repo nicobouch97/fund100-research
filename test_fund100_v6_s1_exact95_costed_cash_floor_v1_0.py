@@ -163,6 +163,10 @@ def test_predeclared_passive_buffers_do_not_create_daily_microticket_trims():
         assert (path["gross_risk_exposure"]<=1+1e-10).all()
         result=s.passive_cash_buffer_feasibility(path,"2014-01-01")
         assert result["daily_trim_events"]==0
+        diag=result["costed_path"]
+        assert result["all_cash_and_single_symbol_limits_met_at_daily_close"] == (
+            diag["cash_below_5pct_sessions_end_of_day"]==0 and
+            diag["sector_weight_over_50pct_sessions"]==0)
         assert result["still_requires_intraday_and_broker_cash_validation"]
         assert result["fixed_buffer_not_an_optimized_or_released_strategy"]
 
