@@ -197,10 +197,15 @@ def check_account_performance(
         raise PortfolioRiskStop("Account daily-loss circuit breaker triggered.")
 
     equities = validated_equity_history(history)
-    # Latest LIVE equity must be included; broker daily history may lag.
+    # Broker 1D history may already contain the current account equity.
+    # Re-appending an identical mark invents a zero-return observation and
+    # can suppress realized volatility below the binding tier STOP. If
+    # history lags, retain the current mark as an additional observation.
+    # Omitting an actually new flat mark is conservative for volatility.
     if abs(equities[-1] / current - Decimal("1")) > Decimal("0.25"):
         raise PortfolioRiskStop("Current account/history equity materially diverged.")
-    equities.append(current)
+    if equities[-1] != current:
+        equities.append(current)
 
     returns = []
     for older, newer in zip(equities, equities[1:]):
