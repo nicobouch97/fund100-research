@@ -744,9 +744,17 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
         for bp in l1.COST_BPS:
             delayed=simulate_next_close_monthly(
                 data,cost_bps=bp,reserve_fraction=reserve)
+            # Fee-matched original month-end CLOSE fills are the proper
+            # counterfactual; the legacy 95% simulator uses a different,
+            # more favorable fee-financing convention.
+            same_close=simulate_daily_cash_floor(
+                data,cost_bps=bp,reserve_fraction=reserve,daily_trims=False)
             next_close_monthly[label][str(bp)]={
                 name:{
                     "costed_path":period_diagnostics(delayed,start),
+                    "fee_matched_same_close_cagr_pct":l1.metrics(
+                        same_close,start)["nav"]["annual_return_pct"],
+                    "legacy_95_fee_convention_not_used_for_timing_attribution":True,
                     "month_end_signals":int(delayed.loc[start:,"monthly_rebalance_signal"].sum()),
                     "following_close_executions":int(delayed.loc[start:,"monthly_rebalance_execution"].sum()),
                     "unaffordable_full_order_skips":int(delayed.loc[start:,"unaffordable_next_close_rebalance"].sum()),
@@ -860,14 +868,10 @@ def main():
             d=report["causal_next_close_monthly_rebalance_sensitivity"][
                 label]["15"][era]
             metrics=d["costed_path"]
-            prior=(report["results"]["15"][era]["actual_S1_95pct_target_with_drift"]
-                   if label=="original_95pct" else
-                   report["fixed_10_and_15pct_passive_cash_buffer_sensitivities"][
-                       label[:2]]["15"][era]["costed_path"])
             print("NEXT_CLOSE_MONTHLY_CAUSAL",label,era,
                   "CAGR_PCT",metrics["metrics"]["nav"]["annual_return_pct"],
-                  "ORIGINAL_SAME_CLOSE_CAGR_PCT",
-                  prior["metrics"]["nav"]["annual_return_pct"],
+                  "FEE_MATCHED_SAME_CLOSE_CAGR_PCT",
+                  d["fee_matched_same_close_cagr_pct"],
                   "CASH_BREACH_CLOSES",metrics["cash_below_5pct_sessions_end_of_day"],
                   "CONCENTRATION_BREACH_CLOSES",metrics["sector_weight_over_50pct_sessions"],
                   "HARD_RISK_BREACH_CLOSES",metrics["high_risk_stop_feasibility"][
