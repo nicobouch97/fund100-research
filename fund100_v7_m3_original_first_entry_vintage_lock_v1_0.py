@@ -257,10 +257,10 @@ def main():
                 initial_prices=initial_prices,subsequent_prices=subsequent_prices)
             a.output.parent.mkdir(parents=True,exist_ok=True)
             a.output.write_text(json.dumps(
-                diagnostic,sort_keys=True,indent=2)+"\\n")
+                diagnostic,sort_keys=True,indent=2)+"\n")
             print("Blocked revised entry price vintage; forensic artifact written.")
         raise
-    a.output.write_text(json.dumps(result,sort_keys=True,indent=2)+"\\n")
+    a.output.write_text(json.dumps(result,sort_keys=True,indent=2)+"\n")
     print(result["status"],"source price symbols:",result["entry_date_price_symbols_compared"])
     print("Original model entry locked; NO BROKER and NO proven alpha.")
 
