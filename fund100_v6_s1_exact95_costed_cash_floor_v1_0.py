@@ -328,6 +328,100 @@ def high_risk_eod_feasibility(path:pd.DataFrame,start:str)->dict:
     }
 
 
+
+def hypothetical_first_stop_next_close_cash(
+        path:pd.DataFrame, prices:pd.DataFrame, *, cost_bps:int)->tuple[pd.DataFrame,dict]:
+    """Research-only absorbing STOP sensitivity, NOT a funded liquidation policy.
+
+    Detect the FIRST combined HIGH-risk/cash/concentration breach on the
+    uninterrupted daily-close path. No same-close execution or knowledge of
+    the next close is assumed: hold the breached positions for one further
+    session, then hypothetically sell ALL at that next completed close,
+    charge the registered one-way cost, and hold unremunerated cash forever.
+    No re-entry or recovery is modeled. The original strategy path is not
+    modified. This does not guarantee a fill, cash settlement, intraday
+    protection, a real STOP response, or an authorised sale.
+    """
+    if cost_bps not in l1.COST_BPS:
+        raise S1EconomicsStop("Only original 5/15/35bps cost stress permitted")
+    data=l1.validate(prices)
+    if not path.index.equals(data.index) or len(path)<7:
+        raise S1EconomicsStop("Stop sensitivity requires exact ordered price sessions")
+    required={"nav","invested","cash_floor_breach_end_of_day",
+              "single_symbol_breach_end_of_day","acwi_nav","turnover","trade",
+              "gross_risk_exposure","cash","risk_off_at_decision"}
+    required.update("weight_"+s for s in l1.NAMES)
+    if not required.issubset(path.columns):
+        raise S1EconomicsStop("Missing original portfolio/stop observations")
+    first=high_risk_eod_feasibility(
+        path,path.index[0].date().isoformat())["first_combined_breach_date"]
+    out=path.copy(deep=True)
+    assumptions={
+        "first_combined_breach_date":first,
+        "hypothetical_next_close_exit_date":None,
+        "hypothetical_exit_fee_nav_units":None,
+        "hypothetical_exit_turnover_fraction":None,
+        "hypothetical_flat_cash_after_exit":False,
+        "breach_detected_only_after_completed_close":True,
+        "next_close_fill_and_immediate_cash_settlement_assumed":True,
+        "no_restart_or_new_risk_allocation_after_exit":True,
+        "not_a_live_stop_or_liquidation_authorization":True,
+        "intraday_gaps_slippage_and_real_broker_execution_unverified":True,
+    }
+    if first is None:
+        return out,assumptions
+    i=path.index.get_loc(pd.Timestamp(first))
+    if not isinstance(i,int):
+        raise S1EconomicsStop("Ambiguous first breach index")
+    if i==len(path)-1:
+        assumptions["breach_at_last_observation_exit_not_yet_observable"]=True
+        return out,assumptions
+    row=path.iloc[i]
+    weights={s:float(row["weight_"+s]) for s in l1.NAMES}
+    gross=sum(weights.values())
+    nav=float(row["nav"])
+    if (not isfinite(nav) or nav<=0 or any(not isfinite(w) or w<0 for w in weights.values())
+        or gross>1+EPS or not bool(row["invested"])):
+        raise S1EconomicsStop("Invalid holdings at first stop")
+    ratios={s:float(data.iloc[i+1][s]/data.iloc[i][s]) for s in l1.NAMES}
+    if any(not isfinite(x) or x<=0 for x in ratios.values()):
+        raise S1EconomicsStop("Invalid next-close exit prices")
+    # Do not use the original simulator's next-day NAV: it might have
+    # performed a month-end rebalance that a STOP would prohibit.
+    cash_value=nav*(1-gross)
+    liquidation_value=sum(nav*weights[s]*ratios[s] for s in l1.NAMES)
+    fee=liquidation_value*cost_bps/10_000.
+    net=cash_value+liquidation_value-fee
+    if not isfinite(net) or net<=0:
+        raise S1EconomicsStop("Hypothetical exit insolvent")
+    exit_date=path.index[i+1]
+    assumptions["hypothetical_next_close_exit_date"]=exit_date.date().isoformat()
+    assumptions["hypothetical_exit_fee_nav_units"]=round(fee,10)
+    assumptions["hypothetical_exit_turnover_fraction"]=round(
+        liquidation_value/(cash_value+liquidation_value),10)
+    assumptions["hypothetical_flat_cash_after_exit"]=True
+    for t in range(i+1,len(out)):
+        day=out.index[t]
+        out.at[day,"nav"]=net
+        out.at[day,"gross_risk_exposure"]=0.
+        out.at[day,"cash"]=1.
+        out.at[day,"invested"]=False
+        out.at[day,"turnover"]=(
+            liquidation_value/(cash_value+liquidation_value) if t==i+1 else 0.)
+        out.at[day,"trade"]=bool(t==i+1)
+        out.at[day,"risk_off_at_decision"]=False
+        out.at[day,"cash_floor_breach_before_trade"]=False
+        out.at[day,"cash_floor_breach_end_of_day"]=False
+        out.at[day,"single_symbol_breach_before_trade"]=False
+        out.at[day,"single_symbol_breach_end_of_day"]=False
+        for symbol in l1.NAMES:
+            out.at[day,"weight_"+symbol]=0.
+        for optional in ("daily_floor_trim","month_end_rebalance"):
+            if optional in out.columns:
+                out.at[day,optional]=False
+    return out,assumptions
+
+
 def period_diagnostics(path:pd.DataFrame,start:str)->dict:
     m=l1.metrics(path,start)
     sub=path.loc[start:]
@@ -396,6 +490,28 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
                 for name,start in (("2014_onward","2014-01-01"),
                                    ("2020_onward","2020-01-01"))
             }
+    # Absorbing STOP counterfactual on the SAME frozen history. Unlike the
+    # uninterrupted CAGR above, this explicitly stops after the FIRST
+    # completed-close violation and never assumes automatic re-entry.
+    stop_cash_sensitivity={}
+    for label,reserve in (("original_95pct",None),("10pct_buffer",.10),
+                          ("15pct_buffer",.15)):
+        stop_cash_sensitivity[label]={}
+        for bp in l1.COST_BPS:
+            unhalted=(simulate(data,cost_bps=bp) if reserve is None
+                      else simulate_daily_cash_floor(
+                          data,cost_bps=bp,reserve_fraction=reserve,
+                          daily_trims=False))
+            stopped,stop_assumptions=hypothetical_first_stop_next_close_cash(
+                unhalted,data,cost_bps=bp)
+            stop_cash_sensitivity[label][str(bp)]={
+                "stop_and_exit_assumptions":stop_assumptions,
+                "after_first_stop_hypothetical_cash_hold_metrics":{
+                    name:l1.metrics(stopped,start)
+                    for name,start in (("2014_onward","2014-01-01"),
+                                       ("2020_onward","2020-01-01"))
+                },
+            }
     floor_ok=all(
       x["actual_S1_95pct_target_with_drift"]["cash_below_5pct_sessions_end_of_day"]==0
       for section in results.values() for x in section.values())
@@ -416,6 +532,8 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
       "daily_cash_floor_ideal_fill_sensitivity":repair,
       "daily_cash_floor_ideal_fill_not_broker_executable":True,
       "fixed_10_and_15pct_passive_cash_buffer_sensitivities":passive_buffers,
+      "first_combined_breach_next_close_exit_then_cash_sensitivity":stop_cash_sensitivity,
+      "first_stop_exit_is_idealized_not_executable":True,
       "passive_cash_buffers_not_live_authorized":True,
       "cash_reserve_minimum_met_in_historical_model":floor_ok,
       "minimum_cash_floor_live_execution_requires_separate_design_review":not floor_ok,
@@ -458,6 +576,16 @@ def main():
                   "FIRST_COMBINED",x["first_combined_breach_date"],
                   "RETURNS_AFTER_STOP_COUNTERFACTUAL",
                   x["risk_stops_not_simulated_returns_after_first_stop_counterfactual"])
+    for label in ("original_95pct","10pct_buffer","15pct_buffer"):
+        x=report["first_combined_breach_next_close_exit_then_cash_sensitivity"][
+            label]["15"]
+        a=x["stop_and_exit_assumptions"]
+        m=x["after_first_stop_hypothetical_cash_hold_metrics"]["2014_onward"]
+        print("FIRST_STOP_NEXT_CLOSE_CASH",label,
+              "BREACH",a["first_combined_breach_date"],
+              "EXIT",a["hypothetical_next_close_exit_date"],
+              "CASH_HOLD_CAGR",m["nav"]["annual_return_pct"],
+              "UNEXECUTABLE_SENSITIVITY",True)
     print("NOT_ALPHA_NOT_BROKER_RELEASE",report["live_orders"])
 
 

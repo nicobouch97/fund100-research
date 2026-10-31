@@ -270,3 +270,81 @@ def test_high_risk_subperiod_preserves_preperiod_peak_and_volatility_history():
     assert x["rolling_70_close_drawdown_breach_closes"]>0
     assert x["rolling_windows_include_prior_invested_closes_before_report_period"]
     assert x["worst_rolling_70_close_drawdown_pct"]==pytest.approx(21.)
+
+
+def flat_synthetic_stop_path(prices):
+    """Fictional portfolio: isolate first STOP and next-close math."""
+    return pd.DataFrame({
+        "nav":100.,"acwi_nav":100.,"invested":True,
+        "cash_floor_breach_end_of_day":False,
+        "cash_floor_breach_before_trade":False,
+        "single_symbol_breach_end_of_day":False,
+        "single_symbol_breach_before_trade":False,
+        "gross_risk_exposure":.9,"cash":.1,
+        "weight_XLK":.4,"weight_XLE":.3,"weight_IWM":.2,
+        "turnover":0.,"trade":False,"risk_off_at_decision":False,
+    },index=prices.index)
+
+
+def test_first_stop_next_close_exit_uses_prices_and_fees_then_stays_cash():
+    prices=sample(n=2100)
+    path=flat_synthetic_stop_path(prices)
+    i=100
+    # Synthetic breach flag represents an already-detected combined STOP.
+    path.loc[path.index[i],"single_symbol_breach_end_of_day"]=True
+    stopped,a=s.hypothetical_first_stop_next_close_cash(path,prices,cost_bps=15)
+    assert a["first_combined_breach_date"]==path.index[i].date().isoformat()
+    assert a["hypothetical_next_close_exit_date"]==path.index[i+1].date().isoformat()
+    ratio=prices.iloc[i+1]/prices.iloc[i]
+    liquidation=100*(.4*ratio["XLK"]+.3*ratio["XLE"]+.2*ratio["IWM"])
+    expected=10+liquidation*(1-.0015)
+    assert stopped.iloc[i+1]["nav"]==pytest.approx(expected)
+    assert stopped.iloc[-1]["nav"]==pytest.approx(expected)
+    assert a["hypothetical_exit_fee_nav_units"]==pytest.approx(.0015*liquidation)
+    assert stopped.iloc[i]["nav"]==pytest.approx(100)
+    assert stopped.iloc[i+1]["cash"]==pytest.approx(1)
+    assert stopped.iloc[i+1]["gross_risk_exposure"]==pytest.approx(0)
+    assert stopped.iloc[i+1]["trade"]
+    assert stopped.iloc[i+1:]["trade"].sum()==1
+    assert stopped.iloc[i+1:]["turnover"].iloc[1:].sum()==pytest.approx(0)
+    assert stopped.iloc[i+1:]["invested"].sum()==0
+    assert path.iloc[-1]["nav"]==pytest.approx(100)  # input never mutated
+    assert a["not_a_live_stop_or_liquidation_authorization"]
+
+
+def test_first_stop_no_breach_preserves_uninterrupted_path():
+    prices=sample(n=2100)
+    path=flat_synthetic_stop_path(prices)
+    stopped,a=s.hypothetical_first_stop_next_close_cash(path,prices,cost_bps=5)
+    pd.testing.assert_frame_equal(stopped,path)
+    assert a["first_combined_breach_date"] is None
+    assert a["hypothetical_next_close_exit_date"] is None
+    assert not a["hypothetical_flat_cash_after_exit"]
+
+
+def test_first_stop_at_last_close_does_not_invent_next_day_fill():
+    prices=sample(n=2100)
+    path=flat_synthetic_stop_path(prices)
+    path.loc[path.index[-1],"cash_floor_breach_end_of_day"]=True
+    stopped,a=s.hypothetical_first_stop_next_close_cash(path,prices,cost_bps=35)
+    assert a["first_combined_breach_date"]==path.index[-1].date().isoformat()
+    assert a["hypothetical_next_close_exit_date"] is None
+    assert a["breach_at_last_observation_exit_not_yet_observable"]
+    pd.testing.assert_frame_equal(stopped,path)
+
+
+def test_first_stop_sensitivity_cannot_claim_alpha_or_live_authority():
+    report=s.evaluate(sample(n=3500),source_sha256=l1.ORIGINAL_SHA)
+    x=report["first_combined_breach_next_close_exit_then_cash_sensitivity"]
+    assert set(x)=={"original_95pct","10pct_buffer","15pct_buffer"}
+    for scenario in x.values():
+        assert set(scenario)=={"5","15","35"}
+        for result in scenario.values():
+            assert set(result["after_first_stop_hypothetical_cash_hold_metrics"])=={
+                "2014_onward","2020_onward"}
+            a=result["stop_and_exit_assumptions"]
+            assert a["not_a_live_stop_or_liquidation_authorization"]
+            assert a["no_restart_or_new_risk_allocation_after_exit"]
+    assert report["first_stop_exit_is_idealized_not_executable"]
+    assert report["live_orders"]==report["broker_calls"]==0
+    assert report["new_strategy_live_authorized"] is False
