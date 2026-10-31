@@ -81,6 +81,7 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
     sell_notional=0.0
     sell_sides=0
     skipped_sides=0
+    stop_full_position_minimum_exceptions=0
     forced_stop=False
     stop_signal=None
     pending=None
@@ -102,9 +103,17 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
             for s,requested_qty in pending["quantities"].items():
                 qty=min(units[s],requested_qty)
                 notional=qty*px[s]
+                # The pilot's full-position risk-reducing sale exception is
+                # distinct from the $1 minimum for routine maintenance.
+                # This is a HYPOTHETICAL full-exit fill, not evidence that
+                # Alpaca accepts a sub-$1 fractional share sale.
+                full_stop_exit=(pending["kind"]=="STOP_EXIT" and
+                                requested_qty>=units[s]-1e-12)
                 if notional+1e-10<MODELED_MIN_SELL_USD:
-                    skipped_sides+=1
-                    continue
+                    if not full_stop_exit:
+                        skipped_sides+=1
+                        continue
+                    stop_full_position_minimum_exceptions+=1
                 units[s]-=qty
                 cash+=notional*(1-fee)
                 total_sell_fees+=notional*fee
@@ -208,6 +217,8 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
         "modeled_entry_buy_fee_usd":_metric(invested_budget-initial_purchase),
         "modeled_fixed_end_liquidation_fee_usd":_metric(last_exit_fee),
         "modeled_sell_sides_below_minimum_skipped":skipped_sides,
+        "hypothetical_full_stop_position_minimum_exceptions":stop_full_position_minimum_exceptions,
+        "sub_minimum_full_stop_fills_not_broker_verified":True,
         "risk_breach_session_counts_after_delay":breaches,
         "risk_risk_limits_not_guaranteed_by_next_close_intervention":True,
         "end_remaining_risky_exposure_before_model_terminal_liquidation_usd":_metric(residual),
@@ -250,6 +261,7 @@ def analyze(prices:pd.DataFrame,digest:str):
         "pilot_sized_results":pilot_results,
         "original_100usd_research_comparator_preserved":True,
         "fixed_one_dollar_minimum_is_absolute_not_a_portfolio_percentage":True,
+        "full_position_stop_exit_exception_is_hypothetical_not_broker_proof":True,
     }
 
 def main():

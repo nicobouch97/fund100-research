@@ -114,3 +114,35 @@ def test_last_close_hard_stop_is_latched_without_fabricated_same_close_exit():
     assert result["end_remaining_risky_exposure_before_model_terminal_liquidation_usd"]>0
     assert not [e for e in result["trade_log"] if e["kind"]=="STOP_EXIT"]
     assert result["actual_broker_orders"]==0
+
+
+def test_full_position_hard_stop_exit_not_blocked_by_routine_minimum(monkeypatch):
+    # Synthetic stress raises the ordinary maintenance minimum above each
+    # individual holding; this is NOT a change to the fixed $1 study.
+    # A binding account STOP must not leave a fractional dust position
+    # invested merely because routine repair tickets have a minimum.
+    monkeypatch.setattr(x9, "MODELED_MIN_SELL_USD", 100.0)
+    frame=scenario("drawdown")
+    result=x9.simulate(frame,start="2020-01-01",cost_bps=15,
+                       capital_usd=130.30)
+    exits=[e for e in result["trade_log"] if e["kind"]=="STOP_EXIT"]
+    assert len(exits)==1
+    assert exits[0]["signal_session"]==frame.index[5].date().isoformat()
+    assert exits[0]["execution_session"]==frame.index[6].date().isoformat()
+    assert set(exits[0]["fixed_prior_close_share_quantity_sold"])==set(x9.S1)
+    assert result["modeled_sell_sides_completed"]==len(x9.S1)
+    assert result["hypothetical_full_stop_position_minimum_exceptions"]==len(x9.S1)
+    assert result["modeled_sell_sides_below_minimum_skipped"]==0
+    assert result["end_remaining_risky_exposure_before_model_terminal_liquidation_usd"]==0
+    assert result["sub_minimum_full_stop_fills_not_broker_verified"] is True
+    assert result["actual_broker_orders"]==0
+
+
+def test_routine_repair_still_respects_absolute_minimum(monkeypatch):
+    monkeypatch.setattr(x9, "MODELED_MIN_SELL_USD", 100.0)
+    result=x9.simulate(scenario("rising"),start="2020-01-01",cost_bps=15)
+    assert not result["trade_log"]
+    assert result["modeled_sell_sides_completed"]==0
+    assert result["hypothetical_full_stop_position_minimum_exceptions"]==0
+    assert result["risk_breach_session_counts_after_delay"]["cash"]>0
+    assert result["first_stop_signal_close"] is None
