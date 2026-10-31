@@ -422,6 +422,63 @@ def hypothetical_first_stop_next_close_cash(
     return out,assumptions
 
 
+# Distinct hypothetical launch cohorts, fixed before inspecting these results.
+# A 2008 stop in a continuously invested strategy must not be silently
+# inherited by a genuinely NEW 2014 or 2020 account inception. Conversely,
+# merely resetting a backtest is not an authorised real-world STOP restart.
+FRESH_INCEPTION_DATES={
+    "2014_fresh_inception":"2014-01-01",
+    "2020_fresh_inception":"2020-01-01",
+}
+
+
+def fresh_inception_first_stop_sensitivity(
+        prices:pd.DataFrame, *, cost_bps:int, reserve_fraction:float|None)->dict:
+    """Costed no-restart STOP paths for independent historical launch dates.
+
+    Each cohort begins in cash with NAV=100 and the SAME 40-session warmup,
+    10pp month-end rebalance rule, 50/30/20 sector mix and 5/15/35bp costs.
+    Account drawdown and volatility start at cohort inception, rather than
+    inheriting an unrelated account's pre-inception risk history. This is
+    retrospective scenario analysis on already inspected data, not an
+    optimised re-entry signal, actual account restart or trade permission.
+    """
+    if cost_bps not in l1.COST_BPS or reserve_fraction not in (None,.10,.15):
+        raise S1EconomicsStop("Only original S1 costs and registered buffers")
+    data=l1.validate(prices)
+    cohorts={}
+    for label,start in FRESH_INCEPTION_DATES.items():
+        launched=data.loc[start:].copy()
+        # Prevent an apparent zero-risk result from a truncated history
+        # with no possible qualified investment or 1-year return window.
+        if len(launched)<840:
+            raise S1EconomicsStop("Insufficient original sessions for fresh inception")
+        unhalted=(simulate(launched,cost_bps=cost_bps) if reserve_fraction is None
+                  else simulate_daily_cash_floor(
+                      launched,cost_bps=cost_bps,
+                      reserve_fraction=reserve_fraction,daily_trims=False))
+        active=unhalted.index[unhalted["invested"]]
+        if not len(active):
+            raise S1EconomicsStop("Fresh inception never reached a first investment")
+        stopped,assumptions=hypothetical_first_stop_next_close_cash(
+            unhalted,launched,cost_bps=cost_bps)
+        cohorts[label]={
+            "requested_inception_date":start,
+            "first_observed_market_session":launched.index[0].date().isoformat(),
+            "first_invested_close":active[0].date().isoformat(),
+            "fresh_initial_nav":l1.NAV0,
+            "pre_inception_trades_or_stops_inherited":False,
+            "risk_history_restarted_only_for_new_hypothetical_account":True,
+            "warmup_and_costed_initial_entry_included":True,
+            "stop_and_exit_assumptions":assumptions,
+            "fresh_inception_no_restart_metrics":l1.metrics(stopped,start),
+            "uninterrupted_returns_after_stop_counterfactual":True,
+            "previously_inspected_history_not_independent_alpha":True,
+            "not_a_live_restart_or_trading_authorization":True,
+        }
+    return cohorts
+
+
 def period_diagnostics(path:pd.DataFrame,start:str)->dict:
     m=l1.metrics(path,start)
     sub=path.loc[start:]
@@ -512,6 +569,17 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
                                        ("2020_onward","2020-01-01"))
                 },
             }
+    # Do not confuse the full-history 2008 absorbing STOP with an account
+    # actually launched afresh in 2014/2020. This is a separate historical
+    # inception sensitivity, never a recovery from an earlier hard STOP.
+    fresh_inception_stops={}
+    for label,reserve in (("original_95pct",None),("10pct_buffer",.10),
+                          ("15pct_buffer",.15)):
+        fresh_inception_stops[label]={
+            str(bp):fresh_inception_first_stop_sensitivity(
+                data,cost_bps=bp,reserve_fraction=reserve)
+            for bp in l1.COST_BPS
+        }
     floor_ok=all(
       x["actual_S1_95pct_target_with_drift"]["cash_below_5pct_sessions_end_of_day"]==0
       for section in results.values() for x in section.values())
@@ -534,6 +602,8 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
       "fixed_10_and_15pct_passive_cash_buffer_sensitivities":passive_buffers,
       "first_combined_breach_next_close_exit_then_cash_sensitivity":stop_cash_sensitivity,
       "first_stop_exit_is_idealized_not_executable":True,
+      "fresh_inception_first_stop_next_close_cash_sensitivity":fresh_inception_stops,
+      "fresh_inception_is_not_a_hard_stop_recovery":True,
       "passive_cash_buffers_not_live_authorized":True,
       "cash_reserve_minimum_met_in_historical_model":floor_ok,
       "minimum_cash_floor_live_execution_requires_separate_design_review":not floor_ok,
@@ -586,6 +656,19 @@ def main():
               "EXIT",a["hypothetical_next_close_exit_date"],
               "CASH_HOLD_CAGR",m["nav"]["annual_return_pct"],
               "UNEXECUTABLE_SENSITIVITY",True)
+    for label in ("original_95pct","10pct_buffer","15pct_buffer"):
+        for cohort in FRESH_INCEPTION_DATES:
+            x=report["fresh_inception_first_stop_next_close_cash_sensitivity"][
+                label]["15"][cohort]
+            a=x["stop_and_exit_assumptions"]
+            m=x["fresh_inception_no_restart_metrics"]
+            print("FRESH_INCEPTION_FIRST_STOP",label,cohort,
+                  "ENTRY",x["first_invested_close"],
+                  "BREACH",a["first_combined_breach_date"],
+                  "EXIT",a["hypothetical_next_close_exit_date"],
+                  "COSTED_CAGR_PCT",m["nav"]["annual_return_pct"],
+                  "ACWI_CAGR_PCT",m["acwi_nav"]["annual_return_pct"],
+                  "RESEARCH_ONLY",True)
     print("NOT_ALPHA_NOT_BROKER_RELEASE",report["live_orders"])
 
 
