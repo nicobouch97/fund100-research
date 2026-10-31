@@ -301,6 +301,7 @@ def high_risk_eod_feasibility(path:pd.DataFrame,start:str)->dict:
         "first_combined_breach_date":first(combined),
         "worst_modelled_daily_return_pct":round(100*float(daily.min()),5),
         "worst_rolling_70_close_drawdown_pct":round(100*float(rolling_dd.max()),5),
+        "latest_rolling_70_close_drawdown_pct":round(100*float(rolling_dd.iloc[-1]),5),
         "highest_rolling_69_return_volatility_pct":round(
             100*float(rolling_vol.max()),5) if rolling_vol.notna().any() else None,
         "all_observed_high_account_risk_limits_met":bool(not risk_hit.any()),
