@@ -236,8 +236,13 @@ def passive_cash_buffer_feasibility(path:pd.DataFrame,start:str)->dict:
     """Historical cash-drift/cost tradeoff; no daily microticket sales."""
     sub=path.loc[start:]
     invested=sub.loc[sub["invested"]]
+    diagnostic=period_diagnostics(path,start)
     return {
-        "costed_path":period_diagnostics(path,start),
+        "costed_path":diagnostic,
+        "all_cash_and_single_symbol_limits_met_at_daily_close":bool(
+            len(invested) and
+            diagnostic["cash_below_5pct_sessions_end_of_day"]==0 and
+            diagnostic["sector_weight_over_50pct_sessions"]==0),
         "month_end_trade_events":int(sub["month_end_rebalance"].sum()),
         "daily_trim_events":int(sub["daily_floor_trim"].sum()),
         "cash_floor_satisfied_at_all_invested_closes":bool(
