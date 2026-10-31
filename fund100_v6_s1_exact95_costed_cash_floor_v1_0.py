@@ -211,6 +211,125 @@ def simulate_daily_cash_floor(prices:pd.DataFrame, *, cost_bps:int,
     return pd.DataFrame(rows).set_index("date")
 
 
+
+def simulate_next_close_monthly(prices:pd.DataFrame, *, cost_bps:int,
+                                reserve_fraction:float)->pd.DataFrame:
+    """Separate causal monthly timing sensitivity; original model is untouched.
+
+    A completed month-end close can only generate fixed SHARE quantities for
+    the NEXT observed session's close. The next-close execution uses those
+    quantities, not a newly fitted target. SELL proceeds finance BUYs; if a
+    gap makes the full fixed order unaffordable, the whole rebalance is
+    skipped, not funded with synthetic margin. Cash/weight drift and HIGH
+    account-risk breaches remain visible; this is NOT a LIVE trading plan,
+    a broker minimum-ticket proof or an automatic HARD STOP recovery.
+    """
+    if (cost_bps not in l1.COST_BPS or type(reserve_fraction) is not float
+        or reserve_fraction not in (FLOOR,.10,.15)):
+        raise S1EconomicsStop("Unregistered delayed monthly research scenario")
+    data=l1.validate(prices)
+    target={s:TARGET[s]*(1-reserve_fraction)/(1-FLOOR) for s in l1.NAMES}
+    rate=cost_bps/10000.
+    cash=float(l1.NAV0)
+    benchmark=float(l1.NAV0)
+    holdings={s:0. for s in l1.NAMES}
+    pending=None
+    engaged=False
+    rows=[]
+    for t,date in enumerate(data.index):
+        px={s:float(data.iloc[t][s]) for s in l1.NAMES}
+        if t:
+            for s in l1.NAMES:
+                holdings[s]*=px[s]/float(data.iloc[t-1][s])
+            benchmark*=float(data.iloc[t][l1.BENCH]/data.iloc[t-1][l1.BENCH])
+        nav=cash+sum(holdings.values())
+        if not isfinite(nav) or nav<=0:
+            raise S1EconomicsStop("Invalid next-close marked NAV")
+        before_cash=bool(engaged and cash/nav<FLOOR-1e-10)
+        before_single=bool(engaged and max(holdings.values())/nav>.5+EPS)
+        traded=False
+        turnover=0.
+        executed_signal=None
+        unaffordable=False
+        if pending is not None:
+            if t<=pending["index"]:
+                raise S1EconomicsStop("Same-close hindsight monthly execution")
+            quantities=pending["quantities"]
+            dollars={s:quantities[s]*px[s] for s in l1.NAMES}
+            sales=sum(-v for v in dollars.values() if v<0)
+            purchases=sum(v for v in dollars.values() if v>0)
+            # The entire precommitted share basket must be cash-funded.
+            remaining=cash+sales*(1-rate)-purchases*(1+rate)
+            if (any(-dollars[s]>holdings[s]+1e-8 for s in l1.NAMES)
+                or remaining < -1e-8):
+                unaffordable=True
+            else:
+                old_nav=nav
+                for s in l1.NAMES:
+                    holdings[s]+=dollars[s]
+                    if holdings[s]<-1e-8:
+                        raise S1EconomicsStop("Synthetic short position")
+                    holdings[s]=max(0.,holdings[s])
+                cash=max(0.,remaining)
+                nav=cash+sum(holdings.values())
+                if nav<=0 or not isfinite(nav):
+                    raise S1EconomicsStop("Invalid post-execution account")
+                turnover=(sales+purchases)/old_nav
+                traded=bool(sales+purchases>1e-10)
+                executed_signal=pending["session"] if traded else None
+                engaged=engaged or traded
+            pending=None
+        nav=cash+sum(holdings.values())
+        weights={s:holdings[s]/nav for s in l1.NAMES}
+        signal=False
+        if l1.month_end_session(data.index,t) and max(
+                abs(target[s]-weights[s]) for s in l1.NAMES)>=l1.BAND:
+            # Solve the same post-fee target at the SIGNAL close, then
+            # freeze share quantities. No same-close rebalance is credited.
+            post=nav
+            for _ in range(100):
+                notional=sum(abs(target[s]*post-holdings[s]) for s in l1.NAMES)
+                nxt=nav-rate*notional
+                if not isfinite(nxt) or nxt<=0:
+                    raise S1EconomicsStop("Invalid delayed rebalance intent")
+                if abs(nxt-post)<=1e-12*nav:
+                    post=nxt
+                    break
+                post=nxt
+            else:
+                raise S1EconomicsStop("Delayed fee solver did not converge")
+            pending={
+                "index":t,"session":date.date().isoformat(),
+                "quantities":{s:(target[s]*post-holdings[s])/px[s]
+                              for s in l1.NAMES},
+            }
+            signal=True
+        if (not isfinite(cash) or cash<0
+            or any(not isfinite(v) or v<0 for v in holdings.values())):
+            raise S1EconomicsStop("Invalid delayed holdings/cash")
+        rows.append({
+            "date":date,"nav":nav,"acwi_nav":benchmark,
+            "turnover":turnover,"trade":traded,
+            "gross_risk_exposure":sum(weights.values()),
+            "cash":cash/nav,"invested":engaged,
+            "risk_off_at_decision":False,"risk_month_end_vol":None,
+            "cash_floor_breach_before_trade":before_cash,
+            "cash_floor_breach_end_of_day":bool(engaged and cash/nav<FLOOR-1e-10),
+            "single_symbol_breach_before_trade":before_single,
+            "single_symbol_breach_end_of_day":bool(engaged and max(weights.values())>.5+EPS),
+            "daily_floor_trim":False,
+            "month_end_rebalance":traded,
+            "monthly_rebalance_signal":signal,
+            "monthly_rebalance_execution":traded,
+            "executed_prior_close_signal_session":executed_signal,
+            "unaffordable_next_close_rebalance":unaffordable,
+            "pending_unexecuted_signal_at_final_close":bool(
+                t==len(data)-1 and pending is not None),
+            **{"weight_"+s:weights[s] for s in l1.NAMES},
+        })
+    return pd.DataFrame(rows).set_index("date")
+
+
 def daily_floor_feasibility(path:pd.DataFrame,start:str)->dict:
     """Descriptive ideal-fill economics and microticket feasibility only."""
     sub=path.loc[start:]
@@ -615,6 +734,29 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
                 data,cost_bps=bp,reserve_fraction=reserve)
             for bp in l1.COST_BPS
         }
+    # Correct the month-end signal/fill chronology separately from the
+    # original same-close study. These fixed-share next-close fills are
+    # retrospective, not a promotion or a hard-STOP-compliant return path.
+    next_close_monthly={}
+    for label,reserve in (("original_95pct",FLOOR),
+                          ("10pct_buffer",.10),("15pct_buffer",.15)):
+        next_close_monthly[label]={}
+        for bp in l1.COST_BPS:
+            delayed=simulate_next_close_monthly(
+                data,cost_bps=bp,reserve_fraction=reserve)
+            next_close_monthly[label][str(bp)]={
+                name:{
+                    "costed_path":period_diagnostics(delayed,start),
+                    "month_end_signals":int(delayed.loc[start:,"monthly_rebalance_signal"].sum()),
+                    "following_close_executions":int(delayed.loc[start:,"monthly_rebalance_execution"].sum()),
+                    "unaffordable_full_order_skips":int(delayed.loc[start:,"unaffordable_next_close_rebalance"].sum()),
+                    "unexecuted_final_close_signal":bool(
+                        delayed.iloc[-1]["pending_unexecuted_signal_at_final_close"]),
+                    "no_same_close_fill_or_broker_minimum_assumed":True,
+                    "hard_account_stops_not_simulated":True,
+                } for name,start in (("2014_onward","2014-01-01"),
+                                     ("2020_onward","2020-01-01"))
+            }
     floor_ok=all(
       x["actual_S1_95pct_target_with_drift"]["cash_below_5pct_sessions_end_of_day"]==0
       for section in results.values() for x in section.values())
@@ -639,6 +781,9 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
       "first_stop_exit_is_idealized_not_executable":True,
       "fresh_inception_first_stop_next_close_cash_sensitivity":fresh_inception_stops,
       "fresh_inception_is_not_a_hard_stop_recovery":True,
+      "causal_next_close_monthly_rebalance_sensitivity":next_close_monthly,
+      "original_same_close_historical_results_preserved":True,
+      "next_close_monthly_research_does_not_prove_broker_fills_or_alpha":True,
       "passive_cash_buffers_not_live_authorized":True,
       "cash_reserve_minimum_met_in_historical_model":floor_ok,
       "minimum_cash_floor_live_execution_requires_separate_design_review":not floor_ok,
