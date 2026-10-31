@@ -68,7 +68,7 @@ def entry_revision_diagnostic(*,initial_prices:pd.DataFrame,
         "total_compared_symbols":len(original.columns),
         "changes":changes,
         "dividend_factor_crosscheck":_dividend_factor_crosscheck(
-            changes,later,dividend_events),
+            changes,original,later,dividend_events),
         "cannot_distinguish_corporate_actions_from_vendor_corrections":True,
         "not_a_return_or_alpha_estimate":True,
         "do_not_replace_original_entry_anchor":True,
@@ -76,14 +76,14 @@ def entry_revision_diagnostic(*,initial_prices:pd.DataFrame,
         "broker_gets":0,"broker_posts":0,"broker_orders":0,
     }
 
-def _dividend_factor_crosscheck(changes:list[dict],later:pd.DataFrame,
-                                events:list[dict]|None)->dict:
-    """Forensic dividend factor consistency, NEVER source authentication.
+def _dividend_factor_crosscheck(changes:list[dict],original:pd.DataFrame,
+                                later:pd.DataFrame,events:list[dict]|None)->dict:
+    """Crosscheck the FULL frozen history, not just one revised entry quote.
 
-    Yahoo adjusted history commonly back-adjusts earlier closes by
-    (1 - cash dividend / unadjusted prior-session close). Independently
-    documented event inputs can explain a drift, but URL strings are not
-    verified by this offline routine and cannot qualify strategy returns.
+    A single entry-day adjustment ratio can coincidentally match a dividend
+    factor even if it is a one-day vendor correction. A genuine backward
+    adjustment must be consistent across every archived pre-ex-date close.
+    This remains an unauthenticated forensic check, NEVER return authority.
     """
     if events is None:
         return {"status":"NO_INDEPENDENT_DIVIDEND_EVIDENCE_SUPPLIED",
@@ -127,36 +127,61 @@ def _dividend_factor_crosscheck(changes:list[dict],later:pd.DataFrame,
                 or len(url)>400):
                 raise EntryAnchorStop("Missing dated public source reference")
         seen.add((symbol,date))
-        # Dated evidence may remain in this file after a later revision
-        # affects another symbol, or before the event itself is observed.
-        # Do not lose the underlying price-drift forensic artifact.
         if symbol not in changed or session>later.index[-1]:
             ignored_events+=1
             continue
         grouped.setdefault(symbol,[]).append(event)
+
+    # The original archive is the authoritative observation. Do not let a
+    # later source omit an old row and still earn a dividend-like label.
+    overlap=original.index
+    overlap_complete=overlap.equals(later.index[later.index<=overlap[-1]])
+    other_drift=[]
+    if overlap_complete:
+        for symbol in sorted(set(original.columns)-changed):
+            ratio=later.loc[overlap,symbol]/original.loc[overlap,symbol]
+            maximum=float((ratio-1).abs().max())*10000
+            if maximum>0.001:  # 0.001bp tolerance for CSV/float rounding
+                other_drift.append({"symbol":symbol,
+                                    "max_unexplained_historical_drift_bps":
+                                        round(maximum,8)})
     rows=[]
     for change in changes:
         symbol=change["symbol"]
         records=sorted(grouped.get(symbol,[]),key=lambda x:x["ex_date"])
         if not records:
-            rows.append({"symbol":symbol,"status":"UNEXPLAINED_NO_DIVIDEND_EVIDENCE"})
+            rows.append({"symbol":symbol,
+                         "status":"UNEXPLAINED_NO_DIVIDEND_EVIDENCE"})
             continue
         expected=prod(1-event["cash_dividend_usd"]/
                       event["previous_unadjusted_close_usd"] for event in records)
         observed=(change["later_vintage_entry_adjusted_close"]/
                   change["entry_anchor_adjusted_close"])
         error_bps=10000*(observed-expected)
-        rows.append({
+        row={
             "symbol":symbol,
-            "status":("DIVIDEND_FACTOR_NUMERICALLY_CONSISTENT"
-                      if abs(error_bps)<=0.05 else
-                      "DIVIDEND_FACTOR_CONTRADICTS_VENDOR_REVISION"),
             "ex_dates":[event["ex_date"] for event in records],
             "expected_cumulative_adjustment_factor":round(expected,10),
             "observed_adjustment_factor":round(observed,10),
             "factor_difference_bps":round(error_bps,8),
-        })
-    all_match=(len(rows)==len(changes) and all(
+        }
+        if not overlap_complete:
+            row["status"]="INCOMPLETE_FROZEN_HISTORICAL_OVERLAP"
+        else:
+            # All original observations precede the post-entry dividend.
+            # Comparing the complete prefix prevents a one-day fabricated
+            # entry correction from masquerading as a uniform back-adjustment.
+            ratios=later.loc[overlap,symbol]/original.loc[overlap,symbol]
+            maximum=float((ratios-expected).abs().max())*10000
+            row["historical_sessions_checked"]=len(overlap)
+            row["maximum_historical_factor_residual_bps"]=round(maximum,8)
+            row["status"]=(
+                "DIVIDEND_FACTOR_NUMERICALLY_CONSISTENT"
+                if abs(error_bps)<=0.05 and maximum<=0.05
+                else "DIVIDEND_FACTOR_CONTRADICTS_VENDOR_REVISION")
+        rows.append(row)
+    all_match=(overlap_complete and not other_drift
+               and len(rows)==len(changes) and all(
         row["status"]=="DIVIDEND_FACTOR_NUMERICALLY_CONSISTENT"
         for row in rows))
     return {
@@ -165,7 +190,11 @@ def _dividend_factor_crosscheck(changes:list[dict],later:pd.DataFrame,
         "events_considered":sum(map(len,grouped.values())),
         "evidence_events_supplied":len(events),
         "irrelevant_or_future_events_ignored":ignored_events,
+        "frozen_historical_overlap_complete":bool(overlap_complete),
+        "frozen_historical_sessions_checked":len(overlap) if overlap_complete else 0,
+        "unexplained_nonentry_historical_drift":other_drift,
         "symbol_checks":rows,
+        "full_pre_ex_history_required_for_factor_consistency":True,
         "source_urls_are_claims_not_verified_by_offline_code":True,
         "cannot_rule_out_vendor_corrections_or_other_corporate_actions":True,
         "does_not_qualify_returns":True,
