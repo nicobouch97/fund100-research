@@ -147,3 +147,43 @@ def test_repair_sensitivity_preserves_original_source_and_live_lock():
     assert report["daily_cash_floor_ideal_fill_not_broker_executable"]
     assert report["new_strategy_live_authorized"] is False
     assert report["broker_calls"]==report["live_orders"]==0
+
+
+def test_predeclared_passive_buffers_do_not_create_daily_microticket_trims():
+    p=sample(n=2100)
+    for reserve in (.10,.15):
+        path=s.simulate_daily_cash_floor(
+            p,cost_bps=15,reserve_fraction=reserve,daily_trims=False)
+        active=path.loc[path["invested"]]
+        assert len(active)>0
+        assert not path["daily_floor_trim"].any()
+        assert path["month_end_rebalance"].sum()>0
+        assert path["nav"].iloc[-1]>0
+        assert active["cash"].iloc[0]==pytest.approx(reserve)
+        assert (path["gross_risk_exposure"]<=1+1e-10).all()
+        result=s.passive_cash_buffer_feasibility(path,"2014-01-01")
+        assert result["daily_trim_events"]==0
+        assert result["still_requires_intraday_and_broker_cash_validation"]
+        assert result["fixed_buffer_not_an_optimized_or_released_strategy"]
+
+
+def test_passive_buffer_is_not_a_new_live_target_or_promotion():
+    report=s.evaluate(sample(n=3500),source_sha256=l1.ORIGINAL_SHA)
+    assert report["exact_whole_account_target"]==s.TARGET
+    assert set(report["fixed_10_and_15pct_passive_cash_buffer_sensitivities"])=={"10","15"}
+    for reserve in ("10","15"):
+        for cost in ("5","15","35"):
+            for period in ("2014_onward","2020_onward"):
+                x=report["fixed_10_and_15pct_passive_cash_buffer_sensitivities"][reserve][cost][period]
+                assert x["daily_trim_events"]==0
+                assert x["no_independent_alpha_claim"]
+    assert report["passive_cash_buffers_not_live_authorized"]
+    assert report["live_orders"]==report["broker_calls"]==0
+
+
+@pytest.mark.parametrize("reserve,trim",[(.08,False),(.10,True),(.15,True),
+                                         (float("nan"),False),(.10,1)])
+def test_unregistered_cash_buffer_or_daily_trim_combination_rejected(reserve,trim):
+    with pytest.raises(s.S1EconomicsStop):
+        s.simulate_daily_cash_floor(
+            sample(n=100),cost_bps=15,reserve_fraction=reserve,daily_trims=trim)
