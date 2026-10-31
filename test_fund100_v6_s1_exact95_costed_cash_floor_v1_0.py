@@ -547,6 +547,8 @@ def test_next_close_research_is_separate_from_original_and_never_live_authority(
             for cohort in ("2014_onward","2020_onward"):
                 x=configs[cost][cohort]
                 assert x["no_same_close_fill_or_broker_minimum_assumed"]
+                assert x["legacy_95_fee_convention_not_used_for_timing_attribution"]
+                assert isinstance(x["fee_matched_same_close_cagr_pct"],float)
                 assert x["hard_account_stops_not_simulated"]
                 assert abs(x["month_end_signals"]-x["following_close_executions"])<=1+x["unaffordable_full_order_skips"]
                 assert x["unaffordable_full_order_skips"]>=0
