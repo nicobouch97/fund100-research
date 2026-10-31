@@ -316,3 +316,30 @@ def test_other_ticker_historical_rewrite_cannot_hide_behind_costco_dividend():
         "DIVIDEND_FACTOR_NUMERICALLY_CONSISTENT")
     assert cross["unexplained_nonentry_historical_drift"][0]["symbol"]=="AAPL"
     assert cross["does_not_rewrite_original_entry"]
+
+def test_saved_sector_rank_and_risk_matched_returns_cannot_be_fabricated():
+    a,p,b,q=samples()
+    rank=deepcopy(b)
+    rank["secondary_exact_sector_conditional_selection_rank"][
+        "upper_tail_fraction_including_ties"]=0.0
+    with pytest.raises(m3.EntryAnchorStop,match="sector-conditional rank"):
+        check(a=a,p=p,b=rank,q=q)
+
+    risk=deepcopy(b)
+    risk["secondary_frozen_preentry_volatility_match"]["stock_risky_fraction"]=0.2
+    with pytest.raises(m3.EntryAnchorStop,match="preentry risk changed"):
+        check(a=a,p=p,b=risk,q=q)
+
+    if b["secondary_frozen_preentry_volatility_match"]["status"]==(
+            "PREENTRY_RISK_MATCHED_NO_LEVERAGE_RESEARCH_ONLY"):
+        for field in ("stock_final_after_costs_usd",
+                      "spy_final_after_costs_usd",
+                      "stock_minus_spy_net_percentage_points"):
+            altered=deepcopy(b)
+            altered["costed_95pct_stocks_versus_95pct_spy"]["15"][
+                "secondary_preentry_volatility_matched"][field]+=1.0
+            with pytest.raises(m3.EntryAnchorStop,match="risk-matched after-cost"):
+                check(a=a,p=p,b=altered,q=q)
+
+    verified=check(a=a,p=p,b=b,q=q)
+    assert verified["independently_recomputed_sector_rank_and_risk_matched_returns"]
