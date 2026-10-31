@@ -109,6 +109,41 @@ def test_volatility_guard_stops_unstable_portfolio():
         )
 
 
+
+def test_duplicate_current_equity_does_not_hide_high_volatility_stop():
+    # Five alternating +/-2.2% daily returns imply about 38.26% annualized
+    # sample volatility. Appending an invented sixth 0% return lowers this
+    # to about 34.34%, incorrectly passing the unchanged HIGH 35% limit.
+    marks = [Decimal("100")]
+    for factor in ("1.022", "0.978", "1.022", "0.978", "1.022"):
+        marks.append(marks[-1] * Decimal(factor))
+    with pytest.raises(r.PortfolioRiskStop, match="volatility"):
+        r.check_account_performance(
+            account={"equity": str(marks[-1]), "last_equity": str(marks[-2])},
+            history=history([str(mark) for mark in marks]),
+            profile=r.get_profile("HIGH"),
+        )
+
+
+def test_distinct_current_mark_still_contributes_to_realized_volatility():
+    # A genuinely new +6% account mark must not be discarded merely
+    # because the broker's six completed daily marks were all flat.
+    with pytest.raises(r.PortfolioRiskStop, match="volatility"):
+        r.check_account_performance(
+            account={"equity": "106", "last_equity": "106"},
+            history=history([100] * 6),
+            profile=r.get_profile("HIGH"),
+        )
+
+
+def test_identical_current_mark_preserves_valid_flat_history():
+    r.check_account_performance(
+        account={"equity": "100.00", "last_equity": "100"},
+        history=history([100] * 6),
+        profile=r.get_profile("HIGH"),
+    )
+
+
 @pytest.mark.parametrize("level", ["unknown", "OFF", "", None, 2])
 def test_risk_tier_fail_closed(level):
     with pytest.raises(r.PortfolioRiskStop):
