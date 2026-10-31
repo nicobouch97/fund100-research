@@ -258,3 +258,15 @@ def test_high_risk_screen_is_reported_for_original_and_passive_buffer_paths():
         assert x["first_five_returns_have_insufficient_volatility_history"]
         assert x["risk_stops_not_simulated_returns_after_first_stop_counterfactual"]
         assert x["research_only_not_live_release"]
+
+
+def test_high_risk_subperiod_preserves_preperiod_peak_and_volatility_history():
+    nav=np.full(150,100.)
+    nav[80:]=79.
+    path=synthetic_high_risk_path(nav)
+    start=path.index[80].date().isoformat()
+    x=s.high_risk_eod_feasibility(path,start)
+    assert x["first_high_account_risk_breach_date"]==start
+    assert x["rolling_70_close_drawdown_breach_closes"]>0
+    assert x["rolling_windows_include_prior_invested_closes_before_report_period"]
+    assert x["worst_rolling_70_close_drawdown_pct"]==pytest.approx(21.)
