@@ -240,6 +240,14 @@ def test_high_risk_diagnostic_combines_cash_concentration_and_risk_without_promo
     assert x["any_high_account_risk_breach_closes"]==0
     assert x["any_combined_risk_cash_concentration_breach_closes"]==2
     assert x["first_combined_breach_date"]==path.index[15].date().isoformat()
+    detail=x["first_combined_breach_attribution"]
+    assert detail["date"]==x["first_combined_breach_date"]
+    assert detail["triggered_constraints"]==["cash_below_5pct"]
+    assert detail["portfolio_cash_or_concentration_only"]
+    assert not detail["account_high_risk_threshold_triggered"]
+    assert detail["cash_fraction_at_breach"] is None
+    assert detail["largest_symbol_weight_fraction_at_breach"] is None
+    assert detail["not_a_live_hard_stop_classification_or_trade_authority"]
     assert x["research_only_not_live_release"]
 
 
@@ -294,6 +302,12 @@ def test_first_stop_next_close_exit_uses_prices_and_fees_then_stays_cash():
     path.loc[path.index[i],"single_symbol_breach_end_of_day"]=True
     stopped,a=s.hypothetical_first_stop_next_close_cash(path,prices,cost_bps=15)
     assert a["first_combined_breach_date"]==path.index[i].date().isoformat()
+    assert a["first_combined_breach_attribution"]["triggered_constraints"]==[
+        "single_symbol_above_50pct"]
+    assert a["first_combined_breach_attribution"][
+        "portfolio_cash_or_concentration_only"]
+    assert a["first_combined_breach_attribution"][
+        "largest_symbol_weight_fraction_at_breach"]==pytest.approx(.4)
     assert a["hypothetical_next_close_exit_date"]==path.index[i+1].date().isoformat()
     ratio=prices.iloc[i+1]/prices.iloc[i]
     liquidation=100*(.4*ratio["XLK"]+.3*ratio["XLE"]+.2*ratio["IWM"])
@@ -318,6 +332,7 @@ def test_first_stop_no_breach_preserves_uninterrupted_path():
     stopped,a=s.hypothetical_first_stop_next_close_cash(path,prices,cost_bps=5)
     pd.testing.assert_frame_equal(stopped,path)
     assert a["first_combined_breach_date"] is None
+    assert a["first_combined_breach_attribution"] is None
     assert a["hypothetical_next_close_exit_date"] is None
     assert not a["hypothetical_flat_cash_after_exit"]
 
@@ -419,3 +434,53 @@ def test_fresh_inception_rejects_short_data_and_unregistered_parameters():
     with pytest.raises(s.S1EconomicsStop,match="registered buffers"):
         s.fresh_inception_first_stop_sensitivity(
             prices,cost_bps=0,reserve_fraction=None)
+
+
+def test_first_breach_attribution_preserves_simultaneous_hard_risk_and_cash():
+    nav=np.full(100,100.)
+    nav[20:]=93.  # Existing HIGH 6% daily loss threshold is unchanged.
+    path=synthetic_high_risk_path(nav)
+    path["cash"]=.10
+    path["weight_XLK"]=.4
+    path["weight_XLE"]=.3
+    path["weight_IWM"]=.2
+    path.loc[path.index[20],"cash"]=.049
+    path.loc[path.index[20],"cash_floor_breach_end_of_day"]=True
+    x=s.high_risk_eod_feasibility(path,"2025-01-01")
+    d=x["first_combined_breach_attribution"]
+    assert d["date"]==path.index[20].date().isoformat()
+    assert "daily_account_loss" in d["triggered_constraints"]
+    assert "cash_below_5pct" in d["triggered_constraints"]
+    assert d["account_high_risk_threshold_triggered"]
+    assert not d["portfolio_cash_or_concentration_only"]
+    assert d["cash_fraction_at_breach"]==pytest.approx(.049)
+    assert d["largest_symbol_weight_fraction_at_breach"]==pytest.approx(.4)
+
+
+def test_first_breach_attribution_uses_first_event_not_later_hard_stop():
+    nav=np.full(100,100.)
+    nav[60:]=92.
+    path=synthetic_high_risk_path(nav)
+    path.loc[path.index[12],"single_symbol_breach_end_of_day"]=True
+    x=s.high_risk_eod_feasibility(path,"2025-01-01")
+    d=x["first_combined_breach_attribution"]
+    assert d["date"]==path.index[12].date().isoformat()
+    assert d["triggered_constraints"]==["single_symbol_above_50pct"]
+    assert d["portfolio_cash_or_concentration_only"]
+    assert x["any_high_account_risk_breach_closes"]>0
+    assert x["first_high_account_risk_breach_date"]>d["date"]
+
+
+def test_frozen_s1_first_breach_cause_is_research_only():
+    report=s.evaluate(sample(n=3500),source_sha256=l1.ORIGINAL_SHA)
+    for variant in report["fresh_inception_first_stop_next_close_cash_sensitivity"].values():
+        for bp in variant.values():
+            for cohort in bp.values():
+                a=cohort["stop_and_exit_assumptions"]
+                detail=a["first_combined_breach_attribution"]
+                assert detail is None or (
+                    detail["date"]==a["first_combined_breach_date"]
+                    and len(detail["triggered_constraints"])>=1
+                    and detail["not_a_live_hard_stop_classification_or_trade_authority"])
+    assert report["live_orders"]==report["broker_calls"]==0
+    assert not report["new_strategy_live_authorized"]
