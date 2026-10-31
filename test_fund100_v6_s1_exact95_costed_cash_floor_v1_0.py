@@ -548,7 +548,7 @@ def test_next_close_research_is_separate_from_original_and_never_live_authority(
                 x=configs[cost][cohort]
                 assert x["no_same_close_fill_or_broker_minimum_assumed"]
                 assert x["hard_account_stops_not_simulated"]
-                assert x["month_end_signals"]>=x["following_close_executions"]
+                assert abs(x["month_end_signals"]-x["following_close_executions"])<=1+x["unaffordable_full_order_skips"]
                 assert x["unaffordable_full_order_skips"]>=0
     assert report["live_orders"]==report["broker_calls"]==0
     with pytest.raises(s.S1EconomicsStop):
