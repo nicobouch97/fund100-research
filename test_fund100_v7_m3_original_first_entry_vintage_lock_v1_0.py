@@ -47,6 +47,27 @@ def test_any_later_vendor_rewrite_to_actual_original_entry_is_not_silent():
     with pytest.raises(m3.EntryAnchorStop):
         check(a=a,p=p,b=b,q=altered)
 
+def test_historical_vendor_revision_without_entry_drift_cannot_launder_new_report():
+    a,p,b,q=samples()
+    assert check(a=a,p=p,b=b,q=q)["entire_frozen_historical_price_panel_stable"]
+    assert check(a=a,p=p,b=b,q=q)["frozen_historical_price_sessions_compared"]==len(p)
+    # These changes do not touch entry/exit prices. Even a freshly
+    # recomputed, self-consistent return report and SHA must not erase
+    # the earlier original source observation.
+    for symbol in ("AAPL","SPY","SHY"):
+        altered=q.copy()
+        altered.loc[p.index[20],symbol]*=1.00002
+        original,first,_,ts=fixtures(
+            "2026-10-28",capture="2026-10-28T23:45:00Z")
+        recomputed=m1.evaluate(
+            original_manifest=original,original_prices=first,
+            later_prices=altered,captured_utc=ts)
+        assert recomputed["later_price_csv_sha256"]!=b["later_price_csv_sha256"]
+        assert recomputed["original_pretrade_selection"]==b["original_pretrade_selection"]
+        with pytest.raises(m3.EntryAnchorStop,match="frozen historical prices"):
+            check(a=a,p=p,b=recomputed,q=altered)
+
+
 def test_frozen_selection_id_and_source_preentry_hash_never_transfer():
     a,p,b,q=samples()
     bad=deepcopy(b)
@@ -363,7 +384,9 @@ def test_forward_report_is_bound_to_exact_full_price_csv_not_just_exit_prices():
     # any costed return, yet it must not silently alter the saved vintage.
     altered=q.copy()
     altered.loc["2026-10-22","AAPL"]*=1.00001
-    with pytest.raises(m3.EntryAnchorStop,match="source digest"):
+    # Full frozen-history consistency now fails before the later report's
+    # digest check; either guard independently prevents stale-price scoring.
+    with pytest.raises(m3.EntryAnchorStop,match="frozen historical prices"):
         check(a=a,p=p,b=b,q=altered)
     bad=deepcopy(a)
     bad["later_price_csv_sha256"]="0"*64

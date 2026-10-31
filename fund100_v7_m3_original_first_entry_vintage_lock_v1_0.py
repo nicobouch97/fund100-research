@@ -286,6 +286,18 @@ def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
         # relationships in a rejected audit without authenticated account
         # context. Caller keeps original pinned source and must HOLD.
         raise EntryAnchorStop("Previously observed entry close was vendor-revised")
+    # An unchanged entry quote is not enough to preserve the frozen
+    # vendor vintage: a correction to an earlier issuer/benchmark bar can
+    # otherwise be laundered into a newly hashed report. Preserve the
+    # complete original 26-security historical prefix at CSV precision.
+    # Genuine later corporate actions still require separately authenticated
+    # total-return reconstruction, never a silent vendor rebase.
+    historical=later.loc[:date]
+    if (not historical.index.equals(original.index)
+        or not historical.columns.equals(original.columns)):
+        raise EntryAnchorStop("Frozen historical price panel incomplete or reordered")
+    if p4l.canonical_csv(historical)!=p4l.canonical_csv(original):
+        raise EntryAnchorStop("Previously observed frozen historical prices were vendor-revised")
     # The archived report and CSV are a single economic observation.
     # Recalculate its original 21-session chronology and all primary/sector
     # after-cost returns from the actual supplied prices. A report from a
@@ -410,6 +422,8 @@ def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
         "future_capture_utc":subsequent_report["later_price_observed_utc"],
         "confirmed_frozen_preentry_stock_selection":True,
         "entry_date_price_symbols_compared":len(first.index),
+        "frozen_historical_price_sessions_compared":len(original.index),
+        "entire_frozen_historical_price_panel_stable":True,
         "anchor_source_stage_before_any_exit":"ENTRY_CLOSE_OBSERVED_AWAITING_FIRST_FUTURE_MARK",
         "checked_later_complete_intervals":subsequent_report["observed_holding_intervals"],
         "independently_recomputed_primary_and_sector_costed_returns":True,
