@@ -361,11 +361,11 @@ def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
                 sw,bw=risk["stock_risky_fraction"],risk["spy_risky_fraction"]
                 sr=m1.INITIAL_NAV*sw/(1+fee)
                 br=m1.INITIAL_NAV*bw/(1+fee)
-                expected_stock=round(m1.INITIAL_NAV*(1-sw)+sr*stock_growth*(1-fee),8)
-                expected_spy=round(m1.INITIAL_NAV*(1-bw)+br*spy_growth*(1-fee),8)
-                expected_delta=round(
-                    m1.INITIAL_NAV*(bw-sw)+
-                    (sr*stock_growth-br*spy_growth)*(1-fee),8)
+                raw_stock=m1.INITIAL_NAV*(1-sw)+sr*stock_growth*(1-fee)
+                raw_spy=m1.INITIAL_NAV*(1-bw)+br*spy_growth*(1-fee)
+                expected_stock=round(raw_stock,8)
+                expected_spy=round(raw_spy,8)
+                expected_delta=round(raw_stock-raw_spy,8)
                 if (type(secondary) is not dict
                     or secondary.get("stock_risky_fraction")!=sw
                     or secondary.get("spy_risky_fraction")!=bw
