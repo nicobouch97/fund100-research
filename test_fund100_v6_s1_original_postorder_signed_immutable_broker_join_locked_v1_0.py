@@ -86,7 +86,7 @@ def test_two_principal_private_immutable_asset_and_actual_broker_adapter_join(mo
         signed_prepost_sources=params["signed_sources"],
         key=params["broker_key"],secret=params["broker_secret"],
         transport=params["broker_transport"],now_utc=params["now_utc"])
-    assert direct["status"]=="SIX_BROKER_GET_ORIGINAL_ACWI_FILL_AND_FLAT_STRUCTURALLY_MATCH"
+    assert direct["status"]=="BOUNDED_BROKER_GET_ORIGINAL_ACWI_FILL_AND_FLAT_STRUCTURALLY_MATCH"
     broker_calls.clear()
     # Then validate that no HMAC/private/immutable boundary is skipped.
     try:
