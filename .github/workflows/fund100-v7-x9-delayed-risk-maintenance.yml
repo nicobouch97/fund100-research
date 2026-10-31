@@ -44,15 +44,23 @@ jobs:
           result=json.loads(Path('/tmp/fund100-v7-x9-delayed-risk-only.json').read_text())
           assert result['schema']==x.SCHEMA
           assert result['original_live_usd_capital_ceiling_unchanged']=='130.30'
-          assert set(result['results'])=={'5','15','35'}
+          assert set(result['results'])==set(result['pilot_sized_results'])=={'5','15','35'}
           assert all(set(p)==set(x.WINDOWS) for p in result['results'].values())
+          assert all(set(p)==set(x.WINDOWS) for p in result['pilot_sized_results'].values())
+          assert result['original_100usd_research_comparator_preserved'] is True
+          assert result['fixed_one_dollar_minimum_is_absolute_not_a_portfolio_percentage'] is True
           assert result['broker_gets']==result['broker_posts']==result['broker_orders']==0
           assert result['live_authorized'] is False
-          for windows in result['results'].values():
-              for p in windows.values():
-                  assert p['actual_broker_orders']==0
-                  for leg in p['trade_log']:
-                      assert leg['signal_session']<leg['execution_session']
+          for label,cohorts,expected in (
+              ('original',result['results'],100.0),
+              ('pilot',result['pilot_sized_results'],130.30)):
+              for windows in cohorts.values():
+                  for p in windows.values():
+                      assert p['model_starting_capital_usd']==expected,(label,p)
+                      assert p['modeled_minimum_sell_notional_usd']==1.0
+                      assert p['actual_broker_orders']==0
+                      for leg in p['trade_log']:
+                          assert leg['signal_session']<leg['execution_session']
           print('Original frozen source, next-close-only sell decisions, no trading authority.')
           PY
       - uses: actions/upload-artifact@v4

@@ -82,3 +82,35 @@ def test_intraday_hypothetical_rebound_does_not_cancel_already_set_stop():
     assert result["forced_stop_signal_latched"]
     # This sensitivity cannot opportunistically undo an already-issued
     # EXIT signal merely because the next session's close was favorable.
+
+def test_pilot_size_is_real_dollars_and_preserves_original_100_usd_comparator():
+    original_result=x9.simulate(scenario(),start="2020-01-01",cost_bps=15)
+    pilot=x9.simulate(scenario(),start="2020-01-01",cost_bps=15,capital_usd=130.30)
+    assert original_result["model_starting_capital_usd"]==100.0
+    assert original_result["initial_cash_reserve_usd"]==5.0
+    assert pilot["model_starting_capital_usd"]==130.30
+    assert pilot["initial_cash_reserve_usd"]==6.515
+    assert pilot["modeled_minimum_sell_notional_usd"]==1.0
+    assert pilot["modeled_entry_buy_fee_usd"]>original_result["modeled_entry_buy_fee_usd"]
+    assert abs(pilot["managed_s1_net_exit_costed_cagr_pct"]-
+               original_result["managed_s1_net_exit_costed_cagr_pct"])<1e-5
+    assert not pilot["trade_log"]
+
+def test_capital_sensitivity_is_fixed_and_cannot_expand_the_pilot():
+    with pytest.raises(x9.RiskStudyStop):
+        x9.simulate(scenario(),start="2020-01-01",cost_bps=15,capital_usd=1000.0)
+    with pytest.raises(x9.RiskStudyStop):
+        x9.simulate(scenario(),start="2020-01-01",cost_bps=15,capital_usd=130.31)
+
+def test_last_close_hard_stop_is_latched_without_fabricated_same_close_exit():
+    frame=scenario()
+    for ticker in x9.S1:
+        frame.loc[frame.index[-1],ticker]*=.65
+    result=x9.simulate(frame,start="2020-01-01",cost_bps=15,capital_usd=130.30)
+    assert result["first_stop_signal_close"]==frame.index[-1].date().isoformat()
+    assert result["hard_stop_first_detected_on_final_close"] is True
+    assert result["forced_stop_signal_latched"] is True
+    assert result["pending_trade_after_last_close_not_assumed_executed"] is True
+    assert result["end_remaining_risky_exposure_before_model_terminal_liquidation_usd"]>0
+    assert not [e for e in result["trade_log"] if e["kind"]=="STOP_EXIT"]
+    assert result["actual_broker_orders"]==0
