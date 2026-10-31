@@ -141,6 +141,8 @@ def assess(*,signed_prepost_sources:dict,closed_receipt:dict,
     spend=Decimal(0)
     target_count=0
     filled_once=False
+    first_original_fill_time=None
+    unrelated_buy_times=[]
     for page in fill_pages:
         for row in page:
             if type(row) is not dict or row.get("activity_type")!="FILL":
@@ -169,10 +171,17 @@ def assess(*,signed_prepost_sources:dict,closed_receipt:dict,
                 # another original holding is an unreviewed portfolio change.
                 if row["side"]=="sell":
                     raise FillFlatStop("Other SELL activity during ACWI migration")
+                # Earlier account-history BUYs are not part of this order.
+                # But any unrelated BUY during/after its first actual FILL
+                # invalidates the claimed isolated migration and future cash
+                # accounting, even if the final positions still look flat.
+                unrelated_buy_times.append(when)
                 continue
             if (row["symbol"]!=ORIGINAL or row["side"]!="sell"
                 or filled_once or when>completed):
                 raise FillFlatStop("Unexpected matching original SELL fill")
+            if first_original_fill_time is None:
+                first_original_fill_time=when
             cumulative+=qty
             spend+=qty*price
             target_count+=1
@@ -189,6 +198,8 @@ def assess(*,signed_prepost_sources:dict,closed_receipt:dict,
     if (not filled_once or target_count==0 or cumulative!=expected[ORIGINAL]
         or spend<=0):
         raise FillFlatStop("Incomplete activity-to-receipt first SELL reconciliation")
+    if any(when>=first_original_fill_time for when in unrelated_buy_times):
+        raise FillFlatStop("Other BUY activity during or after ACWI execution")
     # A filled order receipt is not a trustworthy cash/proceeds basis unless
     # its reported volume-weighted execution price agrees with the COMPLETE
     # matching broker FILL activities. Alpaca may round the reported average
