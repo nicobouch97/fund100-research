@@ -103,7 +103,9 @@ def simulate(prices:pd.DataFrame, *, cost_bps:int, targets:dict[str,float]|None=
 
 
 
-def simulate_daily_cash_floor(prices:pd.DataFrame, *, cost_bps:int)->pd.DataFrame:
+def simulate_daily_cash_floor(prices:pd.DataFrame, *, cost_bps:int,
+                              reserve_fraction:float=FLOOR,
+                              daily_trims:bool=True)->pd.DataFrame:
     """Research sensitivity: restore a true 5% EOD cash floor with daily trims.
 
     All positions and cash are accounted in dollars, including every fee.
@@ -111,10 +113,18 @@ def simulate_daily_cash_floor(prices:pd.DataFrame, *, cost_bps:int)->pd.DataFram
     consumes the buffer, sell a pro-rata slice at that close; do NOT buy.
     Assumes idealized fractional executions at close, instantaneous sale
     proceeds and proportional costs. At $130.30 these tiny trades may be
-    below actual broker minimums. NOT an executable policy or a new alpha fit.
+    below actual broker minimums. For fixed 10%/15% cash-buffer research,
+    disable daily trims and retain the original month-end 10pp band.
+    NOT an executable policy or a new alpha fit.
     """
     if cost_bps not in l1.COST_BPS:
         raise S1EconomicsStop("Original 5/15/35 bps stress only")
+    if (type(reserve_fraction) is not float or reserve_fraction not in
+            (FLOOR,.10,.15) or type(daily_trims) is not bool
+            or (daily_trims and reserve_fraction!=FLOOR)):
+        raise S1EconomicsStop("Only predeclared passive 10/15% cash buffers, or original 5% daily repair")
+    targets={symbol:TARGET[symbol]*(1-reserve_fraction)/(1-FLOOR)
+             for symbol in l1.NAMES}
     data=l1.validate(prices)
     rate=cost_bps/10_000.
     nav=l1.NAV0
@@ -138,12 +148,12 @@ def simulate_daily_cash_floor(prices:pd.DataFrame, *, cost_bps:int)->pd.DataFram
         turnover=0.
         trim=0.
         if l1.month_end_session(data.index,t) and max(
-                abs(TARGET[s]-weights[s]) for s in l1.NAMES)>=l1.BAND:
+                abs(targets[s]-weights[s]) for s in l1.NAMES)>=l1.BAND:
             # Solve NAV_after = NAV_before - fee * sum(abs(target$-held$)).
             # Fee is charged to cash, not silently financed by the buffer.
             post=nav
             for _ in range(100):
-                traded_dollars=sum(abs(TARGET[s]*post-holdings[s])
+                traded_dollars=sum(abs(targets[s]*post-holdings[s])
                                    for s in l1.NAMES)
                 nxt=nav-rate*traded_dollars
                 if not isfinite(nxt) or nxt<=0:
@@ -154,10 +164,10 @@ def simulate_daily_cash_floor(prices:pd.DataFrame, *, cost_bps:int)->pd.DataFram
                 post=nxt
             else:
                 raise S1EconomicsStop("Monthly fee/target solver did not converge")
-            traded_dollars=sum(abs(TARGET[s]*post-holdings[s])
+            traded_dollars=sum(abs(targets[s]*post-holdings[s])
                                for s in l1.NAMES)
             post=nav-rate*traded_dollars
-            holdings={s:TARGET[s]*post for s in l1.NAMES}
+            holdings={s:targets[s]*post for s in l1.NAMES}
             cash=post-sum(holdings.values())
             turnover+=traded_dollars/nav
             nav=post
@@ -165,7 +175,7 @@ def simulate_daily_cash_floor(prices:pd.DataFrame, *, cost_bps:int)->pd.DataFram
             engaged=True
         # Close-to-close drift may erode the reserve on any session.
         # S solves (cash + S*(1-fee))/(NAV-fee*S) == FLOOR.
-        if engaged and cash/nav<FLOOR-1e-12:
+        if daily_trims and engaged and cash/nav<FLOOR-1e-12:
             pre_nav=nav
             deficit=FLOOR*nav-cash
             trim=deficit/(1-rate*(1-FLOOR))
@@ -180,7 +190,7 @@ def simulate_daily_cash_floor(prices:pd.DataFrame, *, cost_bps:int)->pd.DataFram
             traded=True
         if (not isfinite(nav) or not isfinite(cash)
             or cash<0 or any(not isfinite(v) or v<0 for v in holdings.values())
-            or (engaged and cash/nav<FLOOR-1e-10)):
+            or (daily_trims and engaged and cash/nav<FLOOR-1e-10)):
             raise S1EconomicsStop("Daily costed cash floor not preserved")
         weights={s:holdings[s]/nav for s in l1.NAMES}
         rows.append({
@@ -219,6 +229,27 @@ def daily_floor_feasibility(path:pd.DataFrame,start:str)->dict:
         "instant_fractional_close_sales_and_cash_settlement_assumed":True,
         "actual_broker_minimum_and_settlement_not_verified":True,
         "research_sensitivity_not_released_trading_policy":True,
+    }
+
+
+def passive_cash_buffer_feasibility(path:pd.DataFrame,start:str)->dict:
+    """Historical cash-drift/cost tradeoff; no daily microticket sales."""
+    sub=path.loc[start:]
+    invested=sub.loc[sub["invested"]]
+    diagnostic=period_diagnostics(path,start)
+    return {
+        "costed_path":diagnostic,
+        "all_cash_and_single_symbol_limits_met_at_daily_close":bool(
+            len(invested) and
+            diagnostic["cash_below_5pct_sessions_end_of_day"]==0 and
+            diagnostic["sector_weight_over_50pct_sessions"]==0),
+        "month_end_trade_events":int(sub["month_end_rebalance"].sum()),
+        "daily_trim_events":int(sub["daily_floor_trim"].sum()),
+        "cash_floor_satisfied_at_all_invested_closes":bool(
+            len(invested) and (invested["cash"]>=FLOOR-1e-10).all()),
+        "still_requires_intraday_and_broker_cash_validation":True,
+        "fixed_buffer_not_an_optimized_or_released_strategy":True,
+        "no_independent_alpha_claim":True,
     }
 
 
@@ -275,6 +306,20 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
             for name,start in (("2014_onward","2014-01-01"),
                                ("2020_onward","2020-01-01"))
         }
+    # A larger static cash buffer may avoid impractical sub-dollar daily
+    # sells. These are predeclared sensitivities, not a retrospective search
+    # for the best reserve or a modification of the original 95% contract.
+    passive_buffers={}
+    for reserve in (.10,.15):
+        passive_buffers[str(int(reserve*100))]={}
+        for bp in l1.COST_BPS:
+            path=simulate_daily_cash_floor(
+                data,cost_bps=bp,reserve_fraction=reserve,daily_trims=False)
+            passive_buffers[str(int(reserve*100))][str(bp)]={
+                name:passive_cash_buffer_feasibility(path,start)
+                for name,start in (("2014_onward","2014-01-01"),
+                                   ("2020_onward","2020-01-01"))
+            }
     floor_ok=all(
       x["actual_S1_95pct_target_with_drift"]["cash_below_5pct_sessions_end_of_day"]==0
       for section in results.values() for x in section.values())
@@ -294,6 +339,8 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
       "results":results,
       "daily_cash_floor_ideal_fill_sensitivity":repair,
       "daily_cash_floor_ideal_fill_not_broker_executable":True,
+      "fixed_10_and_15pct_passive_cash_buffer_sensitivities":passive_buffers,
+      "passive_cash_buffers_not_live_authorized":True,
       "cash_reserve_minimum_met_in_historical_model":floor_ok,
       "minimum_cash_floor_live_execution_requires_separate_design_review":not floor_ok,
       "independent_alpha_proved":False,
