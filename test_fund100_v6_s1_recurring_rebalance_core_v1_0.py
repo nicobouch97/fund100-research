@@ -423,3 +423,50 @@ def test_monthly_buy_still_holds_when_all_underweight_choices_uneconomic():
     assert result["status"]=="HOLD_BUY_ALL_IN_COST_EXCEEDS_1PCT"
     assert result["hypothetical_candidate"] is None
     assert result["broker_POSTs"]==result["private_Git_writes"]==0
+
+
+def test_monthly_buy_cannot_exceed_untouched_issuer_50pct_after_fee():
+    # XLK is already exactly at the 50% account-wide hard limit.
+    # Buying underweight XLE incurs a $0.10 fee, lowering NAV to
+    # $129.90 and the XLK cap to $64.95. The old buy path checked
+    # only the purchased name and incorrectly advertised this order.
+    d=fixture(portfolio="buy")
+    d["position_values_usd"]={"XLK":"65.00","XLE":"15.00","IWM":"20.00"}
+    d["cash_usd"]="30.00";d["settled_cash_usd"]="30.00"
+    result=run(d)
+    assert result["status"]=="HOLD_BUY_POST_FEE_HARD_LIMIT"
+    assert result["hypothetical_candidate"] is None
+    assert result["broker_POSTs"]==result["private_Git_writes"]==0
+
+    # A genuinely below-cap untouched holding is not falsely rejected.
+    d["position_values_usd"]["XLK"]="64.90"
+    d["cash_usd"]="30.10";d["settled_cash_usd"]="30.10"
+    result=run(d)
+    assert result["status"]=="HYPOTHETICAL_MONTHLY_REPLENISH_BUY_NO_TRANSPORT"
+    assert result["hypothetical_candidate"]["symbol"]=="XLE"
+    assert Decimal("64.90")<=(
+        Decimal("130.00")-Decimal(".10"))*m.migration.MAX_SYMBOL
+
+
+def test_monthly_buy_can_use_lower_fee_alternative_without_issuer_cap_breach():
+    # XLE is more underweight but its $0.10 fee would leave the
+    # untouched $64.98 XLK above 50% of the post-fee NAV.
+    # IWM is also >10pp underweight; its $0.01 fee is small enough.
+    d=fixture(portfolio="buy")
+    d["position_values_usd"]={"XLK":"64.98","XLE":"10.00","IWM":"10.00"}
+    d["cash_usd"]="45.02";d["settled_cash_usd"]="45.02"
+    d["all_in_fee_buffers_usd"]["XLE"]="0.10"
+    d["all_in_fee_buffers_usd"]["IWM"]="0.01"
+    result=run(d)
+    assert result["status"]=="HYPOTHETICAL_MONTHLY_REPLENISH_BUY_NO_TRANSPORT"
+    c=result["hypothetical_candidate"]
+    assert c["symbol"]=="IWM" and c["side"]=="buy"
+    assert c["estimated_notional_usd"]=="14.70"
+    nav_after=Decimal("129.99")
+    assert Decimal("64.98")<=nav_after*m.migration.MAX_SYMBOL
+    assert Decimal("10.00")+Decimal(c["estimated_notional_usd"])<=(
+        nav_after*m.migration.MAX_SYMBOL)
+    assert Decimal("45.02")-Decimal(c["estimated_notional_usd"])-Decimal(".01")>=(
+        nav_after*m.migration.CASH_FLOOR)
+    assert c["executable"] is False
+    assert result["broker_POSTs"]==result["private_Git_writes"]==0
