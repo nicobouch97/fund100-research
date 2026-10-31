@@ -614,6 +614,17 @@ def main():
             diagnostic=entry_revision_diagnostic(
                 initial_prices=initial_prices,subsequent_prices=subsequent_prices,
                 dividend_events=events)
+            if events is not None:
+                diagnostic["conditional_dividend_costed_forward_mark"]=(
+                    conditional_dividend_costed_mark(
+                        initial_report=json.loads((a.first_entry_dir/
+                            "frozen-forward-stocks-versus-SPY.json").read_text()),
+                        initial_prices=initial_prices,
+                        subsequent_report=json.loads((a.latest_dir/
+                            "frozen-forward-stocks-versus-SPY.json").read_text()),
+                        subsequent_prices=subsequent_prices,
+                        dividend_events=events,
+                        crosscheck=diagnostic["dividend_factor_crosscheck"]))
             a.output.parent.mkdir(parents=True,exist_ok=True)
             a.output.write_text(json.dumps(
                 diagnostic,sort_keys=True,indent=2)+"\n")
