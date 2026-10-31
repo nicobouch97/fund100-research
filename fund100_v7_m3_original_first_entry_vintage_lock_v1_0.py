@@ -202,6 +202,149 @@ def _dividend_factor_crosscheck(changes:list[dict],original:pd.DataFrame,
     }
 
 
+
+def conditional_dividend_costed_mark(*,initial_report:dict,initial_prices:pd.DataFrame,
+                                    subsequent_report:dict,subsequent_prices:pd.DataFrame,
+                                    dividend_events:list[dict],crosscheck:dict)->dict:
+    """Independently cost a *conditional* dividend bridge, never qualify M3.
+
+    Keep the 27 Oct observed entry in its original units. Only for a complete,
+    uniform, documented post-entry dividend rebase, translate that original
+    entry into the later vendor's adjusted units by the published factor.
+    This is an economically useful research sensitivity, NOT an authenticated
+    total-return ledger or an exception to the original fail-closed verifier.
+    """
+    blocked={"status":"NO_CONDITIONAL_COSTED_MARK",
+             "reason":"Source or corporate-action proof incomplete",
+             "return_qualification":False,"trading_authorized":False}
+    if (type(crosscheck) is not dict or
+        crosscheck.get("status")!="MECHANICALLY_CONSISTENT_NOT_AUTHENTICATED"
+        or type(dividend_events) is not list or not dividend_events):
+        return blocked
+    try:
+        _proof(initial_report,"ENTRY_CLOSE_OBSERVED_AWAITING_FIRST_FUTURE_MARK")
+        stage=subsequent_report.get("status")
+        if stage not in ("INTERIM_FOR_INFORMATION_NOT_QUALIFICATION",
+                         "COMPLETED_FROZEN_21_SESSION_FORWARD_MARK_NOT_ALPHA"):
+            return blocked
+        _proof(subsequent_report,stage)
+        original=_canonical_prices(initial_prices)
+        later=_canonical_prices(subsequent_prices)
+        entry_day=pd.Timestamp(ORIGINAL_ENTRY_SESSION)
+        if (original.index[-1]!=entry_day
+            or not original.index.equals(later.loc[:entry_day].index)
+            or not original.columns.equals(later.columns)
+            or not later.index[later.index>pd.Timestamp(m1.ORIGINAL_LAST_SESSION)].equals(
+                m1._calendar("2026-10-26",later.index[-1].date().isoformat()))
+            or subsequent_report.get("completed_price_session")!=
+                later.index[-1].date().isoformat()
+            or subsequent_report.get("later_price_csv_sha256")!=sha256(
+                p4l.canonical_csv(later).encode("utf-8")).hexdigest()
+            or initial_report.get("original_pretrade_selection")!=
+                subsequent_report.get("original_pretrade_selection")
+            or initial_report.get("original_24issuer_selection_price_sha256")!=
+                subsequent_report.get("original_24issuer_selection_price_sha256")):
+            return blocked
+        selected=initial_report["original_pretrade_selection"]
+        if (type(selected) is not list or not selected
+            or len(set(selected))!=len(selected)
+            or any(s not in p4l.SECTORS for s in selected)):
+            return blocked
+        changed={s for s in original.columns if
+                 format(float(original.loc[entry_day,s]),".10f")!=
+                 format(float(later.loc[entry_day,s]),".10f")}
+        if (changed!={event.get("symbol") for event in dividend_events}
+            or any(pd.Timestamp(event["ex_date"])>later.index[-1]
+                   for event in dividend_events)):
+            return blocked
+        # Verify independently dated previous-session raw closes as well as
+        # the full pre-entry factor consistency already checked by M3.
+        # A future dividend's factor also adjusts an earlier ex-day's
+        # previous close in a subsequently acquired adjusted-price panel.
+        factors={}
+        for event in dividend_events:
+            symbol=event["symbol"]
+            factor=1.-event["cash_dividend_usd"]/event["previous_unadjusted_close_usd"]
+            factors.setdefault(symbol,[]).append((event["ex_date"],factor))
+        for event in dividend_events:
+            symbol=event["symbol"]
+            sessions=m1._calendar(ORIGINAL_ENTRY_SESSION,event["ex_date"])
+            if len(sessions)<2 or sessions[-1]!=pd.Timestamp(event["ex_date"]):
+                return blocked
+            previous=sessions[-2]
+            if previous not in later.index:
+                return blocked
+            cumulative=prod(f for date,f in factors[symbol]
+                            if date>=event["ex_date"])
+            expected=event["previous_unadjusted_close_usd"]*cumulative
+            if abs(float(later.loc[previous,symbol])-expected)>.02:
+                return blocked
+        translated_entry=original.loc[entry_day].copy()
+        for symbol,events in factors.items():
+            factor=prod(f for _,f in events)
+            translated_entry[symbol]*=factor
+            if abs(float(later.loc[entry_day,symbol]/
+                         translated_entry[symbol])-1.)>0.000005:
+                return blocked
+        horizon=m1._calendar(ORIGINAL_ENTRY_SESSION,"2026-12-15")
+        exit_day=min(later.index[-1],horizon[m1.HOLD_SESSIONS])
+        periods=len(m1._calendar(ORIGINAL_ENTRY_SESSION,exit_day))-1
+        if (periods<1 or periods!=subsequent_report.get("observed_holding_intervals")
+            or subsequent_report.get("final_result_completed") is not
+                (later.index[-1]>=horizon[m1.HOLD_SESSIONS])):
+            return blocked
+        exit_prices=later.loc[exit_day]
+        growth=sum(float(exit_prices[s]/translated_entry[s])
+                   for s in selected)/len(selected)
+        spy_growth=float(exit_prices[p4l.BENCHMARK]/
+                         translated_entry[p4l.BENCHMARK])
+        sector_weights=m1._frozen_sector_control(selected)
+        sector_growth=sum(w*float(exit_prices[s]/translated_entry[s])
+                          for s,w in sector_weights.items())
+        rows={}
+        report_rows=subsequent_report.get("costed_95pct_stocks_versus_95pct_spy")
+        if type(report_rows) is not dict:
+            return blocked
+        for bps in m1.COST_BPS:
+            fee=bps/10000.
+            risky=95./(1+fee)
+            stock=5.+risky*growth*(1-fee)
+            spy=5.+risky*spy_growth*(1-fee)
+            sector=5.+risky*sector_growth*(1-fee)
+            saved=report_rows.get(str(bps),{})
+            saved_sector=saved.get("secondary_same_sector_original_cohort",{})
+            if (saved.get("theoretical_stock_terminal_after_exit_fee_usd")!=round(stock,8)
+                or saved.get("theoretical_spy_terminal_after_exit_fee_usd")!=round(spy,8)
+                or saved.get("stock_minus_spy_net_percentage_points")!=round(stock-spy,8)
+                or saved_sector.get("sector_control_terminal_after_exit_fee_usd")!=round(sector,8)
+                or saved_sector.get("selected_minus_same_sector_net_percentage_points")!=
+                    round(stock-sector,8)):
+                return blocked
+            rows[str(bps)]={
+                "stock_terminal_usd_per_100":round(stock,8),
+                "spy_terminal_usd_per_100":round(spy,8),
+                "stock_minus_spy_percentage_points":round(stock-spy,8),
+                "stock_minus_frozen_sector_control_pp":round(stock-sector,8)}
+        return {
+            "status":"CONDITIONAL_DIVIDEND_REBASE_COSTED_SENSITIVITY_ONLY",
+            "original_entry_observation_preserved":True,
+            "frozen_entry_session":ORIGINAL_ENTRY_SESSION,
+            "observed_holding_intervals":periods,
+            "cost_scenarios_bps_per_side":list(m1.COST_BPS),
+            "costed_marks":rows,
+            "dividend_symbols":sorted(factors),
+            "previous_raw_close_consistency_checked":True,
+            "full_frozen_historical_factor_consistency_checked":True,
+            "source_ex_date_disagreement_remains_unresolved":True,
+            "issuer_and_close_urls_not_authenticated_in_this_job":True,
+            "cash_dividend_receipt_not_verified":True,
+            "independent_total_return_benchmark_not_verified":True,
+            "return_qualification":False,"signal_alpha_proven":False,
+            "trading_authorized":False,"broker_orders":0}
+    except (KeyError,TypeError,ValueError,IndexError,AttributeError):
+        return blocked
+
+
 def _proof(r:dict,required_stage:str):
     if (type(r) is not dict or r.get("schema")!=m1.SCHEMA
         or r.get("status")!=required_stage
