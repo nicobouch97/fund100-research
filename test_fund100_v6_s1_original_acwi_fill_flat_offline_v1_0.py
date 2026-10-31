@@ -259,6 +259,28 @@ def test_wrong_order_id_does_not_sum_into_acwi_receipt():
         m.assess(**a)
 
 
+
+@pytest.mark.parametrize("when",[FILL1,FILL2,"2026-10-22T13:32:30Z"])
+def test_unrelated_buy_during_or_after_first_acwi_fill_cannot_pass_reconciliation(when):
+    a=base()
+    other=deepcopy(a["fill_pages"][0][0])
+    other.update({"id":"foreign-buy","order_id":OTHER_ID,
+                  "symbol":"XLK","side":"buy","transaction_time":when})
+    a["fill_pages"][0].append(other)
+    a["fill_pages"][0].sort(key=lambda row:row["transaction_time"])
+    with pytest.raises(m.FillFlatStop,match="Other BUY activity"):
+        m.assess(**a)
+
+
+def test_earlier_historical_buy_does_not_invalidate_isolated_acwi_execution():
+    a=base()
+    other=deepcopy(a["fill_pages"][0][0])
+    other.update({"id":"earlier-buy","order_id":OTHER_ID,
+                  "symbol":"EEM","side":"buy","transaction_time":START})
+    a["fill_pages"][0].insert(0,other)
+    assert m.assess(**a)["broker_receipt_to_complete_FILLS_structurally_linked"]
+
+
 def test_unrelated_sell_activity_is_not_silent_migration_of_EEM():
     a=base()
     other=deepcopy(a["fill_pages"][0][0])
