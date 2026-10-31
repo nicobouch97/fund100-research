@@ -345,6 +345,7 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
     # Preserve the original ranking and every unchanged post-fee bound.
     rejected_buy_cost=False
     rejected_buy_headroom=False
+    rejected_buy_postfee=False
     for _,sym in sorted(shortage,key=lambda x:(-x[0],x[1])):
         ident=_id(period,sym,"buy")
         if ident in history:continue
@@ -367,12 +368,27 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
             or gross+size>migration.MAX_GROSS*(nav-fee)
             or values[sym]+size>migration.MAX_SYMBOL*(nav-fee)):
             raise RecurringStop("Calculated hypothetical BUY fails post-cost bounds")
+        # A BUY's fee lowers the denominator for EVERY existing holding.
+        # Checking only the purchased name can push an untouched ETF that
+        # was exactly at 50% of NAV above the original hard issuer cap.
+        # Try another eligible underweight name with lower fees, but never
+        # claim an unsafe single-ticket portfolio is a valid candidate.
+        after_nav=nav-fee
+        if (after_nav<=0 or any(
+            value+(size if other==sym else Decimal(0))
+            >after_nav*migration.MAX_SYMBOL
+            for other,value in values.items()
+        )):
+            rejected_buy_postfee=True
+            continue
         return _report("HYPOTHETICAL_MONTHLY_REPLENISH_BUY_NO_TRANSPORT",
             period=period,candidate={
                 "symbol":sym,"side":"buy","estimated_notional_usd":format(size,".2f"),
                 "stable_simulation_event_id":ident,
                 "requires_independent_order_and_settlement_reconciliation":True,
                 "executable":False})
+    if rejected_buy_postfee:
+        return _report("HOLD_BUY_POST_FEE_HARD_LIMIT",period=period)
     if rejected_buy_cost:
         return _report("HOLD_BUY_ALL_IN_COST_EXCEEDS_1PCT",period=period)
     if rejected_buy_headroom:
