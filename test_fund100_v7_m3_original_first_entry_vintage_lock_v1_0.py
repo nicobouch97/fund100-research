@@ -245,7 +245,7 @@ def test_dividend_crosscheck_rejects_unrelated_duplicate_and_invalid_events():
     altered.loc["2026-10-27","COST"]*=1-1.47/996.08
     for events in (
         [_dividend_event(ex_date="2026-10-27")],
-        [_dividend_event(ex_date="2026-11-02")],
+        [_dividend_event(ex_date="not-a-date")],
         [_dividend_event(),_dividend_event()],
         [{**_dividend_event(),"cash_dividend_usd":-1.47}],
         [{**_dividend_event(),"independent_close_url":"http://invalid"}],
