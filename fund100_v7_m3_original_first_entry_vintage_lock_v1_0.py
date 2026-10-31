@@ -96,23 +96,24 @@ def _dividend_factor_crosscheck(changes:list[dict],later:pd.DataFrame,
     changed={item["symbol"] for item in changes}
     grouped:dict[str,list[dict]]={}
     seen=set()
+    ignored_events=0
     for event in events:
         if type(event) is not dict or set(event)!=required:
             raise EntryAnchorStop("Malformed independent dividend evidence")
         symbol=event["symbol"]
         date=event["ex_date"]
-        if (type(symbol) is not str or symbol not in changed
-            or type(date) is not str
+        if (type(symbol) is not str or type(date) is not str
             or (symbol,date) in seen):
-            raise EntryAnchorStop("Unrelated or duplicate dividend evidence")
+            raise EntryAnchorStop("Invalid or duplicate dividend evidence")
         try:
             session=pd.Timestamp(date)
         except (TypeError,ValueError) as exc:
             raise EntryAnchorStop("Invalid dividend ex-date") from exc
         if (session.strftime("%Y-%m-%d")!=date
-            or session<=pd.Timestamp(ORIGINAL_ENTRY_SESSION)
-            or session not in later.index):
-            raise EntryAnchorStop("Dividend ex-date outside observed NYSE horizon")
+            or session<=pd.Timestamp(ORIGINAL_ENTRY_SESSION)):
+            raise EntryAnchorStop("Dividend ex-date outside frozen horizon")
+        if session<=later.index[-1] and session not in later.index:
+            raise EntryAnchorStop("Dividend ex-date is not an observed NYSE session")
         dividend=event["cash_dividend_usd"]
         close=event["previous_unadjusted_close_usd"]
         if (type(dividend) not in (float,int)
@@ -126,6 +127,12 @@ def _dividend_factor_crosscheck(changes:list[dict],later:pd.DataFrame,
                 or len(url)>400):
                 raise EntryAnchorStop("Missing dated public source reference")
         seen.add((symbol,date))
+        # Dated evidence may remain in this file after a later revision
+        # affects another symbol, or before the event itself is observed.
+        # Do not lose the underlying price-drift forensic artifact.
+        if symbol not in changed or session>later.index[-1]:
+            ignored_events+=1
+            continue
         grouped.setdefault(symbol,[]).append(event)
     rows=[]
     for change in changes:
@@ -155,7 +162,9 @@ def _dividend_factor_crosscheck(changes:list[dict],later:pd.DataFrame,
     return {
         "status":("MECHANICALLY_CONSISTENT_NOT_AUTHENTICATED"
                   if all_match else "INCOMPLETE_OR_CONTRADICTORY"),
-        "events_considered":len(events),
+        "events_considered":sum(map(len,grouped.values())),
+        "evidence_events_supplied":len(events),
+        "irrelevant_or_future_events_ignored":ignored_events,
         "symbol_checks":rows,
         "source_urls_are_claims_not_verified_by_offline_code":True,
         "cannot_rule_out_vendor_corrections_or_other_corporate_actions":True,
