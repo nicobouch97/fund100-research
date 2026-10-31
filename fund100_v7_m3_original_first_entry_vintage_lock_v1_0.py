@@ -12,6 +12,7 @@ Pure public-data diagnostics; no API, broker, credentials, order authority.
 """
 from __future__ import annotations
 from hashlib import sha256
+from math import isfinite, prod
 import json
 from pathlib import Path
 
@@ -35,7 +36,8 @@ def _canonical_prices(raw:pd.DataFrame)->pd.DataFrame:
         raise EntryAnchorStop("Unverifiable original price schema") from e
 
 def entry_revision_diagnostic(*,initial_prices:pd.DataFrame,
-                              subsequent_prices:pd.DataFrame)->dict:
+                              subsequent_prices:pd.DataFrame,
+                              dividend_events:list[dict]|None=None)->dict:
     """Describe blocked adjusted-close drift; never qualify revised returns.
 
     Vendor auto-adjusted prices can change after corporate actions or data
@@ -65,12 +67,111 @@ def entry_revision_diagnostic(*,initial_prices:pd.DataFrame,
         "changed_entry_symbols":len(changes),
         "total_compared_symbols":len(original.columns),
         "changes":changes,
+        "dividend_factor_crosscheck":_dividend_factor_crosscheck(
+            changes,later,dividend_events),
         "cannot_distinguish_corporate_actions_from_vendor_corrections":True,
         "not_a_return_or_alpha_estimate":True,
         "do_not_replace_original_entry_anchor":True,
         "no_trading_authority":True,
         "broker_gets":0,"broker_posts":0,"broker_orders":0,
     }
+
+def _dividend_factor_crosscheck(changes:list[dict],later:pd.DataFrame,
+                                events:list[dict]|None)->dict:
+    """Forensic dividend factor consistency, NEVER source authentication.
+
+    Yahoo adjusted history commonly back-adjusts earlier closes by
+    (1 - cash dividend / unadjusted prior-session close). Independently
+    documented event inputs can explain a drift, but URL strings are not
+    verified by this offline routine and cannot qualify strategy returns.
+    """
+    if events is None:
+        return {"status":"NO_INDEPENDENT_DIVIDEND_EVIDENCE_SUPPLIED",
+                "does_not_qualify_returns":True}
+    if type(events) is not list:
+        raise EntryAnchorStop("Invalid dividend evidence container")
+    required={"symbol","ex_date","cash_dividend_usd",
+              "previous_unadjusted_close_usd","issuer_dividend_url",
+              "independent_close_url"}
+    changed={item["symbol"] for item in changes}
+    grouped:dict[str,list[dict]]={}
+    seen=set()
+    ignored_events=0
+    for event in events:
+        if type(event) is not dict or set(event)!=required:
+            raise EntryAnchorStop("Malformed independent dividend evidence")
+        symbol=event["symbol"]
+        date=event["ex_date"]
+        if (type(symbol) is not str or type(date) is not str
+            or (symbol,date) in seen):
+            raise EntryAnchorStop("Invalid or duplicate dividend evidence")
+        try:
+            session=pd.Timestamp(date)
+        except (TypeError,ValueError) as exc:
+            raise EntryAnchorStop("Invalid dividend ex-date") from exc
+        if (session.strftime("%Y-%m-%d")!=date
+            or session<=pd.Timestamp(ORIGINAL_ENTRY_SESSION)):
+            raise EntryAnchorStop("Dividend ex-date outside frozen horizon")
+        if session<=later.index[-1] and session not in later.index:
+            raise EntryAnchorStop("Dividend ex-date is not an observed NYSE session")
+        dividend=event["cash_dividend_usd"]
+        close=event["previous_unadjusted_close_usd"]
+        if (type(dividend) not in (float,int)
+            or type(close) not in (float,int)
+            or not isfinite(dividend) or not isfinite(close)
+            or not 0<dividend<close<1000000):
+            raise EntryAnchorStop("Invalid dividend factor economics")
+        for key in ("issuer_dividend_url","independent_close_url"):
+            url=event[key]
+            if (type(url) is not str or not url.startswith("https://")
+                or len(url)>400):
+                raise EntryAnchorStop("Missing dated public source reference")
+        seen.add((symbol,date))
+        # Dated evidence may remain in this file after a later revision
+        # affects another symbol, or before the event itself is observed.
+        # Do not lose the underlying price-drift forensic artifact.
+        if symbol not in changed or session>later.index[-1]:
+            ignored_events+=1
+            continue
+        grouped.setdefault(symbol,[]).append(event)
+    rows=[]
+    for change in changes:
+        symbol=change["symbol"]
+        records=sorted(grouped.get(symbol,[]),key=lambda x:x["ex_date"])
+        if not records:
+            rows.append({"symbol":symbol,"status":"UNEXPLAINED_NO_DIVIDEND_EVIDENCE"})
+            continue
+        expected=prod(1-event["cash_dividend_usd"]/
+                      event["previous_unadjusted_close_usd"] for event in records)
+        observed=(change["later_vintage_entry_adjusted_close"]/
+                  change["entry_anchor_adjusted_close"])
+        error_bps=10000*(observed-expected)
+        rows.append({
+            "symbol":symbol,
+            "status":("DIVIDEND_FACTOR_NUMERICALLY_CONSISTENT"
+                      if abs(error_bps)<=0.05 else
+                      "DIVIDEND_FACTOR_CONTRADICTS_VENDOR_REVISION"),
+            "ex_dates":[event["ex_date"] for event in records],
+            "expected_cumulative_adjustment_factor":round(expected,10),
+            "observed_adjustment_factor":round(observed,10),
+            "factor_difference_bps":round(error_bps,8),
+        })
+    all_match=(len(rows)==len(changes) and all(
+        row["status"]=="DIVIDEND_FACTOR_NUMERICALLY_CONSISTENT"
+        for row in rows))
+    return {
+        "status":("MECHANICALLY_CONSISTENT_NOT_AUTHENTICATED"
+                  if all_match else "INCOMPLETE_OR_CONTRADICTORY"),
+        "events_considered":sum(map(len,grouped.values())),
+        "evidence_events_supplied":len(events),
+        "irrelevant_or_future_events_ignored":ignored_events,
+        "symbol_checks":rows,
+        "source_urls_are_claims_not_verified_by_offline_code":True,
+        "cannot_rule_out_vendor_corrections_or_other_corporate_actions":True,
+        "does_not_qualify_returns":True,
+        "does_not_rewrite_original_entry":True,
+    }
+
 
 def _proof(r:dict,required_stage:str):
     if (type(r) is not dict or r.get("schema")!=m1.SCHEMA
@@ -238,6 +339,7 @@ def main():
     p.add_argument("--first-entry-dir",type=Path,required=True)
     p.add_argument("--latest-dir",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)
+    p.add_argument("--dividend-evidence-file",type=Path)
     a=p.parse_args()
     initial_prices=_csv(a.first_entry_dir/"new-price-manifest.csv")
     subsequent_prices=_csv(a.latest_dir/"new-price-manifest.csv")
@@ -253,8 +355,15 @@ def main():
         if str(exc)=="Previously observed entry close was vendor-revised":
             # Persist forensic evidence before failing closed. Never replace
             # the original immutable entry vintage or claim interim alpha.
+            events=None
+            if a.dividend_evidence_file is not None:
+                doc=json.loads(a.dividend_evidence_file.read_text())
+                if type(doc) is not dict or type(doc.get("events")) is not list:
+                    raise EntryAnchorStop("Invalid dividend evidence file")
+                events=doc["events"]
             diagnostic=entry_revision_diagnostic(
-                initial_prices=initial_prices,subsequent_prices=subsequent_prices)
+                initial_prices=initial_prices,subsequent_prices=subsequent_prices,
+                dividend_events=events)
             a.output.parent.mkdir(parents=True,exist_ok=True)
             a.output.write_text(json.dumps(
                 diagnostic,sort_keys=True,indent=2)+"\n")

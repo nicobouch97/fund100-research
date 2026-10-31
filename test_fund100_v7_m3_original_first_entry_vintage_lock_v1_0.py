@@ -186,3 +186,87 @@ def test_failed_cli_writes_diagnostic_but_remains_failed(tmp_path,monkeypatch):
     assert saved["changes"][0]["symbol"]=="SHY"
     assert saved["not_a_return_or_alpha_estimate"] is True
     assert saved["no_trading_authority"] is True
+
+
+def _dividend_event(*,amount=1.47,ex_date="2026-10-28"):
+    return {
+        "symbol":"COST","ex_date":ex_date,
+        "cash_dividend_usd":amount,
+        "previous_unadjusted_close_usd":996.08,
+        "issuer_dividend_url":
+            "https://investor.costco.com/stock-info/dividend-history/default.aspx",
+        "independent_close_url":
+            "https://www.statmuse.com/money/ask/costco-stock-prices-in-2026",
+    }
+
+
+def test_independent_dividend_factor_can_explain_but_never_qualify_entry_drift():
+    a,p,b,q=samples()
+    altered=q.copy()
+    altered.loc["2026-10-27","COST"]*=1-1.47/996.08
+    result=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=altered,
+        dividend_events=[_dividend_event()])
+    cross=result["dividend_factor_crosscheck"]
+    assert cross["status"]=="MECHANICALLY_CONSISTENT_NOT_AUTHENTICATED"
+    assert cross["events_considered"]==1
+    assert cross["symbol_checks"][0]["symbol"]=="COST"
+    assert cross["symbol_checks"][0]["status"]=="DIVIDEND_FACTOR_NUMERICALLY_CONSISTENT"
+    assert abs(cross["symbol_checks"][0]["factor_difference_bps"])<0.05
+    assert cross["source_urls_are_claims_not_verified_by_offline_code"]
+    assert cross["does_not_qualify_returns"] and cross["does_not_rewrite_original_entry"]
+    assert result["not_a_return_or_alpha_estimate"] is True
+    with pytest.raises(m3.EntryAnchorStop,match="vendor-revised"):
+        m3.verify(initial_report=a,initial_prices=p,
+                  subsequent_report=b,subsequent_prices=altered)
+
+
+def test_wrong_or_missing_dividend_cannot_explain_revision():
+    _,p,_,q=samples()
+    altered=q.copy()
+    altered.loc["2026-10-27","COST"]*=1-1.47/996.08
+    wrong=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=altered,
+        dividend_events=[_dividend_event(amount=2.0)])
+    assert wrong["dividend_factor_crosscheck"]["status"]=="INCOMPLETE_OR_CONTRADICTORY"
+    missing=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=altered,dividend_events=[])
+    assert missing["dividend_factor_crosscheck"]["symbol_checks"][0][
+        "status"]=="UNEXPLAINED_NO_DIVIDEND_EVIDENCE"
+    none=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=altered)
+    assert none["dividend_factor_crosscheck"]["status"]==(
+        "NO_INDEPENDENT_DIVIDEND_EVIDENCE_SUPPLIED")
+
+
+def test_dividend_crosscheck_rejects_unrelated_duplicate_and_invalid_events():
+    _,p,_,q=samples()
+    altered=q.copy()
+    altered.loc["2026-10-27","COST"]*=1-1.47/996.08
+    for events in (
+        [_dividend_event(ex_date="2026-10-27")],
+        [_dividend_event(ex_date="not-a-date")],
+        [_dividend_event(),_dividend_event()],
+        [{**_dividend_event(),"cash_dividend_usd":-1.47}],
+        [{**_dividend_event(),"independent_close_url":"http://invalid"}],
+    ):
+        with pytest.raises(m3.EntryAnchorStop):
+            m3.entry_revision_diagnostic(
+                initial_prices=p,subsequent_prices=altered,
+                dividend_events=events)
+
+
+def test_unrelated_or_future_dividend_input_does_not_erase_price_drift_report():
+    _,p,_,q=samples()
+    altered=q.copy()
+    altered.loc["2026-10-27","COST"]*=1-1.47/996.08
+    for event in ({**_dividend_event(),"symbol":"AAPL"},
+                  _dividend_event(ex_date="2026-10-30")):
+        result=m3.entry_revision_diagnostic(
+            initial_prices=p,subsequent_prices=altered,dividend_events=[event])
+        assert result["changed_entry_symbols"]==1
+        cross=result["dividend_factor_crosscheck"]
+        assert cross["status"]=="INCOMPLETE_OR_CONTRADICTORY"
+        assert cross["irrelevant_or_future_events_ignored"]==1
+        assert cross["events_considered"]==0
+        assert cross["does_not_qualify_returns"]

@@ -1,0 +1,26 @@
+{
+  "schema": "FUND100_V7_M3_PUBLIC_DIVIDEND_FACTOR_EVIDENCE_V1",
+  "purpose": "Research-only mechanical attribution of original 27 October 2026 Yahoo adjusted-close revision. No model-entry rewrite, return qualification or broker access.",
+  "captured_on_utc_date": "2026-10-31",
+  "events": [
+    {
+      "symbol": "COST",
+      "ex_date": "2026-10-30",
+      "cash_dividend_usd": 1.47,
+      "previous_unadjusted_close_usd": 996.08,
+      "issuer_dividend_url": "https://investor.costco.com/stock-info/dividend-history/default.aspx",
+      "independent_close_url": "https://www.statmuse.com/money/ask/costco-stock-prices-in-2026"
+    }
+  ],
+  "caveats": [
+    "The Costco issuer dividend-history table was observed to label the ex-dividend date 2026-10-29, whereas third-party dividend calendars and price adjustment chronology label 2026-10-30. This conflict is unresolved.",
+    "The $996.08 October 29 unadjusted close is independently published but this file is not a machine-authenticated price or corporate-action record.",
+    "Numeric consistency is not proof of the adjustment cause or a licence to score total returns.",
+    "Future changes to other issuer prices must fail closed and require their own dated independent evidence."
+  ],
+  "independent_ex_date_reference": "https://www.marketbeat.com/stocks/NASDAQ/COST/DIVIDEND/",
+  "broker_gets": 0,
+  "broker_posts": 0,
+  "broker_orders": 0,
+  "no_trading_authority": true
+}

@@ -7,6 +7,7 @@ on:
       - 'test_fund100_v7_m1_original_24stock_momentum_forward_v1_0.py'
       - 'fund100_v7_m3_original_first_entry_vintage_lock_v1_0.py'
       - 'test_fund100_v7_m3_original_first_entry_vintage_lock_v1_0.py'
+      - 'research_lab/V7_M3_COST_OCT30_DIVIDEND_FACTOR_EVIDENCE_2026_10_31.json'
       - 'research_lab/V7_M3_PIN_FIRST_ACTUAL_OCT27_SOURCE_2026_10_27.md'
       - 'research_lab/V7_M1_PREDECLARED_ORIGINAL_24_STOCK_MOMENTUM_FORWARD_2026_10_26.md'
       - '.github/workflows/fund100-v7-m1-original-24stock-forward.yml'
@@ -17,6 +18,7 @@ on:
       - 'test_fund100_v7_m1_original_24stock_momentum_forward_v1_0.py'
       - 'fund100_v7_m3_original_first_entry_vintage_lock_v1_0.py'
       - 'test_fund100_v7_m3_original_first_entry_vintage_lock_v1_0.py'
+      - 'research_lab/V7_M3_COST_OCT30_DIVIDEND_FACTOR_EVIDENCE_2026_10_31.json'
       - '.github/workflows/fund100-v7-m1-original-24stock-forward.yml'
   schedule:
     # New prospective bar as soon as 23:45Z source window clears the
@@ -181,6 +183,7 @@ jobs:
           python fund100_v7_m3_original_first_entry_vintage_lock_v1_0.py \
              --first-entry-dir /tmp/fund100-v7-m3-earliest-first-entry \
              --latest-dir /tmp/fund100-v7-m1-observed \
+             --dividend-evidence-file research_lab/V7_M3_COST_OCT30_DIVIDEND_FACTOR_EVIDENCE_2026_10_31.json \
              --output /tmp/fund100-v7-m1-observed/source-first-entry-vintage-audit.json
       # Preserve the read-only forensic report even when a revised vendor
       # entry price correctly blocks return qualification and fails this job.
