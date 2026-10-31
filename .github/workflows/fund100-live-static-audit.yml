@@ -207,6 +207,9 @@ on:
       - "research_lab/V7_U4_FIRST_100ISSUER_SEC_BASELINE_2026_10_27.md"
       - "fund100_v7_m1_original_24stock_momentum_forward_v1_0.py"
       - "test_fund100_v7_m1_original_24stock_momentum_forward_v1_0.py"
+      - "fund100_v7_m3_original_first_entry_vintage_lock_v1_0.py"
+      - "test_fund100_v7_m3_original_first_entry_vintage_lock_v1_0.py"
+      - "research_lab/V7_M3_COST_OCT30_DIVIDEND_FACTOR_EVIDENCE_2026_10_31.json"
       - "fund100_stock_broad_rotation_feasibility_p4p_v1_0.py"
       - "test_fund100_stock_broad_rotation_feasibility_p4p_v1_0.py"
       # Original-source corporate-action return reconstruction is research-only,
@@ -479,6 +482,9 @@ on:
       - "research_lab/V7_U4_FIRST_100ISSUER_SEC_BASELINE_2026_10_27.md"
       - "fund100_v7_m1_original_24stock_momentum_forward_v1_0.py"
       - "test_fund100_v7_m1_original_24stock_momentum_forward_v1_0.py"
+      - "fund100_v7_m3_original_first_entry_vintage_lock_v1_0.py"
+      - "test_fund100_v7_m3_original_first_entry_vintage_lock_v1_0.py"
+      - "research_lab/V7_M3_COST_OCT30_DIVIDEND_FACTOR_EVIDENCE_2026_10_31.json"
       - "fund100_stock_broad_rotation_feasibility_p4p_v1_0.py"
       - "test_fund100_stock_broad_rotation_feasibility_p4p_v1_0.py"
       # Original-source corporate-action return reconstruction is research-only,
