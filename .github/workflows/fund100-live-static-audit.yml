@@ -57,6 +57,9 @@ on:
       - "test_fund100_v6_s1_recurring_rebalance_core_v1_0.py"
       # Post-fee account-wide S1 order-time cash/concentration checks.
       # Source-locked daily cash floor economic sensitivity; never a LIVE policy.
+      # Source-qualified broker FILL evidence: no calendar-dependent test bypass.
+      - "fund100_v6_s1_authentic_live_fill_schema_getonly_v1_0.py"
+      - "test_fund100_v6_s1_authentic_live_fill_schema_getonly_v1_0.py"
       - "fund100_v6_s1_exact95_costed_cash_floor_v1_0.py"
       - "test_fund100_v6_s1_exact95_costed_cash_floor_v1_0.py"
       - "fund100_v6_s1_cash_at_order_no_churn_v1_0.py"
@@ -342,6 +345,9 @@ on:
       - "test_fund100_v6_s1_recurring_rebalance_core_v1_0.py"
       # Post-fee account-wide S1 order-time cash/concentration checks.
       # Source-locked daily cash floor economic sensitivity; never a LIVE policy.
+      # Source-qualified broker FILL evidence: no calendar-dependent test bypass.
+      - "fund100_v6_s1_authentic_live_fill_schema_getonly_v1_0.py"
+      - "test_fund100_v6_s1_authentic_live_fill_schema_getonly_v1_0.py"
       - "fund100_v6_s1_exact95_costed_cash_floor_v1_0.py"
       - "test_fund100_v6_s1_exact95_costed_cash_floor_v1_0.py"
       - "fund100_v6_s1_cash_at_order_no_churn_v1_0.py"
