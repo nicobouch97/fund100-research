@@ -203,7 +203,7 @@ def _dividend_event(*,amount=1.47,ex_date="2026-10-28"):
 def test_independent_dividend_factor_can_explain_but_never_qualify_entry_drift():
     a,p,b,q=samples()
     altered=q.copy()
-    altered.loc["2026-10-27","COST"]*=1-1.47/996.08
+    altered.loc[p.index,"COST"]*=1-1.47/996.08
     result=m3.entry_revision_diagnostic(
         initial_prices=p,subsequent_prices=altered,
         dividend_events=[_dividend_event()])
@@ -224,7 +224,7 @@ def test_independent_dividend_factor_can_explain_but_never_qualify_entry_drift()
 def test_wrong_or_missing_dividend_cannot_explain_revision():
     _,p,_,q=samples()
     altered=q.copy()
-    altered.loc["2026-10-27","COST"]*=1-1.47/996.08
+    altered.loc[p.index,"COST"]*=1-1.47/996.08
     wrong=m3.entry_revision_diagnostic(
         initial_prices=p,subsequent_prices=altered,
         dividend_events=[_dividend_event(amount=2.0)])
@@ -242,7 +242,7 @@ def test_wrong_or_missing_dividend_cannot_explain_revision():
 def test_dividend_crosscheck_rejects_unrelated_duplicate_and_invalid_events():
     _,p,_,q=samples()
     altered=q.copy()
-    altered.loc["2026-10-27","COST"]*=1-1.47/996.08
+    altered.loc[p.index,"COST"]*=1-1.47/996.08
     for events in (
         [_dividend_event(ex_date="2026-10-27")],
         [_dividend_event(ex_date="not-a-date")],
@@ -259,7 +259,7 @@ def test_dividend_crosscheck_rejects_unrelated_duplicate_and_invalid_events():
 def test_unrelated_or_future_dividend_input_does_not_erase_price_drift_report():
     _,p,_,q=samples()
     altered=q.copy()
-    altered.loc["2026-10-27","COST"]*=1-1.47/996.08
+    altered.loc[p.index,"COST"]*=1-1.47/996.08
     for event in ({**_dividend_event(),"symbol":"AAPL"},
                   _dividend_event(ex_date="2026-10-30")):
         result=m3.entry_revision_diagnostic(
@@ -270,3 +270,49 @@ def test_unrelated_or_future_dividend_input_does_not_erase_price_drift_report():
         assert cross["irrelevant_or_future_events_ignored"]==1
         assert cross["events_considered"]==0
         assert cross["does_not_qualify_returns"]
+
+def test_one_day_entry_revision_cannot_masquerade_as_full_dividend_back_adjustment():
+    _,p,_,q=samples()
+    altered=q.copy()
+    altered.loc["2026-10-27","COST"]*=1-1.47/996.08
+    result=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=altered,
+        dividend_events=[_dividend_event()])
+    cross=result["dividend_factor_crosscheck"]
+    assert cross["status"]=="INCOMPLETE_OR_CONTRADICTORY"
+    assert cross["frozen_historical_overlap_complete"]
+    assert cross["frozen_historical_sessions_checked"]==len(p)
+    assert cross["symbol_checks"][0]["status"]==(
+        "DIVIDEND_FACTOR_CONTRADICTS_VENDOR_REVISION")
+    assert cross["symbol_checks"][0]["maximum_historical_factor_residual_bps"]>1
+    assert cross["does_not_qualify_returns"]
+
+
+def test_earlier_nonuniform_restatement_invalidates_dividend_factor_attribution():
+    _,p,_,q=samples()
+    altered=q.copy()
+    altered.loc[p.index,"COST"]*=1-1.47/996.08
+    altered.loc[p.index[20],"COST"]*=1.00002
+    cross=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=altered,
+        dividend_events=[_dividend_event()])["dividend_factor_crosscheck"]
+    assert cross["status"]=="INCOMPLETE_OR_CONTRADICTORY"
+    assert cross["symbol_checks"][0]["status"]==(
+        "DIVIDEND_FACTOR_CONTRADICTS_VENDOR_REVISION")
+
+
+def test_other_ticker_historical_rewrite_cannot_hide_behind_costco_dividend():
+    _,p,_,q=samples()
+    altered=q.copy()
+    altered.loc[p.index,"COST"]*=1-1.47/996.08
+    altered.loc[p.index[20],"AAPL"]*=1.00002
+    result=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=altered,
+        dividend_events=[_dividend_event()])
+    cross=result["dividend_factor_crosscheck"]
+    assert result["changed_entry_symbols"]==1
+    assert cross["status"]=="INCOMPLETE_OR_CONTRADICTORY"
+    assert cross["symbol_checks"][0]["status"]==(
+        "DIVIDEND_FACTOR_NUMERICALLY_CONSISTENT")
+    assert cross["unexplained_nonentry_historical_drift"][0]["symbol"]=="AAPL"
+    assert cross["does_not_rewrite_original_entry"]
