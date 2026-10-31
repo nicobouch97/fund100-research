@@ -66,7 +66,7 @@ def exercise(monkeypatch,change=None):
 
 def test_mock_source_exact_six_gets_and_recovery_does_not_authorize_any_trade(monkeypatch):
     result,calls=exercise(monkeypatch)
-    assert result["status"]=="SIX_BROKER_GET_ORIGINAL_ACWI_FILL_AND_FLAT_STRUCTURALLY_MATCH"
+    assert result["status"]=="BOUNDED_BROKER_GET_ORIGINAL_ACWI_FILL_AND_FLAT_STRUCTURALLY_MATCH"
     assert len(calls)==6
     assert result["broker_GET_count"]==6
     assert result["broker_POST_count"]==result["private_Git_PUT_count"]==0
@@ -121,7 +121,7 @@ def test_real_clock_observation_occurs_after_final_get_not_before(monkeypatch):
         return transport(path=path,params=params,key=KEY,secret=SECRET)
     out=bridge._observe(
         read,signed_sources=_original["signed_prepost_sources"],now_utc=None)
-    assert out["status"]=="SIX_BROKER_GET_ORIGINAL_ACWI_FILL_AND_FLAT_STRUCTURALLY_MATCH"
+    assert out["status"]=="BOUNDED_BROKER_GET_ORIGINAL_ACWI_FILL_AND_FLAT_STRUCTURALLY_MATCH"
     assert len(calls)==6
     assert out["broker_POST_count"]==0
 
