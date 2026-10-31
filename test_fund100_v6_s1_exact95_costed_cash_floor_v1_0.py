@@ -511,7 +511,7 @@ def test_month_end_close_is_signal_only_and_fixed_shares_fill_next_session():
 
 
 def test_unaffordable_gap_does_not_create_margin_or_same_close_entry():
-    prices=sample(n=150)
+    prices=sample(n=900)
     first_signal=next(i for i in range(len(prices))
                       if l1.month_end_session(prices.index,i))
     # A large move AFTER the signal changes the cost of the FIXED share
