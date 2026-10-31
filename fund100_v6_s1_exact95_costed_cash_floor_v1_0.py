@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from math import isfinite
+from math import isfinite, sqrt
 from pathlib import Path
 
 import pandas as pd
@@ -253,6 +253,81 @@ def passive_cash_buffer_feasibility(path:pd.DataFrame,start:str)->dict:
     }
 
 
+def high_risk_eod_feasibility(path:pd.DataFrame,start:str)->dict:
+    """Descriptive HIGH-risk breaches on an UNINTERRUPTED hypothetical NAV.
+
+    Do not infer executable performance after the first STOP: this research
+    path deliberately continues to show the original strategy's economics.
+    The 70-close rolling peak and 69-return volatility are approximations
+    of the existing broker-history risk horizon, NOT a LIVE risk attestation.
+    No deposits/withdrawals or broker intraday marks are represented.
+    """
+    # Build trailing risk windows from all prior invested closes, even when
+    # reporting a later subperiod such as 2020 onward.
+    active=path.loc[path["invested"]]
+    if len(active)<6:
+        raise S1EconomicsStop("Too few invested closes for HIGH risk diagnosis")
+    nav=active["nav"].astype(float)
+    if (not nav.map(isfinite).all() or (nav<=0).any()
+        or nav.index.has_duplicates or not nav.index.is_monotonic_increasing):
+        raise S1EconomicsStop("Invalid risk diagnostic equity history")
+    daily=nav.pct_change(fill_method=None)
+    rolling_dd=1-nav/nav.rolling(70,min_periods=1).max()
+    # At least five real daily returns, not an invented zero return.
+    rolling_vol=daily.rolling(69,min_periods=5).std(ddof=1)*sqrt(252)
+    loss_hit=daily.lt(-.06)
+    draw_hit=rolling_dd.gt(.20)
+    vol_hit=rolling_vol.gt(.35)
+    cash_hit=active["cash_floor_breach_end_of_day"].astype(bool)
+    concentration_hit=active["single_symbol_breach_end_of_day"].astype(bool)
+    # Scope only the counts to the requested era; retain the earlier
+    # 70-close risk history used by its first observations.
+    daily=daily.loc[start:]
+    rolling_dd=rolling_dd.loc[start:]
+    rolling_vol=rolling_vol.loc[start:]
+    loss_hit=loss_hit.loc[start:]
+    draw_hit=draw_hit.loc[start:]
+    vol_hit=vol_hit.loc[start:]
+    cash_hit=cash_hit.loc[start:]
+    concentration_hit=concentration_hit.loc[start:]
+    if not len(daily):
+        raise S1EconomicsStop("No invested closes in requested risk period")
+    risk_hit=loss_hit|draw_hit|vol_hit
+    combined=risk_hit|cash_hit|concentration_hit
+
+    def first(mask:pd.Series)->str|None:
+        matches=mask.index[mask]
+        return matches[0].date().isoformat() if len(matches) else None
+
+    return {
+        "high_daily_loss_limit_fraction":.06,
+        "high_rolling_drawdown_limit_fraction":.20,
+        "high_annual_realized_volatility_limit":.35,
+        "daily_loss_breach_closes":int(loss_hit.sum()),
+        "rolling_70_close_drawdown_breach_closes":int(draw_hit.sum()),
+        "rolling_69_return_volatility_breach_closes":int(vol_hit.sum()),
+        "cash_floor_breach_closes":int(cash_hit.sum()),
+        "single_symbol_concentration_breach_closes":int(concentration_hit.sum()),
+        "any_high_account_risk_breach_closes":int(risk_hit.sum()),
+        "any_combined_risk_cash_concentration_breach_closes":int(combined.sum()),
+        "first_high_account_risk_breach_date":first(risk_hit),
+        "first_combined_breach_date":first(combined),
+        "worst_modelled_daily_return_pct":round(100*float(daily.min()),5),
+        "worst_rolling_70_close_drawdown_pct":round(100*float(rolling_dd.max()),5),
+        "latest_rolling_70_close_drawdown_pct":round(100*float(rolling_dd.iloc[-1]),5),
+        "highest_rolling_69_return_volatility_pct":round(
+            100*float(rolling_vol.max()),5) if rolling_vol.notna().any() else None,
+        "all_observed_high_account_risk_limits_met":bool(not risk_hit.any()),
+        "all_observed_high_risk_cash_and_concentration_limits_met":bool(
+            not combined.any()),
+        "first_five_returns_have_insufficient_volatility_history":True,
+        "rolling_windows_include_prior_invested_closes_before_report_period":True,
+        "intraday_risk_and_broker_cashflows_not_observed":True,
+        "risk_stops_not_simulated_returns_after_first_stop_counterfactual":True,
+        "research_only_not_live_release":True,
+    }
+
+
 def period_diagnostics(path:pd.DataFrame,start:str)->dict:
     m=l1.metrics(path,start)
     sub=path.loc[start:]
@@ -265,6 +340,7 @@ def period_diagnostics(path:pd.DataFrame,start:str)->dict:
       "minimum_cash_fraction_during_investment":round(float(held["cash"].min()),8) if len(held) else None,
       "maximum_gross_risk_exposure_during_investment":round(float(held["gross_risk_exposure"].max()),8) if len(held) else None,
       "monthly_band_does_not_enforce_daily_minimum":True,
+      "high_risk_stop_feasibility":high_risk_eod_feasibility(path,start),
     }
 
 
@@ -370,6 +446,18 @@ def main():
                 "MAX_DD",m["metrics"]["nav"]["max_drawdown_pct"],
                 "CASH_BREACH_SESSIONS",m["cash_below_5pct_sessions_end_of_day"],
                 "MIN_CASH",m["minimum_cash_fraction_during_investment"])
+    # Keep observed HIGH-risk violations visible in the same CI evidence as
+    # attractive CAGR figures; modeled NAV continues after hypothetical STOP.
+    for reserve in ("10","15"):
+        for name in ("2014_onward","2020_onward"):
+            x=report["fixed_10_and_15pct_passive_cash_buffer_sensitivities"][
+                reserve]["15"][name]["costed_path"]["high_risk_stop_feasibility"]
+            print("PASSIVE_BUFFER_HIGH_RISK",reserve,name,
+                  "ACCOUNT_RISK_BREACH_CLOSES",x["any_high_account_risk_breach_closes"],
+                  "COMBINED_BREACH_CLOSES",x["any_combined_risk_cash_concentration_breach_closes"],
+                  "FIRST_COMBINED",x["first_combined_breach_date"],
+                  "RETURNS_AFTER_STOP_COUNTERFACTUAL",
+                  x["risk_stops_not_simulated_returns_after_first_stop_counterfactual"])
     print("NOT_ALPHA_NOT_BROKER_RELEASE",report["live_orders"])
 
 

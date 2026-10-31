@@ -191,3 +191,82 @@ def test_unregistered_cash_buffer_or_daily_trim_combination_rejected(reserve,tri
     with pytest.raises(s.S1EconomicsStop):
         s.simulate_daily_cash_floor(
             sample(n=100),cost_bps=15,reserve_fraction=reserve,daily_trims=trim)
+
+
+def synthetic_high_risk_path(nav_values):
+    dates=pd.bdate_range("2025-01-02",periods=len(nav_values))
+    return pd.DataFrame({
+        "nav":nav_values,
+        "invested":True,
+        "cash_floor_breach_end_of_day":False,
+        "single_symbol_breach_end_of_day":False,
+    },index=dates)
+
+
+def test_high_risk_diagnostic_detects_loss_drawdown_and_volatility():
+    nav=np.full(100,100.)
+    nav[20:]=93.  # 7% one-day loss breaches unchanged HIGH 6%.
+    nav[35:]=72.  # Further drawdown breaches unchanged HIGH 20%.
+    path=synthetic_high_risk_path(nav)
+    x=s.high_risk_eod_feasibility(path,"2025-01-01")
+    assert x["daily_loss_breach_closes"]==2
+    assert x["rolling_70_close_drawdown_breach_closes"]>0
+    assert x["rolling_69_return_volatility_breach_closes"]>0
+    assert x["first_high_account_risk_breach_date"]==path.index[20].date().isoformat()
+    assert x["any_combined_risk_cash_concentration_breach_closes"]>=2
+    assert not x["all_observed_high_account_risk_limits_met"]
+    assert x["risk_stops_not_simulated_returns_after_first_stop_counterfactual"]
+    assert x["intraday_risk_and_broker_cashflows_not_observed"]
+
+
+def test_high_risk_rolling_drawdown_expires_old_peak_without_hiding_old_stop():
+    nav=np.full(160,100.)
+    nav[10:]=70.
+    x=s.high_risk_eod_feasibility(
+        synthetic_high_risk_path(nav),"2025-01-01")
+    assert x["worst_rolling_70_close_drawdown_pct"]==pytest.approx(30.)
+    assert x["latest_rolling_70_close_drawdown_pct"]==pytest.approx(0.)
+    assert x["first_high_account_risk_breach_date"] is not None
+    assert not x["all_observed_high_account_risk_limits_met"]
+
+
+def test_high_risk_diagnostic_combines_cash_concentration_and_risk_without_promotion():
+    path=synthetic_high_risk_path(np.full(100,100.))
+    path.loc[path.index[15],"cash_floor_breach_end_of_day"]=True
+    path.loc[path.index[35],"single_symbol_breach_end_of_day"]=True
+    x=s.high_risk_eod_feasibility(path,"2025-01-01")
+    assert x["all_observed_high_account_risk_limits_met"]
+    assert not x["all_observed_high_risk_cash_and_concentration_limits_met"]
+    assert x["any_high_account_risk_breach_closes"]==0
+    assert x["any_combined_risk_cash_concentration_breach_closes"]==2
+    assert x["first_combined_breach_date"]==path.index[15].date().isoformat()
+    assert x["research_only_not_live_release"]
+
+
+def test_high_risk_screen_is_reported_for_original_and_passive_buffer_paths():
+    p=sample(n=2100)
+    original=s.period_diagnostics(s.simulate(p,cost_bps=15),"2014-01-01")
+    passive=s.passive_cash_buffer_feasibility(
+        s.simulate_daily_cash_floor(
+            p,cost_bps=15,reserve_fraction=.15,daily_trims=False),
+        "2014-01-01")
+    for result in (original,passive["costed_path"]):
+        x=result["high_risk_stop_feasibility"]
+        assert x["high_daily_loss_limit_fraction"]==.06
+        assert x["high_rolling_drawdown_limit_fraction"]==.20
+        assert x["high_annual_realized_volatility_limit"]==.35
+        assert x["first_five_returns_have_insufficient_volatility_history"]
+        assert x["risk_stops_not_simulated_returns_after_first_stop_counterfactual"]
+        assert x["research_only_not_live_release"]
+
+
+def test_high_risk_subperiod_preserves_preperiod_peak_and_volatility_history():
+    nav=np.full(150,100.)
+    nav[80:]=79.
+    path=synthetic_high_risk_path(nav)
+    start=path.index[80].date().isoformat()
+    x=s.high_risk_eod_feasibility(path,start)
+    assert x["first_high_account_risk_breach_date"]==start
+    assert x["rolling_70_close_drawdown_breach_closes"]>0
+    assert x["rolling_windows_include_prior_invested_closes_before_report_period"]
+    assert x["worst_rolling_70_close_drawdown_pct"]==pytest.approx(21.)
