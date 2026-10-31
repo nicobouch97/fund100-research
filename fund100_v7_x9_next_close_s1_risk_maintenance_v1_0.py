@@ -36,6 +36,9 @@ MIN_CASH=0.05
 REPAIR_SINGLE=0.48
 REPAIR_GROSS=0.90
 MODELED_MIN_SELL_USD=1.00
+# Keep the original $100 research NAV; separately evaluate the real pilot size.
+# The absolute $1 modeled minimum is deliberately NOT scaled with capital.
+CAPITAL_SENSITIVITIES=(100.0,130.30)
 BROKER_GETS=BROKER_POSTS=BROKER_ORDERS=0
 LIVE_TRADING_ENABLED=False
 
@@ -64,13 +67,16 @@ def _validate_view(prices,start,cost_bps):
         raise RiskStudyStop("Suspicious corporate action/return discontinuity")
     return view
 
-def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int):
+def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.0):
+    if type(capital_usd) is not float or capital_usd not in CAPITAL_SENSITIVITIES:
+        raise RiskStudyStop("Unregistered capital-size sensitivity")
     data=_validate_view(prices,start,cost_bps)
     fee=cost_bps/10000.0
-    initial_purchase=95.0/(1+fee)
-    units={s:(initial_purchase*w/.95)/float(data.iloc[0][s])
+    invested_budget=capital_usd*(1-MIN_CASH)
+    initial_purchase=invested_budget/(1+fee)
+    units={s:(initial_purchase*w/(1-MIN_CASH))/float(data.iloc[0][s])
            for s,w in S1.items()}
-    cash=5.0
+    cash=capital_usd*MIN_CASH
     total_sell_fees=0.0
     sell_notional=0.0
     sell_sides=0
@@ -80,8 +86,8 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int):
     pending=None
     log=[]
     fund_returns=[]
-    peak=100.0
-    prev_nav=100.0
+    peak=capital_usd
+    prev_nav=capital_usd
     worst_dd=0.0
     breaches={"single":0,"gross":0,"cash":0,
               "daily_loss":0,"drawdown":0,"volatility":0}
@@ -119,7 +125,7 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int):
         nav=cash+gross
         if nav<=0 or not np.isfinite(nav):
             raise RiskStudyStop("Depleted/nonfinite synthetic account NAV")
-        day_return=nav/prev_nav-1 if i>0 else nav/100.-1
+        day_return=nav/prev_nav-1 if i>0 else nav/capital_usd-1
         if i>0:fund_returns.append(day_return)
         peak=max(peak,nav)
         drawdown=nav/peak-1
@@ -136,33 +142,34 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int):
         if len(fund_returns)>=VOL_OBSERVATIONS:
             vol=float(np.std(fund_returns[-VOL_OBSERVATIONS:],ddof=1)*sqrt(252))
             if vol>MAX_REALIZED_VOL:breaches["volatility"]+=1
-        if i<last_i:
-            if (not forced_stop and
-                (day_return<=MAX_DAILY_LOSS or drawdown<=MAX_DRAWDOWN
-                 or (vol is not None and vol>MAX_REALIZED_VOL))):
-                forced_stop=True
-                stop_signal=when
-            if forced_stop:
-                # Retry residual modeled notional below minimum on later days,
-                # never claim the account is flat merely from a stop signal.
-                if gross>1e-9:
-                    pending={"kind":"STOP_EXIT","signal_index":i,
-                             "signal_session":when,
-                             "quantities":{s:q for s,q in units.items() if q>1e-12}}
-            elif (largest>MAX_SINGLE+1e-12 or gross_weight>MAX_GROSS+1e-12
-                  or cash_weight<MIN_CASH-1e-12):
-                # Fixed sell-only buffer at the OBSERVED close. Compute actual
-                # share quantities NOW, then leave them unchanged until the
-                # next session; a gap can leave residual risk breaches.
-                gross_scale=min(1.0,(REPAIR_GROSS*nav)/gross)
-                proposed={}
-                for s,value in position.items():
-                    sale=max(value*(1-gross_scale),value-REPAIR_SINGLE*nav,0)
-                    if sale>=MODELED_MIN_SELL_USD and value>0:
-                        proposed[s]=sale/px[s]
-                if proposed:
-                    pending={"kind":"RISK_REPAIR","signal_index":i,
-                             "signal_session":when,"quantities":proposed}
+        # A hard STOP observed at the final available close is still a
+        # genuine signal. It cannot be executed inside this historical panel.
+        if (not forced_stop and
+            (day_return<=MAX_DAILY_LOSS or drawdown<=MAX_DRAWDOWN
+             or (vol is not None and vol>MAX_REALIZED_VOL))):
+            forced_stop=True
+            stop_signal=when
+        if forced_stop:
+            # Do not invent a final-close fill. The pending exit remains
+            # explicitly unexecuted when the dataset ends.
+            if gross>1e-9:
+                pending={"kind":"STOP_EXIT","signal_index":i,
+                         "signal_session":when,
+                         "quantities":{s:q for s,q in units.items() if q>1e-12}}
+        elif (largest>MAX_SINGLE+1e-12 or gross_weight>MAX_GROSS+1e-12
+              or cash_weight<MIN_CASH-1e-12):
+            # Fixed sell-only buffer at the OBSERVED close. Compute actual
+            # share quantities NOW, then leave them unchanged until the
+            # next session; a gap can leave residual risk breaches.
+            gross_scale=min(1.0,(REPAIR_GROSS*nav)/gross)
+            proposed={}
+            for s,value in position.items():
+                sale=max(value*(1-gross_scale),value-REPAIR_SINGLE*nav,0)
+                if sale>=MODELED_MIN_SELL_USD and value>0:
+                    proposed[s]=sale/px[s]
+            if proposed:
+                pending={"kind":"RISK_REPAIR","signal_index":i,
+                         "signal_session":when,"quantities":proposed}
         prev_nav=nav
     # Last bar fixed liquidation is benchmark-accounting only, not a LIVE
     # instruction, settlement proof or executable quote. Same convention X8.
@@ -172,12 +179,15 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int):
     final_nav=cash+residual-last_exit_fee
     years=(data.index[-1]-data.index[0]).days/365.25
     if years<=0 or final_nav<=0:raise RiskStudyStop("Invalid terminal NAV")
-    cagr=100*((final_nav/100)**(1/years)-1)
+    cagr=100*((final_nav/capital_usd)**(1/years)-1)
     ref=x8.window(data,start=start,cost_bps=cost_bps)
     return {
         "first_session":data.index[0].date().isoformat(),
         "last_session":data.index[-1].date().isoformat(),
         "sessions":len(data),
+        "model_starting_capital_usd":_metric(capital_usd),
+        "initial_cash_reserve_usd":_metric(capital_usd*MIN_CASH),
+        "modeled_minimum_sell_notional_usd":_metric(MODELED_MIN_SELL_USD),
         "cost_bps_per_traded_side":cost_bps,
         "managed_s1_net_exit_costed_cagr_pct":_metric(cagr),
         "unmanaged_s1_net_exit_costed_cagr_pct":ref["fund_net_exit_costed_cagr_pct"],
@@ -189,12 +199,13 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int):
         "managed_annualized_volatility_fraction":_metric(float(np.std(fund_returns,ddof=1)*sqrt(252))),
         "managed_worst_session_return_pct":_metric(100*min(fund_returns)),
         "first_stop_signal_close":stop_signal,
+        "hard_stop_first_detected_on_final_close":stop_signal==data.index[-1].date().isoformat(),
         "stop_signal_necessarily_requires_next_session_execution":True,
         "forced_stop_signal_latched":forced_stop,
         "modeled_sell_sides_completed":sell_sides,
         "modeled_sell_notional_usd":_metric(sell_notional),
         "modeled_sell_fees_usd":_metric(total_sell_fees),
-        "modeled_entry_buy_fee_usd":_metric(95-initial_purchase),
+        "modeled_entry_buy_fee_usd":_metric(invested_budget-initial_purchase),
         "modeled_fixed_end_liquidation_fee_usd":_metric(last_exit_fee),
         "modeled_sell_sides_below_minimum_skipped":skipped_sides,
         "risk_breach_session_counts_after_delay":breaches,
@@ -211,6 +222,8 @@ def analyze(prices:pd.DataFrame,digest:str):
     except old.V6ResearchStop as exc:raise RiskStudyStop("Invalid original fixed source") from exc
     results={str(b):{name:simulate(source,start=start,cost_bps=b)
                      for name,start in WINDOWS.items()} for b in COSTS}
+    pilot_results={str(b):{name:simulate(source,start=start,cost_bps=b,capital_usd=130.30)
+                           for name,start in WINDOWS.items()} for b in COSTS}
     return {
         "schema":SCHEMA,
         "status":"REPEATEDLY_STUDIED_CAUSAL_RISK_REPAIR_RETROSPECTIVE_NO_ORDER",
@@ -234,6 +247,9 @@ def analyze(prices:pd.DataFrame,digest:str):
             "research_repair_gross_buffer":REPAIR_GROSS,
             "research_min_sell_usd":MODELED_MIN_SELL_USD},
         "results":results,
+        "pilot_sized_results":pilot_results,
+        "original_100usd_research_comparator_preserved":True,
+        "fixed_one_dollar_minimum_is_absolute_not_a_portfolio_percentage":True,
     }
 
 def main():
@@ -250,5 +266,10 @@ def main():
               "ACWI",period["matched_95pct_acwi_net_exit_costed_cagr_pct"],
               "stop",period["first_stop_signal_close"],
               "breach sessions",period["risk_breach_session_counts_after_delay"])
+    for name,period in result["pilot_sized_results"]["15"].items():
+        print(name,"$130.30 pilot-size sensitivity CAGR",period["managed_s1_net_exit_costed_cagr_pct"],
+              "sell sides",period["modeled_sell_sides_completed"],
+              "skipped minimum sides",period["modeled_sell_sides_below_minimum_skipped"],
+              "pending after last close",period["pending_trade_after_last_close_not_assumed_executed"])
     print("Only historical risk-maintenance economics; no trading permission.")
 if __name__=="__main__":main()
