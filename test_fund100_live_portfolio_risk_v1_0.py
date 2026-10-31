@@ -91,6 +91,42 @@ def test_daily_loss_stops_high_tier_at_seven_percent():
         )
 
 
+def test_duplicate_current_history_mark_does_not_hide_high_volatility():
+    # Five alternating +/-2.2% sessions imply ~38.3% annualized vol.
+    # Appending the already-present current equity as a sixth 0% return
+    # incorrectly lowers the estimate to ~34.3%, below the HIGH 35% stop.
+    levels = [Decimal("100")]
+    for i in range(5):
+        levels.append(levels[-1] * (
+            Decimal("1.022") if i % 2 == 0 else Decimal("0.978")
+        ))
+    assert levels[-1] != levels[-2]
+    with pytest.raises(r.PortfolioRiskStop, match="volatility"):
+        r.check_account_performance(
+            account={"equity": str(levels[-1]),
+                     "last_equity": str(levels[-2])},
+            history=history([str(x) for x in levels]),
+            profile=r.get_profile("HIGH"),
+        )
+
+
+def test_new_current_equity_mark_still_participates_in_volatility():
+    # A genuinely new account mark is not silently dropped as a duplicate.
+    levels = [Decimal("100")]
+    for i in range(5):
+        levels.append(levels[-1] * (
+            Decimal("1.022") if i % 2 == 0 else Decimal("0.978")
+        ))
+    current = levels[-1] * Decimal("1.022")
+    with pytest.raises(r.PortfolioRiskStop, match="volatility"):
+        r.check_account_performance(
+            account={"equity": str(current),
+                     "last_equity": str(levels[-1])},
+            history=history([str(x) for x in levels]),
+            profile=r.get_profile("HIGH"),
+        )
+
+
 def test_rolling_drawdown_stops_even_if_daily_loss_small():
     with pytest.raises(r.PortfolioRiskStop, match="drawdown"):
         r.check_account_performance(
