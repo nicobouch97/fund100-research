@@ -295,6 +295,37 @@ def high_risk_eod_feasibility(path:pd.DataFrame,start:str)->dict:
     risk_hit=loss_hit|draw_hit|vol_hit
     combined=risk_hit|cash_hit|concentration_hit
 
+    # Attribute the FIRST breach, rather than conflating a cash/weight
+    # maintenance violation with an account-level HIGH emergency STOP.
+    # These are retrospective completed-close observations, not authority
+    # to restart, liquidate or override a real operator STOP.
+    first_combined_detail=None
+    if combined.any():
+        at=combined.index[combined][0]
+        flags={
+            "daily_account_loss":bool(loss_hit.loc[at]),
+            "rolling_70_close_drawdown":bool(draw_hit.loc[at]),
+            "rolling_69_return_volatility":bool(vol_hit.loc[at]),
+            "cash_below_5pct":bool(cash_hit.loc[at]),
+            "single_symbol_above_50pct":bool(concentration_hit.loc[at]),
+        }
+        hard_risk=any(flags[k] for k in (
+            "daily_account_loss","rolling_70_close_drawdown",
+            "rolling_69_return_volatility"))
+        weight_columns=["weight_"+symbol for symbol in l1.NAMES]
+        first_combined_detail={
+            "date":at.date().isoformat(),
+            "triggered_constraints":[key for key,value in flags.items() if value],
+            "account_high_risk_threshold_triggered":hard_risk,
+            "portfolio_cash_or_concentration_only":not hard_risk,
+            "cash_fraction_at_breach":(
+                float(active.loc[at,"cash"]) if "cash" in active else None),
+            "largest_symbol_weight_fraction_at_breach":(
+                max(float(active.loc[at,col]) for col in weight_columns)
+                if all(col in active for col in weight_columns) else None),
+            "not_a_live_hard_stop_classification_or_trade_authority":True,
+        }
+
     def first(mask:pd.Series)->str|None:
         matches=mask.index[mask]
         return matches[0].date().isoformat() if len(matches) else None
@@ -312,6 +343,7 @@ def high_risk_eod_feasibility(path:pd.DataFrame,start:str)->dict:
         "any_combined_risk_cash_concentration_breach_closes":int(combined.sum()),
         "first_high_account_risk_breach_date":first(risk_hit),
         "first_combined_breach_date":first(combined),
+        "first_combined_breach_attribution":first_combined_detail,
         "worst_modelled_daily_return_pct":round(100*float(daily.min()),5),
         "worst_rolling_70_close_drawdown_pct":round(100*float(rolling_dd.max()),5),
         "latest_rolling_70_close_drawdown_pct":round(100*float(rolling_dd.iloc[-1]),5),
@@ -353,11 +385,14 @@ def hypothetical_first_stop_next_close_cash(
     required.update("weight_"+s for s in l1.NAMES)
     if not required.issubset(path.columns):
         raise S1EconomicsStop("Missing original portfolio/stop observations")
-    first=high_risk_eod_feasibility(
-        path,path.index[0].date().isoformat())["first_combined_breach_date"]
+    risk_report=high_risk_eod_feasibility(
+        path,path.index[0].date().isoformat())
+    first=risk_report["first_combined_breach_date"]
     out=path.copy(deep=True)
     assumptions={
         "first_combined_breach_date":first,
+        "first_combined_breach_attribution":risk_report[
+            "first_combined_breach_attribution"],
         "hypothetical_next_close_exit_date":None,
         "hypothetical_exit_fee_nav_units":None,
         "hypothetical_exit_turnover_fraction":None,
@@ -666,6 +701,12 @@ def main():
                   "ENTRY",x["first_invested_close"],
                   "BREACH",a["first_combined_breach_date"],
                   "EXIT",a["hypothetical_next_close_exit_date"],
+                  "FIRST_BREACH_TRIGGERS",",".join(
+                      (a["first_combined_breach_attribution"] or {})
+                      .get("triggered_constraints",[])),
+                  "ACCOUNT_HIGH_RISK_STOP",(
+                      (a["first_combined_breach_attribution"] or {})
+                      .get("account_high_risk_threshold_triggered")),
                   "COSTED_CAGR_PCT",m["nav"]["annual_return_pct"],
                   "ACWI_CAGR_PCT",m["acwi_nav"]["annual_return_pct"],
                   "RESEARCH_ONLY",True)
