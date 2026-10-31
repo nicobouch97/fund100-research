@@ -446,6 +446,18 @@ def main():
                 "MAX_DD",m["metrics"]["nav"]["max_drawdown_pct"],
                 "CASH_BREACH_SESSIONS",m["cash_below_5pct_sessions_end_of_day"],
                 "MIN_CASH",m["minimum_cash_fraction_during_investment"])
+    # Keep observed HIGH-risk violations visible in the same CI evidence as
+    # attractive CAGR figures; modeled NAV continues after hypothetical STOP.
+    for reserve in ("10","15"):
+        for name in ("2014_onward","2020_onward"):
+            x=report["fixed_10_and_15pct_passive_cash_buffer_sensitivities"][
+                reserve]["15"][name]["costed_path"]["high_risk_stop_feasibility"]
+            print("PASSIVE_BUFFER_HIGH_RISK",reserve,name,
+                  "ACCOUNT_RISK_BREACH_CLOSES",x["any_high_account_risk_breach_closes"],
+                  "COMBINED_BREACH_CLOSES",x["any_combined_risk_cash_concentration_breach_closes"],
+                  "FIRST_COMBINED",x["first_combined_breach_date"],
+                  "RETURNS_AFTER_STOP_COUNTERFACTUAL",
+                  x["risk_stops_not_simulated_returns_after_first_stop_counterfactual"])
     print("NOT_ALPHA_NOT_BROKER_RELEASE",report["live_orders"])
 
 
