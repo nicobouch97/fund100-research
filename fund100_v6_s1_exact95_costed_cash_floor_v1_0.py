@@ -262,8 +262,9 @@ def high_risk_eod_feasibility(path:pd.DataFrame,start:str)->dict:
     of the existing broker-history risk horizon, NOT a LIVE risk attestation.
     No deposits/withdrawals or broker intraday marks are represented.
     """
-    active=path.loc[start:]
-    active=active.loc[active["invested"]]
+    # Build trailing risk windows from all prior invested closes, even when
+    # reporting a later subperiod such as 2020 onward.
+    active=path.loc[path["invested"]]
     if len(active)<6:
         raise S1EconomicsStop("Too few invested closes for HIGH risk diagnosis")
     nav=active["nav"].astype(float)
@@ -279,6 +280,18 @@ def high_risk_eod_feasibility(path:pd.DataFrame,start:str)->dict:
     vol_hit=rolling_vol.gt(.35)
     cash_hit=active["cash_floor_breach_end_of_day"].astype(bool)
     concentration_hit=active["single_symbol_breach_end_of_day"].astype(bool)
+    # Scope only the counts to the requested era; retain the earlier
+    # 70-close risk history used by its first observations.
+    daily=daily.loc[start:]
+    rolling_dd=rolling_dd.loc[start:]
+    rolling_vol=rolling_vol.loc[start:]
+    loss_hit=loss_hit.loc[start:]
+    draw_hit=draw_hit.loc[start:]
+    vol_hit=vol_hit.loc[start:]
+    cash_hit=cash_hit.loc[start:]
+    concentration_hit=concentration_hit.loc[start:]
+    if not len(daily):
+        raise S1EconomicsStop("No invested closes in requested risk period")
     risk_hit=loss_hit|draw_hit|vol_hit
     combined=risk_hit|cash_hit|concentration_hit
 
@@ -308,6 +321,7 @@ def high_risk_eod_feasibility(path:pd.DataFrame,start:str)->dict:
         "all_observed_high_risk_cash_and_concentration_limits_met":bool(
             not combined.any()),
         "first_five_returns_have_insufficient_volatility_history":True,
+        "rolling_windows_include_prior_invested_closes_before_report_period":True,
         "intraday_risk_and_broker_cashflows_not_observed":True,
         "risk_stops_not_simulated_returns_after_first_stop_counterfactual":True,
         "research_only_not_live_release":True,
