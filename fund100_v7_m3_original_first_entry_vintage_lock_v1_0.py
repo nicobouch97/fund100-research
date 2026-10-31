@@ -239,6 +239,7 @@ def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
         or initial_report.get("completed_price_session")!=ORIGINAL_ENTRY_SESSION
         or initial.get("last_vendor_session")!=ORIGINAL_ENTRY_SESSION
         or initial_report.get("costed_95pct_stocks_versus_95pct_spy")!={}
+        or initial_report.get("interim_excess_at_15bps_pp_not_alpha") is not None
         or initial_report.get("final_result_completed") is not False):
         raise EntryAnchorStop("Anchor is not first entry-only completed NYSE close")
     stage=subsequent_report.get("status")
@@ -258,6 +259,13 @@ def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
         raise EntryAnchorStop("Later source changes original selection or duration")
     original=_canonical_prices(initial_prices)
     later=_canonical_prices(subsequent_prices)
+    # The earliest 27 Oct immutable GitHub artifact predates the digest
+    # field. Its source identity is pinned by the workflow run/artifact ID.
+    # If a newer first-entry report has a digest, it must agree with its CSV.
+    if ("later_price_csv_sha256" in initial_report and
+        initial_report["later_price_csv_sha256"]!=sha256(
+            p4l.canonical_csv(original).encode("utf-8")).hexdigest()):
+        raise EntryAnchorStop("First-entry report price source digest mismatch")
     date=pd.Timestamp(ORIGINAL_ENTRY_SESSION)
     if (original.index[-1]!=date or date not in later.index
         or original.index[0]!=later.index[0]
@@ -370,11 +378,23 @@ def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
                     raise EntryAnchorStop("Reported risk-matched after-cost return disagrees with pinned risk")
             elif secondary is not None:
                 raise EntryAnchorStop("Unavailable risk match cannot report synthetic returns")
+        # The interim headline is a copy of the predeclared 15bps primary
+        # result, never an independent estimate or a free-form saved number.
+        headline=(results["15"]["stock_minus_spy_net_percentage_points"]
+                  if not finished else None)
+        if subsequent_report.get("interim_excess_at_15bps_pp_not_alpha")!=headline:
+            raise EntryAnchorStop("Reported interim headline disagrees with costed returns")
         # Recheck descriptive rank only after the primary price-to-return
         # reconciliation so stale prices still fail with the original error.
         expected_rank=m1._sector_conditional_rank(selected,entry,exit_prices)
         if subsequent_report.get("secondary_exact_sector_conditional_selection_rank")!=expected_rank:
             raise EntryAnchorStop("Reported sector-conditional rank disagrees with source prices")
+        # New forward reports must commit to the exact full CSV source
+        # vintage, not just agree on the entry/exit prices used for returns.
+        # This is an internal archive binding, not proof Yahoo was correct.
+        expected_digest=sha256(p4l.canonical_csv(later).encode("utf-8")).hexdigest()
+        if subsequent_report.get("later_price_csv_sha256")!=expected_digest:
+            raise EntryAnchorStop("Later report price source digest mismatch")
     except (KeyError,TypeError,IndexError,ValueError) as exc:
         if isinstance(exc,EntryAnchorStop):
             raise
