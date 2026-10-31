@@ -312,13 +312,7 @@ def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
         if subsequent_report.get("secondary_frozen_sector_control_weights")!={
                 t:round(w,12) for t,w in control.items()}:
             raise EntryAnchorStop("Original sector weights changed after entry")
-        # The original M3 check authenticated primary and sector terminal
-        # economics, but did not validate the saved conditional sector rank
-        # or the secondary risk-matched score. Both are performance claims.
-        # Recalculate the rank from the same pinned 24-issuer price panel.
-        expected_rank=m1._sector_conditional_rank(selected,entry,exit_prices)
-        if subsequent_report.get("secondary_exact_sector_conditional_selection_rank")!=expected_rank:
-            raise EntryAnchorStop("Reported sector-conditional rank disagrees with source prices")
+        # The archived first-entry risk estimate must remain unchanged.
         # The first-entry artifact predates all exits. Its original preentry
         # risk estimate is immutable; later reports may not refit risk using
         # future returns or quietly change exposure fractions.
@@ -376,6 +370,11 @@ def verify(*,initial_report:dict,initial_prices:pd.DataFrame,
                     raise EntryAnchorStop("Reported risk-matched after-cost return disagrees with pinned risk")
             elif secondary is not None:
                 raise EntryAnchorStop("Unavailable risk match cannot report synthetic returns")
+        # Recheck descriptive rank only after the primary price-to-return
+        # reconciliation so stale prices still fail with the original error.
+        expected_rank=m1._sector_conditional_rank(selected,entry,exit_prices)
+        if subsequent_report.get("secondary_exact_sector_conditional_selection_rank")!=expected_rank:
+            raise EntryAnchorStop("Reported sector-conditional rank disagrees with source prices")
     except (KeyError,TypeError,IndexError,ValueError) as exc:
         if isinstance(exc,EntryAnchorStop):
             raise
