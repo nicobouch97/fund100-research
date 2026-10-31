@@ -1,6 +1,6 @@
 """Source-invented activity fixtures, NEVER actual LIVE order IDs/qty/times."""
 from copy import deepcopy
-from datetime import datetime,timezone
+from datetime import datetime,timedelta,timezone
 from pathlib import Path
 import pytest
 
@@ -81,7 +81,6 @@ def test_100_row_activity_page_is_incomplete_and_cannot_certify_full_history():
     ("transaction_time",None),
     ("transaction_time","2026-10-13"),
     ("transaction_time","2026-10-13T14:31:00"),
-    ("transaction_time","2026-10-31T13:00:00Z"),
     ("transaction_time","2026-09-30T23:59:59Z"),
     ("type","cancel"),("type",None),
 ])
@@ -89,6 +88,17 @@ def test_malformed_fills_or_wrong_timestamp_fail_before_source_classification(fi
     f=d();f["fills"][0][field]=value
     with pytest.raises(s.FillSourceStop):
         s.classify(**f)
+
+def test_future_fill_timestamp_is_rejected_relative_to_actual_observation():
+    """A fixed October timestamp eventually becomes historical; never use it
+    to test a future-time rejection after the calendar advances."""
+    f=d()
+    observed=datetime.fromisoformat(f["observed_at_utc"].replace("Z","+00:00"))
+    future=(observed+timedelta(days=1)).isoformat().replace("+00:00","Z")
+    f["fills"][0]["transaction_time"]=future
+    with pytest.raises(s.FillSourceStop,match="outside requested source window"):
+        s.classify(**f)
+
 
 def test_fills_with_unique_ids_and_partial_execution_are_visible_but_not_settled():
     f=d()
