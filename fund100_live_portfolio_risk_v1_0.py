@@ -200,7 +200,12 @@ def check_account_performance(
     # Latest LIVE equity must be included; broker daily history may lag.
     if abs(equities[-1] / current - Decimal("1")) > Decimal("0.25"):
         raise PortfolioRiskStop("Current account/history equity materially diverged.")
-    equities.append(current)
+    # The broker's 1D history can already contain the current equity mark.
+    # Appending that same mark manufactures a zero return, diluting realized
+    # volatility and potentially bypassing the unchanged HIGH 35% guard.
+    # Omitting an actually flat new session is conservative for volatility.
+    if equities[-1] != current:
+        equities.append(current)
 
     returns = []
     for older, newer in zip(equities, equities[1:]):
