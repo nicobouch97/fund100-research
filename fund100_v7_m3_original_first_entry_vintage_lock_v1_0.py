@@ -230,6 +230,12 @@ def conditional_dividend_costed_mark(*,initial_report:dict,initial_prices:pd.Dat
         _proof(subsequent_report,stage)
         original=_canonical_prices(initial_prices)
         later=_canonical_prices(subsequent_prices)
+        # The caller's claimed factor verdict is not independent evidence.
+        # Recompute it from the actual archived source panels and events.
+        if entry_revision_diagnostic(
+            initial_prices=original,subsequent_prices=later,
+            dividend_events=dividend_events)["dividend_factor_crosscheck"]!=crosscheck:
+            return blocked
         entry_day=pd.Timestamp(ORIGINAL_ENTRY_SESSION)
         if (original.index[-1]!=entry_day
             or not original.index.equals(later.loc[:entry_day].index)
