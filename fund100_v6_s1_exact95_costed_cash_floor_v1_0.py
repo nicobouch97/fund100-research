@@ -102,6 +102,126 @@ def simulate(prices:pd.DataFrame, *, cost_bps:int, targets:dict[str,float]|None=
     return pd.DataFrame(rows).set_index("date")
 
 
+
+def simulate_daily_cash_floor(prices:pd.DataFrame, *, cost_bps:int)->pd.DataFrame:
+    """Research sensitivity: restore a true 5% EOD cash floor with daily trims.
+
+    All positions and cash are accounted in dollars, including every fee.
+    Monthly 10pp-band decisions are unchanged. If natural appreciation
+    consumes the buffer, sell a pro-rata slice at that close; do NOT buy.
+    Assumes idealized fractional executions at close, instantaneous sale
+    proceeds and proportional costs. At $130.30 these tiny trades may be
+    below actual broker minimums. NOT an executable policy or a new alpha fit.
+    """
+    if cost_bps not in l1.COST_BPS:
+        raise S1EconomicsStop("Original 5/15/35 bps stress only")
+    data=l1.validate(prices)
+    rate=cost_bps/10_000.
+    nav=l1.NAV0
+    benchmark=l1.NAV0
+    cash=float(nav)
+    holdings={s:0. for s in l1.NAMES}
+    engaged=False
+    rows=[]
+    for t,date in enumerate(data.index):
+        if t:
+            previous=data.iloc[t-1]
+            current=data.iloc[t]
+            for symbol in l1.NAMES:
+                holdings[symbol]*=float(current[symbol]/previous[symbol])
+            benchmark*=float(current[l1.BENCH]/previous[l1.BENCH])
+        nav=cash+sum(holdings.values())
+        if not isfinite(nav) or nav<=0:
+            raise S1EconomicsStop("Invalid daily dollar NAV")
+        weights={s:holdings[s]/nav for s in l1.NAMES}
+        traded=False
+        turnover=0.
+        trim=0.
+        if l1.month_end_session(data.index,t) and max(
+                abs(TARGET[s]-weights[s]) for s in l1.NAMES)>=l1.BAND:
+            # Solve NAV_after = NAV_before - fee * sum(abs(target$-held$)).
+            # Fee is charged to cash, not silently financed by the buffer.
+            post=nav
+            for _ in range(100):
+                traded_dollars=sum(abs(TARGET[s]*post-holdings[s])
+                                   for s in l1.NAMES)
+                nxt=nav-rate*traded_dollars
+                if not isfinite(nxt) or nxt<=0:
+                    raise S1EconomicsStop("Monthly rebalance insolvent")
+                if abs(nxt-post)<=1e-12*nav:
+                    post=nxt
+                    break
+                post=nxt
+            else:
+                raise S1EconomicsStop("Monthly fee/target solver did not converge")
+            traded_dollars=sum(abs(TARGET[s]*post-holdings[s])
+                               for s in l1.NAMES)
+            post=nav-rate*traded_dollars
+            holdings={s:TARGET[s]*post for s in l1.NAMES}
+            cash=post-sum(holdings.values())
+            turnover+=traded_dollars/nav
+            nav=post
+            traded=True
+            engaged=True
+        # Close-to-close drift may erode the reserve on any session.
+        # S solves (cash + S*(1-fee))/(NAV-fee*S) == FLOOR.
+        if engaged and cash/nav<FLOOR-1e-12:
+            pre_nav=nav
+            deficit=FLOOR*nav-cash
+            trim=deficit/(1-rate*(1-FLOOR))
+            gross=sum(holdings.values())
+            if not 0<trim<=gross:
+                raise S1EconomicsStop("Cannot restore daily cash floor")
+            scale=1-trim/gross
+            holdings={s:value*scale for s,value in holdings.items()}
+            cash+=trim*(1-rate)
+            nav=cash+sum(holdings.values())
+            turnover+=trim/pre_nav
+            traded=True
+        if (not isfinite(nav) or not isfinite(cash)
+            or cash<0 or any(not isfinite(v) or v<0 for v in holdings.values())
+            or (engaged and cash/nav<FLOOR-1e-10)):
+            raise S1EconomicsStop("Daily costed cash floor not preserved")
+        weights={s:holdings[s]/nav for s in l1.NAMES}
+        rows.append({
+            "date":date,"nav":nav,"acwi_nav":benchmark,
+            "turnover":turnover,"trade":traded,
+            "gross_risk_exposure":sum(weights.values()),
+            "cash":cash/nav,"invested":engaged,
+            "risk_off_at_decision":False,"risk_month_end_vol":None,
+            "cash_floor_breach_before_trade":False,
+            "cash_floor_breach_end_of_day":bool(engaged and cash/nav<FLOOR-1e-10),
+            "single_symbol_breach_before_trade":False,
+            "single_symbol_breach_end_of_day":bool(engaged and max(weights.values())>.5+EPS),
+            "daily_floor_trim":trim>0,
+            "daily_floor_trim_usd_per_130_30":130.30*trim/(nav+rate*trim) if trim else 0.,
+            "month_end_rebalance":bool(traded and trim==0 and l1.month_end_session(data.index,t)),
+            **{"weight_"+s:weights[s] for s in l1.NAMES},
+        })
+    return pd.DataFrame(rows).set_index("date")
+
+
+def daily_floor_feasibility(path:pd.DataFrame,start:str)->dict:
+    """Descriptive ideal-fill economics and microticket feasibility only."""
+    sub=path.loc[start:]
+    invested=sub.loc[sub["invested"]]
+    trims=invested.loc[invested["daily_floor_trim"]]
+    notional=trims["daily_floor_trim_usd_per_130_30"]
+    return {
+        "costed_path":period_diagnostics(path,start),
+        "idealized_daily_pro_rata_trim_events":int(len(trims)),
+        "idealized_trims_below_1_usd_at_130_30":int((notional<1.).sum()),
+        "idealized_trims_below_5_usd_at_130_30":int((notional<5.).sum()),
+        "smallest_idealized_trim_usd_at_130_30":(
+            round(float(notional.min()),8) if len(trims) else None),
+        "daily_close_cash_floor_enforced_after_model_fees":bool(
+            len(invested) and (invested["cash"]>=FLOOR-1e-10).all()),
+        "instant_fractional_close_sales_and_cash_settlement_assumed":True,
+        "actual_broker_minimum_and_settlement_not_verified":True,
+        "research_sensitivity_not_released_trading_policy":True,
+    }
+
+
 def period_diagnostics(path:pd.DataFrame,start:str)->dict:
     m=l1.metrics(path,start)
     sub=path.loc[start:]
@@ -145,6 +265,16 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
                  risk["metrics"]["nav"]["annual_return_pct"]-full["nav"]["annual_return_pct"],5),
               "S1_cash_floor_satisfied_on_all_sessions":risk["cash_below_5pct_sessions_end_of_day"]==0,
             }
+    # Separate unoptimized daily-floor sensitivity on the SAME original
+    # frozen history. This does not alter the original monthly S1 result.
+    repair={}
+    for bp in l1.COST_BPS:
+        path=simulate_daily_cash_floor(data,cost_bps=bp)
+        repair[str(bp)]={
+            name:daily_floor_feasibility(path,start)
+            for name,start in (("2014_onward","2014-01-01"),
+                               ("2020_onward","2020-01-01"))
+        }
     floor_ok=all(
       x["actual_S1_95pct_target_with_drift"]["cash_below_5pct_sessions_end_of_day"]==0
       for section in results.values() for x in section.values())
@@ -162,6 +292,8 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
       "cash_floor_after_transaction_costs_not_broker_certified":True,
       "cost_bps_one_way":list(l1.COST_BPS),
       "results":results,
+      "daily_cash_floor_ideal_fill_sensitivity":repair,
+      "daily_cash_floor_ideal_fill_not_broker_executable":True,
       "cash_reserve_minimum_met_in_historical_model":floor_ok,
       "minimum_cash_floor_live_execution_requires_separate_design_review":not floor_ok,
       "independent_alpha_proved":False,

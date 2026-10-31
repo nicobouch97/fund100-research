@@ -106,3 +106,44 @@ def test_model_does_not_use_broker_credentials_or_order_requests():
     text=(Path(__file__).resolve().parent/"fund100_v6_s1_exact95_costed_cash_floor_v1_0.py").read_text()
     for invalid in ("ALPACA_LIVE_KEY","ALPACA_PAPER_KEY","/v2/orders","requests.post","paper_request("):
         assert invalid not in text
+
+
+def test_ideal_daily_cash_floor_repair_is_costed_and_never_under_five_percent():
+    p=sample(n=2100)
+    original=s.simulate(p,cost_bps=15)
+    repaired=s.simulate_daily_cash_floor(p,cost_bps=15)
+    active=repaired.loc[repaired["invested"]]
+    assert len(active)>0
+    assert active["daily_floor_trim"].sum()>0
+    assert (active["cash"]>=.05-1e-10).all()
+    assert repaired["cash_floor_breach_end_of_day"].sum()==0
+    assert original["cash_floor_breach_end_of_day"].sum()>0
+    assert repaired["turnover"].sum()>original["turnover"].sum()
+    assert repaired["nav"].iloc[-1]>0
+    assert not repaired[["nav","cash","gross_risk_exposure"]].isna().any().any()
+
+
+def test_cash_floor_trim_microtickets_are_not_misrepresented_as_executable():
+    path=s.simulate_daily_cash_floor(sample(n=2100),cost_bps=35)
+    report=s.daily_floor_feasibility(path,"2014-01-01")
+    assert report["idealized_daily_pro_rata_trim_events"]>0
+    assert report["idealized_trims_below_5_usd_at_130_30"]>0
+    assert report["daily_close_cash_floor_enforced_after_model_fees"]
+    assert report["instant_fractional_close_sales_and_cash_settlement_assumed"]
+    assert report["actual_broker_minimum_and_settlement_not_verified"]
+    assert report["research_sensitivity_not_released_trading_policy"]
+
+
+def test_repair_sensitivity_preserves_original_source_and_live_lock():
+    report=s.evaluate(sample(n=3500),source_sha256=l1.ORIGINAL_SHA)
+    assert set(report["daily_cash_floor_ideal_fill_sensitivity"])=={"5","15","35"}
+    for bp in ("5","15","35"):
+        for period in ("2014_onward","2020_onward"):
+            sensitivity=report["daily_cash_floor_ideal_fill_sensitivity"][bp][period]
+            assert sensitivity["daily_close_cash_floor_enforced_after_model_fees"]
+            assert sensitivity["actual_broker_minimum_and_settlement_not_verified"]
+            assert report["results"][bp][period]["actual_S1_95pct_target_with_drift"][
+                "cash_below_5pct_sessions_end_of_day"]>0
+    assert report["daily_cash_floor_ideal_fill_not_broker_executable"]
+    assert report["new_strategy_live_authorized"] is False
+    assert report["broker_calls"]==report["live_orders"]==0
