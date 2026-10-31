@@ -343,3 +343,49 @@ def test_saved_sector_rank_and_risk_matched_returns_cannot_be_fabricated():
 
     verified=check(a=a,p=p,b=b,q=q)
     assert verified["independently_recomputed_sector_rank_and_risk_matched_returns"]
+
+def test_forward_report_is_bound_to_exact_full_price_csv_not_just_exit_prices():
+    from hashlib import sha256
+    a,p,b,q=samples()
+    assert a["later_price_csv_sha256"]==sha256(
+        m3.p4l.canonical_csv(p).encode("utf-8")).hexdigest()
+    assert b["later_price_csv_sha256"]==sha256(
+        m3.p4l.canonical_csv(q).encode("utf-8")).hexdigest()
+    bad=deepcopy(b)
+    bad["later_price_csv_sha256"]="0"*64
+    with pytest.raises(m3.EntryAnchorStop,match="source digest"):
+        check(a=a,p=p,b=bad,q=q)
+    bad=deepcopy(b)
+    del bad["later_price_csv_sha256"]
+    with pytest.raises(m3.EntryAnchorStop,match="source digest"):
+        check(a=a,p=p,b=bad,q=q)
+    # This old lookback row does not change the observed entry/exit or
+    # any costed return, yet it must not silently alter the saved vintage.
+    altered=q.copy()
+    altered.loc["2026-10-22","AAPL"]*=1.00001
+    with pytest.raises(m3.EntryAnchorStop,match="source digest"):
+        check(a=a,p=p,b=b,q=altered)
+    bad=deepcopy(a)
+    bad["later_price_csv_sha256"]="0"*64
+    with pytest.raises(m3.EntryAnchorStop,match="source digest"):
+        check(a=bad,p=p,b=b,q=q)
+    # The real first-entry immutable GitHub artifact predates this new
+    # checksum field; do not erase the historical original source pin.
+    legacy=deepcopy(a)
+    del legacy["later_price_csv_sha256"]
+    assert check(a=legacy,p=p,b=b,q=q)["checked_later_complete_intervals"]==1
+
+
+def test_saved_interim_headline_cannot_disagree_with_costed_15bps_economics():
+    a,p,b,q=samples()
+    assert b["interim_excess_at_15bps_pp_not_alpha"]==(
+        b["costed_95pct_stocks_versus_95pct_spy"]["15"][
+            "stock_minus_spy_net_percentage_points"])
+    forged=deepcopy(b)
+    forged["interim_excess_at_15bps_pp_not_alpha"]+=1.
+    with pytest.raises(m3.EntryAnchorStop,match="interim headline"):
+        check(a=a,p=p,b=forged,q=q)
+    forged=deepcopy(a)
+    forged["interim_excess_at_15bps_pp_not_alpha"]=9.
+    with pytest.raises(m3.EntryAnchorStop,match="Anchor is not first"):
+        check(a=forged,p=p,b=b,q=q)
