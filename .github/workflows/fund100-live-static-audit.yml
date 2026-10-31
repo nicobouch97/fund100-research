@@ -285,6 +285,10 @@ on:
       - "test_fund100_v7_x5_capacity_aware_portfolio_router_v1_0.py"
       - "fund100_v7_x6_costed_multiasset_opportunity_selector_v1_0.py"
       - "test_fund100_v7_x6_costed_multiasset_opportunity_selector_v1_0.py"
+      # Research-only pilot-dollar execution and terminal risk signal must also pass full audit.
+      - "fund100_v7_x9_next_close_s1_risk_maintenance_v1_0.py"
+      - "test_fund100_v7_x9_next_close_s1_risk_maintenance_v1_0.py"
+      - ".github/workflows/fund100-v7-x9-delayed-risk-maintenance.yml"
       - "test_fund100_v5_*.py"
       - "fund100_etf_paper_*.py"
       - "test_fund100_etf_paper_*.py"
