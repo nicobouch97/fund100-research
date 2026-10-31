@@ -348,3 +348,74 @@ def test_first_stop_sensitivity_cannot_claim_alpha_or_live_authority():
     assert report["first_stop_exit_is_idealized_not_executable"]
     assert report["live_orders"]==report["broker_calls"]==0
     assert report["new_strategy_live_authorized"] is False
+
+
+def test_fresh_inception_does_not_inherit_a_prior_account_stop():
+    prices=sample(n=3500)
+    full=s.simulate(prices,cost_bps=15)
+    # An old account had a hard concentration breach in 2012.
+    old_day=full.loc["2012"].index[10]
+    full.loc[old_day,"single_symbol_breach_end_of_day"]=True
+    _,old=s.hypothetical_first_stop_next_close_cash(full,prices,cost_bps=15)
+    assert old["first_combined_breach_date"]<=old_day.date().isoformat()
+    fresh=s.fresh_inception_first_stop_sensitivity(
+        prices,cost_bps=15,reserve_fraction=None)
+    assert set(fresh)==set(s.FRESH_INCEPTION_DATES)
+    for label,start in s.FRESH_INCEPTION_DATES.items():
+        result=fresh[label]
+        assert result["requested_inception_date"]==start
+        assert result["first_observed_market_session"]>=start
+        assert result["first_invested_close"]>result["first_observed_market_session"]
+        assert not result["pre_inception_trades_or_stops_inherited"]
+        assert result["fresh_initial_nav"]==100.
+        assert result["not_a_live_restart_or_trading_authorization"]
+        assert result["previously_inspected_history_not_independent_alpha"]
+        stop=result["stop_and_exit_assumptions"]["first_combined_breach_date"]
+        assert stop is None or stop>=result["first_invested_close"]
+        assert result["fresh_inception_no_restart_metrics"]["nav"]["sessions"]>=250
+
+
+def test_fresh_inception_reuses_original_unmodified_simulation_and_costs():
+    prices=sample(n=3500)
+    for reserve in (None,.10,.15):
+        result=s.fresh_inception_first_stop_sensitivity(
+            prices,cost_bps=35,reserve_fraction=reserve)
+        for label,start in s.FRESH_INCEPTION_DATES.items():
+            launched=prices.loc[start:]
+            direct=(s.simulate(launched,cost_bps=35) if reserve is None
+                    else s.simulate_daily_cash_floor(
+                        launched,cost_bps=35,reserve_fraction=reserve,
+                        daily_trims=False))
+            stopped,assumptions=s.hypothetical_first_stop_next_close_cash(
+                direct,launched,cost_bps=35)
+            assert result[label]["stop_and_exit_assumptions"]==assumptions
+            assert result[label]["fresh_inception_no_restart_metrics"]==(
+                l1.metrics(stopped,start))
+
+
+def test_fresh_inception_never_promotes_a_new_live_or_hard_stop_restart():
+    report=s.evaluate(sample(n=3500),source_sha256=l1.ORIGINAL_SHA)
+    all_cohorts=report["fresh_inception_first_stop_next_close_cash_sensitivity"]
+    assert set(all_cohorts)=={"original_95pct","10pct_buffer","15pct_buffer"}
+    for policy in all_cohorts.values():
+        assert set(policy)=={"5","15","35"}
+        for cost in policy.values():
+            assert set(cost)==set(s.FRESH_INCEPTION_DATES)
+            assert all(x["not_a_live_restart_or_trading_authorization"]
+                       for x in cost.values())
+    assert report["fresh_inception_is_not_a_hard_stop_recovery"]
+    assert not report["new_strategy_live_authorized"]
+    assert report["live_orders"]==report["paper_orders"]==report["broker_calls"]==0
+
+
+def test_fresh_inception_rejects_short_data_and_unregistered_parameters():
+    prices=sample(n=3500)
+    with pytest.raises(s.S1EconomicsStop,match="Insufficient original sessions"):
+        s.fresh_inception_first_stop_sensitivity(
+            prices.loc[:"2021-01-01"],cost_bps=15,reserve_fraction=None)
+    with pytest.raises(s.S1EconomicsStop,match="registered buffers"):
+        s.fresh_inception_first_stop_sensitivity(
+            prices,cost_bps=15,reserve_fraction=.20)
+    with pytest.raises(s.S1EconomicsStop,match="registered buffers"):
+        s.fresh_inception_first_stop_sensitivity(
+            prices,cost_bps=0,reserve_fraction=None)
