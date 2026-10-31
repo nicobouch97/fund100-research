@@ -372,7 +372,7 @@ def test_fresh_inception_does_not_inherit_a_prior_account_stop():
         assert result["previously_inspected_history_not_independent_alpha"]
         stop=result["stop_and_exit_assumptions"]["first_combined_breach_date"]
         assert stop is None or stop>=result["first_invested_close"]
-        assert result["fresh_inception_no_restart_metrics"]["nav"]["sessions"]>=250
+        assert result["fresh_inception_no_restart_metrics"]["sessions"]>=250
 
 
 def test_fresh_inception_reuses_original_unmodified_simulation_and_costs():
