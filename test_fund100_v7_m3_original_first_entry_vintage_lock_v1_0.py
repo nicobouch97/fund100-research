@@ -384,7 +384,9 @@ def test_forward_report_is_bound_to_exact_full_price_csv_not_just_exit_prices():
     # any costed return, yet it must not silently alter the saved vintage.
     altered=q.copy()
     altered.loc["2026-10-22","AAPL"]*=1.00001
-    with pytest.raises(m3.EntryAnchorStop,match="source digest"):
+    # Full frozen-history consistency now fails before the later report's
+    # digest check; either guard independently prevents stale-price scoring.
+    with pytest.raises(m3.EntryAnchorStop,match="frozen historical prices"):
         check(a=a,p=p,b=b,q=altered)
     bad=deepcopy(a)
     bad["later_price_csv_sha256"]="0"*64
