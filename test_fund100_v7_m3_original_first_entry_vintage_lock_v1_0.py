@@ -498,3 +498,28 @@ def test_conditional_dividend_mark_rejects_unrelated_historical_revision():
         subsequent_prices=altered,dividend_events=[event],crosscheck=cross)
     assert mark["status"]=="NO_CONDITIONAL_COSTED_MARK"
     assert not mark["trading_authorized"]
+
+
+def test_sub_half_ppm_vendor_rounding_does_not_hide_material_source_revision():
+    _,p,_,q=samples()
+    altered=q.copy()
+    altered.loc[p.index,"COST"]*=1.-1.47/996.08
+    # The live 31 Oct original/later CSV pair exhibited harmless float32
+    # noise up to 0.00380572bp across unchanged tickers. Preserve the
+    # EXACT immutable M3 entry/history lock, but do not misclassify this
+    # sub-0.005bp rounding as an independent economic vendor correction.
+    altered.loc[p.index[20],"AAPL"]*=1.+3e-7  # 0.003bp
+    altered.loc[p.index[21],"SHY"]*=1.+4e-7   # 0.004bp
+    cross=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=altered,
+        dividend_events=[_dividend_event()])["dividend_factor_crosscheck"]
+    assert m3.MAX_UNRELATED_VENDOR_ROUNDING_BPS==0.005
+    assert cross["status"]=="MECHANICALLY_CONSISTENT_NOT_AUTHENTICATED"
+    assert cross["unexplained_nonentry_historical_drift"]==[]
+    # A genuine 0.006bp revision is still excluded from attribution.
+    altered.loc[p.index[22],"SPY"]*=1.+6e-7
+    cross=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=altered,
+        dividend_events=[_dividend_event()])["dividend_factor_crosscheck"]
+    assert cross["status"]=="INCOMPLETE_OR_CONTRADICTORY"
+    assert cross["unexplained_nonentry_historical_drift"][0]["symbol"]=="SPY"

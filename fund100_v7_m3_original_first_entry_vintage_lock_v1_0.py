@@ -26,6 +26,12 @@ FIRST_ENTRY_ARTIFACT_NAME="fund100-v7-m3-first-entry-20261027"
 ORIGINAL_ENTRY_SESSION=m1.ENTRY_SESSION
 BROKER_GETS=BROKER_POSTS=BROKER_ORDERS=0
 LIVE_AUTHORIZED=False
+# Yahoo's float32 adjusted-price export can differ by several 0.001bp
+# between downloads without an economic correction. The real 31 Oct
+# original-vs-later 270-row panel showed a maximum 0.00380572bp for SHY.
+# Keep the forensic attribution tolerance below 0.005bp (0.5ppm);
+# the original immutable source/entry verifier itself remains EXACT.
+MAX_UNRELATED_VENDOR_ROUNDING_BPS=0.005
 
 class EntryAnchorStop(ValueError):pass
 
@@ -141,7 +147,7 @@ def _dividend_factor_crosscheck(changes:list[dict],original:pd.DataFrame,
         for symbol in sorted(set(original.columns)-changed):
             ratio=later.loc[overlap,symbol]/original.loc[overlap,symbol]
             maximum=float((ratio-1).abs().max())*10000
-            if maximum>0.001:  # 0.001bp tolerance for CSV/float rounding
+            if maximum>MAX_UNRELATED_VENDOR_ROUNDING_BPS:  # quantized adjusted-close noise only
                 other_drift.append({"symbol":symbol,
                                     "max_unexplained_historical_drift_bps":
                                         round(maximum,8)})
