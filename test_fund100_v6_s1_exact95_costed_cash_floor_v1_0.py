@@ -484,3 +484,74 @@ def test_frozen_s1_first_breach_cause_is_research_only():
                     and detail["not_a_live_hard_stop_classification_or_trade_authority"])
     assert report["live_orders"]==report["broker_calls"]==0
     assert not report["new_strategy_live_authorized"]
+
+
+def test_month_end_close_is_signal_only_and_fixed_shares_fill_next_session():
+    prices=sample(n=2100)
+    delayed=s.simulate_next_close_monthly(
+        prices,cost_bps=15,reserve_fraction=.10)
+    signals=delayed.index[delayed["monthly_rebalance_signal"]]
+    fills=delayed.index[delayed["monthly_rebalance_execution"]]
+    assert len(signals)>0 and len(fills)>0
+    first=signals[0]
+    next_close=delayed.index[delayed.index.get_loc(first)+1]
+    assert not delayed.loc[first,"trade"]
+    assert delayed.loc[next_close,"trade"]
+    assert delayed.loc[next_close,"executed_prior_close_signal_session"]==(
+        first.date().isoformat())
+    for at in fills:
+        j=delayed.index.get_loc(at)
+        assert j>0
+        assert delayed.iloc[j-1]["monthly_rebalance_signal"]
+        assert delayed.loc[at,"executed_prior_close_signal_session"]==(
+            delayed.index[j-1].date().isoformat())
+    assert (delayed["cash"]>=0).all()
+    assert (delayed["gross_risk_exposure"]<=1+1e-10).all()
+    assert not delayed["daily_floor_trim"].any()
+
+
+def test_unaffordable_gap_does_not_create_margin_or_same_close_entry():
+    prices=sample(n=900)
+    first_signal=next(i for i in range(len(prices))
+                      if l1.month_end_session(prices.index,i))
+    # A large move AFTER the signal changes the cost of the FIXED share
+    # basket. Do not resize it using tomorrow's close or borrow cash.
+    for symbol in l1.NAMES:
+        prices.iloc[first_signal+1:,
+                    prices.columns.get_loc(symbol)]*=1.15
+    delayed=s.simulate_next_close_monthly(
+        prices,cost_bps=15,reserve_fraction=.05)
+    attempted=delayed.iloc[first_signal+1]
+    assert delayed.iloc[first_signal]["monthly_rebalance_signal"]
+    assert attempted["unaffordable_next_close_rebalance"]
+    assert not attempted["trade"]
+    assert not attempted["invested"]
+    assert attempted["cash"]==pytest.approx(1.)
+    assert (delayed["cash"]>=0).all()
+
+
+def test_next_close_research_is_separate_from_original_and_never_live_authority():
+    prices=sample(n=3500)
+    original_path=s.simulate_daily_cash_floor(
+        prices,cost_bps=15,reserve_fraction=.15,daily_trims=False)
+    delayed=s.simulate_next_close_monthly(
+        prices,cost_bps=15,reserve_fraction=.15)
+    assert not original_path["nav"].equals(delayed["nav"])
+    report=s.evaluate(prices,source_sha256=l1.ORIGINAL_SHA)
+    assert report["original_same_close_historical_results_preserved"]
+    assert report["next_close_monthly_research_does_not_prove_broker_fills_or_alpha"]
+    assert set(report["causal_next_close_monthly_rebalance_sensitivity"])=={
+        "original_95pct","10pct_buffer","15pct_buffer"}
+    for configs in report["causal_next_close_monthly_rebalance_sensitivity"].values():
+        for cost in ("5","15","35"):
+            for cohort in ("2014_onward","2020_onward"):
+                x=configs[cost][cohort]
+                assert x["no_same_close_fill_or_broker_minimum_assumed"]
+                assert x["legacy_95_fee_convention_not_used_for_timing_attribution"]
+                assert isinstance(x["fee_matched_same_close_cagr_pct"],float)
+                assert x["hard_account_stops_not_simulated"]
+                assert abs(x["month_end_signals"]-x["following_close_executions"])<=1+x["unaffordable_full_order_skips"]
+                assert x["unaffordable_full_order_skips"]>=0
+    assert report["live_orders"]==report["broker_calls"]==0
+    with pytest.raises(s.S1EconomicsStop):
+        s.simulate_next_close_monthly(prices,cost_bps=0,reserve_fraction=.10)
