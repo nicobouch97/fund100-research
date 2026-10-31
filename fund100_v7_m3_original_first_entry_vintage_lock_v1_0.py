@@ -34,6 +34,44 @@ def _canonical_prices(raw:pd.DataFrame)->pd.DataFrame:
     except p4l.BroadStockStop as e:
         raise EntryAnchorStop("Unverifiable original price schema") from e
 
+def entry_revision_diagnostic(*,initial_prices:pd.DataFrame,
+                              subsequent_prices:pd.DataFrame)->dict:
+    """Describe blocked adjusted-close drift; never qualify revised returns.
+
+    Vendor auto-adjusted prices can change after corporate actions or data
+    corrections. This does not infer the cause or reconstruct total returns.
+    """
+    original=_canonical_prices(initial_prices)
+    later=_canonical_prices(subsequent_prices)
+    date=pd.Timestamp(ORIGINAL_ENTRY_SESSION)
+    if (original.index[-1]!=date or date not in later.index
+        or set(original.columns)!=set(later.columns)):
+        raise EntryAnchorStop("Cannot diagnose nonmatching entry price panels")
+    changes=[]
+    for ticker in sorted(original.columns):
+        anchor=float(original.loc[date,ticker])
+        current=float(later.loc[date,ticker])
+        if format(anchor,".10f")!=format(current,".10f"):
+            changes.append({
+                "symbol":ticker,
+                "entry_anchor_adjusted_close":round(anchor,10),
+                "later_vintage_entry_adjusted_close":round(current,10),
+                "relative_change_bps":round(10000*(current/anchor-1),8),
+            })
+    return {
+        "schema":"FUND100_V7_M3_BLOCKED_ENTRY_VENDOR_REVISION_DIAGNOSTIC_V1",
+        "status":"BLOCKED_REVISED_ENTRY_VENDOR_VINTAGE_RESEARCH_ONLY",
+        "entry_session":ORIGINAL_ENTRY_SESSION,
+        "changed_entry_symbols":len(changes),
+        "total_compared_symbols":len(original.columns),
+        "changes":changes,
+        "cannot_distinguish_corporate_actions_from_vendor_corrections":True,
+        "not_a_return_or_alpha_estimate":True,
+        "do_not_replace_original_entry_anchor":True,
+        "no_trading_authority":True,
+        "broker_gets":0,"broker_posts":0,"broker_orders":0,
+    }
+
 def _proof(r:dict,required_stage:str):
     if (type(r) is not dict or r.get("schema")!=m1.SCHEMA
         or r.get("status")!=required_stage
@@ -201,13 +239,27 @@ def main():
     p.add_argument("--latest-dir",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)
     a=p.parse_args()
-    result=verify(
-        initial_report=json.loads((a.first_entry_dir/
-            "frozen-forward-stocks-versus-SPY.json").read_text()),
-        initial_prices=_csv(a.first_entry_dir/"new-price-manifest.csv"),
-        subsequent_report=json.loads((a.latest_dir/
-            "frozen-forward-stocks-versus-SPY.json").read_text()),
-        subsequent_prices=_csv(a.latest_dir/"new-price-manifest.csv"))
+    initial_prices=_csv(a.first_entry_dir/"new-price-manifest.csv")
+    subsequent_prices=_csv(a.latest_dir/"new-price-manifest.csv")
+    try:
+        result=verify(
+            initial_report=json.loads((a.first_entry_dir/
+                "frozen-forward-stocks-versus-SPY.json").read_text()),
+            initial_prices=initial_prices,
+            subsequent_report=json.loads((a.latest_dir/
+                "frozen-forward-stocks-versus-SPY.json").read_text()),
+            subsequent_prices=subsequent_prices)
+    except EntryAnchorStop as exc:
+        if str(exc)=="Previously observed entry close was vendor-revised":
+            # Persist forensic evidence before failing closed. Never replace
+            # the original immutable entry vintage or claim interim alpha.
+            diagnostic=entry_revision_diagnostic(
+                initial_prices=initial_prices,subsequent_prices=subsequent_prices)
+            a.output.parent.mkdir(parents=True,exist_ok=True)
+            a.output.write_text(json.dumps(
+                diagnostic,sort_keys=True,indent=2)+"\n")
+            print("Blocked revised entry price vintage; forensic artifact written.")
+        raise
     a.output.write_text(json.dumps(result,sort_keys=True,indent=2)+"\n")
     print(result["status"],"source price symbols:",result["entry_date_price_symbols_compared"])
     print("Original model entry locked; NO BROKER and NO proven alpha.")

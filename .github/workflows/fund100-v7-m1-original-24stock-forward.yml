@@ -182,9 +182,12 @@ jobs:
              --first-entry-dir /tmp/fund100-v7-m3-earliest-first-entry \
              --latest-dir /tmp/fund100-v7-m1-observed \
              --output /tmp/fund100-v7-m1-observed/source-first-entry-vintage-audit.json
+      # Preserve the read-only forensic report even when a revised vendor
+      # entry price correctly blocks return qualification and fails this job.
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: fund100-v7-m1-frozen-24issuer-21session-SPY-${{ github.run_id }}
           path: /tmp/fund100-v7-m1-observed/
           retention-days: 90
-          if-no-files-found: error
+          if-no-files-found: warn

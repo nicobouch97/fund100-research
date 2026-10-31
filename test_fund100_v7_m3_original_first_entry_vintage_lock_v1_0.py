@@ -138,3 +138,51 @@ def test_saved_nyse_receipt_and_horizon_cannot_claim_phantom_session():
         "official_nyse_session_close_utc"]="2026-10-28T00:00:00Z"
     with pytest.raises(m3.EntryAnchorStop,match="disagrees"):
         check(a=a,p=p,b=bad,q=q)
+
+def test_revised_entry_diagnostic_preserves_anchor_and_blocks_alpha():
+    a,p,b,q=samples()
+    altered=q.copy()
+    altered.loc["2026-10-27","SPY"]*=1.0001
+    altered.loc["2026-10-27","AAPL"]*=0.9999
+    result=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=altered)
+    assert result["status"]=="BLOCKED_REVISED_ENTRY_VENDOR_VINTAGE_RESEARCH_ONLY"
+    assert result["changed_entry_symbols"]==2
+    assert result["total_compared_symbols"]==26
+    assert [x["symbol"] for x in result["changes"]]==["AAPL","SPY"]
+    assert result["changes"][0]["relative_change_bps"]==-1.0
+    assert result["changes"][1]["relative_change_bps"]==1.0
+    assert result["not_a_return_or_alpha_estimate"] is True
+    assert result["do_not_replace_original_entry_anchor"] is True
+    assert result["cannot_distinguish_corporate_actions_from_vendor_corrections"]
+    assert result["broker_gets"]==result["broker_posts"]==result["broker_orders"]==0
+    with pytest.raises(m3.EntryAnchorStop,match="vendor-revised"):
+        m3.verify(initial_report=a,initial_prices=p,
+                  subsequent_report=b,subsequent_prices=altered)
+
+
+def test_failed_cli_writes_diagnostic_but_remains_failed(tmp_path,monkeypatch):
+    import json
+    import sys
+    a,p,b,q=samples()
+    altered=q.copy()
+    altered.loc["2026-10-27","SHY"]*=0.9995
+    first=tmp_path/"first"
+    latest=tmp_path/"latest"
+    first.mkdir()
+    latest.mkdir()
+    (first/"frozen-forward-stocks-versus-SPY.json").write_text(json.dumps(a))
+    (latest/"frozen-forward-stocks-versus-SPY.json").write_text(json.dumps(b))
+    (first/"new-price-manifest.csv").write_text(m3.p4l.canonical_csv(p))
+    (latest/"new-price-manifest.csv").write_text(m3.p4l.canonical_csv(altered))
+    output=tmp_path/"diagnostics"/"audit.json"
+    monkeypatch.setattr(sys,"argv",[
+        "m3","--first-entry-dir",str(first),
+        "--latest-dir",str(latest),"--output",str(output)])
+    with pytest.raises(m3.EntryAnchorStop,match="vendor-revised"):
+        m3.main()
+    saved=json.loads(output.read_text())
+    assert saved["changed_entry_symbols"]==1
+    assert saved["changes"][0]["symbol"]=="SHY"
+    assert saved["not_a_return_or_alpha_estimate"] is True
+    assert saved["no_trading_authority"] is True
