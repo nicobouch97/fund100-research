@@ -855,6 +855,27 @@ def main():
                   "COSTED_CAGR_PCT",m["nav"]["annual_return_pct"],
                   "ACWI_CAGR_PCT",m["acwi_nav"]["annual_return_pct"],
                   "RESEARCH_ONLY",True)
+    for label in ("original_95pct","10pct_buffer","15pct_buffer"):
+        for era in ("2014_onward","2020_onward"):
+            d=report["causal_next_close_monthly_rebalance_sensitivity"][
+                label]["15"][era]
+            metrics=d["costed_path"]
+            prior=(report["results"]["15"][era]["actual_S1_95pct_target_with_drift"]
+                   if label=="original_95pct" else
+                   report["fixed_10_and_15pct_passive_cash_buffer_sensitivities"][
+                       label[:2]]["15"][era]["costed_path"])
+            print("NEXT_CLOSE_MONTHLY_CAUSAL",label,era,
+                  "CAGR_PCT",metrics["metrics"]["nav"]["annual_return_pct"],
+                  "ORIGINAL_SAME_CLOSE_CAGR_PCT",
+                  prior["metrics"]["nav"]["annual_return_pct"],
+                  "CASH_BREACH_CLOSES",metrics["cash_below_5pct_sessions_end_of_day"],
+                  "CONCENTRATION_BREACH_CLOSES",metrics["sector_weight_over_50pct_sessions"],
+                  "HARD_RISK_BREACH_CLOSES",metrics["high_risk_stop_feasibility"][
+                      "any_high_account_risk_breach_closes"],
+                  "SIGNALS",d["month_end_signals"],
+                  "EXECUTED",d["following_close_executions"],
+                  "UNAFFORDABLE",d["unaffordable_full_order_skips"],
+                  "NOT_EXECUTABLE_OR_ALPHA",True)
     print("NOT_ALPHA_NOT_BROKER_RELEASE",report["live_orders"])
 
 
