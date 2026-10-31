@@ -117,12 +117,13 @@ def inspect_postorder(*,signed_sources:dict,owner_sources:dict,
             key=broker_key,secret=broker_secret,
             transport=broker_transport,now_utc=now_utc)
         if (observed.get("status")!=
-            "SIX_BROKER_GET_ORIGINAL_ACWI_FILL_AND_FLAT_STRUCTURALLY_MATCH"
+            "BOUNDED_BROKER_GET_ORIGINAL_ACWI_FILL_AND_FLAT_STRUCTURALLY_MATCH"
             or observed.get("broker_receipt_to_all_FILLS_structurally_verified")
                 is not True
             or observed.get("original_ACWI_flat_and_other_three_holdings_unchanged")
                 is not True
-            or observed.get("broker_GET_count")!=6
+            or type(observed.get("broker_GET_count")) is not int
+            or not broker.GET_COUNT<=observed["broker_GET_count"]<=broker.MAX_GET_COUNT
             or observed.get("broker_POST_count")!=0
             or observed.get("resend_original_ACWI_permitted") is not False
             or observed.get("credentialless_injected_transport_used") is not mock
@@ -142,7 +143,7 @@ def inspect_postorder(*,signed_sources:dict,owner_sources:dict,
         "github_provider_immutable_owner_and_seq2_asset_verified":True,
         "original_broker_receipt_FILLS_and_flat_positions_verified":True,
         "real_remote_authentication_proven_by_this_run":not mock,
-        "broker_GETs":6,
+        "broker_GETs":observed["broker_GET_count"],
         "private_Git_GETs":4,
         "provider_immutable_GETs":2,
         "broker_POSTs":0,
