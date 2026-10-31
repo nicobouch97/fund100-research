@@ -412,3 +412,89 @@ def test_saved_interim_headline_cannot_disagree_with_costed_15bps_economics():
     forged["interim_excess_at_15bps_pp_not_alpha"]=9.
     with pytest.raises(m3.EntryAnchorStop,match="Anchor is not first"):
         check(a=forged,p=p,b=b,q=q)
+
+
+def _conditional_dividend_fixture():
+    a,p,_,q=samples()
+    # Synthetic next-session dividend with a frozen, genuine pre-event
+    # entry observation and a complete later vendor adjusted-price rebase.
+    previous_raw=float(q.loc["2026-10-27","COST"])
+    event={**_dividend_event(ex_date="2026-10-28"),
+           "previous_unadjusted_close_usd":previous_raw}
+    factor=1.-event["cash_dividend_usd"]/previous_raw
+    adjusted=q.copy()
+    adjusted.loc[p.index,"COST"]*=factor
+    original,first,_,ts=fixtures("2026-10-28",capture="2026-10-28T23:45:00Z")
+    later=m1.evaluate(original_manifest=original,original_prices=first,
+                      later_prices=adjusted,captured_utc=ts)
+    diagnostic=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=adjusted,
+        dividend_events=[event])
+    return a,p,later,adjusted,event,diagnostic
+
+
+def test_conditional_dividend_forward_mark_reconciles_all_costs_without_qualification():
+    a,p,b,q,event,diag=_conditional_dividend_fixture()
+    result=m3.conditional_dividend_costed_mark(
+        initial_report=a,initial_prices=p,subsequent_report=b,
+        subsequent_prices=q,dividend_events=[event],
+        crosscheck=diag["dividend_factor_crosscheck"])
+    assert result["status"]=="CONDITIONAL_DIVIDEND_REBASE_COSTED_SENSITIVITY_ONLY"
+    assert result["original_entry_observation_preserved"]
+    assert result["previous_raw_close_consistency_checked"]
+    assert result["full_frozen_historical_factor_consistency_checked"]
+    assert result["dividend_symbols"]==["COST"]
+    assert result["observed_holding_intervals"]==1
+    assert not result["return_qualification"]
+    assert not result["signal_alpha_proven"]
+    assert not result["trading_authorized"]
+    assert result["broker_orders"]==0
+    for bps in ("5","15","35"):
+        row=result["costed_marks"][bps]
+        saved=b["costed_95pct_stocks_versus_95pct_spy"][bps]
+        assert row["stock_minus_spy_percentage_points"]==(
+            saved["stock_minus_spy_net_percentage_points"])
+        assert row["stock_minus_frozen_sector_control_pp"]==(
+            saved["secondary_same_sector_original_cohort"][
+                "selected_minus_same_sector_net_percentage_points"])
+    # The official M3 qualification MUST still reject the revised entry.
+    with pytest.raises(m3.EntryAnchorStop,match="vendor-revised"):
+        m3.verify(initial_report=a,initial_prices=p,
+                  subsequent_report=b,subsequent_prices=q)
+
+
+def test_conditional_dividend_mark_rejects_forged_return_report_and_raw_close():
+    a,p,b,q,event,diag=_conditional_dividend_fixture()
+    bad=deepcopy(b)
+    bad["costed_95pct_stocks_versus_95pct_spy"]["15"][
+        "stock_minus_spy_net_percentage_points"]+=1.
+    mark=m3.conditional_dividend_costed_mark(
+        initial_report=a,initial_prices=p,subsequent_report=bad,
+        subsequent_prices=q,dividend_events=[event],
+        crosscheck=diag["dividend_factor_crosscheck"])
+    assert mark["status"]=="NO_CONDITIONAL_COSTED_MARK"
+    assert not mark["return_qualification"]
+    bad_event={**event,"previous_unadjusted_close_usd":
+               event["previous_unadjusted_close_usd"]+3.}
+    bad_cross=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=q,
+        dividend_events=[bad_event])["dividend_factor_crosscheck"]
+    mark=m3.conditional_dividend_costed_mark(
+        initial_report=a,initial_prices=p,subsequent_report=b,
+        subsequent_prices=q,dividend_events=[bad_event],crosscheck=bad_cross)
+    assert mark["status"]=="NO_CONDITIONAL_COSTED_MARK"
+
+
+def test_conditional_dividend_mark_rejects_unrelated_historical_revision():
+    a,p,b,q,event,diag=_conditional_dividend_fixture()
+    altered=q.copy()
+    altered.loc[p.index[20],"SPY"]*=1.00002
+    cross=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=altered,
+        dividend_events=[event])["dividend_factor_crosscheck"]
+    assert cross["status"]=="INCOMPLETE_OR_CONTRADICTORY"
+    mark=m3.conditional_dividend_costed_mark(
+        initial_report=a,initial_prices=p,subsequent_report=b,
+        subsequent_prices=altered,dividend_events=[event],crosscheck=cross)
+    assert mark["status"]=="NO_CONDITIONAL_COSTED_MARK"
+    assert not mark["trading_authorized"]
