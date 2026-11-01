@@ -29,6 +29,13 @@ MAX_DAILY_LOSS=-0.06
 MAX_DRAWDOWN=-0.20
 MAX_REALIZED_VOL=0.35
 VOL_OBSERVATIONS=63
+ORIGINAL_RISK_HISTORY="ORIGINAL_X9_LIFETIME_PEAK_63_RETURN_VOL"
+BROKER_HISTORY_PROXY="BROKER_70_CLOSE_69_RETURN_WINDOW_PROXY"
+# Read-only research approximation of the existing broker-history guard.
+# The actual account source, funding-adjusted marks and duplicate timestamp
+# ambiguity cannot be authenticated from historical ETF adjusted closes.
+BROKER_HISTORY_CLOSES=70
+BROKER_MIN_EQUITY_CLOSES=6
 MAX_SINGLE=0.50
 MAX_GROSS=0.95
 MIN_CASH=0.05
@@ -67,7 +74,11 @@ def _validate_view(prices,start,cost_bps):
         raise RiskStudyStop("Suspicious corporate action/return discontinuity")
     return view
 
-def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.0):
+def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.0,
+             risk_history_variant:str=ORIGINAL_RISK_HISTORY):
+    if type(risk_history_variant) is not str or risk_history_variant not in (
+            ORIGINAL_RISK_HISTORY,BROKER_HISTORY_PROXY):
+        raise RiskStudyStop("Unregistered account risk-history sensitivity")
     if type(capital_usd) is not float or capital_usd not in CAPITAL_SENSITIVITIES:
         raise RiskStudyStop("Unregistered capital-size sensitivity")
     data=_validate_view(prices,start,cost_bps)
@@ -92,6 +103,7 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
     pending=None
     log=[]
     fund_returns=[]
+    nav_history=[]
     peak=capital_usd
     prev_nav=capital_usd
     worst_dd=0.0
@@ -145,6 +157,7 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
             stop_execution_nav=nav
         day_return=nav/prev_nav-1 if i>0 else nav/capital_usd-1
         if i>0:fund_returns.append(day_return)
+        nav_history.append(nav)
         peak=max(peak,nav)
         drawdown=nav/peak-1
         worst_dd=min(worst_dd,drawdown)
@@ -154,25 +167,47 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
         if largest>MAX_SINGLE+1e-12:breaches["single"]+=1
         if gross_weight>MAX_GROSS+1e-12:breaches["gross"]+=1
         if cash_weight<MIN_CASH-1e-12:breaches["cash"]+=1
-        if day_return<=MAX_DAILY_LOSS:breaches["daily_loss"]+=1
-        if drawdown<=MAX_DRAWDOWN:breaches["drawdown"]+=1
-        vol=None
-        if len(fund_returns)>=VOL_OBSERVATIONS:
-            vol=float(np.std(fund_returns[-VOL_OBSERVATIONS:],ddof=1)*sqrt(252))
-            if vol>MAX_REALIZED_VOL:breaches["volatility"]+=1
+        if risk_history_variant==ORIGINAL_RISK_HISTORY:
+            # Preserve every original X9 STOP decision and its frozen output.
+            risk_drawdown=drawdown
+            daily_hit=day_return<=MAX_DAILY_LOSS
+            draw_hit=risk_drawdown<=MAX_DRAWDOWN
+            vol=(float(np.std(fund_returns[-VOL_OBSERVATIONS:],ddof=1)*sqrt(252))
+                 if len(fund_returns)>=VOL_OBSERVATIONS else None)
+        else:
+            # The existing LIVE portfolio-history reader permits at most 70
+            # close marks, calculates sample volatility from up to 69 returns,
+            # and uses strict > threshold breaches. The extra zero-return
+            # interpretation is conservative for ambiguous current marks.
+            # This is a *proxy*, not broker account risk verification.
+            recent=nav_history[-BROKER_HISTORY_CLOSES:]
+            risk_drawdown=nav/max(recent)-1
+            daily_hit=day_return<MAX_DAILY_LOSS
+            draw_hit=risk_drawdown<MAX_DRAWDOWN
+            vol=None
+            if len(recent)>=BROKER_MIN_EQUITY_CLOSES:
+                returns=np.asarray(
+                    [recent[j]/recent[j-1]-1 for j in range(1,len(recent))],
+                    dtype=float)
+                observed=float(np.std(returns,ddof=1)*sqrt(252))
+                ambiguous_flat=float(np.std(
+                    np.append(returns,0.0),ddof=1)*sqrt(252))
+                vol=max(observed,ambiguous_flat)
+        vol_hit=vol is not None and vol>MAX_REALIZED_VOL
+        if daily_hit:breaches["daily_loss"]+=1
+        if draw_hit:breaches["drawdown"]+=1
+        if vol_hit:breaches["volatility"]+=1
         # A hard STOP observed at the final available close is still a
         # genuine signal. It cannot be executed inside this historical panel.
-        if (not forced_stop and
-            (day_return<=MAX_DAILY_LOSS or drawdown<=MAX_DRAWDOWN
-             or (vol is not None and vol>MAX_REALIZED_VOL))):
+        if not forced_stop and (daily_hit or draw_hit or vol_hit):
             forced_stop=True
             stop_signal=when
             stop_signal_nav=nav
             stop_signal_reasons=[
                 name for name,triggered in (
-                    ("daily_loss",day_return<=MAX_DAILY_LOSS),
-                    ("drawdown",drawdown<=MAX_DRAWDOWN),
-                    ("volatility",vol is not None and vol>MAX_REALIZED_VOL),
+                    ("daily_loss",daily_hit),
+                    ("drawdown",draw_hit),
+                    ("volatility",vol_hit),
                 ) if triggered
             ]
         if forced_stop:
@@ -232,6 +267,9 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
         "last_session":data.index[-1].date().isoformat(),
         "sessions":len(data),
         "model_starting_capital_usd":_metric(capital_usd),
+        "risk_history_variant":risk_history_variant,
+        "broker_70_close_proxy_is_not_authenticated_account_risk":True,
+        "broker_cashflow_and_current_mark_timestamp_not_observed":True,
         "initial_cash_reserve_usd":_metric(capital_usd*MIN_CASH),
         "modeled_minimum_sell_notional_usd":_metric(MODELED_MIN_SELL_USD),
         "cost_bps_per_traded_side":cost_bps,
@@ -285,7 +323,10 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
         "actual_broker_orders":0,
     }
 
-def analyze(prices:pd.DataFrame,digest:str):
+def analyze(prices:pd.DataFrame,digest:str,*,
+            include_broker_window_proxy:bool=False):
+    if type(include_broker_window_proxy) is not bool:
+        raise RiskStudyStop("Invalid broker-history proxy selection")
     if digest!=SOURCE_SHA256:raise RiskStudyStop("Unverified original historic source")
     try:source=old.validate_prices(prices)
     except old.V6ResearchStop as exc:raise RiskStudyStop("Invalid original fixed source") from exc
@@ -293,6 +334,31 @@ def analyze(prices:pd.DataFrame,digest:str):
                      for name,start in WINDOWS.items()} for b in COSTS}
     pilot_results={str(b):{name:simulate(source,start=start,cost_bps=b,capital_usd=130.30)
                            for name,start in WINDOWS.items()} for b in COSTS}
+    # Optional predeclared *window semantics* comparison. It is not a
+    # fitted strategy, a new STOP policy or an independent return holdout.
+    # Keep original 100/130.30 X9 paths unchanged for historical continuity.
+    proxy=None
+    comparison=None
+    if include_broker_window_proxy:
+        proxy={str(b):{
+            name:simulate(source,start=start,cost_bps=b,capital_usd=130.30,
+                          risk_history_variant=BROKER_HISTORY_PROXY)
+            for name,start in WINDOWS.items()} for b in COSTS}
+        comparison={cost:{
+            name:{
+                "original_first_stop_signal":pilot_results[cost][name][
+                    "first_stop_signal_close"],
+                "broker_window_proxy_first_stop_signal":proxy[cost][name][
+                    "first_stop_signal_close"],
+                "first_stop_signal_unchanged":pilot_results[cost][name][
+                    "first_stop_signal_close"]==proxy[cost][name][
+                    "first_stop_signal_close"],
+                "original_costed_full_window_cagr_pct":pilot_results[cost][name][
+                    "managed_s1_net_exit_costed_cagr_pct"],
+                "proxy_costed_full_window_cagr_pct":proxy[cost][name][
+                    "managed_s1_net_exit_costed_cagr_pct"],
+                "not_independent_alpha_or_live_stop_evidence":True,
+            } for name in WINDOWS} for cost in proxy}
     return {
         "schema":SCHEMA,
         "status":"REPEATEDLY_STUDIED_CAUSAL_RISK_REPAIR_RETROSPECTIVE_NO_ORDER",
@@ -317,6 +383,10 @@ def analyze(prices:pd.DataFrame,digest:str):
             "research_min_sell_usd":MODELED_MIN_SELL_USD},
         "results":results,
         "pilot_sized_results":pilot_results,
+        "broker_70_close_window_proxy":proxy,
+        "broker_70_close_window_comparison":comparison,
+        "broker_window_proxy_explicitly_requested":include_broker_window_proxy,
+        "broker_window_proxy_not_complete_live_risk_equivalence":True,
         "original_100usd_research_comparator_preserved":True,
         "fixed_one_dollar_minimum_is_absolute_not_a_portfolio_percentage":True,
         "full_position_stop_exit_exception_is_hypothetical_not_broker_proof":True,
@@ -327,7 +397,7 @@ def main():
     p.add_argument("--output",type=Path,required=True)
     args=p.parse_args()
     data,digest=old.load_frozen(Path("research_lab/frozen_history_v2.csv"))
-    result=analyze(data,digest)
+    result=analyze(data,digest,include_broker_window_proxy=True)
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps(result,sort_keys=True,indent=2)+"\n")
     for name,period in result["results"]["15"].items():
@@ -344,5 +414,12 @@ def main():
               "sell sides",period["modeled_sell_sides_completed"],
               "skipped minimum sides",period["modeled_sell_sides_below_minimum_skipped"],
               "pending after last close",period["pending_trade_after_last_close_not_assumed_executed"])
+    for name,comparison in result["broker_70_close_window_comparison"]["15"].items():
+        print("BROKER_WINDOW_PROXY",name,
+              "original STOP",comparison["original_first_stop_signal"],
+              "proxy STOP",comparison["broker_window_proxy_first_stop_signal"],
+              "original CAGR",comparison["original_costed_full_window_cagr_pct"],
+              "proxy CAGR",comparison["proxy_costed_full_window_cagr_pct"],
+              "NOT LIVE OR ALPHA",True)
     print("Only historical risk-maintenance economics; no trading permission.")
 if __name__=="__main__":main()
