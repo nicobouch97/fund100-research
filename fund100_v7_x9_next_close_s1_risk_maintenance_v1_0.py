@@ -43,6 +43,7 @@ MIN_CASH=0.05
 REPAIR_SINGLE=0.48
 REPAIR_GROSS=0.90
 MODELED_MIN_SELL_USD=1.00
+MODELED_MAX_ROUTINE_TICKET_USD=65.00
 # Keep the original $100 research NAV; separately evaluate the real pilot size.
 # The absolute $1 modeled minimum is deliberately NOT scaled with capital.
 CAPITAL_SENSITIVITIES=(100.0,130.30)
@@ -74,6 +75,36 @@ def _validate_view(prices,start,cost_bps):
         raise RiskStudyStop("Suspicious corporate action/return discontinuity")
     return view
 
+def _monthly_execution_hold_reason(units,cash,px,quantities,fee):
+    """Conservative atomic-basket gate at the *execution* close.
+
+    This is a retrospective feasibility test, not an Alpaca quote, settlement
+    certificate or a production order permit. Reject the entire hypothetical
+    basket if any leg cannot be funded or would breach the existing pilot
+    per-order limits or S1 post-fee portfolio envelope.
+    """
+    signed={s:q*px[s] for s,q in quantities.items()}
+    sell=sum(-v for v in signed.values() if v<0)
+    buy=sum(v for v in signed.values() if v>0)
+    if any(-q>units[s]+1e-10 for s,q in quantities.items()):
+        return "SELL_EXCEEDS_OWNED_QUANTITY"
+    new_cash=cash+sell*(1-fee)-buy*(1+fee)
+    if buy*(1+fee)>cash+1e-8 or new_cash< -1e-8:
+        return "BUY_REQUIRES_UNVERIFIED_SAME_EVENT_SELL_CREDIT"
+    if any((abs(v)<MODELED_MIN_SELL_USD-1e-10 or
+            abs(v)>MODELED_MAX_ROUTINE_TICKET_USD+1e-10)
+           for v in signed.values() if abs(v)>1e-10):
+        return "ROUTINE_TICKET_OUTSIDE_PILOT_DOLLAR_LIMITS"
+    post={s:(units[s]+quantities.get(s,0.0))*px[s] for s in S1}
+    post_nav=new_cash+sum(post.values())
+    if (post_nav<=0 or not np.isfinite(post_nav) or
+        any(v< -1e-8 for v in post.values()) or
+        new_cash/post_nav<MIN_CASH-1e-12 or
+        sum(post.values())/post_nav>MAX_GROSS+1e-12 or
+        max(post.values())/post_nav>MAX_SINGLE+1e-12):
+        return "POST_FEE_CASH_GROSS_OR_CONCENTRATION_BREACH"
+    return None
+
 def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.0,
              risk_history_variant:str=ORIGINAL_RISK_HISTORY,
              prefunded_monthly:bool=False):
@@ -97,6 +128,7 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
     skipped_sides=0
     stop_full_position_minimum_exceptions=0
     monthly_signals=monthly_executions=monthly_funding_holds=0
+    monthly_execution_envelope_holds=0
     monthly_buy_sides=0
     monthly_buy_notional=monthly_buy_fees=0.0
     forced_stop=False
@@ -128,17 +160,24 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
                 signed={s:q*px[s] for s,q in pending["quantities"].items()}
                 sell=sum(-v for v in signed.values() if v<0)
                 buy=sum(v for v in signed.values() if v>0)
-                impossible_sell=any(
-                    -q>units[s]+1e-10 for s,q in pending["quantities"].items())
                 opening_cash=cash
                 new_cash=opening_cash+sell*(1-fee)-buy*(1+fee)
-                if (impossible_sell or buy*(1+fee)>opening_cash+1e-8
-                    or new_cash < -1e-8):
-                    monthly_funding_holds+=1
+                hold_reason=_monthly_execution_hold_reason(
+                    units,opening_cash,px,pending["quantities"],fee)
+                if hold_reason is not None:
+                    funding_hold=hold_reason in (
+                        "SELL_EXCEEDS_OWNED_QUANTITY",
+                        "BUY_REQUIRES_UNVERIFIED_SAME_EVENT_SELL_CREDIT")
+                    if funding_hold:
+                        monthly_funding_holds+=1
+                    else:
+                        monthly_execution_envelope_holds+=1
                     log.append({
                         "signal_session":pending["signal_session"],
                         "execution_session":when,
-                        "kind":"MONTHLY_PREFUNDED_HOLD",
+                        "kind":("MONTHLY_PREFUNDED_HOLD" if funding_hold
+                                else "MONTHLY_EXECUTION_ENVELOPE_HOLD"),
+                        "reason":hold_reason,
                         "same_event_sell_proceeds_not_spendable":True,
                         "no_orders_executed":True,
                     })
@@ -343,6 +382,9 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
         "monthly_rotation_signals":monthly_signals,
         "monthly_prefunded_executions":monthly_executions,
         "monthly_prefunded_funding_holds":monthly_funding_holds,
+        "monthly_execution_envelope_holds":monthly_execution_envelope_holds,
+        "execution_close_risk_and_ticket_checks_reject_atomic_basket":True,
+        "modeled_max_routine_ticket_usd":_metric(MODELED_MAX_ROUTINE_TICKET_USD),
         "monthly_prefunded_buy_sides":monthly_buy_sides,
         "monthly_prefunded_buy_notional_usd":_metric(monthly_buy_notional),
         "monthly_prefunded_buy_fees_usd":_metric(monthly_buy_fees),
@@ -520,6 +562,7 @@ def main():
               "STOP",period["first_stop_signal_close"],
               "ROTATIONS",period["monthly_prefunded_executions"],
               "FUNDING_HOLDS",period["monthly_prefunded_funding_holds"],
+              "ENVELOPE_HOLDS",period["monthly_execution_envelope_holds"],
               "REPAIRS",sum(x["kind"]=="RISK_REPAIR" for x in period["trade_log"]),
               "NOT LIVE OR INDEPENDENT ALPHA",True)
     print("Only historical risk-maintenance economics; no trading permission.")
