@@ -59,7 +59,8 @@ def test_exact95_reduces_risk_vs_hypothetical_full_in_positive_trend():
 
 def test_report_no_alpha_permission_or_false_5pct_claim():
     p=sample(n=3500)
-    x=s.evaluate(p,source_sha256=l1.ORIGINAL_SHA)
+    x=s.evaluate(p,source_sha256=l1.ORIGINAL_SHA,
+                 include_prefunded_stop=True)
     assert x["schema"]==s.SCHEMA
     assert x["exact_whole_account_target"]==s.TARGET
     assert not x["new_strategy_live_authorized"]
@@ -76,6 +77,7 @@ def test_report_no_alpha_permission_or_false_5pct_claim():
             assert set(cost)==set(s.FRESH_INCEPTION_DATES)
             assert all(not v["new_live_trade_authority"] for v in cost.values())
     assert x["fresh_prefunded_stop_is_not_live_broker_settlement_proof"]
+    assert x["fresh_prefunded_stop_matrix_explicitly_requested"] is True
     for c in ("5","15","35"):
         assert set(x["results"][c])=={"2014_onward","2020_onward"}
         assert x["results"][c]["2014_onward"]["actual_S1_95pct_target_with_drift"]["cash_below_5pct_sessions_end_of_day"]>=0
@@ -128,6 +130,15 @@ def test_prefunded_high_stop_cannot_fit_unregistered_costs_or_cash(cost,reserve)
     with pytest.raises(s.S1EconomicsStop):
         s.fresh_prefunded_next_close_first_breach_sensitivity(
             sample(n=2100),cost_bps=cost,reserve_fraction=reserve)
+
+
+def test_combined_stop_matrix_is_not_recomputed_by_default():
+    x=s.evaluate(sample(n=3500),source_sha256=l1.ORIGINAL_SHA)
+    assert x["fresh_prefunded_next_close_first_breach_no_restart"] is None
+    assert x["fresh_prefunded_stop_matrix_explicitly_requested"] is False
+    with pytest.raises(s.S1EconomicsStop):
+        s.evaluate(sample(n=3500),source_sha256=l1.ORIGINAL_SHA,
+                   include_prefunded_stop="yes")
 
 
 def test_wrong_source_hash_never_accepted():
