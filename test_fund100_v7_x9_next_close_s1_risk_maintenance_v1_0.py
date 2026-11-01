@@ -324,3 +324,15 @@ def test_prefunded_monthly_flag_and_matrix_selection_are_strict():
         with pytest.raises(x9.RiskStudyStop,match="monthly risk-integration"):
             x9.analyze(frame,x9.SOURCE_SHA256,
                        include_prefunded_monthly=invalid)
+
+
+def test_sell_only_risk_repairs_preempt_month_end_rotations():
+    frame=scenario("rising")
+    report=x9.simulate(frame,start="2020-01-01",cost_bps=15,
+                       prefunded_monthly=True)
+    repairs=[e for e in report["trade_log"] if e["kind"]=="RISK_REPAIR"]
+    assert repairs
+    assert report["risk_breach_session_counts_after_delay"]["cash"]>0
+    assert report["monthly_prefunded_executions"]==0
+    assert report["monthly_rotation_signals"]==0
+    assert report["actual_broker_orders"]==0
