@@ -1811,6 +1811,63 @@ def risk_size_authorized_event(
     return sized.weights
 
 
+def require_prefunded_buy_cash(
+    *,
+    orders: list[dict],
+    opening_cash: Decimal,
+    current_cash: Decimal,
+) -> Decimal:
+    """Prevent same-event SELL credits from funding BUY execution.
+
+    A fresh Trading API cash balance can include unsettled SELL proceeds.
+    The BUY batch must fit BOTH cash observed before the first SELL and
+    the current broker cash balance. This is a conservative negative
+    gate, NOT proof that the opening cash is settled or spendable.
+    An authenticated settlement source is still required for a true
+    proceeds-funded SELL-to-BUY transition.
+    """
+    for name, amount in (
+        ("pre-SELL opening cash", opening_cash),
+        ("fresh broker cash", current_cash),
+    ):
+        if (
+            type(amount) is not Decimal
+            or not amount.is_finite()
+            or amount < Decimal("0")
+        ):
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: invalid " + name + "."
+            )
+
+    if not isinstance(orders, list):
+        raise ProductionStop(
+            "LIVE PRODUCTION STOP: invalid BUY order batch."
+        )
+
+    total = Decimal("0")
+    for order in orders:
+        if not isinstance(order, dict) or order.get("side") != "buy":
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: non-BUY order in BUY cash check."
+            )
+        amount = decimal_value(
+            order.get("notional_usd"),
+            field_name="prefunded BUY notional",
+        )
+        if amount <= Decimal("0"):
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: invalid BUY notional."
+            )
+        total += amount
+
+    if total > min(opening_cash, current_cash):
+        raise ProductionStop(
+            "LIVE PRODUCTION STOP: BUY depends on unverified sale "
+            "proceeds or exceeds pre-SELL/fresh cash; HOLD before POST."
+        )
+    return total
+
+
 def materialize_orders(
     *,
     snapshot: dict,
@@ -2468,6 +2525,7 @@ def build_dependencies(
     policy_context: dict,
     target_weights: dict[str, Decimal],
     candidates: dict,
+    opening_cash: Decimal,
 ):
 
     allowed_ids = {
@@ -2569,6 +2627,15 @@ def build_dependencies(
                 ),
             )
         )
+
+        if str(phase).upper() == "BUY":
+            # The broker's post-SELL cash may include unsettled proceeds.
+            # This bound is checked again on the actual fresh BUY snapshot.
+            require_prefunded_buy_cash(
+                orders=orders,
+                opening_cash=opening_cash,
+                current_cash=broker_snapshot["cash"],
+            )
 
         last_materialized[
             str(
@@ -3439,6 +3506,7 @@ def main():
         policy_context=policy_context,
         target_weights=target_weights,
         candidates=candidates,
+        opening_cash=initial_snapshot["cash"],
     )
 
     initial_sell_orders = (
@@ -3583,22 +3651,14 @@ def main():
         Decimal("0"),
     )
 
-    if (
-        estimated_buy
-        > (
-            initial_snapshot[
-                "cash"
-            ]
-            + estimated_sell
-            + Decimal("0.10")
-        )
-    ):
-
-        raise ProductionStop(
-            "LIVE PRODUCTION STOP: "
-            "estimated BUY phase cannot be funded by "
-            "current cash plus estimated SELL proceeds."
-        )
+    # Full-event preflight must not use projected SELL proceeds as
+    # executable BUY funding. The synthetic preview above is only for
+    # evaluating the entire gross event before the first possible POST.
+    require_prefunded_buy_cash(
+        orders=initial_buy_orders,
+        opening_cash=initial_snapshot["cash"],
+        current_cash=initial_snapshot["cash"],
+    )
 
     compiler_adapter = {
         "schema":
