@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   synthetic-rehearsal:
-    name: ETF risk-aware SELL / BUY paper acceptance
+    name: ETF prefunding HOLD paper acceptance
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -52,12 +52,14 @@ jobs:
           import json
           from pathlib import Path
           r = json.loads(Path("synthetic_etf_rehearsal.json").read_text())
-          assert r["status"] == "SUCCESS"
+          assert r["status"] == "HOLD_UNVERIFIED_BUY_CASH"
           assert r["mode"] == "OFFLINE_SYNTHETIC_PAPER"
           assert r["unmocked_broker_requests"] == 0
           assert r["replay_duplicate_orders"] == 0
-          assert r["order_count"] == 2
-          print("Fund-100 synthetic ETF paper run: PASS")
+          assert r["order_count"] == 0
+          assert r["simulated_orders"] == []
+          assert r["phases"] == []
+          print("Fund-100 synthetic ETF cash safety HOLD: PASS")
           print("Synthetic orders:", r["order_count"])
           print("Duplicate synthetic fills:", r["replay_duplicate_orders"])
           print("Alpaca requests:", r["unmocked_broker_requests"])
