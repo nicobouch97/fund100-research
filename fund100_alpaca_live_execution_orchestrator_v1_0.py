@@ -806,7 +806,34 @@ def run_execution_phase(
         }
 
     # --------------------------------------------------------
-    # 7. Writer is reachable ONLY after cap approval.
+    # 7. Recheck release/STOP immediately before invoking the writer.
+    #
+    # The initial check can become stale while broker snapshots,
+    # order-history GETs and cumulative-cap reconstruction run.
+    # The injected verifier MUST reread current operator/kill-switch
+    # authority on this call, not return a cached earlier verdict.
+    #
+    # This narrows the STOP time-of-check/time-of-use window. It does
+    # NOT replace the writer's own final, live pre-POST STOP check:
+    # an operator STOP can still arrive after this verification.
+    # --------------------------------------------------------
+
+    presend_lock_verdict = deps.verify_release_lock(
+        release_lock_package=release_lock_package,
+        compiler_package=compiler_package,
+        permit_package=permit_package,
+        phase=phase_normalized,
+        now=now,
+    )
+
+    validate_release_verification(presend_lock_verdict)
+
+    trace.append(
+        "release_lock_reverified_before_writer"
+    )
+
+    # --------------------------------------------------------
+    # 8. Writer is reachable ONLY after cap and fresh STOP approval.
     # --------------------------------------------------------
 
     writer_result = (
