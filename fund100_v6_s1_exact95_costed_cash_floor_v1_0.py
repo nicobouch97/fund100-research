@@ -213,7 +213,8 @@ def simulate_daily_cash_floor(prices:pd.DataFrame, *, cost_bps:int,
 
 
 def simulate_next_close_monthly(prices:pd.DataFrame, *, cost_bps:int,
-                                reserve_fraction:float)->pd.DataFrame:
+                                reserve_fraction:float,
+                                prefunded_buy_only:bool=False)->pd.DataFrame:
     """Separate causal monthly timing sensitivity; original model is untouched.
 
     A completed month-end close can only generate fixed SHARE quantities for
@@ -223,9 +224,15 @@ def simulate_next_close_monthly(prices:pd.DataFrame, *, cost_bps:int,
     skipped, not funded with synthetic margin. Cash/weight drift and HIGH
     account-risk breaches remain visible; this is NOT a LIVE trading plan,
     a broker minimum-ticket proof or an automatic HARD STOP recovery.
+
+    Optional prefunded_buy_only is a separate, fixed conservative
+    counterfactual: the BUY leg must be payable from cash present BEFORE
+    same-event SELLs. It does not certify that opening cash is settled.
+    The original immediate-sale-credit historical path remains the default.
     """
     if (cost_bps not in l1.COST_BPS or type(reserve_fraction) is not float
-        or reserve_fraction not in (FLOOR,.10,.15)):
+        or reserve_fraction not in (FLOOR,.10,.15)
+        or type(prefunded_buy_only) is not bool):
         raise S1EconomicsStop("Unregistered delayed monthly research scenario")
     data=l1.validate(prices)
     target={s:TARGET[s]*(1-reserve_fraction)/(1-FLOOR) for s in l1.NAMES}
@@ -251,6 +258,7 @@ def simulate_next_close_monthly(prices:pd.DataFrame, *, cost_bps:int,
         turnover=0.
         executed_signal=None
         unaffordable=False
+        unverified_sale_funding_hold=False
         if pending is not None:
             if t<=pending["index"]:
                 raise S1EconomicsStop("Same-close hindsight monthly execution")
@@ -260,8 +268,17 @@ def simulate_next_close_monthly(prices:pd.DataFrame, *, cost_bps:int,
             purchases=sum(v for v in dollars.values() if v>0)
             # The entire precommitted share basket must be cash-funded.
             remaining=cash+sales*(1-rate)-purchases*(1+rate)
+            # Opening cash is the pre-SELL cash observed at this fill
+            # close. Even a filled SELL does not authenticate settlement.
+            prefunded_shortfall=(
+                prefunded_buy_only and purchases*(1+rate)>cash+1e-8)
+            sale_credit_would_cover=(
+                remaining>=-1e-8
+                and all(-dollars[s]<=holdings[s]+1e-8 for s in l1.NAMES))
+            unverified_sale_funding_hold=bool(
+                prefunded_shortfall and sales>0 and sale_credit_would_cover)
             if (any(-dollars[s]>holdings[s]+1e-8 for s in l1.NAMES)
-                or remaining < -1e-8):
+                or remaining < -1e-8 or prefunded_shortfall):
                 unaffordable=True
             else:
                 old_nav=nav
@@ -323,6 +340,8 @@ def simulate_next_close_monthly(prices:pd.DataFrame, *, cost_bps:int,
             "monthly_rebalance_execution":traded,
             "executed_prior_close_signal_session":executed_signal,
             "unaffordable_next_close_rebalance":unaffordable,
+            "unverified_sale_funding_hold":unverified_sale_funding_hold,
+            "prefunded_buy_only_counterfactual":prefunded_buy_only,
             "pending_unexecuted_signal_at_final_close":bool(
                 t==len(data)-1 and pending is not None),
             **{"weight_"+s:weights[s] for s in l1.NAMES},
@@ -744,6 +763,9 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
         for bp in l1.COST_BPS:
             delayed=simulate_next_close_monthly(
                 data,cost_bps=bp,reserve_fraction=reserve)
+            prefunded=simulate_next_close_monthly(
+                data,cost_bps=bp,reserve_fraction=reserve,
+                prefunded_buy_only=True)
             # Fee-matched original month-end CLOSE fills are the proper
             # counterfactual; the legacy 95% simulator uses a different,
             # more favorable fee-financing convention.
@@ -758,6 +780,18 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
                     "month_end_signals":int(delayed.loc[start:,"monthly_rebalance_signal"].sum()),
                     "following_close_executions":int(delayed.loc[start:,"monthly_rebalance_execution"].sum()),
                     "unaffordable_full_order_skips":int(delayed.loc[start:,"unaffordable_next_close_rebalance"].sum()),
+                    "prefunded_only_cagr_pct":l1.metrics(
+                        prefunded,start)["nav"]["annual_return_pct"],
+                    "prefunded_only_minus_sale_credit_cagr_pp":round(
+                        l1.metrics(prefunded,start)["nav"]["annual_return_pct"]
+                        - l1.metrics(delayed,start)["nav"]["annual_return_pct"],5),
+                    "prefunded_only_executions":int(
+                        prefunded.loc[start:,"monthly_rebalance_execution"].sum()),
+                    "prefunded_only_unverified_sale_funding_holds":int(
+                        prefunded.loc[start:,"unverified_sale_funding_hold"].sum()),
+                    "prefunded_only_total_unaffordable_skips":int(
+                        prefunded.loc[start:,"unaffordable_next_close_rebalance"].sum()),
+                    "prefunded_opening_cash_not_authenticated_settlement":True,
                     "unexecuted_final_close_signal":bool(
                         delayed.iloc[-1]["pending_unexecuted_signal_at_final_close"]),
                     "no_same_close_fill_or_broker_minimum_assumed":True,
@@ -792,6 +826,8 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
       "causal_next_close_monthly_rebalance_sensitivity":next_close_monthly,
       "original_same_close_historical_results_preserved":True,
       "next_close_monthly_research_does_not_prove_broker_fills_or_alpha":True,
+      "prefunded_next_close_is_fixed_conservative_funding_sensitivity_only":True,
+      "prefunded_next_close_cannot_prove_opening_cash_settlement":True,
       "passive_cash_buffers_not_live_authorized":True,
       "cash_reserve_minimum_met_in_historical_model":floor_ok,
       "minimum_cash_floor_live_execution_requires_separate_design_review":not floor_ok,
