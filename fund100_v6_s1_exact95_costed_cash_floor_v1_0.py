@@ -1017,6 +1017,19 @@ def main():
                   "EXECUTED",d["following_close_executions"],
                   "UNAFFORDABLE",d["unaffordable_full_order_skips"],
                   "NOT_EXECUTABLE_OR_ALPHA",True)
+    for reserve in ("original_95pct","10pct_buffer","15pct_buffer"):
+        for cohort in FRESH_INCEPTION_DATES:
+            result=report["fresh_prefunded_next_close_first_breach_no_restart"][
+                reserve]["15"][cohort]
+            print("PREFUNDED_NEXT_CLOSE_FIRST_BREACH",reserve,cohort,
+                  "BREACH",result["first_combined_breach_close"],
+                  "NEXT_CLOSE_EXIT",result["hypothetical_next_close_exit"],
+                  "NO_RESTART_CAGR",result["costed_no_restart_cagr_pct"],
+                  "UNINTERRUPTED_CAGR_NOT_EXECUTABLE",
+                  result["uninterrupted_prefunded_cagr_not_executable_pct"],
+                  "PREFUNDING_HOLDS_BEFORE_BREACH",
+                  result["unverified_sale_funding_holds_through_first_breach"],
+                  "NOT_ALPHA_OR_LIVE",True)
     print("NOT_ALPHA_NOT_BROKER_RELEASE",report["live_orders"])
 
 
