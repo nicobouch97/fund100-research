@@ -2358,64 +2358,97 @@ def submit_order_batch(orders):
     }
 
 
-def wait_for_fill(
-    client_order_id: str,
-):
+def wait_for_fill(expected_order: dict):
+    """Reconcile a filled broker order to the *actual* intended order.
 
-    for _ in range(
-        90
-    ):
-
-        order = (
-            live.get_order_by_client_id(
-                client_order_id
-            )
+    A status string alone is not a fill proof. A mismatched broker lookup
+    must never unlock the following BUY phase or event completion. Filled
+    quantities and prices are checked for basic economic consistency;
+    settlement and spendable cash require independent account evidence.
+    """
+    if not isinstance(expected_order, dict) or not isinstance(
+        expected_order.get("client_order_id"), str
+    ) or not expected_order["client_order_id"].strip():
+        raise ProductionStop(
+            "LIVE PRODUCTION STOP: expected fill intent is missing."
         )
+    client_order_id = expected_order["client_order_id"]
 
+    for _ in range(90):
+        order = live.get_order_by_client_id(client_order_id)
         if order is None:
-
-            time.sleep(
-                2
-            )
-
+            time.sleep(2)
             continue
 
-        status = (
-            str(
-                order.get(
-                    "status",
-                    "",
-                )
+        if not isinstance(order, dict):
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: malformed broker fill lookup."
             )
-            .strip()
-            .lower()
-        )
+        status = str(order.get("status", "")).strip().lower()
 
-        if status == "filled":
-
-            return order
-
-        if status in (
-            FAILED_ORDER_STATUSES
-        ):
-
+        if status in FAILED_ORDER_STATUSES:
             raise ProductionStop(
                 "LIVE PRODUCTION STOP: "
                 f"{client_order_id} failed: {status}."
             )
-
-        if status not in (
-            SAFE_ORDER_STATUSES
-        ):
-
+        if status not in SAFE_ORDER_STATUSES:
             raise ProductionStop(
                 "LIVE PRODUCTION STOP: "
                 f"unknown order status {status!r}."
             )
 
-        time.sleep(
-            2
+        # Reuse the exact writer receipt contract for EVERY broker lookup,
+        # including active/partial orders. This binds the order ID, client
+        # ID, symbol, side, type, DAY term and original notional.
+        receipt_status = (
+            "EXISTING_FILLED_ORDER"
+            if status == "filled"
+            else "EXISTING_NO_RESUBMIT_ORDER"
         )
+        try:
+            orchestrator.validate_writer_receipts(
+                {
+                    "writer_schema": writer_candidate.WRITER_CANDIDATE_SCHEMA,
+                    "orders": [{
+                        "client_order_id": client_order_id,
+                        "status": receipt_status,
+                        "broker_order": order,
+                    }],
+                },
+                [expected_order],
+            )
+        except orchestrator.OrchestrationStop as exc:
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: broker fill identity mismatch; "
+                "hold and reconcile without resubmission."
+            ) from exc
+
+        if status == "filled":
+            qty = decimal_value(
+                order.get("filled_qty"), field_name="broker filled quantity"
+            )
+            avg_price = decimal_value(
+                order.get("filled_avg_price"),
+                field_name="broker filled average price",
+            )
+            intended = decimal_value(
+                expected_order.get("notional_usd"),
+                field_name="intended order notional",
+            )
+            if qty <= 0 or avg_price <= 0 or intended <= 0:
+                raise ProductionStop(
+                    "LIVE PRODUCTION STOP: filled order has invalid economics."
+                )
+            # A fractional market-notional order may round by a few cents.
+            # Larger disagreement is not evidence of a complete intended fill.
+            tolerance = max(Decimal("0.05"), intended * Decimal("0.02"))
+            if abs(qty * avg_price - intended) > tolerance:
+                raise ProductionStop(
+                    "LIVE PRODUCTION STOP: filled economics differ from intent."
+                )
+            return order
+
+        time.sleep(2)
 
     raise ProductionStop(
         "LIVE PRODUCTION STOP: "
@@ -3636,11 +3669,7 @@ def main():
             ]
         ):
 
-            wait_for_fill(
-                order[
-                    "client_order_id"
-                ]
-            )
+            wait_for_fill(order)
 
     # --------------------------------------------------------
     # BUY PHASE
@@ -3688,11 +3717,7 @@ def main():
             ]
         ):
 
-            wait_for_fill(
-                order[
-                    "client_order_id"
-                ]
-            )
+            wait_for_fill(order)
 
     reconciliation = (
         final_reconciliation(
