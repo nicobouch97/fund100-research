@@ -284,7 +284,7 @@ def test_monthly_signal_is_prior_close_and_unverified_sale_funding_holds_whole_b
     # without creating a daily-loss, volatility or drawdown HARD STOP.
     frame=pd.DataFrame({s:np.full(len(dates),100.) for s in x9.S1},
                        index=dates)
-    frame["XLK"]=100*(.9985**t)
+    frame["XLK"]=100*(.9991**t)
     frame[original.BENCH]=100.
     report=x9.simulate(frame,start="2020-01-01",cost_bps=15,
                        capital_usd=130.30,prefunded_monthly=True,
