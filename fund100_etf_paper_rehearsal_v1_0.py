@@ -244,11 +244,32 @@ def rehearse(*, stop_after_sell: bool = False, level: str = "HIGH",
 
         # A preview funded by a synthetic SELL is not settled BUY cash.
         # Reject before even the first simulated SELL, matching production.
-        production.require_prefunded_buy_cash(
-            orders=buy_preview,
-            opening_cash=snapshot["cash"],
-            current_cash=snapshot["cash"],
-        )
+        try:
+            production.require_prefunded_buy_cash(
+                orders=buy_preview,
+                opening_cash=snapshot["cash"],
+                current_cash=snapshot["cash"],
+            )
+        except production.ProductionStop as exc:
+            if "BUY depends on unverified sale proceeds" not in str(exc):
+                raise
+            # A deliberately unfunded synthetic rotation is now an
+            # expected safety HOLD, never a successful simulated fill.
+            return {
+                "mode": "OFFLINE_SYNTHETIC_PAPER",
+                "strategy": "V5-002_SHADOW",
+                "risk_level": level,
+                "status": "HOLD_UNVERIFIED_BUY_CASH",
+                "reason": "Same-event SELL credits are not settled cash.",
+                "synthetic_starting_equity_usd": "100.00",
+                "synthetic_ending_equity_usd": str(broker.equity),
+                "simulated_orders": broker.actions,
+                "order_count": len(broker.actions),
+                "replay_duplicate_orders": 0,
+                "unmocked_broker_requests": broker.network_calls,
+                "operator_control": "MOCKED",
+                "phases": [],
+            }
         deps, phases, allowed = production.build_dependencies(
             policy_context=policy,
             target_weights=adjusted,
