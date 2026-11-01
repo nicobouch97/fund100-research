@@ -530,3 +530,95 @@ def test_production_writer_rejects_ambiguous_post_without_retry(monkeypatch):
     with pytest.raises(production.orchestrator.OrchestrationStop, match="notional"):
         production.submit_order_batch([intent])
     assert len(posts) == 1
+
+
+def _synthetic_filled_broker_order(intent):
+    return {
+        **_synthetic_broker_ack(intent),
+        "status": "filled",
+        "filled_qty": "0.05",
+        "filled_avg_price": "100.00",
+    }
+
+
+def test_production_fill_wait_accepts_matching_positive_broker_fill(monkeypatch):
+    intent = _synthetic_writer_intent()
+    filled = _synthetic_filled_broker_order(intent)
+    calls = []
+    monkeypatch.setattr(
+        production.live, "get_order_by_client_id",
+        lambda cid: (calls.append(cid) or filled),
+    )
+    assert production.wait_for_fill(intent) is filled
+    assert calls == [intent["client_order_id"]]
+
+
+@pytest.mark.parametrize("change", [
+    {"client_order_id": "different-client-order"},
+    {"symbol": "SPY"},
+    {"side": "buy"},
+    {"type": "limit"},
+    {"time_in_force": "gtc"},
+    {"notional": "8.00"},
+    {"id": ""},
+])
+def test_production_fill_wait_rejects_wrong_broker_identity(monkeypatch, change):
+    intent = _synthetic_writer_intent()
+    broker = {**_synthetic_filled_broker_order(intent), **change}
+    monkeypatch.setattr(
+        production.live, "get_order_by_client_id", lambda cid: broker,
+    )
+    with pytest.raises(production.ProductionStop, match="fill identity mismatch"):
+        production.wait_for_fill(intent)
+
+
+@pytest.mark.parametrize("change", [
+    {"filled_qty": "0"},
+    {"filled_avg_price": "0"},
+    {"filled_qty": None},
+    {"filled_avg_price": "NaN"},
+    {"filled_qty": "0.001"},
+    {"filled_qty": "0.20"},
+])
+def test_production_fill_wait_rejects_missing_or_implausible_economics(
+    monkeypatch, change
+):
+    intent = _synthetic_writer_intent()
+    broker = {**_synthetic_filled_broker_order(intent), **change}
+    monkeypatch.setattr(
+        production.live, "get_order_by_client_id", lambda cid: broker,
+    )
+    with pytest.raises(production.ProductionStop):
+        production.wait_for_fill(intent)
+
+
+def test_production_fill_wait_does_not_promote_partial_to_completed(monkeypatch):
+    intent = _synthetic_writer_intent()
+    filled = _synthetic_filled_broker_order(intent)
+    partial = {**filled, "status": "partially_filled", "filled_qty": "0.01"}
+    observations = iter([partial, filled])
+    sleeps = []
+    monkeypatch.setattr(
+        production.live, "get_order_by_client_id", lambda cid: next(observations),
+    )
+    monkeypatch.setattr(production.time, "sleep", lambda seconds: sleeps.append(seconds))
+    assert production.wait_for_fill(intent) is filled
+    assert sleeps == [2]
+
+
+def test_production_fill_wait_rejects_mismatched_partial_before_buy(monkeypatch):
+    intent = _synthetic_writer_intent()
+    partial = {
+        **_synthetic_filled_broker_order(intent),
+        "status": "partially_filled",
+        "symbol": "SPY",
+    }
+    monkeypatch.setattr(
+        production.live, "get_order_by_client_id", lambda cid: partial,
+    )
+    monkeypatch.setattr(
+        production.time, "sleep",
+        lambda seconds: pytest.fail("mismatched partial must not be polled"),
+    )
+    with pytest.raises(production.ProductionStop, match="fill identity mismatch"):
+        production.wait_for_fill(intent)
