@@ -77,3 +77,14 @@ def test_roadmap_front_priority_reflects_dated_evidence_and_rejects_fitting():
     assert "STRATEGY_EVIDENCE_AND_LAUNCH_PRIORITY_SNAPSHOT_2026_10_30.md" in d[:4000]
     assert "not more fitting of the same 2026 stock history" in d[:4000]
     assert "not established alpha" in d[:4000]
+
+def test_november_stop_horizon_addendum_is_dated_and_not_live_promotion():
+    d=report()
+    assert "1 November 2026 addendum" in d
+    assert "run 41275299300" in d
+    for date in ("2020-03-09","2020-03-10","2025-04-03","2025-04-04"):
+        assert date in d
+    for value in ("17.332350pp","−5.326349pp","−2.889917pp","1,639"):
+        assert value in d
+    assert "not a risk-equivalent compliant portfolio" in d
+    assert "No S1 promotion, risk-limit change" in d
