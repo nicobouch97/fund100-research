@@ -573,6 +573,12 @@ def hypothetical_first_stop_next_close_cash(
     assumptions["hypothetical_exit_turnover_fraction"]=round(
         liquidation_value/(cash_value+liquidation_value),10)
     assumptions["hypothetical_flat_cash_after_exit"]=True
+    # A combined STOP at the completed signal close supersedes any
+    # ordinary monthly rebalance intent created at that same close.
+    if "monthly_rebalance_signal" in out.columns:
+        out.at[path.index[i],"monthly_rebalance_signal"]=False
+    if "pending_unexecuted_signal_at_final_close" in out.columns:
+        out.at[path.index[i],"pending_unexecuted_signal_at_final_close"]=False
     for t in range(i+1,len(out)):
         day=out.index[t]
         out.at[day,"nav"]=net
@@ -589,9 +595,16 @@ def hypothetical_first_stop_next_close_cash(
         out.at[day,"single_symbol_breach_end_of_day"]=False
         for symbol in l1.NAMES:
             out.at[day,"weight_"+symbol]=0.
-        for optional in ("daily_floor_trim","month_end_rebalance"):
+        for optional in (
+            "daily_floor_trim","month_end_rebalance",
+            "monthly_rebalance_signal","monthly_rebalance_execution",
+            "unaffordable_next_close_rebalance","unverified_sale_funding_hold",
+            "pending_unexecuted_signal_at_final_close",
+        ):
             if optional in out.columns:
                 out.at[day,optional]=False
+        if "executed_prior_close_signal_session" in out.columns:
+            out.at[day,"executed_prior_close_signal_session"]=None
     return out,assumptions
 
 
@@ -650,6 +663,80 @@ def fresh_inception_first_stop_sensitivity(
             "not_a_live_restart_or_trading_authorization":True,
         }
     return cohorts
+
+
+def fresh_prefunded_next_close_first_breach_sensitivity(
+        prices:pd.DataFrame, *, cost_bps:int, reserve_fraction:float)->dict:
+    """Combined funding + next-close + absorbing first-breach economics.
+
+    Two genuinely separate hypothetical 2014/2020 cash-account inceptions
+    reset the risk history. A completed-close HIGH account-risk, cash-floor
+    or issuer-concentration breach cancels pending monthly rotation and
+    hypothetically liquidates at the FOLLOWING close, with a sale fee.
+    There is no re-entry. This uses the repeatedly inspected frozen history,
+    not a new independent alpha test, and does NOT authenticate opening cash,
+    brokerage fills, settlement or an executable sub-$1 exit.
+    """
+    if (cost_bps not in l1.COST_BPS
+        or type(reserve_fraction) is not float
+        or reserve_fraction not in (FLOOR,.10,.15)):
+        raise S1EconomicsStop("Unregistered prefunded HIGH stop sensitivity")
+    data=l1.validate(prices)
+    results={}
+    for label,start in FRESH_INCEPTION_DATES.items():
+        launched=data.loc[start:].copy()
+        if len(launched)<840:
+            raise S1EconomicsStop("Insufficient frozen history for fresh inception")
+        unhalted=simulate_next_close_monthly(
+            launched,cost_bps=cost_bps,reserve_fraction=reserve_fraction,
+            prefunded_buy_only=True)
+        if not unhalted["invested"].any():
+            raise S1EconomicsStop("No first investment in prefunded scenario")
+        stopped,stop=hypothetical_first_stop_next_close_cash(
+            unhalted,launched,cost_bps=cost_bps)
+        first=stop["first_combined_breach_date"]
+        before=unhalted.loc[:first] if first is not None else unhalted
+        exit_date=stop["hypothetical_next_close_exit_date"]
+        if exit_date is not None:
+            after=stopped.loc[exit_date:]
+            if (not (after["gross_risk_exposure"]==0).all()
+                or not (after["cash"]==1).all()
+                or after["monthly_rebalance_execution"].any()
+                or after["monthly_rebalance_signal"].any()
+                or after["unverified_sale_funding_hold"].any()):
+                raise S1EconomicsStop("Absorbing STOP leaked a future rotation")
+        results[label]={
+            "requested_inception":start,
+            "first_invested_close":unhalted.index[
+                unhalted["invested"]][0].date().isoformat(),
+            "first_combined_breach_close":first,
+            "first_breach_reasons":(
+                (stop["first_combined_breach_attribution"] or {})
+                .get("triggered_constraints",[])),
+            "hypothetical_next_close_exit":exit_date,
+            "hypothetical_exit_fee_nav_units":stop[
+                "hypothetical_exit_fee_nav_units"],
+            "costed_no_restart_cagr_pct":l1.metrics(
+                stopped,start)["nav"]["annual_return_pct"],
+            "uninterrupted_prefunded_cagr_not_executable_pct":l1.metrics(
+                unhalted,start)["nav"]["annual_return_pct"],
+            "prefunded_monthly_rotations_through_first_breach":int(
+                before["monthly_rebalance_execution"].sum()),
+            "unverified_sale_funding_holds_through_first_breach":int(
+                before["unverified_sale_funding_hold"].sum()),
+            "post_exit_cash_only_closes":(
+                len(stopped.loc[exit_date:])-1 if exit_date else 0),
+            "breach_on_last_close_has_no_invented_exit":bool(
+                stop.get("breach_at_last_observation_exit_not_yet_observable",False)),
+            "cash_only_after_hypothetical_exit_no_restart":bool(
+                stop["hypothetical_flat_cash_after_exit"]),
+            "first_breach_includes_cash_and_concentration_not_only_high_stop":True,
+            "initial_cash_is_not_authenticated_settlement":True,
+            "same_frozen_history_not_independent_alpha":True,
+            "idealized_next_close_exit_not_broker_proven":True,
+            "new_live_trade_authority":False,
+        }
+    return results
 
 
 def period_diagnostics(path:pd.DataFrame,start:str)->dict:
@@ -799,6 +886,18 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
                 } for name,start in (("2014_onward","2014-01-01"),
                                      ("2020_onward","2020-01-01"))
             }
+    # Combine PR #502's prefunded-only cash restriction with the existing
+    # first-breach/next-close/no-restart HIGH-risk research, rather than
+    # quoting uninterrupted high CAGR after a hypothetical hard STOP.
+    # Fixed original 5/15/35bp costs and 5/10/15% cash scenarios only.
+    fresh_prefunded_stop={}
+    for label,reserve in (("original_95pct",FLOOR),
+                          ("10pct_buffer",.10),("15pct_buffer",.15)):
+        fresh_prefunded_stop[label]={
+            str(bp):fresh_prefunded_next_close_first_breach_sensitivity(
+                data,cost_bps=bp,reserve_fraction=reserve)
+            for bp in l1.COST_BPS
+        }
     floor_ok=all(
       x["actual_S1_95pct_target_with_drift"]["cash_below_5pct_sessions_end_of_day"]==0
       for section in results.values() for x in section.values())
@@ -824,6 +923,8 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
       "fresh_inception_first_stop_next_close_cash_sensitivity":fresh_inception_stops,
       "fresh_inception_is_not_a_hard_stop_recovery":True,
       "causal_next_close_monthly_rebalance_sensitivity":next_close_monthly,
+      "fresh_prefunded_next_close_first_breach_no_restart":fresh_prefunded_stop,
+      "fresh_prefunded_stop_is_not_live_broker_settlement_proof":True,
       "original_same_close_historical_results_preserved":True,
       "next_close_monthly_research_does_not_prove_broker_fills_or_alpha":True,
       "prefunded_next_close_is_fixed_conservative_funding_sensitivity_only":True,
