@@ -509,6 +509,7 @@ def test_exact_required_call_order():
             "cumulative_cap_approved",
             "release_lock_reverified_before_writer",
             "writer_invoked",
+            "writer_receipts_validated_not_fills",
         ]
     )
 
