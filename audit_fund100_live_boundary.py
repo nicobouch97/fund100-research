@@ -272,7 +272,7 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
     (
         ".github/workflows/fund100-v5-live-production.yml",
         "fund100_live_production_controller_v1_0.py",
-    ): "8937bd1749fd817dcc03f0bc3c12be6d91adbee3",
+    ): "e441cd43930010d34ef02c901ccfb633babd45f6",
     (
         ".github/workflows/fund100-live-emergency-stop.yml",
         "fund100_live_operator_control_v1_0.py",

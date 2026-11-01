@@ -622,3 +622,109 @@ def test_production_fill_wait_rejects_mismatched_partial_before_buy(monkeypatch)
     )
     with pytest.raises(production.ProductionStop, match="fill identity mismatch"):
         production.wait_for_fill(intent)
+
+
+# Same-event SELL proceeds are NOT proof of settled or spendable BUY cash.
+def _prefunded_buy(notional="15.00"):
+    return [{"symbol": "XLV", "side": "buy",
+             "notional_usd": notional, "client_order_id": "f100-test-b-xlv"}]
+
+
+def test_prefunded_buy_passes_only_when_both_cash_snapshots_cover_batch():
+    total = production.require_prefunded_buy_cash(
+        orders=_prefunded_buy(),
+        opening_cash=Decimal("20.00"),
+        current_cash=Decimal("18.00"),
+    )
+    assert total == Decimal("15.00")
+
+
+def test_prefunded_buy_rejects_same_event_sale_credit_even_when_fresh_cash_rises():
+    with pytest.raises(production.ProductionStop, match="unverified sale"):
+        production.require_prefunded_buy_cash(
+            orders=_prefunded_buy(),
+            opening_cash=Decimal("10.00"),
+            current_cash=Decimal("80.00"),
+        )
+
+
+def test_prefunded_buy_rejects_fresh_cash_drain_despite_large_opening_balance():
+    with pytest.raises(production.ProductionStop, match="pre-SELL/fresh"):
+        production.require_prefunded_buy_cash(
+            orders=_prefunded_buy(),
+            opening_cash=Decimal("80.00"),
+            current_cash=Decimal("10.00"),
+        )
+
+
+@pytest.mark.parametrize("opening,current", [
+    (Decimal("-0.01"), Decimal("30")),
+    (Decimal("30"), Decimal("-0.01")),
+    (Decimal("NaN"), Decimal("30")),
+    (Decimal("30"), Decimal("Infinity")),
+    ("30.00", Decimal("30")),
+])
+def test_prefunded_buy_rejects_unverified_or_malformed_cash(opening, current):
+    with pytest.raises(production.ProductionStop, match="invalid"):
+        production.require_prefunded_buy_cash(
+            orders=_prefunded_buy(),
+            opening_cash=opening,
+            current_cash=current,
+        )
+
+
+@pytest.mark.parametrize("orders", [
+    [{"side": "sell", "notional_usd": "15.00"}],
+    [{"side": "buy", "notional_usd": "NaN"}],
+    [{"side": "buy", "notional_usd": "-1.00"}],
+    [{"side": "buy"}],
+])
+def test_prefunded_buy_rejects_malformed_order_evidence(orders):
+    with pytest.raises(production.ProductionStop):
+        production.require_prefunded_buy_cash(
+            orders=orders,
+            opening_cash=Decimal("30"),
+            current_cash=Decimal("30"),
+        )
+
+
+def test_actual_orchestrator_buy_materialization_rechecks_original_cash(monkeypatch):
+    monkeypatch.setattr(
+        production, "verify_live_portfolio_risk", lambda **kwargs: None
+    )
+    monkeypatch.setattr(
+        production, "materialize_orders", lambda **kwargs: _prefunded_buy()
+    )
+    deps, last, _ = production.build_dependencies(
+        policy_context={"capital_ceiling": Decimal("130.30")},
+        target_weights={},
+        candidates={},
+        opening_cash=Decimal("10.00"),
+    )
+    with pytest.raises(production.ProductionStop, match="unverified sale"):
+        deps.materialize_execution_phase(
+            broker_snapshot={"cash": Decimal("80.00")},
+            phase="BUY",
+        )
+    assert last["BUY"] == []
+
+
+def test_actual_orchestrator_buy_materialization_accepts_prefunded_batch(monkeypatch):
+    monkeypatch.setattr(
+        production, "verify_live_portfolio_risk", lambda **kwargs: None
+    )
+    monkeypatch.setattr(
+        production, "materialize_orders", lambda **kwargs: _prefunded_buy()
+    )
+    deps, last, _ = production.build_dependencies(
+        policy_context={"capital_ceiling": Decimal("130.30")},
+        target_weights={},
+        candidates={},
+        opening_cash=Decimal("20.00"),
+    )
+    result = deps.materialize_execution_phase(
+        broker_snapshot={"cash": Decimal("18.00")},
+        phase="BUY",
+    )
+    assert result["orders"] == _prefunded_buy()
+    assert last["BUY"] == _prefunded_buy()

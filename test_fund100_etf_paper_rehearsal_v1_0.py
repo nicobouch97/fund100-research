@@ -9,30 +9,31 @@ import fund100_live_portfolio_risk_v1_0 as portfolio
 import fund100_live_operator_control_v1_0 as operator
 
 
-def test_real_production_two_phase_rehearsal_is_funded_by_sell():
+def test_same_event_sell_funded_rehearsal_holds_before_any_order(monkeypatch):
+    # Starting synthetic cash is zero: an instant PAPER SELL fill cannot
+    # establish settled BUY funds. Production must reject before any POST.
+    attempted = []
+    def forbid_submit(self, **kwargs):
+        attempted.append(kwargs)
+        raise AssertionError("Unfunded event attempted broker submission")
+    monkeypatch.setattr(paper.PaperBroker, "submit", forbid_submit)
     report = paper.rehearse()
-    assert report["status"] == "SUCCESS"
-    assert report["mode"] == "OFFLINE_SYNTHETIC_PAPER"
-    assert report["risk_level"] == "HIGH"
-    assert report["simulated_orders"] == [
-        {
-            "client_order_id": "f100live-fedcba987654-s-eem",
-            "side": "sell", "symbol": "EEM", "notional_usd": "5.00",
-        },
-        {
-            "client_order_id": "f100live-fedcba987654-b-xlv",
-            "side": "buy", "symbol": "XLV", "notional_usd": "5.00",
-        },
-    ]
-    assert report["order_count"] == 2
-    assert Decimal(report["synthetic_ending_equity_usd"]) == Decimal("100")
-    assert report["replay_duplicate_orders"] == 0
+    assert report["status"] == "HOLD_UNVERIFIED_BUY_CASH"
+    assert report["order_count"] == 0
+    assert report["simulated_orders"] == []
+    assert report["phases"] == []
     assert report["unmocked_broker_requests"] == 0
-    assert [p["phase"] for p in report["phases"]] == ["SELL", "BUY"]
-    assert all("cumulative_cap_approved" in p["trace"] for p in report["phases"])
+    assert report["synthetic_ending_equity_usd"] == "100.00"
+    assert attempted == []
 
 
-def test_operator_stop_between_phases_blocks_next_trade():
+def test_operator_stop_between_phases_blocks_next_trade(monkeypatch):
+    # Isolate the independently tested operator STOP behavior from the
+    # prefunding gate. This mock is OFFLINE ONLY and is NOT settlement proof.
+    monkeypatch.setattr(
+        paper.production, "require_prefunded_buy_cash",
+        lambda **kwargs: Decimal("0"),
+    )
     with pytest.raises(operator.OperatorControlStop, match="STOP"):
         paper.rehearse(stop_after_sell=True)
 
