@@ -242,10 +242,18 @@ def rehearse(*, stop_after_sell: bool = False, level: str = "HIGH",
         ), Decimal("0")) > policy["capital_ceiling"]:
             raise production.ProductionStop("Synthetic event exceeds pilot ceiling")
 
+        # A preview funded by a synthetic SELL is not settled BUY cash.
+        # Reject before even the first simulated SELL, matching production.
+        production.require_prefunded_buy_cash(
+            orders=buy_preview,
+            opening_cash=snapshot["cash"],
+            current_cash=snapshot["cash"],
+        )
         deps, phases, allowed = production.build_dependencies(
             policy_context=policy,
             target_weights=adjusted,
             candidates=event["candidates"],
+            opening_cash=snapshot["cash"],
         )
         traces = []
         for phase in ("SELL", "BUY"):
