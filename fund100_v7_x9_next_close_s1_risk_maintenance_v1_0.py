@@ -75,10 +75,13 @@ def _validate_view(prices,start,cost_bps):
     return view
 
 def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.0,
-             risk_history_variant:str=ORIGINAL_RISK_HISTORY):
+             risk_history_variant:str=ORIGINAL_RISK_HISTORY,
+             prefunded_monthly:bool=False):
     if type(risk_history_variant) is not str or risk_history_variant not in (
             ORIGINAL_RISK_HISTORY,BROKER_HISTORY_PROXY):
         raise RiskStudyStop("Unregistered account risk-history sensitivity")
+    if type(prefunded_monthly) is not bool:
+        raise RiskStudyStop("Unregistered prefunded monthly research mode")
     if type(capital_usd) is not float or capital_usd not in CAPITAL_SENSITIVITIES:
         raise RiskStudyStop("Unregistered capital-size sensitivity")
     data=_validate_view(prices,start,cost_bps)
@@ -93,6 +96,9 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
     sell_sides=0
     skipped_sides=0
     stop_full_position_minimum_exceptions=0
+    monthly_signals=monthly_executions=monthly_funding_holds=0
+    monthly_buy_sides=0
+    monthly_buy_notional=monthly_buy_fees=0.0
     forced_stop=False
     stop_signal=None
     stop_signal_nav=None
@@ -116,38 +122,81 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
         if pending is not None:
             if i<=pending["signal_index"]:
                 raise RiskStudyStop("Same-session hindsight execution")
-            sold={}
-            for s,requested_qty in pending["quantities"].items():
-                qty=min(units[s],requested_qty)
-                notional=qty*px[s]
-                # The pilot's full-position risk-reducing sale exception is
-                # distinct from the $1 minimum for routine maintenance.
-                # This is a HYPOTHETICAL full-exit fill, not evidence that
-                # Alpaca accepts a sub-$1 fractional share sale.
-                full_stop_exit=(pending["kind"]=="STOP_EXIT" and
-                                requested_qty>=units[s]-1e-12)
-                if notional+1e-10<MODELED_MIN_SELL_USD:
-                    if not full_stop_exit:
-                        skipped_sides+=1
-                        continue
-                    stop_full_position_minimum_exceptions+=1
-                units[s]-=qty
-                cash+=notional*(1-fee)
-                total_sell_fees+=notional*fee
-                sell_notional+=notional
-                sell_sides+=1
-                sold[s]=qty
-            log.append({
-                "signal_session":pending["signal_session"],
-                "execution_session":when,
-                "kind":pending["kind"],
-                "fixed_prior_close_share_quantity_sold":sold,
-                "requested_at_prior_close":True,
-                "execution_at_following_session_close_assumed":True,
-            })
-            if pending["kind"]=="STOP_EXIT" and stop_execution_session is None:
-                stop_execution_session=when
-            pending=None
+            if pending["kind"]=="MONTHLY_PREFUNDED":
+                # Prior completed close fixes signed share quantities.
+                # Same-event SELL credits never finance a BUY.
+                signed={s:q*px[s] for s,q in pending["quantities"].items()}
+                sell=sum(-v for v in signed.values() if v<0)
+                buy=sum(v for v in signed.values() if v>0)
+                impossible_sell=any(
+                    -q>units[s]+1e-10 for s,q in pending["quantities"].items())
+                opening_cash=cash
+                new_cash=opening_cash+sell*(1-fee)-buy*(1+fee)
+                if (impossible_sell or buy*(1+fee)>opening_cash+1e-8
+                    or new_cash < -1e-8):
+                    monthly_funding_holds+=1
+                    log.append({
+                        "signal_session":pending["signal_session"],
+                        "execution_session":when,
+                        "kind":"MONTHLY_PREFUNDED_HOLD",
+                        "same_event_sell_proceeds_not_spendable":True,
+                        "no_orders_executed":True,
+                    })
+                else:
+                    for s,q in pending["quantities"].items():
+                        units[s]=max(0.0,units[s]+q)
+                        if q<0:
+                            sell_sides+=1
+                        elif q>0:
+                            monthly_buy_sides+=1
+                    cash=max(0.0,new_cash)
+                    sell_notional+=sell
+                    total_sell_fees+=sell*fee
+                    monthly_buy_notional+=buy
+                    monthly_buy_fees+=buy*fee
+                    monthly_executions+=1
+                    log.append({
+                        "signal_session":pending["signal_session"],
+                        "execution_session":when,
+                        "kind":"MONTHLY_PREFUNDED_EXECUTED",
+                        "fixed_prior_close_signed_share_quantities":
+                            pending["quantities"],
+                        "buy_funded_from_pre_sell_cash_only":True,
+                    })
+                pending=None
+            else:
+                sold={}
+                for s,requested_qty in pending["quantities"].items():
+                    qty=min(units[s],requested_qty)
+                    notional=qty*px[s]
+                    # The pilot's full-position risk-reducing sale exception is
+                    # distinct from the $1 minimum for routine maintenance.
+                    # This is a HYPOTHETICAL full-exit fill, not evidence that
+                    # Alpaca accepts a sub-$1 fractional share sale.
+                    full_stop_exit=(pending["kind"]=="STOP_EXIT" and
+                                    requested_qty>=units[s]-1e-12)
+                    if notional+1e-10<MODELED_MIN_SELL_USD:
+                        if not full_stop_exit:
+                            skipped_sides+=1
+                            continue
+                        stop_full_position_minimum_exceptions+=1
+                    units[s]-=qty
+                    cash+=notional*(1-fee)
+                    total_sell_fees+=notional*fee
+                    sell_notional+=notional
+                    sell_sides+=1
+                    sold[s]=qty
+                log.append({
+                    "signal_session":pending["signal_session"],
+                    "execution_session":when,
+                    "kind":pending["kind"],
+                    "fixed_prior_close_share_quantity_sold":sold,
+                    "requested_at_prior_close":True,
+                    "execution_at_following_session_close_assumed":True,
+                })
+                if pending["kind"]=="STOP_EXIT" and stop_execution_session is None:
+                    stop_execution_session=when
+                pending=None
         position={s:units[s]*px[s] for s in S1}
         gross=sum(position.values())
         nav=cash+gross
@@ -237,6 +286,28 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
             if proposed:
                 pending={"kind":"RISK_REPAIR","signal_index":i,
                          "signal_session":when,"quantities":proposed}
+        elif prefunded_monthly and (
+                i==last_i or data.index[i+1].month!=date.month):
+            # A HARD STOP or sell-only repair supersedes rotation.
+            weights={s:position[s]/nav for s in S1}
+            if max(abs(S1[s]-weights[s]) for s in S1)>=.10:
+                post=nav
+                for _ in range(100):
+                    turnover=sum(abs(S1[s]*post-position[s]) for s in S1)
+                    nxt=nav-fee*turnover
+                    if not np.isfinite(nxt) or nxt<=0:
+                        raise RiskStudyStop("Invalid prefunded rotation NAV")
+                    if abs(nxt-post)<=1e-12*nav:
+                        post=nxt
+                        break
+                    post=nxt
+                else:
+                    raise RiskStudyStop("Prefunded rotation solver failed")
+                pending={"kind":"MONTHLY_PREFUNDED","signal_index":i,
+                         "signal_session":when,
+                         "quantities":{s:(S1[s]*post-position[s])/px[s]
+                                       for s in S1}}
+                monthly_signals+=1
         prev_nav=nav
     # Last bar fixed liquidation is benchmark-accounting only, not a LIVE
     # instruction, settlement proof or executable quote. Same convention X8.
@@ -268,6 +339,15 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
         "sessions":len(data),
         "model_starting_capital_usd":_metric(capital_usd),
         "risk_history_variant":risk_history_variant,
+        "prefunded_monthly_rotations_enabled":prefunded_monthly,
+        "monthly_rotation_signals":monthly_signals,
+        "monthly_prefunded_executions":monthly_executions,
+        "monthly_prefunded_funding_holds":monthly_funding_holds,
+        "monthly_prefunded_buy_sides":monthly_buy_sides,
+        "monthly_prefunded_buy_notional_usd":_metric(monthly_buy_notional),
+        "monthly_prefunded_buy_fees_usd":_metric(monthly_buy_fees),
+        "monthly_opening_cash_not_authenticated_settlement":True,
+        "risk_repairs_and_hard_stops_take_priority_over_rotations":True,
         "broker_70_close_proxy_is_not_authenticated_account_risk":True,
         "broker_cashflow_and_current_mark_timestamp_not_observed":True,
         "initial_cash_reserve_usd":_metric(capital_usd*MIN_CASH),
@@ -324,7 +404,10 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
     }
 
 def analyze(prices:pd.DataFrame,digest:str,*,
-            include_broker_window_proxy:bool=False):
+            include_broker_window_proxy:bool=False,
+            include_prefunded_monthly:bool=False):
+    if type(include_prefunded_monthly) is not bool:
+        raise RiskStudyStop("Invalid monthly risk-integration selection")
     if type(include_broker_window_proxy) is not bool:
         raise RiskStudyStop("Invalid broker-history proxy selection")
     if digest!=SOURCE_SHA256:raise RiskStudyStop("Unverified original historic source")
@@ -359,9 +442,18 @@ def analyze(prices:pd.DataFrame,digest:str,*,
                     "managed_s1_net_exit_costed_cagr_pct"],
                 "not_independent_alpha_or_live_stop_evidence":True,
             } for name in WINDOWS} for cost in proxy}
+    integrated=None
+    if include_prefunded_monthly:
+        integrated={str(b):{
+            name:simulate(source,start=start,cost_bps=b,capital_usd=130.30,
+                          risk_history_variant=BROKER_HISTORY_PROXY,
+                          prefunded_monthly=True)
+            for name,start in WINDOWS.items()} for b in COSTS}
     return {
         "schema":SCHEMA,
         "status":"REPEATEDLY_STUDIED_CAUSAL_RISK_REPAIR_RETROSPECTIVE_NO_ORDER",
+        "prefunded_monthly_risk_integration":integrated,
+        "prefunded_monthly_risk_integration_requested":include_prefunded_monthly,
         "original_source_sha256":SOURCE_SHA256,
         "historical_signals_not_independent":True,
         "risk_not_fitted_to_exploratory_market_outcomes":True,
@@ -397,7 +489,8 @@ def main():
     p.add_argument("--output",type=Path,required=True)
     args=p.parse_args()
     data,digest=old.load_frozen(Path("research_lab/frozen_history_v2.csv"))
-    result=analyze(data,digest,include_broker_window_proxy=True)
+    result=analyze(data,digest,include_broker_window_proxy=True,
+                   include_prefunded_monthly=True)
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps(result,sort_keys=True,indent=2)+"\n")
     for name,period in result["results"]["15"].items():
@@ -421,5 +514,13 @@ def main():
               "original CAGR",comparison["original_costed_full_window_cagr_pct"],
               "proxy CAGR",comparison["proxy_costed_full_window_cagr_pct"],
               "NOT LIVE OR ALPHA",True)
+    for name,period in result["prefunded_monthly_risk_integration"]["15"].items():
+        print("PREFUNDED_MONTHLY_WITH_RISK",name,
+              "CAGR",period["managed_s1_net_exit_costed_cagr_pct"],
+              "STOP",period["first_stop_signal_close"],
+              "ROTATIONS",period["monthly_prefunded_executions"],
+              "FUNDING_HOLDS",period["monthly_prefunded_funding_holds"],
+              "REPAIRS",sum(x["kind"]=="RISK_REPAIR" for x in period["trade_log"]),
+              "NOT LIVE OR INDEPENDENT ALPHA",True)
     print("Only historical risk-maintenance economics; no trading permission.")
 if __name__=="__main__":main()
