@@ -260,3 +260,67 @@ def test_broker_window_variant_is_explicit_and_original_is_unchanged():
     with pytest.raises(x9.RiskStudyStop):
         x9.analyze(frame,x9.SOURCE_SHA256,
                    include_broker_window_proxy="yes")
+
+
+def test_prefunded_monthly_mode_preserves_original_default_and_flat_path():
+    frame=scenario()
+    base=x9.simulate(frame,start="2020-01-01",cost_bps=15)
+    explicit=x9.simulate(frame,start="2020-01-01",cost_bps=15,
+                         prefunded_monthly=False)
+    assert base==explicit
+    monthly=x9.simulate(frame,start="2020-01-01",cost_bps=15,
+                        prefunded_monthly=True)
+    assert monthly["prefunded_monthly_rotations_enabled"] is True
+    assert monthly["monthly_rotation_signals"]==0
+    assert monthly["monthly_prefunded_executions"]==0
+    assert monthly["monthly_prefunded_funding_holds"]==0
+    assert monthly["actual_broker_orders"]==0
+
+
+def test_monthly_signal_is_prior_close_and_unverified_sale_funding_holds_whole_basket():
+    dates=pd.bdate_range("2021-01-01",periods=520)
+    t=np.arange(len(dates),dtype=float)
+    # Smooth sector divergence causes a >10pp month-end target gap
+    # without creating a daily-loss, volatility or drawdown HARD STOP.
+    frame=pd.DataFrame({s:np.full(len(dates),100.) for s in x9.S1},
+                       index=dates)
+    frame["XLK"]=100*(.9985**t)
+    frame[original.BENCH]=100.
+    report=x9.simulate(frame,start="2020-01-01",cost_bps=15,
+                       capital_usd=130.30,prefunded_monthly=True,
+                       risk_history_variant=x9.BROKER_HISTORY_PROXY)
+    holds=[e for e in report["trade_log"]
+           if e["kind"]=="MONTHLY_PREFUNDED_HOLD"]
+    assert report["first_stop_signal_close"] is None
+    assert report["monthly_rotation_signals"]>0
+    assert len(holds)>0
+    assert report["monthly_prefunded_funding_holds"]==len(holds)
+    assert report["monthly_prefunded_executions"]==0
+    assert all(e["signal_session"]<e["execution_session"] for e in holds)
+    assert all(e["same_event_sell_proceeds_not_spendable"] and
+               e["no_orders_executed"] for e in holds)
+    assert report["monthly_prefunded_buy_fees_usd"]==0
+    assert report["actual_broker_orders"]==0
+
+
+def test_hard_stop_preempts_monthly_reentry_even_when_mode_enabled():
+    frame=scenario("drawdown")
+    report=x9.simulate(frame,start="2020-01-01",cost_bps=15,
+                       prefunded_monthly=True)
+    assert report["first_stop_signal_close"]==frame.index[5].date().isoformat()
+    assert report["first_stop_execution_session"]==frame.index[6].date().isoformat()
+    assert report["monthly_prefunded_executions"]==0
+    assert report["monthly_rotation_signals"]==0
+    assert all(e["kind"]=="STOP_EXIT" for e in report["trade_log"])
+    assert report["actual_broker_orders"]==0
+
+
+def test_prefunded_monthly_flag_and_matrix_selection_are_strict():
+    frame=scenario()
+    for invalid in (None,"yes",1):
+        with pytest.raises(x9.RiskStudyStop,match="prefunded monthly"):
+            x9.simulate(frame,start="2020-01-01",cost_bps=15,
+                        prefunded_monthly=invalid)
+        with pytest.raises(x9.RiskStudyStop,match="monthly risk-integration"):
+            x9.analyze(frame,x9.SOURCE_SHA256,
+                       include_prefunded_monthly=invalid)
