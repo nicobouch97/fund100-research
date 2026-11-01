@@ -76,6 +76,18 @@ jobs:
                       'not_independent_alpha_or_live_stop_evidence']
                   for leg in p['trade_log']:
                       assert leg['signal_session']<leg['execution_session']
+          for cost,windows in result['prefunded_monthly_risk_integration'].items():
+              for name,p in windows.items():
+                  assert p['modeled_max_routine_ticket_usd']==65.0
+                  assert p['execution_close_risk_and_ticket_checks_reject_atomic_basket']
+                  holds=[e for e in p['trade_log']
+                         if e['kind']=='MONTHLY_EXECUTION_ENVELOPE_HOLD']
+                  assert p['monthly_execution_envelope_holds']==len(holds)
+                  assert all(e['no_orders_executed'] and
+                             e['signal_session']<e['execution_session']
+                             for e in holds)
+                  assert p['actual_broker_orders']==0
+          print('Integrated monthly rotations checked at execution close against the unchanged pilot envelope.')
           print('Original frozen X9 and broker-history window proxy independently costed; no trading authority.')
           PY
       - uses: actions/upload-artifact@v4
