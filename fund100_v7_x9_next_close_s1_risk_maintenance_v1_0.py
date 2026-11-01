@@ -93,7 +93,7 @@ def _monthly_execution_hold_reason(units,cash,px,quantities,fee):
         return "BUY_REQUIRES_UNVERIFIED_SAME_EVENT_SELL_CREDIT"
     if any((abs(v)<MODELED_MIN_SELL_USD-1e-10 or
             abs(v)>MODELED_MAX_ROUTINE_TICKET_USD+1e-10)
-           for v in signed.values() if abs(v)>1e-10):
+           for v in signed.values() if v!=0):
         return "ROUTINE_TICKET_OUTSIDE_PILOT_DOLLAR_LIMITS"
     post={s:(units[s]+quantities.get(s,0.0))*px[s] for s in S1}
     post_nav=new_cash+sum(post.values())
