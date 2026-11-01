@@ -1162,3 +1162,64 @@ def test_complete_writer_receipt_is_acknowledgement_not_settlement():
     assert result["trace"][-1] == "writer_receipts_validated_not_fills"
     assert result["writer_result"]["orders"][0]["status"] == "SUBMITTED"
     assert harness.post_count == 1
+
+
+@pytest.mark.parametrize(
+    ("claimed_outcome", "broker_status"),
+    [
+        ("EXISTING_FILLED_ORDER", "new"),
+        ("EXISTING_FILLED_ORDER", "partially_filled"),
+        ("EXISTING_NO_RESUBMIT_ORDER", "filled"),
+    ],
+)
+def test_recovered_writer_receipt_must_match_actual_broker_status(
+    claimed_outcome, broker_status
+):
+    # No receipt can promote an unfilled broker order to a recovered fill,
+    # or report an already-filled order as an active no-resubmit order.
+    harness = Harness()
+    original = harness.submit_authorized_order_batch
+
+    def contradictory_writer(**kwargs):
+        result = original(**kwargs)
+        receipt = result["orders"][0]
+        receipt["status"] = claimed_outcome
+        receipt["broker_order"]["status"] = broker_status
+        return result
+
+    deps = replace(harness.deps(), submit_authorized_order_batch=contradictory_writer)
+    with pytest.raises(
+        orchestrator.OrchestrationStop, match="recovered .* claim contradicts"
+    ):
+        _run_with_injected_dependencies(deps)
+    assert harness.writer_calls == 1
+    assert harness.post_count == 1
+
+
+def test_two_client_ids_cannot_share_one_broker_order_identity():
+    # A duplicated broker ID across separate client IDs could otherwise
+    # make one broker order appear as two separate reconciled executions.
+    orders = [
+        {"client_order_id": "f100live-first", "symbol": "ACWI",
+         "side": "sell", "notional_usd": "10"},
+        {"client_order_id": "f100live-second", "symbol": "EEM",
+         "side": "sell", "notional_usd": "20"},
+    ]
+    receipts = [
+        {"client_order_id": order["client_order_id"], "status": "SUBMITTED",
+         "broker_order": {
+             "id": "same-broker-id",
+             "client_order_id": order["client_order_id"],
+             "symbol": order["symbol"], "side": order["side"],
+             "type": "market", "time_in_force": "day",
+             "status": "filled", "notional": order["notional_usd"],
+         }}
+        for order in orders
+    ]
+    with pytest.raises(
+        orchestrator.OrchestrationStop, match="duplicate broker order identity"
+    ):
+        orchestrator.validate_writer_receipts(
+            {"writer_schema": candidate.WRITER_CANDIDATE_SCHEMA,
+             "orders": receipts}, orders
+        )

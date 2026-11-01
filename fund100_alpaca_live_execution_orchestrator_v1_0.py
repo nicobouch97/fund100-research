@@ -578,6 +578,10 @@ def validate_writer_receipts(writer_result: Any, orders: list[dict]) -> None:
             "ORCHESTRATOR STOP: incomplete writer acknowledgement batch; reconcile."
         )
 
+    # A broker order ID identifies one actual broker order. Two distinct
+    # client IDs must never be allowed to claim the same broker order/fill.
+    seen_broker_ids: set[str] = set()
+
     for expected, receipt in zip(orders, writer_result["orders"]):
         if (type(receipt) is not dict
             or receipt.get("client_order_id") != expected["client_order_id"]
@@ -598,6 +602,26 @@ def validate_writer_receipts(writer_result: Any, orders: list[dict]) -> None:
             or broker_order.get("status") not in SAFE_BROKER_STATUSES):
             raise OrchestrationStop(
                 "ORCHESTRATOR STOP: broker acknowledgement not reconciled to intent."
+            )
+
+        broker_id = broker_order["id"].strip()
+        if broker_id in seen_broker_ids:
+            raise OrchestrationStop(
+                "ORCHESTRATOR STOP: duplicate broker order identity in batch."
+            )
+        seen_broker_ids.add(broker_id)
+
+        # Recovery labels must agree with the actual broker status.
+        # In particular, an active/partial order is NOT a completed fill.
+        if (receipt["status"] == "EXISTING_FILLED_ORDER"
+            and broker_order["status"] != "filled"):
+            raise OrchestrationStop(
+                "ORCHESTRATOR STOP: recovered fill claim contradicts broker status."
+            )
+        if (receipt["status"] == "EXISTING_NO_RESUBMIT_ORDER"
+            and broker_order["status"] == "filled"):
+            raise OrchestrationStop(
+                "ORCHESTRATOR STOP: recovered active claim contradicts filled status."
             )
 
         try:
