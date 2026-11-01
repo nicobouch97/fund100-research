@@ -61,7 +61,22 @@ jobs:
                       assert p['actual_broker_orders']==0
                       for leg in p['trade_log']:
                           assert leg['signal_session']<leg['execution_session']
-          print('Original frozen source, next-close-only sell decisions, no trading authority.')
+          assert result['broker_window_proxy_explicitly_requested'] is True
+          assert result['broker_window_proxy_not_complete_live_risk_equivalence'] is True
+          assert set(result['broker_70_close_window_proxy'])=={'5','15','35'}
+          assert set(result['broker_70_close_window_comparison'])=={'5','15','35'}
+          for cost,windows in result['broker_70_close_window_proxy'].items():
+              assert set(windows)==set(x.WINDOWS)
+              for name,p in windows.items():
+                  assert p['risk_history_variant']==x.BROKER_HISTORY_PROXY
+                  assert p['model_starting_capital_usd']==130.30
+                  assert p['actual_broker_orders']==0
+                  assert p['broker_70_close_proxy_is_not_authenticated_account_risk']
+                  assert result['broker_70_close_window_comparison'][cost][name][
+                      'not_independent_alpha_or_live_stop_evidence']
+                  for leg in p['trade_log']:
+                      assert leg['signal_session']<leg['execution_session']
+          print('Original frozen X9 and broker-history window proxy independently costed; no trading authority.')
           PY
       - uses: actions/upload-artifact@v4
         with:

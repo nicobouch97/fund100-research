@@ -208,3 +208,55 @@ def test_stop_exit_on_final_close_does_not_count_exit_session_as_cash_only():
     assert result["post_stop_cash_only_sessions"]==0
     assert result["full_window_cagr_includes_post_stop_cash_period"] is False
     assert result["actual_broker_orders"]==0
+
+
+def test_broker_70_close_proxy_detects_early_vol_without_63_return_wait():
+    frame=scenario()
+    # A small but alternating early shock: neither 6% daily loss nor
+    # 20% drawdown, but 5 observed daily returns annualize above 35%.
+    for ticker in x9.S1:
+        for j in range(1,7):
+            frame.iloc[j,frame.columns.get_loc(ticker)]=104.0 if j%2 else 100.0
+    original_result=x9.simulate(frame,start="2020-01-01",cost_bps=15)
+    proxy=x9.simulate(frame,start="2020-01-01",cost_bps=15,
+                      risk_history_variant=x9.BROKER_HISTORY_PROXY)
+    assert original_result["first_stop_signal_close"] is None
+    assert proxy["first_stop_signal_close"]==frame.index[5].date().isoformat()
+    assert proxy["first_stop_signal_reasons"]==["volatility"]
+    assert proxy["first_stop_execution_session"]==frame.index[6].date().isoformat()
+    assert proxy["broker_70_close_proxy_is_not_authenticated_account_risk"]
+    assert proxy["actual_broker_orders"]==0
+
+
+def test_broker_70_close_proxy_does_not_inherit_lifetime_peak():
+    frame=scenario()
+    frame=frame.reindex(pd.bdate_range("2021-01-01",periods=300)).ffill()
+    # Gentle multi-month decline: >20% from original inception, but
+    # <20% over any 70-close risk window; no 6% daily shock.
+    for ticker in x9.S1:
+        frame[ticker]=100.0*(0.9985**np.arange(len(frame)))
+    original_result=x9.simulate(frame,start="2020-01-01",cost_bps=15)
+    proxy=x9.simulate(frame,start="2020-01-01",cost_bps=15,
+                      risk_history_variant=x9.BROKER_HISTORY_PROXY)
+    assert original_result["first_stop_signal_close"] is not None
+    assert "drawdown" in original_result["first_stop_signal_reasons"]
+    assert proxy["first_stop_signal_close"] is None
+    assert proxy["forced_stop_signal_latched"] is False
+    assert proxy["risk_breach_session_counts_after_delay"]["drawdown"]==0
+    assert proxy["actual_broker_orders"]==0
+
+
+def test_broker_window_variant_is_explicit_and_original_is_unchanged():
+    frame=scenario("drawdown")
+    base=x9.simulate(frame,start="2020-01-01",cost_bps=15)
+    explicit=x9.simulate(frame,start="2020-01-01",cost_bps=15,
+                         risk_history_variant=x9.ORIGINAL_RISK_HISTORY)
+    assert base==explicit
+    assert base["risk_history_variant"]==x9.ORIGINAL_RISK_HISTORY
+    for variant in ("LIVE","",None,True):
+        with pytest.raises(x9.RiskStudyStop):
+            x9.simulate(frame,start="2020-01-01",cost_bps=15,
+                        risk_history_variant=variant)
+    with pytest.raises(x9.RiskStudyStop):
+        x9.analyze(frame,x9.SOURCE_SHA256,
+                   include_broker_window_proxy="yes")
