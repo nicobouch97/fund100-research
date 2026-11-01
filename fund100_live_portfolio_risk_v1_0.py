@@ -197,10 +197,16 @@ def check_account_performance(
         raise PortfolioRiskStop("Account daily-loss circuit breaker triggered.")
 
     equities = validated_equity_history(history)
-    # Latest LIVE equity must be included; broker daily history may lag.
+    # A broker 1D history may already contain the current account mark.
+    # There is no timestamp for account.equity to distinguish a duplicate
+    # from a genuinely new flat day. Evaluate both interpretations for
+    # volatility and enforce the stricter result rather than inventing a
+    # zero return that can dilute a real breach.
     if abs(equities[-1] / current - Decimal("1")) > Decimal("0.25"):
         raise PortfolioRiskStop("Current account/history equity materially diverged.")
-    equities.append(current)
+    identical_current_mark = equities[-1] == current
+    if not identical_current_mark:
+        equities.append(current)
 
     returns = []
     for older, newer in zip(equities, equities[1:]):
@@ -215,6 +221,13 @@ def check_account_performance(
         raise PortfolioRiskStop("Rolling account drawdown limit breached.")
 
     realized_vol = Decimal(str(stdev(returns) * sqrt(252)))
+    if identical_current_mark:
+        # If this was a *new* flat day, adding a genuine 0% return can
+        # increase OR decrease sample volatility depending on return mean.
+        # Choose the larger value until the broker supplies an unambiguous
+        # current-mark timestamp; never relax the HIGH 35% STOP.
+        flat_day_vol = Decimal(str(stdev([*returns, 0.0]) * sqrt(252)))
+        realized_vol = max(realized_vol, flat_day_vol)
     if realized_vol > profile.max_realized_volatility:
         raise PortfolioRiskStop("Realized account volatility ceiling breached.")
 

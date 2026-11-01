@@ -293,8 +293,12 @@ PINNED_PRODUCTION_RISK_MODULE = (
 PINNED_PRODUCTION_OPERATOR_MODULE = (
     "953c015d2c38c84212f31c290f325504754ad425"
 )
+# Reviewed 31 Oct 2026: LIVE risk source handles identical current
+# equity as an ambiguous duplicate/new flat 1D mark, enforcing the larger
+# of the two volatility estimates. Distinct marks still enter history;
+# tier thresholds, broker endpoints, credential scopes and STOP unchanged.
 PINNED_PRODUCTION_PORTFOLIO_MODULE = (
-    "314ef3332d16867815e94264db09eb48d96937a0"
+    "354f25363df57d5a3b3fe392575a750d2d40f13d"
 )
 PINNED_PRODUCTION_SIZING_MODULE = (
     "cf30d38ad36e048ee74eb597fc2445b9317ab500"
