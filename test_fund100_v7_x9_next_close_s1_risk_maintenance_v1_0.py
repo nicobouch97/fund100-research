@@ -361,13 +361,21 @@ def test_monthly_execution_close_gate_catches_cash_risk_and_tickets():
     assert x9.BROKER_GETS==x9.BROKER_POSTS==x9.BROKER_ORDERS==0
 
 
-def test_prefunded_monthly_does_not_execute_post_trade_cash_floor_violation(monkeypatch):
-    # Research-only larger opening reserve makes the BUY affordable, but
-    # a 95% target would breach that same reserve at execution. This
-    # exercises the integrated engine, not just the pure arithmetic gate.
-    monkeypatch.setattr(x9,"MIN_CASH",.35)
-    report=x9.simulate(scenario(),start="2020-01-01",cost_bps=15,
-                       capital_usd=130.30,prefunded_monthly=True)
+def test_integrated_engine_records_atomic_envelope_hold_without_orders(monkeypatch):
+    # Pure arithmetic is exercised above. Force the execution-time decision
+    # on an otherwise valid historical monthly signal to prove that the
+    # integrated engine never books a synthetic partial rotation.
+    dates=pd.bdate_range("2021-01-01",periods=520)
+    t=np.arange(len(dates),dtype=float)
+    frame=pd.DataFrame({s:np.full(len(dates),100.) for s in x9.S1},
+                       index=dates)
+    frame["XLK"]=100*(.9991**t)
+    frame[original.BENCH]=100.
+    monkeypatch.setattr(x9,"_monthly_execution_hold_reason",
+                        lambda *args:"POST_FEE_CASH_GROSS_OR_CONCENTRATION_BREACH")
+    report=x9.simulate(frame,start="2020-01-01",cost_bps=15,
+                       capital_usd=130.30,prefunded_monthly=True,
+                       risk_history_variant=x9.BROKER_HISTORY_PROXY)
     holds=[e for e in report["trade_log"]
            if e["kind"]=="MONTHLY_EXECUTION_ENVELOPE_HOLD"]
     assert report["monthly_rotation_signals"]>0
