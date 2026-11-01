@@ -17,8 +17,13 @@ def test_same_event_sell_funded_rehearsal_holds_before_any_order(monkeypatch):
         attempted.append(kwargs)
         raise AssertionError("Unfunded event attempted broker submission")
     monkeypatch.setattr(paper.PaperBroker, "submit", forbid_submit)
-    with pytest.raises(paper.production.ProductionStop, match="unverified sale"):
-        paper.rehearse()
+    report = paper.rehearse()
+    assert report["status"] == "HOLD_UNVERIFIED_BUY_CASH"
+    assert report["order_count"] == 0
+    assert report["simulated_orders"] == []
+    assert report["phases"] == []
+    assert report["unmocked_broker_requests"] == 0
+    assert report["synthetic_ending_equity_usd"] == "100.00"
     assert attempted == []
 
 
