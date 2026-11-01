@@ -530,6 +530,61 @@ def test_unaffordable_gap_does_not_create_margin_or_same_close_entry():
     assert (delayed["cash"]>=0).all()
 
 
+@pytest.mark.parametrize("reserve",[.05,.10,.15])
+def test_prefunded_next_close_does_not_spend_unverified_sale_credit(reserve):
+    prices=sample(n=900)
+    first=next(i for i in range(len(prices))
+               if l1.month_end_session(prices.index,i))
+    # A gradual, fictional sector rally after the first entry creates
+    # a month-end rotation that sells the winner to buy laggards.
+    col=prices.columns.get_loc("XLK")
+    for i in range(first+1,len(prices)):
+        prices.iat[i,col]*=1.04**min(i-first,24)
+    old=s.simulate_next_close_monthly(
+        prices,cost_bps=15,reserve_fraction=reserve)
+    safe=s.simulate_next_close_monthly(
+        prices,cost_bps=15,reserve_fraction=reserve,
+        prefunded_buy_only=True)
+    # Initial entry uses pre-existing cash; no settlement credit needed.
+    assert old.iloc[first+1]["trade"]
+    assert safe.iloc[first+1]["trade"]
+    assert not safe.iloc[first+1]["unverified_sale_funding_hold"]
+    held=safe.index[safe["unverified_sale_funding_hold"]]
+    assert len(held)>0
+    # At the first divergence the legacy same-event sale-credit path
+    # executes, while the conservative prefunded path holds the basket.
+    first_hold=held[0]
+    assert old.loc[first_hold,"trade"]
+    assert not safe.loc[first_hold,"trade"]
+    assert safe.loc[first_hold,"unaffordable_next_close_rebalance"]
+    assert (safe["cash"]>=0).all()
+    assert (safe["gross_risk_exposure"]<=1+1e-10).all()
+    assert safe["prefunded_buy_only_counterfactual"].all()
+    assert not old["prefunded_buy_only_counterfactual"].any()
+
+
+def test_prefunded_cash_mode_is_boolean_and_report_never_proves_settlement():
+    prices=sample(n=900)
+    with pytest.raises(s.S1EconomicsStop):
+        s.simulate_next_close_monthly(
+            prices,cost_bps=15,reserve_fraction=.05,
+            prefunded_buy_only=1)
+    report=s.evaluate(sample(n=3500),source_sha256=l1.ORIGINAL_SHA)
+    assert report["prefunded_next_close_is_fixed_conservative_funding_sensitivity_only"]
+    assert report["prefunded_next_close_cannot_prove_opening_cash_settlement"]
+    assert not report["new_strategy_live_authorized"]
+    assert report["broker_calls"]==report["paper_orders"]==report["live_orders"]==0
+    for scenarios in report["causal_next_close_monthly_rebalance_sensitivity"].values():
+        for costs in scenarios.values():
+            for section in costs.values():
+                assert isinstance(section["prefunded_only_cagr_pct"],float)
+                assert isinstance(section["prefunded_only_minus_sale_credit_cagr_pp"],float)
+                assert section["prefunded_only_unverified_sale_funding_holds"]>=0
+                assert section["prefunded_only_total_unaffordable_skips"]>=(
+                    section["prefunded_only_unverified_sale_funding_holds"])
+                assert section["prefunded_opening_cash_not_authenticated_settlement"]
+
+
 def test_next_close_research_is_separate_from_original_and_never_live_authority():
     prices=sample(n=3500)
     original_path=s.simulate_daily_cash_floor(
