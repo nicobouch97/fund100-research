@@ -84,6 +84,11 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
     stop_full_position_minimum_exceptions=0
     forced_stop=False
     stop_signal=None
+    stop_signal_nav=None
+    stop_signal_reasons=None
+    stop_execution_session=None
+    stop_execution_nav=None
+    post_stop_cash_only_sessions=0
     pending=None
     log=[]
     fund_returns=[]
@@ -128,12 +133,16 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
                 "requested_at_prior_close":True,
                 "execution_at_following_session_close_assumed":True,
             })
+            if pending["kind"]=="STOP_EXIT" and stop_execution_session is None:
+                stop_execution_session=when
             pending=None
         position={s:units[s]*px[s] for s in S1}
         gross=sum(position.values())
         nav=cash+gross
         if nav<=0 or not np.isfinite(nav):
             raise RiskStudyStop("Depleted/nonfinite synthetic account NAV")
+        if stop_execution_session==when and stop_execution_nav is None:
+            stop_execution_nav=nav
         day_return=nav/prev_nav-1 if i>0 else nav/capital_usd-1
         if i>0:fund_returns.append(day_return)
         peak=max(peak,nav)
@@ -158,7 +167,21 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
              or (vol is not None and vol>MAX_REALIZED_VOL))):
             forced_stop=True
             stop_signal=when
+            stop_signal_nav=nav
+            stop_signal_reasons=[
+                name for name,triggered in (
+                    ("daily_loss",day_return<=MAX_DAILY_LOSS),
+                    ("drawdown",drawdown<=MAX_DRAWDOWN),
+                    ("volatility",vol is not None and vol>MAX_REALIZED_VOL),
+                ) if triggered
+            ]
         if forced_stop:
+            # A STOP_EXIT filled at this session's close was exposed to
+            # that session's market move. Count only later completed closes
+            # as genuinely cash-only, never the execution close itself.
+            if (stop_execution_session is not None
+                and when>stop_execution_session and gross<=1e-9):
+                post_stop_cash_only_sessions+=1
             # Do not invent a final-close fill. The pending exit remains
             # explicitly unexecuted when the dataset ends.
             if gross>1e-9:
@@ -189,6 +212,20 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
     years=(data.index[-1]-data.index[0]).days/365.25
     if years<=0 or final_nav<=0:raise RiskStudyStop("Invalid terminal NAV")
     cagr=100*((final_nav/capital_usd)**(1/years)-1)
+    # Compare the benchmark at the actual next-close STOP exit horizon,
+    # not only at the far later fixed backtest end. This is a descriptive
+    # 95%-ACWI passive reference, NOT a like-for-like issuer-risk portfolio:
+    # 95% in one broad ETF would breach the literal 50% per-ticker rule.
+    stop_aligned_acwi_return=None
+    stop_aligned_excess=None
+    if stop_execution_session is not None:
+        exit_idx=data.index.get_loc(pd.Timestamp(stop_execution_session))
+        acwi_shares=initial_purchase/float(data.iloc[0][BENCHMARK])
+        acwi_exit_nav=(capital_usd*MIN_CASH+
+                       acwi_shares*float(data.iloc[exit_idx][BENCHMARK])*(1-fee))
+        stop_aligned_acwi_return=100*(acwi_exit_nav/capital_usd-1)
+        stop_aligned_excess=(100*(stop_execution_nav/capital_usd-1)-
+                             stop_aligned_acwi_return)
     ref=x8.window(data,start=start,cost_bps=cost_bps)
     return {
         "first_session":data.index[0].date().isoformat(),
@@ -208,6 +245,27 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
         "managed_annualized_volatility_fraction":_metric(float(np.std(fund_returns,ddof=1)*sqrt(252))),
         "managed_worst_session_return_pct":_metric(100*min(fund_returns)),
         "first_stop_signal_close":stop_signal,
+        "first_stop_signal_reasons":stop_signal_reasons,
+        "first_stop_signal_nav_usd":(
+            _metric(stop_signal_nav) if stop_signal_nav is not None else None),
+        "first_stop_execution_session":stop_execution_session,
+        "first_stop_execution_nav_usd":(
+            _metric(stop_execution_nav) if stop_execution_nav is not None else None),
+        "first_stop_signal_to_next_close_exit_return_pct":(
+            _metric(100*(stop_execution_nav/stop_signal_nav-1))
+            if stop_execution_nav is not None else None),
+        "first_stop_execution_net_return_from_start_pct":(
+            _metric(100*(stop_execution_nav/capital_usd-1))
+            if stop_execution_nav is not None else None),
+        "matched_95pct_acwi_costed_return_at_s1_stop_execution_pct":(
+            _metric(stop_aligned_acwi_return)
+            if stop_aligned_acwi_return is not None else None),
+        "s1_less_acwi_costed_return_at_s1_stop_execution_pp":(
+            _metric(stop_aligned_excess) if stop_aligned_excess is not None else None),
+        "stop_aligned_acwi_is_descriptive_not_issuer_risk_equivalent":True,
+        "post_stop_cash_only_sessions":post_stop_cash_only_sessions,
+        "full_window_cagr_includes_post_stop_cash_period":(
+            post_stop_cash_only_sessions>0),
         "hard_stop_first_detected_on_final_close":stop_signal==data.index[-1].date().isoformat(),
         "stop_signal_necessarily_requires_next_session_execution":True,
         "forced_stop_signal_latched":forced_stop,
@@ -277,6 +335,9 @@ def main():
               "unmanaged",period["unmanaged_s1_net_exit_costed_cagr_pct"],
               "ACWI",period["matched_95pct_acwi_net_exit_costed_cagr_pct"],
               "stop",period["first_stop_signal_close"],
+              "stop-exit",period["first_stop_execution_session"],
+              "at-stop excess pp",period["s1_less_acwi_costed_return_at_s1_stop_execution_pp"],
+              "cash-only sessions",period["post_stop_cash_only_sessions"],
               "breach sessions",period["risk_breach_session_counts_after_delay"])
     for name,period in result["pilot_sized_results"]["15"].items():
         print(name,"$130.30 pilot-size sensitivity CAGR",period["managed_s1_net_exit_costed_cagr_pct"],

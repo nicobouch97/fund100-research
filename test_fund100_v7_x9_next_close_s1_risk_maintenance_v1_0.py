@@ -146,3 +146,65 @@ def test_routine_repair_still_respects_absolute_minimum(monkeypatch):
     assert result["hypothetical_full_stop_position_minimum_exceptions"]==0
     assert result["risk_breach_session_counts_after_delay"]["cash"]>0
     assert result["first_stop_signal_close"] is None
+
+
+def test_stop_horizon_attribution_is_next_close_and_costed():
+    frame=scenario("drawdown")
+    result=x9.simulate(frame,start="2020-01-01",cost_bps=15,
+                       capital_usd=130.30)
+    assert set(result["first_stop_signal_reasons"])=={"daily_loss","drawdown"}
+    assert result["first_stop_signal_nav_usd"]>0
+    assert result["first_stop_execution_session"]==frame.index[6].date().isoformat()
+    assert result["first_stop_execution_nav_usd"]<result["first_stop_signal_nav_usd"]
+    assert result["first_stop_signal_to_next_close_exit_return_pct"]<0
+    assert result["first_stop_execution_net_return_from_start_pct"]<-20
+    # ACWI was flat, but still pays the entry AND benchmark exit fees.
+    assert -1<result["matched_95pct_acwi_costed_return_at_s1_stop_execution_pct"]<0
+    assert result["s1_less_acwi_costed_return_at_s1_stop_execution_pp"]<-20
+    assert result["stop_aligned_acwi_is_descriptive_not_issuer_risk_equivalent"] is True
+    # The execution session is still exposed until its close.
+    assert result["post_stop_cash_only_sessions"]==len(frame)-7
+    assert result["full_window_cagr_includes_post_stop_cash_period"] is True
+    assert result["actual_broker_orders"]==0
+
+
+def test_no_stop_has_no_fabricated_stop_horizon_or_cash_only_sessions():
+    result=x9.simulate(scenario(),start="2020-01-01",cost_bps=15)
+    assert result["first_stop_signal_reasons"] is None
+    for field in (
+        "first_stop_signal_nav_usd",
+        "first_stop_execution_session",
+        "first_stop_execution_nav_usd",
+        "first_stop_signal_to_next_close_exit_return_pct",
+        "first_stop_execution_net_return_from_start_pct",
+        "matched_95pct_acwi_costed_return_at_s1_stop_execution_pct",
+        "s1_less_acwi_costed_return_at_s1_stop_execution_pp",
+    ):
+        assert result[field] is None
+    assert result["post_stop_cash_only_sessions"]==0
+    assert result["full_window_cagr_includes_post_stop_cash_period"] is False
+
+
+def test_final_close_stop_has_no_invented_exit_or_benchmark_fill():
+    frame=scenario()
+    for ticker in x9.S1:
+        frame.loc[frame.index[-1],ticker]*=.65
+    result=x9.simulate(frame,start="2020-01-01",cost_bps=15)
+    assert result["first_stop_signal_nav_usd"]>0
+    assert result["first_stop_execution_session"] is None
+    assert result["first_stop_execution_nav_usd"] is None
+    assert result["matched_95pct_acwi_costed_return_at_s1_stop_execution_pct"] is None
+    assert result["post_stop_cash_only_sessions"]==0
+    assert result["full_window_cagr_includes_post_stop_cash_period"] is False
+    assert result["pending_trade_after_last_close_not_assumed_executed"] is True
+
+def test_stop_exit_on_final_close_does_not_count_exit_session_as_cash_only():
+    frame=scenario()
+    for ticker in x9.S1:
+        frame.loc[frame.index[-2]:,ticker]*=.65
+    result=x9.simulate(frame,start="2020-01-01",cost_bps=15)
+    assert result["first_stop_signal_close"]==frame.index[-2].date().isoformat()
+    assert result["first_stop_execution_session"]==frame.index[-1].date().isoformat()
+    assert result["post_stop_cash_only_sessions"]==0
+    assert result["full_window_cagr_includes_post_stop_cash_period"] is False
+    assert result["actual_broker_orders"]==0
