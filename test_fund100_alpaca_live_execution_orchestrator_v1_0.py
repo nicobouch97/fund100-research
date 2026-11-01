@@ -352,83 +352,43 @@ class Harness:
         }
 
 
-    def submit_authorized_order_batch(
-        self,
-        *,
-        orders,
-        **kwargs,
-    ):
-
-        self.events.append(
-            "writer"
-        )
-
+    def submit_authorized_order_batch(self, *, orders, **kwargs):
+        self.events.append("writer")
         self.writer_calls += 1
-
-        results = []
-
+        receipts = []
         for order in orders:
-
-            client_id = (
-                order[
-                    "client_order_id"
-                ]
-            )
-
-            existing = (
-                self.history.get(
-                    client_id
-                )
-            )
-
-            if existing is not None:
-
-                results.append(
-                    {
-                        "client_order_id":
-                            client_id,
-                        "result":
-                            "existing",
-                    }
-                )
-
-                continue
-
-            self.post_count += 1
-
-            self.history[
-                client_id
-            ] = {
-                "client_order_id":
-                    client_id,
-                "symbol":
-                    order[
-                        "symbol"
-                    ],
-                "side":
-                    order[
-                        "side"
-                    ],
-                "notional_usd":
-                    order[
-                        "notional_usd"
-                    ],
-                "status":
-                    "filled",
-            }
-
-            results.append(
-                {
-                    "client_order_id":
-                        client_id,
-                    "result":
-                        "submitted",
+            client_id = order["client_order_id"]
+            existing = self.history.get(client_id)
+            if existing is None:
+                self.post_count += 1
+                existing = {
+                    "client_order_id": client_id,
+                    "symbol": order["symbol"],
+                    "side": order["side"],
+                    "notional_usd": order["notional_usd"],
+                    "status": "filled",
                 }
-            )
-
+                self.history[client_id] = existing
+                outcome = "SUBMITTED"
+            else:
+                outcome = ("EXISTING_FILLED_ORDER"
+                           if existing["status"] == "filled"
+                           else "EXISTING_NO_RESUBMIT_ORDER")
+            broker_order = {
+                **existing,
+                "id": existing.get("id", "synthetic-" + client_id),
+                "notional": existing.get("notional", order["notional_usd"]),
+                "type": "market",
+                "time_in_force": "day",
+            }
+            receipts.append({
+                "client_order_id": client_id,
+                "status": outcome,
+                "broker_order": broker_order,
+            })
         return {
-            "results":
-                results,
+            "writer_schema": candidate.WRITER_CANDIDATE_SCHEMA,
+            "orders": receipts,
         }
 
 
@@ -549,6 +509,7 @@ def test_exact_required_call_order():
             "cumulative_cap_approved",
             "release_lock_reverified_before_writer",
             "writer_invoked",
+            "writer_receipts_validated_not_fills",
         ]
     )
 
@@ -1154,3 +1115,50 @@ def test_noop_phase_does_not_need_presend_writer_verification():
     assert harness.events == ["lock", "broker", "materialize", "history", "cap"]
     assert result["trace"][-1] == "writer_not_required"
     assert harness.writer_calls == harness.post_count == 0
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda result: None,
+        lambda result: {"writer_schema": result["writer_schema"], "orders": []},
+        lambda result: {**result, "writer_schema": "UNKNOWN"},
+        lambda result: {**result, "orders": [
+            {**result["orders"][0], "client_order_id": BUY_ID}]},
+        lambda result: {**result, "orders": [
+            {**result["orders"][0], "status": "REJECTED"}]},
+        lambda result: {**result, "orders": [
+            {**result["orders"][0], "broker_order": {
+                **result["orders"][0]["broker_order"], "notional": "61"}}]},
+        lambda result: {**result, "orders": [
+            {**result["orders"][0], "broker_order": {
+                **result["orders"][0]["broker_order"], "status": "rejected"}}]},
+        lambda result: {**result, "orders": [
+            {**result["orders"][0], "broker_order": {
+                **result["orders"][0]["broker_order"], "id": ""}}]},
+    ],
+)
+def test_writer_acknowledgement_ambiguity_blocks_success(mutation):
+    # A POST may already have happened; never claim successful completion
+    # or retry blindly when the returned receipt is absent or inconsistent.
+    harness = Harness()
+    original = harness.submit_authorized_order_batch
+
+    def ambiguous_writer(**kwargs):
+        result = original(**kwargs)
+        return mutation(result)
+
+    deps = replace(harness.deps(), submit_authorized_order_batch=ambiguous_writer)
+    with pytest.raises(
+        orchestrator.OrchestrationStop, match="ORCHESTRATOR STOP"
+    ):
+        _run_with_injected_dependencies(deps)
+    assert harness.writer_calls == 1
+    assert harness.post_count == 1
+
+
+def test_complete_writer_receipt_is_acknowledgement_not_settlement():
+    harness = Harness()
+    result = run_phase(harness, "SELL")
+    assert result["trace"][-1] == "writer_receipts_validated_not_fills"
+    assert result["writer_result"]["orders"][0]["status"] == "SUBMITTED"
+    assert harness.post_count == 1

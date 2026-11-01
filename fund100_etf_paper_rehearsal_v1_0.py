@@ -16,6 +16,7 @@ from time import time
 from unittest.mock import patch
 
 import fund100_live_production_controller_v1_0 as production
+import fund100_alpaca_live_writer_candidate_v1_1 as writer_candidate
 
 
 SYNTHETIC_STRATEGY = {
@@ -126,11 +127,17 @@ class PaperBroker:
     def submit(self, orders: list[dict]) -> dict:
         """Simulate production writer, but never call live HTTP transport."""
         actions = []
+        receipts = []
         for order in orders:
             self.check_running()
             cid = order["client_order_id"]
             if cid in self.filled:
                 actions.append({"client_order_id": cid, "action": "RECOVERED"})
+                receipts.append({
+                    "client_order_id": cid,
+                    "status": "EXISTING_FILLED_ORDER",
+                    "broker_order": dict(self.filled[cid]),
+                })
                 continue
             amount = Decimal(str(order["notional_usd"]))
             symbol = order["symbol"]
@@ -153,14 +160,27 @@ class PaperBroker:
                 "status": "filled",
                 "notional": str(amount),
                 "client_order_id": cid,
+                "id": "paper-" + cid,
+                "symbol": symbol,
+                "side": order["side"],
+                "type": "market",
+                "time_in_force": "day",
             }
+            receipts.append({
+                "client_order_id": cid,
+                "status": "SUBMITTED",
+                "broker_order": dict(self.filled[cid]),
+            })
             action = {
                 "client_order_id": cid, "side": order["side"],
                 "symbol": symbol, "notional_usd": str(amount),
             }
             actions.append(action)
             self.actions.append(action)
-        return {"results": actions}
+        return {
+            "writer_schema": writer_candidate.WRITER_CANDIDATE_SCHEMA,
+            "orders": receipts,
+        }
 
 
 def rehearse(*, stop_after_sell: bool = False, level: str = "HIGH",

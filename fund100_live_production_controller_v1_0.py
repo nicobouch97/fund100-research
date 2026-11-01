@@ -13,6 +13,7 @@ from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from pathlib import Path
 
 import fund100_alpaca_live_execution_orchestrator_v1_0 as orchestrator
+import fund100_alpaca_live_writer_candidate_v1_1 as writer_candidate
 import fund100_live_bootstrap_v1_0 as live
 import fund100_live_risk_controls_v1_0 as risk_controls
 import fund100_live_operator_control_v1_0 as operator_control
@@ -2276,158 +2277,84 @@ def enforce_cumulative_cap(
 # ============================================================
 
 
-def submit_order_batch(
-    orders,
-):
+def submit_order_batch(orders):
+    """Submit/recover with validated receipts; never equate ACK with fill.
 
-    results = []
+    A broker may accept an order before its HTTP response is lost. An
+    ambiguous receipt must stop the phase for client-ID reconciliation;
+    it must never trigger an automatic second POST.
+    """
+    receipts = []
 
     for order in orders:
-
-        cid = (
-            order[
-                "client_order_id"
-            ]
-        )
-
-        existing = (
-            live.get_order_by_client_id(
-                cid
-            )
-        )
+        cid = order["client_order_id"]
+        existing = live.get_order_by_client_id(cid)
 
         if existing is not None:
-
-            status = (
-                str(
-                    existing.get(
-                        "status",
-                        "",
-                    )
+            try:
+                outcome = writer_candidate.resolve_existing_order(
+                    existing=existing, intent=order,
                 )
-                .strip()
-                .lower()
-            )
-
-            if status in (
-                FAILED_ORDER_STATUSES
-            ):
-
+            except RuntimeError as exc:
                 raise ProductionStop(
-                    "LIVE PRODUCTION STOP: "
-                    f"{cid} previously terminal-failed."
-                )
-
-            if status not in (
-                SAFE_ORDER_STATUSES
+                    "LIVE PRODUCTION STOP: existing broker order is not "
+                    "safely reconciled to intent; do not resubmit."
+                ) from exc
+            broker_order = existing
+        else:
+            if (
+                os.environ.get("FUND100_BROKER_KILL_SWITCH", "")
+                .strip().upper() != "DISENGAGED"
             ):
-
                 raise ProductionStop(
-                    "LIVE PRODUCTION STOP: "
-                    f"{cid} has ambiguous broker status."
+                    "LIVE PRODUCTION STOP: kill switch changed or is not DISENGAGED."
                 )
 
-            results.append(
-                {
-                    "client_order_id":
-                        cid,
-
-                    "action":
-                        "EXISTING_ORDER_RECOVERED",
-
-                    "status":
-                        status,
-                }
-            )
-
-            continue
-
-        if (
-            os.environ.get(
-                "FUND100_BROKER_KILL_SWITCH",
-                "",
-            )
-            .strip()
-            .upper()
-            != "DISENGAGED"
-        ):
-
-            raise ProductionStop(
-                "LIVE PRODUCTION STOP: "
-                "kill switch changed or is not DISENGAGED."
-            )
-
-        payload = {
-            "symbol":
-                order[
-                    "symbol"
-                ],
-
-            "notional":
-                order[
-                    "notional_usd"
-                ],
-
-            "side":
-                order[
-                    "side"
-                ],
-
-            "type":
-                "market",
-
-            "time_in_force":
-                "day",
-
-            "extended_hours":
-                False,
-
-            "client_order_id":
-                cid,
-        }
-
-        # A fresh GitHub MAIN lookup is mandatory immediately before
-        # EVERY POST (not the checkout copy or the runner's old env).
-        operator_control.require_operator_running()
-
-        created = (
-            live.live_request(
-                method="POST",
-                path="/v2/orders",
-                body=payload,
-            )
-        )
-
-        if (
-            created.get(
-                "client_order_id"
-            )
-            != cid
-        ):
-
-            raise ProductionStop(
-                "LIVE PRODUCTION STOP: "
-                "broker returned different client_order_id."
-            )
-
-        results.append(
-            {
-                "client_order_id":
-                    cid,
-
-                "action":
-                    "LIVE_POST",
-
-                "status":
-                    created.get(
-                        "status"
-                    ),
+            payload = {
+                "symbol": order["symbol"],
+                "notional": order["notional_usd"],
+                "side": order["side"],
+                "type": "market",
+                "time_in_force": "day",
+                "extended_hours": False,
+                "client_order_id": cid,
             }
+
+            # Fresh GitHub MAIN STOP lookup immediately before every POST.
+            operator_control.require_operator_running()
+            created = live.live_request(
+                method="POST", path="/v2/orders", body=payload,
+            )
+            try:
+                broker_order = writer_candidate.validate_submitted_order_response(
+                    response=created, intent=order,
+                )
+            except RuntimeError as exc:
+                raise ProductionStop(
+                    "LIVE PRODUCTION STOP: broker POST acknowledgement "
+                    "is ambiguous; reconcile client ID before any retry."
+                ) from exc
+            outcome = "SUBMITTED"
+
+        receipt = {
+            "client_order_id": cid,
+            "status": outcome,
+            "broker_order": broker_order,
+        }
+        # Validate each result before another POST in the same batch.
+        # No fill/settlement assertion is implied by a valid receipt.
+        orchestrator.validate_writer_receipts(
+            {
+                "writer_schema": writer_candidate.WRITER_CANDIDATE_SCHEMA,
+                "orders": [receipt],
+            },
+            [order],
         )
+        receipts.append(receipt)
 
     return {
-        "results":
-            results,
+        "writer_schema": writer_candidate.WRITER_CANDIDATE_SCHEMA,
+        "orders": receipts,
     }
 
 
