@@ -68,9 +68,66 @@ def test_report_no_alpha_permission_or_false_5pct_claim():
     assert x["history_exploratory_not_out_of_sample"]
     assert x["original_unmanaged_100pct_basket_is_not_the_95pct_strategy"]
     assert set(x["results"])=={"5","15","35"}
+    combined=x["fresh_prefunded_next_close_first_breach_no_restart"]
+    assert set(combined)=={"original_95pct","10pct_buffer","15pct_buffer"}
+    for reserve in combined.values():
+        assert set(reserve)=={"5","15","35"}
+        for cost in reserve.values():
+            assert set(cost)==set(s.FRESH_INCEPTION_DATES)
+            assert all(not v["new_live_trade_authority"] for v in cost.values())
+    assert x["fresh_prefunded_stop_is_not_live_broker_settlement_proof"]
     for c in ("5","15","35"):
         assert set(x["results"][c])=={"2014_onward","2020_onward"}
         assert x["results"][c]["2014_onward"]["actual_S1_95pct_target_with_drift"]["cash_below_5pct_sessions_end_of_day"]>=0
+
+
+def test_prefunded_high_stop_absorbs_future_rebalances_and_cash_holds():
+    prices=sample(n=2100)
+    path=s.simulate_next_close_monthly(
+        prices,cost_bps=15,reserve_fraction=.05,prefunded_buy_only=True)
+    stopped,stop=s.hypothetical_first_stop_next_close_cash(
+        path,prices,cost_bps=15)
+    assert stop["first_combined_breach_date"] is not None
+    assert stop["hypothetical_next_close_exit_date"] is not None
+    signal=pd.Timestamp(stop["first_combined_breach_date"])
+    exit_close=pd.Timestamp(stop["hypothetical_next_close_exit_date"])
+    assert exit_close>signal
+    assert not bool(stopped.loc[signal,"monthly_rebalance_signal"])
+    after=stopped.loc[exit_close:]
+    assert (after["gross_risk_exposure"]==0).all()
+    assert (after["cash"]==1).all()
+    assert (after["nav"]==after["nav"].iloc[0]).all()
+    for col in ("monthly_rebalance_signal","monthly_rebalance_execution",
+                "unaffordable_next_close_rebalance",
+                "unverified_sale_funding_hold",
+                "pending_unexecuted_signal_at_final_close"):
+        assert not after[col].any()
+    assert after["executed_prior_close_signal_session"].isna().all()
+    assert stop["hypothetical_exit_fee_nav_units"]>0
+
+
+def test_fresh_prefunded_high_stop_is_new_inception_not_hard_stop_restart():
+    result=s.fresh_prefunded_next_close_first_breach_sensitivity(
+        sample(n=3500),cost_bps=15,reserve_fraction=.05)
+    assert set(result)==set(s.FRESH_INCEPTION_DATES)
+    for cohort,details in result.items():
+        assert details["requested_inception"]==s.FRESH_INCEPTION_DATES[cohort]
+        assert details["first_combined_breach_close"] is not None
+        assert details["hypothetical_next_close_exit"] is not None
+        assert details["costed_no_restart_cagr_pct"]!=details[
+            "uninterrupted_prefunded_cagr_not_executable_pct"]
+        assert details["post_exit_cash_only_closes"]>0
+        assert details["first_breach_includes_cash_and_concentration_not_only_high_stop"]
+        assert details["initial_cash_is_not_authenticated_settlement"]
+        assert details["same_frozen_history_not_independent_alpha"]
+        assert details["new_live_trade_authority"] is False
+
+
+@pytest.mark.parametrize("cost,reserve",[(0,.05),(15,.07),(35,0.10),(15,True)])
+def test_prefunded_high_stop_cannot_fit_unregistered_costs_or_cash(cost,reserve):
+    with pytest.raises(s.S1EconomicsStop):
+        s.fresh_prefunded_next_close_first_breach_sensitivity(
+            sample(n=2100),cost_bps=cost,reserve_fraction=reserve)
 
 
 def test_wrong_source_hash_never_accepted():
