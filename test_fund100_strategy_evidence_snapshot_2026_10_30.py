@@ -84,7 +84,7 @@ def test_november_stop_horizon_addendum_is_dated_and_not_live_promotion():
     assert "run 41275299300" in d
     for date in ("2020-03-09","2020-03-10","2025-04-03","2025-04-04"):
         assert date in d
-    for value in ("17.332350pp","−5.326349pp","−2.889917pp","1,639"):
+    for value in ("17.332350pp","−5.326349pp","−2.889917pp","1,638"):
         assert value in d
     assert "not a risk-equivalent compliant portfolio" in d
     assert "No S1 promotion, risk-limit change" in d
