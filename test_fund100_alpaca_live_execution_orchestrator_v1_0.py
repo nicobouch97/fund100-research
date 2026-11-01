@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -993,3 +994,83 @@ def test_materializer_cannot_mix_order_sides_in_one_phase():
     assert harness.events == ["lock", "broker", "materialize"]
     assert harness.writer_calls == 0
     assert harness.post_count == 0
+
+
+def _run_with_injected_dependencies(deps):
+    return orchestrator.run_execution_phase(
+        release_lock_package=release_lock(),
+        compiler_package=compiler(),
+        permit_package=permit(),
+        phase="SELL",
+        now=now(),
+        deps=deps,
+    )
+
+
+@pytest.mark.parametrize(
+    "verdict",
+    [False, 0, {}, {"approved": False}, {"approved": True, "released": False}],
+)
+def test_negative_or_ambiguous_release_verdict_blocks_broker_and_writer(verdict):
+    harness = Harness()
+
+    def verifier(**kwargs):
+        harness.events.append("lock")
+        return verdict
+
+    deps = replace(harness.deps(), verify_release_lock=verifier)
+    with pytest.raises(
+        orchestrator.OrchestrationStop,
+        match="release lock verification not affirmative",
+    ):
+        _run_with_injected_dependencies(deps)
+
+    assert harness.events == ["lock"]
+    assert harness.snapshot_calls == 0
+    assert harness.writer_calls == harness.post_count == 0
+
+
+def test_explicit_positive_release_verdict_is_supported():
+    harness = Harness()
+
+    def verifier(**kwargs):
+        harness.events.append("lock")
+        return {"approved": True}
+
+    result = _run_with_injected_dependencies(
+        replace(harness.deps(), verify_release_lock=verifier)
+    )
+    assert result["trace"][0] == "release_lock_verified"
+    assert harness.writer_calls == 1
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        {"account": None, "positions": {}, "open_orders": []},
+        {"account": {}, "positions": {}, "open_orders": []},
+        {"account": {"cash": "100"}, "positions": None, "open_orders": []},
+        {"account": {"cash": "100"}, "positions": [None], "open_orders": []},
+        {"account": {"cash": "100"}, "positions": {}, "open_orders": None},
+        {"account": {"cash": "100"}, "positions": {}, "open_orders": [None]},
+    ],
+)
+def test_malformed_broker_reconstruction_blocks_materializer_and_writer(snapshot):
+    harness = Harness()
+
+    def malformed_snapshot(**kwargs):
+        harness.events.append("broker")
+        return snapshot
+
+    deps = replace(
+        harness.deps(),
+        reconstruct_broker_snapshot=malformed_snapshot,
+    )
+    with pytest.raises(
+        orchestrator.OrchestrationStop,
+        match="invalid broker",
+    ):
+        _run_with_injected_dependencies(deps)
+
+    assert harness.events == ["lock", "broker"]
+    assert harness.writer_calls == harness.post_count == 0

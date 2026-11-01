@@ -183,6 +183,29 @@ def validate_phase(
     return phase_normalized
 
 
+def validate_release_verification(
+    verdict: Any,
+) -> None:
+    """Accept exception-only success or an explicit affirmative verdict.
+
+    An injected release verifier returning False or an ambiguous result
+    must never be treated as successful just because it did not raise.
+    """
+    if verdict is None or verdict is True:
+        return
+
+    if (
+        isinstance(verdict, dict)
+        and verdict.get("approved") is True
+        and verdict.get("released") is not False
+    ):
+        return
+
+    raise OrchestrationStop(
+        "ORCHESTRATOR STOP: release lock verification not affirmative."
+    )
+
+
 def validate_broker_snapshot(
     snapshot: dict,
 ) -> None:
@@ -218,6 +241,38 @@ def validate_broker_snapshot(
                     missing
                 )
             )
+        )
+
+
+    # Merely returning the three keys is not evidence of a reconstructed
+    # account, position inventory and open-order inventory. Reject empty
+    # or malformed objects before an injected materializer can ignore them.
+    account = snapshot["account"]
+    positions = snapshot["positions"]
+    open_orders = snapshot["open_orders"]
+
+    if not isinstance(account, dict) or not account:
+        raise OrchestrationStop(
+            "ORCHESTRATOR STOP: invalid broker account snapshot."
+        )
+
+    if (
+        not isinstance(positions, (dict, list))
+        or (
+            isinstance(positions, list)
+            and any(not isinstance(p, dict) for p in positions)
+        )
+    ):
+        raise OrchestrationStop(
+            "ORCHESTRATOR STOP: invalid broker positions snapshot."
+        )
+
+    if (
+        not isinstance(open_orders, list)
+        or any(not isinstance(o, dict) for o in open_orders)
+    ):
+        raise OrchestrationStop(
+            "ORCHESTRATOR STOP: invalid broker open orders snapshot."
         )
 
 
@@ -534,7 +589,7 @@ def run_execution_phase(
     # 1. Re-verify frozen release authority.
     # --------------------------------------------------------
 
-    deps.verify_release_lock(
+    lock_verdict = deps.verify_release_lock(
         release_lock_package=(
             release_lock_package
         ),
@@ -551,6 +606,8 @@ def run_execution_phase(
             now
         ),
     )
+
+    validate_release_verification(lock_verdict)
 
     trace.append(
         "release_lock_verified"
