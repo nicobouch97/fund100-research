@@ -755,7 +755,13 @@ def period_diagnostics(path:pd.DataFrame,start:str)->dict:
     }
 
 
-def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
+def evaluate(raw:pd.DataFrame,*,source_sha256:str,
+             include_prefunded_stop:bool=False)->dict:
+    # The combined 18-case retrospective stress is expensive. Keep routine
+    # unit callers on the original report; compute it ONCE in the explicit
+    # source-locked CLI evidence workflow, not in every unrelated test.
+    if type(include_prefunded_stop) is not bool:
+        raise S1EconomicsStop("Invalid combined-stop research selection")
     verify_contract()
     if source_sha256!=l1.ORIGINAL_SHA:
         raise S1EconomicsStop("Wrong original source digest; no retrospective data replacement")
@@ -890,14 +896,16 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
     # first-breach/next-close/no-restart HIGH-risk research, rather than
     # quoting uninterrupted high CAGR after a hypothetical hard STOP.
     # Fixed original 5/15/35bp costs and 5/10/15% cash scenarios only.
-    fresh_prefunded_stop={}
-    for label,reserve in (("original_95pct",FLOOR),
-                          ("10pct_buffer",.10),("15pct_buffer",.15)):
-        fresh_prefunded_stop[label]={
-            str(bp):fresh_prefunded_next_close_first_breach_sensitivity(
-                data,cost_bps=bp,reserve_fraction=reserve)
-            for bp in l1.COST_BPS
-        }
+    fresh_prefunded_stop=None
+    if include_prefunded_stop:
+        fresh_prefunded_stop={}
+        for label,reserve in (("original_95pct",FLOOR),
+                              ("10pct_buffer",.10),("15pct_buffer",.15)):
+            fresh_prefunded_stop[label]={
+                str(bp):fresh_prefunded_next_close_first_breach_sensitivity(
+                    data,cost_bps=bp,reserve_fraction=reserve)
+                for bp in l1.COST_BPS
+            }
     floor_ok=all(
       x["actual_S1_95pct_target_with_drift"]["cash_below_5pct_sessions_end_of_day"]==0
       for section in results.values() for x in section.values())
@@ -924,6 +932,7 @@ def evaluate(raw:pd.DataFrame,*,source_sha256:str)->dict:
       "fresh_inception_is_not_a_hard_stop_recovery":True,
       "causal_next_close_monthly_rebalance_sensitivity":next_close_monthly,
       "fresh_prefunded_next_close_first_breach_no_restart":fresh_prefunded_stop,
+      "fresh_prefunded_stop_matrix_explicitly_requested":include_prefunded_stop,
       "fresh_prefunded_stop_is_not_live_broker_settlement_proof":True,
       "original_same_close_historical_results_preserved":True,
       "next_close_monthly_research_does_not_prove_broker_fills_or_alpha":True,
@@ -946,7 +955,7 @@ def main():
     args.add_argument("--output",required=True,type=Path)
     x=args.parse_args()
     prices,digest=l1.load_frozen(x.frozen_history)
-    report=evaluate(prices,source_sha256=digest)
+    report=evaluate(prices,source_sha256=digest,include_prefunded_stop=True)
     x.output.parent.mkdir(parents=True,exist_ok=True)
     x.output.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n")
     for cost,periods in report["results"].items():
