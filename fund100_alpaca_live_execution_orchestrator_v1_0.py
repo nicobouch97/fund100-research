@@ -623,6 +623,16 @@ def run_execution_phase(
         )
     )
 
+    # A materializer is an injected dependency, not an execution authority.
+    # Never let a SELL phase carry BUY orders (or vice versa), even when
+    # the broker-history and cumulative-cap dependencies would approve them.
+    # This check must precede every path to the writer.
+    if any(order["side"] != phase_normalized.lower() for order in orders):
+        raise OrchestrationStop(
+            "ORCHESTRATOR STOP: materialized order side "
+            "does not match execution phase."
+        )
+
     trace.append(
         "phase_materialized"
     )
