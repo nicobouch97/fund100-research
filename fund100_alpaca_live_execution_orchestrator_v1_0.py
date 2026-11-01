@@ -548,6 +548,73 @@ def validate_cap_proof(
         )
 
 
+
+# A writer acknowledgement is NOT a fill or settlement confirmation.
+# This schema is the existing hard-locked writer candidate's actual return
+# contract, rather than the older synthetic rehearsal's loose result list.
+WRITER_RECEIPT_SCHEMA = "FUND100_ALPACA_LIVE_WRITER_CANDIDATE_V1_1"
+SAFE_WRITER_OUTCOMES = {
+    "SUBMITTED", "EXISTING_FILLED_ORDER", "EXISTING_NO_RESUBMIT_ORDER",
+}
+SAFE_BROKER_STATUSES = {
+    "filled", "accepted", "pending_new", "accepted_for_bidding",
+    "new", "partially_filled", "pending_cancel", "stopped",
+    "done_for_day", "calculated",
+}
+
+
+def validate_writer_receipts(writer_result: Any, orders: list[dict]) -> None:
+    """Fail closed on missing, mismatched or unsafe broker acknowledgements.
+
+    The writer may have performed a POST before returning an invalid result.
+    Never retry it here; reconcile the client IDs through authenticated
+    broker history before any subsequent execution phase.
+    """
+    if (type(writer_result) is not dict
+        or writer_result.get("writer_schema") != WRITER_RECEIPT_SCHEMA
+        or type(writer_result.get("orders")) is not list
+        or len(writer_result["orders"]) != len(orders)):
+        raise OrchestrationStop(
+            "ORCHESTRATOR STOP: incomplete writer acknowledgement batch; reconcile."
+        )
+
+    for expected, receipt in zip(orders, writer_result["orders"]):
+        if (type(receipt) is not dict
+            or receipt.get("client_order_id") != expected["client_order_id"]
+            or receipt.get("status") not in SAFE_WRITER_OUTCOMES):
+            raise OrchestrationStop(
+                "ORCHESTRATOR STOP: writer acknowledgement identity/status mismatch."
+            )
+
+        broker_order = receipt.get("broker_order")
+        if (type(broker_order) is not dict
+            or type(broker_order.get("id")) is not str
+            or not broker_order["id"].strip()
+            or broker_order.get("client_order_id") != expected["client_order_id"]
+            or broker_order.get("symbol") != expected["symbol"]
+            or broker_order.get("side") != expected["side"]
+            or broker_order.get("type") != "market"
+            or broker_order.get("time_in_force") != "day"
+            or broker_order.get("status") not in SAFE_BROKER_STATUSES):
+            raise OrchestrationStop(
+                "ORCHESTRATOR STOP: broker acknowledgement not reconciled to intent."
+            )
+
+        try:
+            acknowledged_notional = _decimal_positive(
+                broker_order.get("notional"),
+                field_name="broker_acknowledged_notional",
+            )
+        except OrchestrationStop as exc:
+            raise OrchestrationStop(
+                "ORCHESTRATOR STOP: broker acknowledgement has no valid notional."
+            ) from exc
+        if abs(acknowledged_notional - Decimal(expected["notional_usd"])) > Decimal("0.01"):
+            raise OrchestrationStop(
+                "ORCHESTRATOR STOP: broker acknowledged notional differs from intent."
+            )
+
+
 def run_execution_phase(
     *,
     release_lock_package: dict,
@@ -868,8 +935,16 @@ def run_execution_phase(
         )
     )
 
+    # The transport can return after an ambiguous, partial or malformed
+    # acknowledgement. Such a phase is NOT successful and must never be
+    # blindly followed by a BUY phase or a repeated POST.
+    validate_writer_receipts(writer_result, orders)
+
     trace.append(
         "writer_invoked"
+    )
+    trace.append(
+        "writer_receipts_validated_not_fills"
     )
 
     return {
