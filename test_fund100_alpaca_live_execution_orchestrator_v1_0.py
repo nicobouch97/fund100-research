@@ -936,3 +936,60 @@ def test_invalid_phase_fails_before_any_dependency_runs():
         harness.events
         == []
     )
+
+
+@pytest.mark.parametrize(
+    ("phase", "wrong_side"),
+    [("SELL", "buy"), ("BUY", "sell")],
+)
+def test_materializer_cannot_submit_opposite_side_in_execution_phase(
+    phase, wrong_side
+):
+    # A valid-looking materializer response with the wrong side must fail
+    # before history, cap approval or any writer/POST can be reached.
+    harness = Harness()
+    original = harness.materialize_execution_phase
+
+    def wrong_phase_materialization(**kwargs):
+        result = original(**kwargs)
+        result["orders"][0]["side"] = wrong_side
+        return result
+
+    harness.materialize_execution_phase = wrong_phase_materialization
+
+    with pytest.raises(
+        orchestrator.OrchestrationStop,
+        match="does not match execution phase",
+    ):
+        run_phase(harness, phase)
+
+    assert harness.events == ["lock", "broker", "materialize"]
+    assert harness.writer_calls == 0
+    assert harness.post_count == 0
+
+
+def test_materializer_cannot_mix_order_sides_in_one_phase():
+    harness = Harness()
+    original = harness.materialize_execution_phase
+
+    def mixed_phase_materialization(**kwargs):
+        result = original(**kwargs)
+        result["orders"].append({
+            "symbol": "SPY",
+            "side": "buy",
+            "notional_usd": "1",
+            "client_order_id": BUY_ID,
+        })
+        return result
+
+    harness.materialize_execution_phase = mixed_phase_materialization
+
+    with pytest.raises(
+        orchestrator.OrchestrationStop,
+        match="does not match execution phase",
+    ):
+        run_phase(harness, "SELL")
+
+    assert harness.events == ["lock", "broker", "materialize"]
+    assert harness.writer_calls == 0
+    assert harness.post_count == 0
