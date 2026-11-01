@@ -107,6 +107,7 @@ def test_controller_enforces_selected_budget_before_order_writer():
         policy_context=context,
         target_weights={"SPY": Decimal("1")},
         candidates=candidates,
+        opening_cash=Decimal("130.30"),
     )
     assert allowed_ids == {"f100-test-risk-guard"}
 
