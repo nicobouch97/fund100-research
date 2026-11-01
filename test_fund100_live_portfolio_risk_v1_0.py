@@ -136,6 +136,22 @@ def test_distinct_current_mark_still_contributes_to_realized_volatility():
         )
 
 
+def test_equal_mark_ambiguous_new_flat_day_cannot_hide_high_volatility():
+    # Five identical +6% returns have zero sample volatility if the last
+    # equity is a duplicate. A genuinely new flat day adds a zero return,
+    # raising annualized sample volatility above HIGH's 35% threshold.
+    # With no current-account timestamp, the safer interpretation wins.
+    marks = [Decimal("100")]
+    for _ in range(5):
+        marks.append(marks[-1] * Decimal("1.06"))
+    with pytest.raises(r.PortfolioRiskStop, match="volatility"):
+        r.check_account_performance(
+            account={"equity": str(marks[-1]), "last_equity": str(marks[-1])},
+            history=history([str(mark) for mark in marks]),
+            profile=r.get_profile("HIGH"),
+        )
+
+
 def test_identical_current_mark_preserves_valid_flat_history():
     r.check_account_performance(
         account={"equity": "100.00", "last_equity": "100"},
