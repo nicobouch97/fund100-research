@@ -385,91 +385,44 @@ def dependencies(
         }
 
 
-    def submit_authorized_order_batch(
-        *,
-        orders,
-        **kwargs,
-    ):
-
+    def submit_authorized_order_batch(*, orders, **kwargs):
         broker.writer_calls += 1
-
-        results = []
-
+        receipts = []
         for order in orders:
-
-            client_id = (
-                order[
-                    "client_order_id"
-                ]
-            )
-
-            existing = (
-                broker.orders.get(
-                    client_id
-                )
-            )
-
-            if existing is not None:
-
-                results.append(
-                    {
-                        "client_order_id":
-                            client_id,
-                        "action":
-                            "existing_order_recovered",
-                    }
-                )
-
-                continue
-
-            broker.post_count += 1
-
-            broker.orders[
-                client_id
-            ] = {
-                "client_order_id":
-                    client_id,
-                "symbol":
-                    order[
-                        "symbol"
-                    ],
-                "side":
-                    order[
-                        "side"
-                    ],
-                "notional_usd":
-                    order[
-                        "notional_usd"
-                    ],
-                "status":
-                    "filled",
-            }
-
-            if (
-                client_id
-                in broker.lose_response_once
-            ):
-
-                broker.lose_response_once.remove(
-                    client_id
-                )
-
-                raise RuntimeError(
-                    "SIMULATED LOST RESPONSE AFTER BROKER ACCEPT."
-                )
-
-            results.append(
-                {
-                    "client_order_id":
-                        client_id,
-                    "action":
-                        "fake_post",
+            client_id = order["client_order_id"]
+            existing = broker.orders.get(client_id)
+            if existing is None:
+                broker.post_count += 1
+                existing = {
+                    "client_order_id": client_id,
+                    "symbol": order["symbol"],
+                    "side": order["side"],
+                    "notional_usd": order["notional_usd"],
+                    "status": "filled",
                 }
-            )
-
+                broker.orders[client_id] = existing
+                if client_id in broker.lose_response_once:
+                    broker.lose_response_once.remove(client_id)
+                    raise RuntimeError("SIMULATED LOST RESPONSE AFTER BROKER ACCEPT.")
+                outcome = "SUBMITTED"
+            else:
+                outcome = ("EXISTING_FILLED_ORDER"
+                           if existing["status"] == "filled"
+                           else "EXISTING_NO_RESUBMIT_ORDER")
+            receipts.append({
+                "client_order_id": client_id,
+                "status": outcome,
+                "broker_order": {
+                    **existing,
+                    "id": "synthetic-" + client_id,
+                    "notional": order["notional_usd"],
+                    "type": "market",
+                    "time_in_force": "day",
+                },
+            })
         return {
-            "results":
-                results,
+            "writer_schema": candidate.WRITER_CANDIDATE_SCHEMA,
+            "orders": receipts,
         }
 
 
