@@ -449,3 +449,84 @@ def test_client_ids_are_deterministic_when_missing():
             "client_order_id"
         ]
     )
+
+
+def _synthetic_writer_intent():
+    return {
+        "client_order_id": "f100live-test-receipt-s-eem",
+        "symbol": "EEM",
+        "side": "sell",
+        "notional_usd": "5.00",
+    }
+
+
+def _synthetic_broker_ack(intent):
+    return {
+        "id": "synthetic-broker-order-id",
+        "client_order_id": intent["client_order_id"],
+        "symbol": intent["symbol"],
+        "side": intent["side"],
+        "notional": intent["notional_usd"],
+        "type": "market",
+        "time_in_force": "day",
+        "status": "accepted",
+    }
+
+
+def test_production_writer_returns_validated_receipt_not_a_fill(monkeypatch):
+    intent = _synthetic_writer_intent()
+    posts = []
+    monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "DISENGAGED")
+    monkeypatch.setattr(
+        production.live, "get_order_by_client_id", lambda cid: None
+    )
+    monkeypatch.setattr(
+        production.operator_control, "require_operator_running", lambda: None
+    )
+
+    def fake_post(**kwargs):
+        posts.append(kwargs)
+        return _synthetic_broker_ack(intent)
+
+    monkeypatch.setattr(production.live, "live_request", fake_post)
+    result = production.submit_order_batch([intent])
+    assert result["writer_schema"] == production.writer_candidate.WRITER_CANDIDATE_SCHEMA
+    assert result["orders"][0]["status"] == "SUBMITTED"
+    assert result["orders"][0]["broker_order"]["status"] == "accepted"
+    assert len(posts) == 1
+
+
+def test_production_writer_rejects_mismatched_existing_order_without_post(monkeypatch):
+    intent = _synthetic_writer_intent()
+    existing = {**_synthetic_broker_ack(intent), "symbol": "SPY", "status": "filled"}
+    monkeypatch.setattr(
+        production.live, "get_order_by_client_id", lambda cid: existing
+    )
+
+    def forbidden_post(**kwargs):
+        raise AssertionError("must not POST after mismatched broker history")
+
+    monkeypatch.setattr(production.live, "live_request", forbidden_post)
+    with pytest.raises(production.ProductionStop, match="not safely reconciled"):
+        production.submit_order_batch([intent])
+
+
+def test_production_writer_rejects_ambiguous_post_without_retry(monkeypatch):
+    intent = _synthetic_writer_intent()
+    posts = []
+    monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "DISENGAGED")
+    monkeypatch.setattr(
+        production.live, "get_order_by_client_id", lambda cid: None
+    )
+    monkeypatch.setattr(
+        production.operator_control, "require_operator_running", lambda: None
+    )
+
+    def malformed_post(**kwargs):
+        posts.append(kwargs)
+        return {**_synthetic_broker_ack(intent), "notional": "8.00"}
+
+    monkeypatch.setattr(production.live, "live_request", malformed_post)
+    with pytest.raises(production.orchestrator.OrchestrationStop, match="notional"):
+        production.submit_order_batch([intent])
+    assert len(posts) == 1
