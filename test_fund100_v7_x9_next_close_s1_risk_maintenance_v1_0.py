@@ -162,7 +162,8 @@ def test_stop_horizon_attribution_is_next_close_and_costed():
     assert -1<result["matched_95pct_acwi_costed_return_at_s1_stop_execution_pct"]<0
     assert result["s1_less_acwi_costed_return_at_s1_stop_execution_pp"]<-20
     assert result["stop_aligned_acwi_is_descriptive_not_issuer_risk_equivalent"] is True
-    assert result["post_stop_cash_only_sessions"]==len(frame)-6
+    # The execution session is still exposed until its close.
+    assert result["post_stop_cash_only_sessions"]==len(frame)-7
     assert result["full_window_cagr_includes_post_stop_cash_period"] is True
     assert result["actual_broker_orders"]==0
 
@@ -196,3 +197,14 @@ def test_final_close_stop_has_no_invented_exit_or_benchmark_fill():
     assert result["post_stop_cash_only_sessions"]==0
     assert result["full_window_cagr_includes_post_stop_cash_period"] is False
     assert result["pending_trade_after_last_close_not_assumed_executed"] is True
+
+def test_stop_exit_on_final_close_does_not_count_exit_session_as_cash_only():
+    frame=scenario()
+    for ticker in x9.S1:
+        frame.loc[frame.index[-2]:,ticker]*=.65
+    result=x9.simulate(frame,start="2020-01-01",cost_bps=15)
+    assert result["first_stop_signal_close"]==frame.index[-2].date().isoformat()
+    assert result["first_stop_execution_session"]==frame.index[-1].date().isoformat()
+    assert result["post_stop_cash_only_sessions"]==0
+    assert result["full_window_cagr_includes_post_stop_cash_period"] is False
+    assert result["actual_broker_orders"]==0

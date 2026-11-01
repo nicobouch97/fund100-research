@@ -176,7 +176,11 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
                 ) if triggered
             ]
         if forced_stop:
-            if gross<=1e-9:
+            # A STOP_EXIT filled at this session's close was exposed to
+            # that session's market move. Count only later completed closes
+            # as genuinely cash-only, never the execution close itself.
+            if (stop_execution_session is not None
+                and when>stop_execution_session and gross<=1e-9):
                 post_stop_cash_only_sessions+=1
             # Do not invent a final-close fill. The pending exit remains
             # explicitly unexecuted when the dataset ends.
