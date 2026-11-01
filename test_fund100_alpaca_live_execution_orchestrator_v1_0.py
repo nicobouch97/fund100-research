@@ -532,6 +532,7 @@ def test_exact_required_call_order():
             "materialize",
             "history",
             "cap",
+            "lock",
             "writer",
         ]
     )
@@ -546,6 +547,7 @@ def test_exact_required_call_order():
             "phase_materialized",
             "authorized_history_reconstructed",
             "cumulative_cap_approved",
+            "release_lock_reverified_before_writer",
             "writer_invoked",
         ]
     )
@@ -1073,4 +1075,82 @@ def test_malformed_broker_reconstruction_blocks_materializer_and_writer(snapshot
         _run_with_injected_dependencies(deps)
 
     assert harness.events == ["lock", "broker"]
+    assert harness.writer_calls == harness.post_count == 0
+
+
+def test_presend_stop_change_after_cap_reconstruction_blocks_writer():
+    """A STOP engaged during the GET/cap window must be rechecked."""
+    harness = Harness()
+    calls = []
+
+    def changing_verifier(**kwargs):
+        harness.events.append("lock")
+        calls.append(kwargs)
+        # First release check was good; operator STOP now engaged.
+        return None if len(calls) == 1 else False
+
+    deps = replace(harness.deps(), verify_release_lock=changing_verifier)
+
+    with pytest.raises(
+        orchestrator.OrchestrationStop,
+        match="release lock verification not affirmative",
+    ):
+        _run_with_injected_dependencies(deps)
+
+    assert len(calls) == 2
+    assert calls[0] == calls[1]
+    assert harness.events == [
+        "lock", "broker", "materialize", "history", "cap", "lock"
+    ]
+    assert harness.writer_calls == harness.post_count == 0
+
+
+def test_presend_verifier_error_after_cap_reconstruction_blocks_writer():
+    """An unavailable final STOP read must not default to permission."""
+    harness = Harness()
+    calls = 0
+
+    def failing_verifier(**kwargs):
+        nonlocal calls
+        calls += 1
+        harness.events.append("lock")
+        if calls == 2:
+            raise RuntimeError("STOP authority source unavailable")
+        return True
+
+    deps = replace(harness.deps(), verify_release_lock=failing_verifier)
+
+    with pytest.raises(RuntimeError, match="STOP authority source unavailable"):
+        _run_with_injected_dependencies(deps)
+
+    assert calls == 2
+    assert harness.events[-2:] == ["cap", "lock"]
+    assert harness.writer_calls == harness.post_count == 0
+
+
+def test_noop_phase_does_not_need_presend_writer_verification():
+    """No writer means no second STOP check, but cap reconstruction remains."""
+    harness = Harness()
+    checks = 0
+
+    def verifier(**kwargs):
+        nonlocal checks
+        checks += 1
+        harness.events.append("lock")
+        return True
+
+    def no_orders(**kwargs):
+        harness.events.append("materialize")
+        return {"orders": []}
+
+    deps = replace(
+        harness.deps(),
+        verify_release_lock=verifier,
+        materialize_execution_phase=no_orders,
+    )
+    result = _run_with_injected_dependencies(deps)
+
+    assert checks == 1
+    assert harness.events == ["lock", "broker", "materialize", "history", "cap"]
+    assert result["trace"][-1] == "writer_not_required"
     assert harness.writer_calls == harness.post_count == 0
