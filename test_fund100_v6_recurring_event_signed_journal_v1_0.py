@@ -417,6 +417,7 @@ def recurring_broker_fixture(*, side="buy"):
         "symbol": "SPY", "side": side, "status": "filled",
         "type": "market", "time_in_force": "day",
         "qty": "1.25", "filled_qty": "1.25",
+        "filled_avg_price": "12",
         "submitted_at": now, "filled_at": later,
     }
     fills = [[
@@ -468,6 +469,7 @@ def test_recurring_actual_broker_shaped_fill_math_is_offline_only(side):
         private_signed_journal_source=signed_source,
         **context, **recurring_broker_fixture(side=side))
     assert result["filled_order_and_complete_FILLS_structurally_matched"] is True
+    assert result["broker_receipt_average_matches_complete_FILLS"] is True
     assert result["synthetic_order_fields_bound_to_signed_intent_preimage"] is True
     assert result["real_broker_receipt_source_authenticated"] is False
     assert result["real_private_journal_antirollback_verified"] is False
@@ -514,6 +516,44 @@ def test_recurring_broker_structural_mismatch_never_advances(path, bad):
             private_signed_journal_source=signed_source, **context, **fixture)
 
 
+@pytest.mark.parametrize("reported", [
+    None, "NaN", "-12", "12e0", "12.01", "12.0051", "0",
+])
+def test_recurring_receipt_vwap_missing_malformed_or_disagrees_holds(reported):
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture()
+    fixture["closed_order"]["filled_avg_price"] = reported
+    with pytest.raises(broker_proof.BrokerProofStop):
+        broker_proof.assess(
+            private_signed_journal_source=signed_source, **context, **fixture)
+
+
+def test_recurring_receipt_average_allows_half_cent_broker_rounding():
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture()
+    fixture["closed_order"]["filled_avg_price"] = "12.005"
+    result = broker_proof.assess(
+        private_signed_journal_source=signed_source, **context, **fixture)
+    assert result["broker_receipt_average_matches_complete_FILLS"] is True
+    assert result["next_live_order_authorized"] is False
+
+
+def test_recurring_receipt_uses_quantity_weighted_fill_price_not_simple_mean():
+    signed_source, context = replay_source_and_context()
+    fixture = recurring_broker_fixture()
+    fixture["fill_pages"][0][0]["price"] = "10"
+    fixture["fill_pages"][0][1]["price"] = "14"
+    # (0.5 * 10 + 0.75 * 14) / 1.25 = 12.40, not arithmetic 12.
+    fixture["closed_order"]["filled_avg_price"] = "12.40"
+    result = broker_proof.assess(
+        private_signed_journal_source=signed_source, **context, **fixture)
+    assert result["broker_receipt_average_matches_complete_FILLS"] is True
+    fixture["closed_order"]["filled_avg_price"] = "12"
+    with pytest.raises(broker_proof.BrokerProofStop, match="average price"):
+        broker_proof.assess(
+            private_signed_journal_source=signed_source, **context, **fixture)
+
+
 def test_nonpossible_post_cannot_be_reconciled_as_filled_broker_event():
     start = genesis_source()
     reserved = next_source(journal.plan_reserve(start, **CONTEXT))
@@ -542,6 +582,7 @@ def test_full_existing_inventory_exit_over_65_reconciles_offline_only():
     fixture["after_positions"] = {"XLE": "0.5"}
     for row in fixture["fill_pages"][0]:
         row["price"] = "80"  # 1.25 * $80 = $100, but it closes risk
+    fixture["closed_order"]["filled_avg_price"] = "80"
     result = broker_proof.assess(
         private_signed_journal_source=signed_source, **context, **fixture)
     assert result["synthetic_full_existing_position_exit_exception_applied"] is True
