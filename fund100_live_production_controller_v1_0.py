@@ -2115,82 +2115,75 @@ def materialize_orders(
 # ============================================================
 
 
-def existing_order_notional(
-    order: dict,
-) -> Decimal:
+def existing_order_notional(order: dict) -> Decimal:
+    """Reserve full historical order exposure, not just a partial fill.
 
-    raw_notional = (
-        order.get(
-            "notional"
+    Alpaca notional orders retain their submitted amount while active.
+    For a completed quantity order without a notional, only the final
+    filled quantity and average price can reconstruct its total amount.
+    Never treat an incomplete quantity order's partial fill as the cap.
+    """
+    if type(order) is not dict:
+        raise ProductionStop(
+            "LIVE PRODUCTION STOP: malformed historical broker order."
         )
-    )
-
-    if raw_notional not in (
-        None,
-        "",
-    ):
-
-        notional = decimal_value(
-            raw_notional,
-            field_name=(
-                "existing order notional"
-            ),
+    status = str(order.get("status", "")).strip().lower()
+    if status not in SAFE_ORDER_STATUSES:
+        raise ProductionStop(
+            "LIVE PRODUCTION STOP: unsafe historical order status."
         )
 
-        if notional > Decimal("0"):
-
-            return notional
-
-    filled_qty = (
-        order.get(
-            "filled_qty"
+    raw_notional = order.get("notional")
+    requested = None
+    if raw_notional not in (None, ""):
+        requested = decimal_value(
+            raw_notional, field_name="historical submitted notional"
         )
-    )
+        if requested <= 0:
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: nonpositive historical order notional."
+            )
 
-    filled_price = (
-        order.get(
-            "filled_avg_price"
-        )
-    )
-
-    if (
-        filled_qty not in (
-            None,
-            "",
-        )
-        and filled_price not in (
-            None,
-            "",
-        )
-    ):
-
-        qty = decimal_value(
-            filled_qty,
-            field_name=(
-                "filled quantity"
-            ),
-        )
-
-        price = decimal_value(
-            filled_price,
-            field_name=(
-                "filled average price"
-            ),
+    raw_qty = order.get("filled_qty")
+    raw_price = order.get("filled_avg_price")
+    filled_value = Decimal("0")
+    if raw_qty not in (None, ""):
+        qty = decimal_value(raw_qty, field_name="historical filled quantity")
+        if qty < 0:
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: negative historical filled quantity."
+            )
+        if qty > 0:
+            if raw_price in (None, ""):
+                raise ProductionStop(
+                    "LIVE PRODUCTION STOP: historical partial fill price missing."
+                )
+            price = decimal_value(
+                raw_price, field_name="historical filled average price"
+            )
+            if price <= 0:
+                raise ProductionStop(
+                    "LIVE PRODUCTION STOP: historical fill price nonpositive."
+                )
+            filled_value = qty * price
+    elif raw_price not in (None, ""):
+        raise ProductionStop(
+            "LIVE PRODUCTION STOP: historical fill price without quantity."
         )
 
-        fallback = (
-            qty
-            * price
+    if status == "filled" and filled_value <= 0:
+        raise ProductionStop(
+            "LIVE PRODUCTION STOP: completed broker fill economics unverified."
         )
-
-        if fallback > Decimal("0"):
-
-            return fallback
-
-    raise ProductionStop(
-        "LIVE PRODUCTION STOP: "
-        "cannot reconstruct historical order notional."
-    )
+    if requested is None:
+        if status != "filled" or filled_value <= 0:
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: cannot reserve unfilled quantity order."
+            )
+        return filled_value
+    # Even a broker-reported fill greater than submitted notional must not
+    # reduce the cumulative cap reservation.
+    return max(requested, filled_value)
 
 
 def reconstruct_authorized_history(
@@ -2246,6 +2239,7 @@ def enforce_cumulative_cap(
     consumed = Decimal(
         "0"
     )
+    seen_broker_order_ids = set()
 
     for cid in sorted(
         history
@@ -2260,6 +2254,26 @@ def enforce_cumulative_cap(
         if order is None:
 
             continue
+
+        # A GET-by-client-ID response is not proof of identity on its own.
+        # Bind every historical cap reservation to a unique broker order.
+        if type(order) is not dict or order.get("client_order_id") != cid:
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: historical broker client ID mismatch."
+            )
+        broker_id = order.get("id")
+        if (type(broker_id) is not str or not broker_id.strip()
+                or broker_id in seen_broker_order_ids):
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: missing/duplicate historical broker order ID."
+            )
+        seen_broker_order_ids.add(broker_id)
+        if (order.get("side") not in ("buy", "sell")
+                or order.get("type") != "market"
+                or order.get("time_in_force") != "day"):
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: historical broker order shape mismatch."
+            )
 
         status = (
             str(
