@@ -59,15 +59,19 @@ def check_account(*,account:dict,positions:list,orders:list,clock:dict,
         raise ReadinessStop("LIVE observation is not recent.")
     if not isinstance(account,dict) or not isinstance(positions,list) or not isinstance(orders,list) or not isinstance(clock,dict):
         raise ReadinessStop("Invalid GET-only response types.")
-    if not account.get("id") or not isinstance(account["id"],str):
+    if type(account.get("id")) is not str or not account["id"].strip():
         raise ReadinessStop("Broker identity missing.")
     binding=sha256(("FUND100-LIVE-ACCOUNT|"+account["id"].strip()).encode()).hexdigest()
     if binding!=policy.get("account_binding_sha256"):
         raise ReadinessStop("Unexpected LIVE account identity.")
+    # These are independent broker-side restrictions. Missing, null, numeric
+    # or string flags are UNKNOWN, not proof that trading is unblocked.
+    # The production writer already fails closed on the same ambiguity;
+    # this authenticated GET-only source feeds the recurring journal bridge.
     if (account.get("status")!="ACTIVE"
-        or account.get("account_blocked") is True
-        or account.get("trading_blocked") is True):
-        raise ReadinessStop("LIVE account is not in approved ACTIVE state.")
+        or account.get("account_blocked") is not False
+        or account.get("trading_blocked") is not False):
+        raise ReadinessStop("LIVE account block flags or ACTIVE state unverified.")
     if len(orders)!=0:
         raise ReadinessStop("Existing LIVE orders must be reconciled first.")
     if len(positions)!=len(ALLOWED):
