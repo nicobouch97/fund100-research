@@ -159,6 +159,10 @@ class PaperBroker:
             self.filled[cid] = {
                 "status": "filled",
                 "notional": str(amount),
+                # Offline instant-fill economics must match broker-filled
+                # records required by the production cumulative-cap guard.
+                "filled_qty": "1",
+                "filled_avg_price": str(amount),
                 "client_order_id": cid,
                 "id": "paper-" + cid,
                 "symbol": symbol,

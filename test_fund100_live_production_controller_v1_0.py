@@ -845,3 +845,101 @@ def test_live_snapshot_rejects_negative_cash_before_any_writer(monkeypatch):
     }
     with pytest.raises(production.ProductionStop, match="negative cash"):
         _fake_live_snapshot(monkeypatch, account=account)
+
+
+# Historical cap reservations are a production safety boundary, not P&L.
+# These tests use invented broker dictionaries; no network or LIVE orders.
+def _synthetic_cap_order(cid, **overrides):
+    record = {
+        "id": "broker-" + cid, "client_order_id": cid,
+        "symbol": "ACWI", "side": "buy", "type": "market",
+        "time_in_force": "day", "status": "partially_filled",
+        "notional": "50.00", "filled_qty": "0.10",
+        "filled_avg_price": "100.00",
+    }
+    record.update(overrides)
+    return record
+
+
+def test_cap_reserves_full_partially_filled_notional_not_partial_proceeds():
+    order = _synthetic_cap_order("one")
+    assert production.existing_order_notional(order) == Decimal("50.00")
+
+
+def test_cap_reserves_greater_of_submitted_and_actual_filled_value():
+    order = _synthetic_cap_order(
+        "one", status="filled", filled_qty="0.60"
+    )
+    assert production.existing_order_notional(order) == Decimal("60.00")
+
+
+def test_cap_accepts_final_quantity_fill_only_with_complete_economics():
+    order = _synthetic_cap_order(
+        "one", status="filled", notional=None,
+        filled_qty="0.30", filled_avg_price="100.00"
+    )
+    assert production.existing_order_notional(order) == Decimal("30.00")
+
+
+@pytest.mark.parametrize("change", [
+    {"notional": None},
+    {"notional": "0"},
+    {"notional": "-10"},
+    {"notional": None, "filled_qty": "0", "filled_avg_price": None},
+    {"filled_qty": "0.10", "filled_avg_price": None},
+    {"filled_qty": "-0.10"},
+    {"filled_qty": "0.10", "filled_avg_price": "NaN"},
+])
+def test_cap_refuses_ambiguous_partial_or_malformed_order_reservation(change):
+    order = _synthetic_cap_order("one", **change)
+    with pytest.raises(production.ProductionStop):
+        production.existing_order_notional(order)
+
+
+def test_cap_validates_all_historical_and_new_order_reservations():
+    old = _synthetic_cap_order("old", status="filled", filled_qty="0.50")
+    qty = _synthetic_cap_order(
+        "qty", status="filled", notional=None, filled_qty="0.30"
+    )
+    history = {"old": old, "qty": qty, "new": None}
+    new = [{"client_order_id": "new", "notional_usd": "40.00"}]
+    result = production.enforce_cumulative_cap(
+        allowed_client_ids=set(history), history=history, new_orders=new,
+        capital_ceiling=Decimal("130.30")
+    )
+    assert Decimal(result["historical_consumed_usd"]) == Decimal("80.00")
+    assert Decimal(result["projected_notional_usd"]) == Decimal("120.00")
+    with pytest.raises(production.ProductionStop, match="exceeds"):
+        production.enforce_cumulative_cap(
+            allowed_client_ids=set(history), history=history,
+            new_orders=[{"client_order_id": "new", "notional_usd": "60.00"}],
+            capital_ceiling=Decimal("130.30")
+        )
+
+
+@pytest.mark.parametrize("change", [
+    {"client_order_id": "other"},
+    {"id": ""},
+    {"side": "hold"},
+    {"type": "limit"},
+    {"time_in_force": "gtc"},
+])
+def test_cap_rejects_misbound_historical_broker_order(change):
+    history = {"one": _synthetic_cap_order("one", **change)}
+    with pytest.raises(production.ProductionStop):
+        production.enforce_cumulative_cap(
+            allowed_client_ids={"one"}, history=history, new_orders=[],
+            capital_ceiling=Decimal("130.30")
+        )
+
+
+def test_cap_rejects_duplicate_broker_order_ids_across_client_ids():
+    history = {
+        "one": _synthetic_cap_order("one"),
+        "two": _synthetic_cap_order("two", id="broker-one"),
+    }
+    with pytest.raises(production.ProductionStop, match="duplicate"):
+        production.enforce_cumulative_cap(
+            allowed_client_ids=set(history), history=history, new_orders=[],
+            capital_ceiling=Decimal("130.30")
+        )
