@@ -907,8 +907,8 @@ def test_cap_validates_all_historical_and_new_order_reservations():
         allowed_client_ids=set(history), history=history, new_orders=new,
         capital_ceiling=Decimal("130.30")
     )
-    assert result["historical_consumed_usd"] == "80.00"
-    assert result["projected_notional_usd"] == "120.00"
+    assert Decimal(result["historical_consumed_usd"]) == Decimal("80.00")
+    assert Decimal(result["projected_notional_usd"]) == Decimal("120.00")
     with pytest.raises(production.ProductionStop, match="exceeds"):
         production.enforce_cumulative_cap(
             allowed_client_ids=set(history), history=history,
