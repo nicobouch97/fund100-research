@@ -9,7 +9,7 @@ No prices, backtest, ranking, broker access or trading authority.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -46,6 +46,20 @@ def _clock(value: object) -> str:
 
 
 
+def _scored_fiscal_end(event: dict) -> date:
+    """Require the scored 10-K's own fiscal end, never its later filing year."""
+    raw = event.get("source_10k_fiscal_period_end")
+    if type(raw) is not str:
+        raise AnnualReplayStop("Scored 10-K fiscal period end missing")
+    try:
+        fiscal_end = date.fromisoformat(raw)
+    except ValueError as exc:
+        raise AnnualReplayStop("Invalid scored 10-K fiscal period end") from exc
+    if fiscal_end.isoformat() != raw:
+        raise AnnualReplayStop("Noncanonical scored 10-K fiscal period end")
+    return fiscal_end
+
+
 def annual_score_stability(observations: list[dict]) -> dict:
     """Measure adjacent ORIGINAL annual score transitions, not stock returns.
 
@@ -54,7 +68,7 @@ def annual_score_stability(observations: list[dict]) -> dict:
     The 2/3 threshold is a descriptive diagnostic, NOT a trading rule.
     """
     distribution = {str(i): 0 for i in range(4)}
-    scored_pairs = unchanged = improved = deteriorated = missing_pairs = 0
+    scored_pairs = unchanged = improved = deteriorated = missing_pairs = gap_pairs = 0
     entered = exited = remained_eligible = 0
     issuers_with_scored_pairs = issuers_with_changes = 0
     for row in observations:
@@ -74,6 +88,16 @@ def annual_score_stability(observations: list[dict]) -> dict:
             before, after = prior["score"], current["score"]
             if before is None or after is None:
                 missing_pairs += 1
+                continue
+            # Adjacent filing observations need not represent adjacent fiscal
+            # years: a late filing, skipped 10-K, or same-year amendment
+            # otherwise creates a spurious one-year quality transition.
+            first_end = _scored_fiscal_end(prior)
+            second_end = _scored_fiscal_end(current)
+            elapsed = (second_end - first_end).days
+            if (second_end.year != first_end.year + 1
+                or not 330 <= elapsed <= 400):
+                gap_pairs += 1
                 continue
             scored_pairs += 1
             pairs_here += 1
@@ -96,7 +120,7 @@ def annual_score_stability(observations: list[dict]) -> dict:
     if (sum(distribution.values()) != sum(
             row["available_score_count"] for row in observations
             if row["ticker"] in p4n.SOURCE_MATCHED_TAGS)
-        or scored_pairs + missing_pairs != sum(
+        or scored_pairs + missing_pairs + gap_pairs != sum(
             max(0, row["annual_filing_dates_reviewed"] - 1)
             for row in observations if row["ticker"] in p4n.SOURCE_MATCHED_TAGS)
         or scored_pairs != unchanged + improved + deteriorated):
@@ -106,6 +130,7 @@ def annual_score_stability(observations: list[dict]) -> dict:
         "score_observation_distribution": distribution,
         "adjacent_annual_pairs_with_both_scores": scored_pairs,
         "adjacent_annual_pairs_with_missing_score": missing_pairs,
+        "adjacent_filings_with_nonconsecutive_fiscal_periods": gap_pairs,
         "unchanged_score_pairs": unchanged,
         "improved_score_pairs": improved,
         "deteriorated_score_pairs": deteriorated,
@@ -116,6 +141,7 @@ def annual_score_stability(observations: list[dict]) -> dict:
         "issuers_with_any_score_change": issuers_with_changes,
         "threshold_2_is_descriptive_not_a_validated_trade_signal": True,
         "score_persistence_is_not_stock_return_predictiveness": True,
+        "fiscal_year_adjacency_required_not_merely_filing_adjacency": True,
         "source_retrieved_today_not_independent_historical_vintage": True,
     }
 
@@ -204,8 +230,12 @@ def evaluate(source_dir: Path) -> dict:
                         or available > day
                         or quality["score"] not in (0, 1, 2, 3)):
                         raise AnnualReplayStop("Historical accession chronology inconsistent")
+                fiscal_end = (
+                    filings[accession]["end"] if accession in filings else None
+                )
                 events.append({
                     "asof_conservative_available_date": day,
+                    "source_10k_fiscal_period_end": fiscal_end,
                     "source_10k_accession": accession,
                     "source_10k_available_date": available,
                     "state": quality["state"],
