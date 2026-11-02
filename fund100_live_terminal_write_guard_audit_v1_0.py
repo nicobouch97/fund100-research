@@ -21,7 +21,7 @@ BOOTSTRAP = "fund100_live_bootstrap_v1_0.py"
 PRODUCTION = "fund100_live_production_controller_v1_0.py"
 REVIEWED_WRITER_BLOBS = {
     BOOTSTRAP: "3d866d415ba228b6c538adac6d0a70e6b93de34d",
-    PRODUCTION: "159ba18f2bbe4aa7bb65825c515abe8acd0c3537",
+    PRODUCTION: "5094316338f9eb16437d902acf75a1efb698a37a",
 }
 
 # These exact AST tests have predictable meaning, regardless of formatting.
