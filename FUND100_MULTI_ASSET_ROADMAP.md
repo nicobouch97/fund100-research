@@ -3,6 +3,16 @@
 Status: engineering plan, 14 October 2026. This document is **not**
 authority to trade or expand LIVE permissions.
 
+**2 November — authenticated LIVE GET-only source integrity (PR #515):**
+The shared four-GET transition reader must not interpret a missing, null,
+numeric or string-valued `account_blocked` / `trading_blocked` broker field
+as an unblocked account. Require explicit `False` for both before reporting
+source-bound account readiness; a blank account identity also fails closed.
+This aligns read-only signed-journal/broker readiness with the existing
+production writer's strict broker-state validation. It does **not**
+authenticate settled sale proceeds, enable trading or alter the original
+$130.30 cap, STOP, kill switch, risk policy or LIVE release locks.
+
 ## 2 November 2026 — historical listed-and-delisted stock data acquisition decision
 
 The highest-impact remaining stock research gap is **actual licensed historical security-level data**, not more fitting of the same 2026 stock history or another four-name sample backtest. [P4 historical source decision](research_lab/stocks/P4_HISTORICAL_DELISTED_DATA_SOURCE_DECISION_2026_11_02.md) identifies Sharadar Direct's documented active/delisted US price, corporate-action, security-reference and SEC **as-reported** fundamentals bundle as the first candidate, with an explicit alternative and real-byte admission tests. The free Dow-30 sample cannot resolve survivorship; the paid full bundle is **not acquired**, price/license/entitlement remain unverified, and no vendor data may be committed publicly or mixed with private execution state. This is source qualification, **not** a successful historical backtest or alpha. The small ETF launch-first priority and all STOP/capital/release locks are unchanged.
