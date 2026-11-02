@@ -155,7 +155,13 @@ jobs:
           assert s["adjacent_annual_pairs_with_both_scores"] == (
               s["unchanged_score_pairs"] + s["improved_score_pairs"]
               + s["deteriorated_score_pairs"])
-          assert s["adjacent_annual_pairs_with_both_scores"] + s["adjacent_annual_pairs_with_missing_score"] <= d["industrial_annual_filing_dates_reviewed"]
+          assert (s["adjacent_annual_pairs_with_both_scores"]
+                  + s["adjacent_annual_pairs_with_missing_score"]
+                  + s["adjacent_filings_with_nonconsecutive_fiscal_periods"]
+                  == sum(max(0, row["annual_filing_dates_reviewed"] - 1)
+                         for row in d["observations"]
+                         if row["ticker"] not in d["sector_specific_issuers_not_replayed"]))
+          assert s["fiscal_year_adjacency_required_not_merely_filing_adjacency"]
           assert s["score_persistence_is_not_stock_return_predictiveness"]
           assert s["source_retrieved_today_not_independent_historical_vintage"]
           assert not d["historical_investable_backtest_eligible"]
@@ -170,7 +176,8 @@ jobs:
                 "unchanged",s["unchanged_score_pairs"],
                 "improved",s["improved_score_pairs"],
                 "deteriorated",s["deteriorated_score_pairs"],
-                "missing pairs",s["adjacent_annual_pairs_with_missing_score"])
+                "missing-score pairs",s["adjacent_annual_pairs_with_missing_score"],
+                "nonconsecutive fiscal pairs",s["adjacent_filings_with_nonconsecutive_fiscal_periods"])
           PY
       - name: Match dated original 10-K scores to 126-session historical stock outcomes (not alpha)
         if: steps.capture.outputs.acquired == 'true'
