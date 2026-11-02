@@ -289,3 +289,22 @@ def test_quality_stability_accepts_53_week_fiscal_year():
     assert result["adjacent_annual_pairs_with_both_scores"] == 1
     assert result["adjacent_filings_with_nonconsecutive_fiscal_periods"] == 0
     assert result["score_at_least_2_entries"] == 1
+
+
+@pytest.mark.parametrize("prior_end,current_end", [
+    ("2023-01-01", "2023-12-31"),  # consecutive 52-week years, same calendar year
+    ("2022-12-31", "2024-01-06"),  # consecutive 53-week years, calendar year +2
+])
+def test_quality_stability_accepts_fiscal_year_around_new_year(prior_end, current_end):
+    observations = [{
+        "ticker": "CAT", "annual_filing_dates_reviewed": 2,
+        "available_score_count": 2,
+        "annual_events": [
+            {"score": 1, "source_10k_fiscal_period_end": prior_end},
+            {"score": 2, "source_10k_fiscal_period_end": current_end},
+        ],
+    }]
+    result = p4q.annual_score_stability(observations)
+    assert result["adjacent_annual_pairs_with_both_scores"] == 1
+    assert result["adjacent_filings_with_nonconsecutive_fiscal_periods"] == 0
+    assert result["score_at_least_2_entries"] == 1
