@@ -95,8 +95,10 @@ def annual_score_stability(observations: list[dict]) -> dict:
             first_end = _scored_fiscal_end(prior)
             second_end = _scored_fiscal_end(current)
             elapsed = (second_end - first_end).days
-            if (second_end.year != first_end.year + 1
-                or not 330 <= elapsed <= 400):
+            # Around New Year, consecutive 52/53-week fiscal periods can
+            # end in the same calendar year or two calendar years apart.
+            # Compare original fiscal-end spacing, not calendar year labels.
+            if not 330 <= elapsed <= 400:
                 gap_pairs += 1
                 continue
             scored_pairs += 1
