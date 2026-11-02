@@ -270,13 +270,14 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         "fund100_live_pilot_prepare_v1_0.py",
     ): "dfebc7cedcd9820b1141c74a69d85e500c287748",
     # Reviewed 2 Nov 2026: production snapshot parsing rejects ambiguous
-    # broker records; cumulative-cap history now reserves partial fills
-    # conservatively and rejects mismatched or duplicate broker identities.
+    # broker records and verifies account equity against cash plus all
+    # managed position marks; cumulative-cap history still reserves
+    # partial fills and rejects mismatched or duplicate broker identities.
     # Exact source pin only; no expansion of credential/job permissions.
     (
         ".github/workflows/fund100-v5-live-production.yml",
         "fund100_live_production_controller_v1_0.py",
-    ): "834ed2ea2d7d204b41fe1722a9b1b43491c13dff",
+    ): "159ba18f2bbe4aa7bb65825c515abe8acd0c3537",
     (
         ".github/workflows/fund100-live-emergency-stop.yml",
         "fund100_live_operator_control_v1_0.py",

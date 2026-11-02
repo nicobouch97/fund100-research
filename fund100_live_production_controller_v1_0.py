@@ -1753,6 +1753,23 @@ def fresh_snapshot(
             "debit or margin financing."
         )
 
+    # Alpaca's account equity and position marks arrive in separate GETs.
+    # Permit minor asynchronous price/rounding drift, but never size orders
+    # from a materially incomplete or understated position reconstruction.
+    # This is a negative safety check, NOT proof of a settled cash balance.
+    marked_equity = cash + sum(
+        (position["market_value"] for position in positions.values()),
+        Decimal("0"),
+    )
+    valuation_tolerance = max(
+        Decimal("0.05"), equity * Decimal("0.01")
+    )
+    if abs(marked_equity - equity) > valuation_tolerance:
+        raise ProductionStop(
+            "LIVE PRODUCTION STOP: broker account equity does not "
+            "reconcile to cash plus all managed position marks."
+        )
+
     return {
         "account":
             account,

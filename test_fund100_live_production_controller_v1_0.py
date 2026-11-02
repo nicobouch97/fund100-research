@@ -764,6 +764,36 @@ def test_live_snapshot_accepts_unique_explicitly_unblocked_broker_state(monkeypa
     assert snap["positions"]["ACWI"]["market_value"] == Decimal("80.00")
 
 
+def test_live_snapshot_accepts_small_asynchronous_mark_drift(monkeypatch):
+    # Account and positions are separate GETs, so tiny mark drift is expected.
+    snap = _fake_live_snapshot(
+        monkeypatch,
+        positions=[{"symbol": "ACWI", "qty": "1", "market_value": "80.95"}],
+    )
+    assert snap["equity"] == Decimal("100.00")
+
+
+@pytest.mark.parametrize("positions", [
+    [],
+    [{"symbol": "ACWI", "qty": "1", "market_value": "65.00"}],
+    [{"symbol": "ACWI", "qty": "1", "market_value": "81.05"}],
+])
+def test_live_snapshot_rejects_missing_or_inconsistent_position_marks(
+    monkeypatch, positions
+):
+    with pytest.raises(production.ProductionStop, match="does not reconcile"):
+        _fake_live_snapshot(monkeypatch, positions=positions)
+
+
+def test_live_snapshot_rejects_inconsistent_account_equity(monkeypatch):
+    account = {
+        "status": "ACTIVE", "account_blocked": False,
+        "trading_blocked": False, "equity": "110.00", "cash": "20.00",
+    }
+    with pytest.raises(production.ProductionStop, match="does not reconcile"):
+        _fake_live_snapshot(monkeypatch, account=account)
+
+
 @pytest.mark.parametrize("field,bad_value", [
     ("trading_blocked", None),
     ("trading_blocked", "false"),
