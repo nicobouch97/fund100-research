@@ -64,8 +64,6 @@ def _frozen_forward_entry_exposure(changes:list[dict],initial_report:dict|None)-
             return {**unassessed,"status":"UNVERIFIABLE_FROZEN_PAYOFF_DEPENDENCIES"}
         control=set(m1._frozen_sector_control(selected))
         selected_set=set(selected)
-        sectors={p4l.SECTORS[s] for s in selected}
-        rank_peers={s for s in p4l.SECTORS if p4l.SECTORS[s] in sectors}
         classifications={}
         for item in changes:
             ticker=item["symbol"]
@@ -75,8 +73,6 @@ def _frozen_forward_entry_exposure(changes:list[dict],initial_report:dict|None)-
                 role="FROZEN_SPY_BENCHMARK"
             elif ticker in control:
                 role="FROZEN_SECTOR_CONTROL"
-            elif ticker in rank_peers:
-                role="FROZEN_SECTOR_RANK_REFERENCE"
             else:
                 role="OUTSIDE_FIXED_FORWARD_PAYOFF"
             classifications[ticker]=role
