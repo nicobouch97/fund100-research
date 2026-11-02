@@ -388,3 +388,44 @@ def test_integrated_engine_records_atomic_envelope_hold_without_orders(monkeypat
     assert all(e["signal_session"]<e["execution_session"] for e in holds)
     assert report["execution_close_risk_and_ticket_checks_reject_atomic_basket"]
     assert report["actual_broker_orders"]==0
+
+
+def test_risk_repair_partial_ticket_limit_and_full_position_exception():
+    check=x9._risk_repair_execution_hold_reason
+    units={"XLK":2.0,"XLE":1.0}
+    px={"XLK":100.0,"XLE":10.0}
+    assert check(units,px,{"XLK":0.70})==(
+        "RISK_REPAIR_PARTIAL_TICKET_OUTSIDE_PILOT_LIMITS")
+    assert check(units,px,{"XLE":0.05})==(
+        "RISK_REPAIR_PARTIAL_TICKET_OUTSIDE_PILOT_LIMITS")
+    assert check(units,px,{"XLK":0.50,"XLE":0.05})==(
+        "RISK_REPAIR_PARTIAL_TICKET_OUTSIDE_PILOT_LIMITS")
+    assert check(units,px,{"XLK":2.0}) is None
+    assert check(units,px,{"XLE":1.0}) is None
+    assert check(units,px,{"XLK":2.01})==(
+        "RISK_REPAIR_UNOWNED_OR_INVALID_SHARES")
+
+
+def test_integrated_risk_repair_ticket_hold_is_atomic_and_never_books_sale(monkeypatch):
+    dates=pd.bdate_range("2021-01-01",periods=520)
+    t=np.arange(len(dates),dtype=float)
+    prices=pd.DataFrame({s:np.full(len(dates),100.) for s in x9.S1},
+                        index=dates)
+    prices["XLK"]=100*(1.001**t)
+    prices[original.BENCH]=100.
+    # Force an execution-envelope refusal, not a fabricated broker fill.
+    monkeypatch.setattr(x9,"_risk_repair_execution_hold_reason",
+                        lambda *args:"RISK_REPAIR_PARTIAL_TICKET_OUTSIDE_PILOT_LIMITS")
+    result=x9.simulate(prices,start="2020-01-01",cost_bps=15,
+                       capital_usd=130.30,prefunded_monthly=True,
+                       risk_history_variant=x9.BROKER_HISTORY_PROXY)
+    holds=[e for e in result["trade_log"]
+           if e["kind"]=="RISK_REPAIR_EXECUTION_ENVELOPE_HOLD"]
+    assert holds
+    assert result["risk_repair_execution_envelope_holds"]==len(holds)
+    assert result["modeled_sell_sides_completed"]==0
+    assert result["integrated_partial_risk_repair_ticket_enforced"] is True
+    assert all(e["no_orders_executed"] and
+               e["risk_remains_subject_to_next_close_reassessment"]
+               and e["signal_session"]<e["execution_session"] for e in holds)
+    assert result["actual_broker_orders"]==0
