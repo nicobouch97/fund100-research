@@ -207,7 +207,7 @@ class _FREDResponse:
 
 
 def _fred_ok():
-    return _FREDResponse(b"DATE,DFII10\\n2026-10-29,1.23\\n")
+    return _FREDResponse(b"DATE,DFII10\n2026-10-29,1.23\n")
 
 
 def test_public_fred_read_timeout_retries_then_uses_only_successful_bytes(monkeypatch):
@@ -280,8 +280,8 @@ def test_three_failed_transport_attempts_hard_fail_without_fallback(monkeypatch)
 
 
 @pytest.mark.parametrize("payload, message", [
-    (b"DATE,WRONG\\n2026-10-29,1.23\\n", "shape"),
-    (b"DATE,DFII10\\n2026-10-29,1.23\\n2026-10-29,1.24\\n", "calendar"),
+    (b"DATE,WRONG\n2026-10-29,1.23\n", "shape"),
+    (b"DATE,DFII10\n2026-10-29,1.23\n2026-10-29,1.24\n", "calendar"),
 ])
 def test_invalid_successful_fred_payload_fails_without_retry(monkeypatch, payload, message):
     calls, sleeps = [], []
