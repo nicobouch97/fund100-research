@@ -529,12 +529,8 @@ def test_frozen_forward_entry_exposure_is_forensic_only_and_never_unblocks_vinta
     a,p,b,q=samples()
     selected=set(a["original_pretrade_selection"])
     control=set(m1._frozen_sector_control(a["original_pretrade_selection"]))
-    sector_peers={s for s in m3.p4l.SECTORS if
-                  m3.p4l.SECTORS[s] in
-                  {m3.p4l.SECTORS[t] for t in selected}}
-    outside=next(s for s in m3.p4l.SECTORS if s not in
-                 (selected|control|sector_peers))
-    peer=next(s for s in sector_peers if s not in selected|control)
+    outside=next(s for s in m3.p4l.SECTORS if s not in control)
+    peer=next(s for s in control if s not in selected)
     changed=q.copy()
     for symbol in (outside,peer,"SPY",next(iter(selected))):
         changed.loc["2026-10-27",symbol]*=0.999
@@ -543,11 +539,11 @@ def test_frozen_forward_entry_exposure_is_forensic_only_and_never_unblocks_vinta
     scope=diagnostic["frozen_forward_entry_exposure"]
     roles=scope["entry_day_revision_roles"]
     assert roles[outside]=="OUTSIDE_FIXED_FORWARD_PAYOFF"
-    assert roles[peer]=="FROZEN_SECTOR_RANK_REFERENCE"
+    assert roles[peer]=="FROZEN_SECTOR_CONTROL"
     assert roles["SPY"]=="FROZEN_SPY_BENCHMARK"
     assert roles[next(iter(selected))]=="FROZEN_SELECTED_STOCK"
     assert scope["entry_day_only_not_full_history"]
-    assert not scope["does_not_qualify_returns"] is False
+    assert scope["does_not_qualify_returns"] is True
     assert not scope["trading_authorized"]
     with pytest.raises(m3.EntryAnchorStop,match="vendor-revised"):
         m3.verify(initial_report=a,initial_prices=p,
@@ -568,7 +564,7 @@ def test_unused_entry_revision_still_blocks_all_26_column_vintage():
     assert scope["only_outside_fixed_forward_payoff_entry_symbols_revised"]
     assert scope["fixed_forward_payoff_entry_symbols_revised"]==[]
     assert not scope["trading_authorized"]
-    assert not scope["does_not_qualify_returns"] is False
+    assert scope["does_not_qualify_returns"] is True
     assert diag["not_a_return_or_alpha_estimate"]
     with pytest.raises(m3.EntryAnchorStop,match="vendor-revised"):
         m3.verify(initial_report=a,initial_prices=p,
