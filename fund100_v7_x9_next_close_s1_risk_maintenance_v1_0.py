@@ -105,6 +105,33 @@ def _monthly_execution_hold_reason(units,cash,px,quantities,fee):
         return "POST_FEE_CASH_GROSS_OR_CONCENTRATION_BREACH"
     return None
 
+def _risk_repair_execution_hold_reason(units,px,quantities):
+    """Do not book a non-executable partial risk-reducing sale.
+
+    An actual full-position risk-reducing exit is a distinct pilot exception;
+    it is not proof of broker fractional-fill support. All partial repair
+    legs must meet the same absolute $1-$65 ticket envelope as routine
+    partial sales. Fail the entire synthetic repair basket, not just one leg.
+    """
+    if not quantities:
+        return "EMPTY_RISK_REPAIR"
+    for symbol,qty in quantities.items():
+        if (symbol not in units or symbol not in px
+            or not np.isfinite(qty) or qty<=0
+            or not np.isfinite(units[symbol]) or units[symbol]<=0
+            or qty>units[symbol]+1e-10):
+            return "RISK_REPAIR_UNOWNED_OR_INVALID_SHARES"
+        notional=qty*px[symbol]
+        if not np.isfinite(notional) or notional<=0:
+            return "RISK_REPAIR_INVALID_EXECUTION_NOTIONAL"
+        full_position=qty>=units[symbol]-1e-12
+        if not full_position and (
+            notional<MODELED_MIN_SELL_USD-1e-10
+            or notional>MODELED_MAX_ROUTINE_TICKET_USD+1e-10):
+            return "RISK_REPAIR_PARTIAL_TICKET_OUTSIDE_PILOT_LIMITS"
+    return None
+
+
 def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.0,
              risk_history_variant:str=ORIGINAL_RISK_HISTORY,
              prefunded_monthly:bool=False):
@@ -129,6 +156,7 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
     stop_full_position_minimum_exceptions=0
     monthly_signals=monthly_executions=monthly_funding_holds=0
     monthly_execution_envelope_holds=0
+    risk_repair_execution_holds=0
     monthly_buy_sides=0
     monthly_buy_notional=monthly_buy_fees=0.0
     forced_stop=False
@@ -204,8 +232,29 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
                     })
                 pending=None
             else:
+                # Legacy nonintegrated X9 remains the frozen comparator.
+                # Integrated risk maintenance also respects the partial-sale
+                # ticket envelope, with no fabricated split orders.
+                repair_hold=(
+                    _risk_repair_execution_hold_reason(
+                        units,px,pending["quantities"])
+                    if prefunded_monthly and pending["kind"]=="RISK_REPAIR"
+                    else None)
+                if repair_hold is not None:
+                    risk_repair_execution_holds+=1
+                    log.append({
+                        "signal_session":pending["signal_session"],
+                        "execution_session":when,
+                        "kind":"RISK_REPAIR_EXECUTION_ENVELOPE_HOLD",
+                        "reason":repair_hold,
+                        "no_orders_executed":True,
+                        "risk_remains_subject_to_next_close_reassessment":True,
+                    })
+                    pending=None
                 sold={}
-                for s,requested_qty in pending["quantities"].items():
+                for s,requested_qty in (
+                        pending["quantities"].items() if pending is not None
+                        else ()):
                     qty=min(units[s],requested_qty)
                     notional=qty*px[s]
                     # The pilot's full-position risk-reducing sale exception is
@@ -225,17 +274,18 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
                     sell_notional+=notional
                     sell_sides+=1
                     sold[s]=qty
-                log.append({
-                    "signal_session":pending["signal_session"],
-                    "execution_session":when,
-                    "kind":pending["kind"],
-                    "fixed_prior_close_share_quantity_sold":sold,
-                    "requested_at_prior_close":True,
-                    "execution_at_following_session_close_assumed":True,
-                })
-                if pending["kind"]=="STOP_EXIT" and stop_execution_session is None:
-                    stop_execution_session=when
-                pending=None
+                if pending is not None:
+                    log.append({
+                        "signal_session":pending["signal_session"],
+                        "execution_session":when,
+                        "kind":pending["kind"],
+                        "fixed_prior_close_share_quantity_sold":sold,
+                        "requested_at_prior_close":True,
+                        "execution_at_following_session_close_assumed":True,
+                    })
+                    if pending["kind"]=="STOP_EXIT" and stop_execution_session is None:
+                        stop_execution_session=when
+                    pending=None
         position={s:units[s]*px[s] for s in S1}
         gross=sum(position.values())
         nav=cash+gross
@@ -383,6 +433,9 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
         "monthly_prefunded_executions":monthly_executions,
         "monthly_prefunded_funding_holds":monthly_funding_holds,
         "monthly_execution_envelope_holds":monthly_execution_envelope_holds,
+        "risk_repair_execution_envelope_holds":risk_repair_execution_holds,
+        "integrated_partial_risk_repair_ticket_enforced":prefunded_monthly,
+        "risk_repair_holds_are_repeated_attempts_not_unique_breaches":True,
         "execution_close_risk_and_ticket_checks_reject_atomic_basket":True,
         "modeled_max_routine_ticket_usd":_metric(MODELED_MAX_ROUTINE_TICKET_USD),
         "monthly_prefunded_buy_sides":monthly_buy_sides,
