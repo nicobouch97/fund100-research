@@ -185,3 +185,127 @@ def test_sha_changes_with_source_and_cannot_claim_realtime():
     changed.loc[70, "BAA10Y"] += .015
     assert c2.macro_hash(changed) != original
     assert c2.AVAILABILITY_CLAIM.endswith("NOT_VERIFIED_POINT_IN_TIME")
+
+
+# The forward observer uses the same public macro GET path. Transport
+# retries must preserve the original research series and never backfill
+# unavailable dates, accept corrupt data or authorize a trade.
+class _FREDResponse:
+    status = 200
+
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self, limit):
+        return self.payload[:limit]
+
+
+def _fred_ok():
+    return _FREDResponse(b"DATE,DFII10\n2026-10-29,1.23\n")
+
+
+def test_public_fred_read_timeout_retries_then_uses_only_successful_bytes(monkeypatch):
+    calls, sleeps = [], []
+
+    def get(request, *, timeout):
+        calls.append((request.full_url, timeout))
+        if len(calls) == 1:
+            raise TimeoutError("read operation timed out")
+        return _fred_ok()
+
+    monkeypatch.setattr(source, "urlopen", get)
+    monkeypatch.setattr(source, "sleep", sleeps.append)
+    result = source.fetch_public("DFII10")
+    assert len(calls) == 2
+    assert calls[0] == (source.BASE + "DFII10", source.FETCH_TIMEOUT_SECONDS)
+    assert sleeps == [source.RETRY_DELAYS_SECONDS[0]]
+    assert result.iloc[0] == pytest.approx(1.23)
+    assert result.index[0] == pd.Timestamp("2026-10-29")
+
+
+@pytest.mark.parametrize("status", [429, 500, 503, 599])
+def test_transient_http_status_retries_once_then_recovers(monkeypatch, status):
+    from urllib.error import HTTPError
+
+    calls, sleeps = [], []
+
+    def get(request, *, timeout):
+        calls.append(request.full_url)
+        if len(calls) == 1:
+            raise HTTPError(request.full_url, status, "temporary", None, None)
+        return _fred_ok()
+
+    monkeypatch.setattr(source, "urlopen", get)
+    monkeypatch.setattr(source, "sleep", sleeps.append)
+    assert source.fetch_public("DFII10").iloc[0] == pytest.approx(1.23)
+    assert len(calls) == 2 and sleeps == [2]
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 404])
+def test_nonretryable_http_failure_does_not_hide_missing_source(monkeypatch, status):
+    from urllib.error import HTTPError
+
+    calls, sleeps = [], []
+
+    def get(request, *, timeout):
+        calls.append(1)
+        raise HTTPError(request.full_url, status, "permanent", None, None)
+
+    monkeypatch.setattr(source, "urlopen", get)
+    monkeypatch.setattr(source, "sleep", sleeps.append)
+    with pytest.raises(c2.CommodityRegimeStop, match="Nonretryable"):
+        source.fetch_public("DFII10")
+    assert len(calls) == 1 and not sleeps
+
+
+def test_three_failed_transport_attempts_hard_fail_without_fallback(monkeypatch):
+    calls, sleeps = [], []
+
+    def get(request, *, timeout):
+        calls.append(1)
+        raise TimeoutError("read timed out")
+
+    monkeypatch.setattr(source, "urlopen", get)
+    monkeypatch.setattr(source, "sleep", sleeps.append)
+    with pytest.raises(c2.CommodityRegimeStop, match="bounded retries"):
+        source.fetch_public("DFII10")
+    assert len(calls) == source.MAX_FETCH_ATTEMPTS == 3
+    assert sleeps == list(source.RETRY_DELAYS_SECONDS)
+
+
+@pytest.mark.parametrize("payload, message", [
+    (b"DATE,WRONG\n2026-10-29,1.23\n", "shape"),
+    (b"DATE,DFII10\n2026-10-29,1.23\n2026-10-29,1.24\n", "calendar"),
+])
+def test_invalid_successful_fred_payload_fails_without_retry(monkeypatch, payload, message):
+    calls, sleeps = [], []
+
+    def get(request, *, timeout):
+        calls.append(1)
+        return _FREDResponse(payload)
+
+    monkeypatch.setattr(source, "urlopen", get)
+    monkeypatch.setattr(source, "sleep", sleeps.append)
+    with pytest.raises(c2.CommodityRegimeStop, match=message):
+        source.fetch_public("DFII10")
+    assert len(calls) == 1 and not sleeps
+
+
+def test_oversized_public_macro_data_is_not_retried(monkeypatch):
+    calls, sleeps = [], []
+
+    def get(request, *, timeout):
+        calls.append(1)
+        return _FREDResponse(b"x" * (source.MAX_BYTES + 1))
+
+    monkeypatch.setattr(source, "urlopen", get)
+    monkeypatch.setattr(source, "sleep", sleeps.append)
+    with pytest.raises(c2.CommodityRegimeStop, match="too large"):
+        source.fetch_public("DFII10")
+    assert len(calls) == 1 and not sleeps

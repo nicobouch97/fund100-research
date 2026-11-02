@@ -11,7 +11,9 @@ import argparse
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from time import sleep
 
 import pandas as pd
 
@@ -21,6 +23,11 @@ from fund100_commodity_macro_c2_v1_0 import (
 
 BASE = "https://fred.stlouisfed.org/graph/fredgraph.csv?id="
 MAX_BYTES = 3_000_000
+# Only transport failures may be retried; parsed or oversized data are never
+# silently replaced by a cached, stale or invented research observation.
+MAX_FETCH_ATTEMPTS = 3
+FETCH_TIMEOUT_SECONDS = 30
+RETRY_DELAYS_SECONDS = (2, 4)
 
 
 def parse_public_fred(raw: bytes, name: str) -> pd.Series:
@@ -65,13 +72,37 @@ def fetch_public(name: str) -> pd.Series:
         },
         method="GET",
     )
-    with urlopen(request, timeout=30) as response:
-        if response.status != 200:
-            raise CommodityRegimeStop("Public research source GET failed.")
-        raw = response.read(MAX_BYTES+1)
-    if len(raw) > MAX_BYTES:
-        raise CommodityRegimeStop("Public macro data too large.")
-    return parse_public_fred(raw, name)
+    for attempt in range(MAX_FETCH_ATTEMPTS):
+        try:
+            with urlopen(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
+                if response.status != 200:
+                    raise CommodityRegimeStop("Public research source GET failed.")
+                raw = response.read(MAX_BYTES + 1)
+        except HTTPError as exc:
+            # GitHub Actions has observed FRED read timeouts. HTTP 429 and
+            # 5xx are similarly transient; a 4xx identity/permission failure
+            # must not be masked by retries.
+            if exc.code != 429 and not 500 <= exc.code <= 599:
+                raise CommodityRegimeStop(
+                    "Nonretryable public macro HTTP error."
+                ) from exc
+            if attempt == MAX_FETCH_ATTEMPTS - 1:
+                raise CommodityRegimeStop(
+                    "Public macro source unavailable after bounded retries."
+                ) from exc
+        except (TimeoutError, URLError, ConnectionError) as exc:
+            if attempt == MAX_FETCH_ATTEMPTS - 1:
+                raise CommodityRegimeStop(
+                    "Public macro source unavailable after bounded retries."
+                ) from exc
+        else:
+            if len(raw) > MAX_BYTES:
+                raise CommodityRegimeStop("Public macro data too large.")
+            # Invalid CSV, stale/partial series and future publication data
+            # remain hard failures; never retry into a different vintage.
+            return parse_public_fred(raw, name)
+        sleep(RETRY_DELAYS_SECONDS[attempt])
+    raise AssertionError("Unreachable bounded FRED GET loop")
 
 
 def main() -> None:
