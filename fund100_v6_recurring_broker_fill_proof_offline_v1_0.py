@@ -287,12 +287,24 @@ def assess(*, private_signed_journal_source, genesis_sha256, account_binding_sha
         raise BrokerProofStop(
             "New order or partial sell exceeds original pilot $65 limit"
         )
+    # The closed broker receipt is an independent execution-price witness.
+    # The original ACWI reconciliation already checks this, but recurring
+    # G2 did not: a filled receipt could contradict every complete FILL
+    # activity while still being reported as structurally matched.
+    # Alpaca may round its reported average, so tolerate half a cent/share,
+    # not an arbitrary discrepancy in total proceeds.
+    receipt_average = _number(
+        closed_order.get("filled_avg_price"), "receipt average execution price"
+    )
+    if abs(receipt_average - notional / cumulative) > Decimal("0.005"):
+        raise BrokerProofStop("Broker receipt average price disagrees with complete FILL activities")
     return {
         "schema": SCHEMA,
         "status": "SYNTHETIC_RECEIPT_FILL_AND_PORTFOLIO_REPLAY_MATCH_ONLY",
         "signed_possible_send_source_structurally_verified": True,
         "synthetic_order_fields_bound_to_signed_intent_preimage": True,
         "filled_order_and_complete_FILLS_structurally_matched": True,
+        "broker_receipt_average_matches_complete_FILLS": True,
         "all_remaining_positions_unchanged_in_fixture": True,
         "original_65usd_order_notional_ceiling_checked": True,
         "synthetic_alpaca_notional_buy_with_null_qty_validated": is_notional_buy,
