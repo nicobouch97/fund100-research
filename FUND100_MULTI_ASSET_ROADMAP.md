@@ -3,6 +3,10 @@
 Status: engineering plan, 14 October 2026. This document is **not**
 authority to trade or expand LIVE permissions.
 
+## 2 November 2026 — historical listed-and-delisted stock data acquisition decision
+
+The highest-impact remaining stock research gap is **actual licensed historical security-level data**, not another contemporary-survivor or four-name sample backtest. [P4 historical source decision](research_lab/stocks/P4_HISTORICAL_DELISTED_DATA_SOURCE_DECISION_2026_11_02.md) identifies Sharadar Direct's documented active/delisted US price, corporate-action, security-reference and SEC **as-reported** fundamentals bundle as the first candidate, with an explicit alternative and real-byte admission tests. The free Dow-30 sample cannot resolve survivorship; the paid full bundle is **not acquired**, price/license/entitlement remain unverified, and no vendor data may be committed publicly or mixed with private execution state. This is source qualification, **not** a successful historical backtest or alpha. The small ETF launch-first priority and all STOP/capital/release locks are unchanged.
+
 ## 2 November 2026 — historical SEC quality chronology fiscal-year integrity
 
 P4Q's original 10-K score-persistence diagnostic must compare **consecutive
