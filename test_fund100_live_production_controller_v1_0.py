@@ -207,6 +207,27 @@ def test_target_weights_normalize_acwi_core():
     )
 
 
+@pytest.mark.parametrize("weights", [
+    {"ACWI_CORE": "0.25", "ACWI": "0.75", "EEM": "0.25"},
+    {"acwi": "0.25", "ACWI": "0.75", "EEM": "0.25"},
+    {"ACWI": "0.75", "EEM": "0.25", None: "0"},
+    {"ACWI": "0.75", "EEM": "0.25", "  ": "0"},
+])
+def test_target_weights_reject_ambiguous_or_invalid_symbols(weights):
+    # Previously an alias collision overwrote one allocation, potentially
+    # converting a >100% raw target into a plausible 100% normalized target.
+    with pytest.raises(production.ProductionStop):
+        production.normalize_target_weights(weights)
+
+
+def test_target_weights_preserve_valid_zero_weight_symbol():
+    result = production.normalize_target_weights(
+        {"ACWI_CORE": "0.75", "EEM": "0.25", "XLV": "0"}
+    )
+    assert result == {"ACWI": Decimal("0.75"), "EEM": Decimal("0.25"),
+                      "XLV": Decimal("0")}
+
+
 def test_negative_target_rejected():
 
     with pytest.raises(
