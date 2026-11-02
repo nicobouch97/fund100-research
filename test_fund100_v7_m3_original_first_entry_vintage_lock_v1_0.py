@@ -523,3 +523,60 @@ def test_sub_half_ppm_vendor_rounding_does_not_hide_material_source_revision():
         dividend_events=[_dividend_event()])["dividend_factor_crosscheck"]
     assert cross["status"]=="INCOMPLETE_OR_CONTRADICTORY"
     assert cross["unexplained_nonentry_historical_drift"][0]["symbol"]=="SPY"
+
+
+def test_frozen_forward_entry_exposure_is_forensic_only_and_never_unblocks_vintage():
+    a,p,b,q=samples()
+    selected=set(a["original_pretrade_selection"])
+    control=set(m1._frozen_sector_control(a["original_pretrade_selection"]))
+    sector_peers={s for s in m3.p4l.SECTORS if
+                  m3.p4l.SECTORS[s] in
+                  {m3.p4l.SECTORS[t] for t in selected}}
+    outside=next(s for s in m3.p4l.SECTORS if s not in
+                 (selected|control|sector_peers))
+    peer=next(s for s in sector_peers if s not in selected|control)
+    changed=q.copy()
+    for symbol in (outside,peer,"SPY",next(iter(selected))):
+        changed.loc["2026-10-27",symbol]*=0.999
+    diagnostic=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=changed,initial_report=a)
+    scope=diagnostic["frozen_forward_entry_exposure"]
+    roles=scope["entry_day_revision_roles"]
+    assert roles[outside]=="OUTSIDE_FIXED_FORWARD_PAYOFF"
+    assert roles[peer]=="FROZEN_SECTOR_RANK_REFERENCE"
+    assert roles["SPY"]=="FROZEN_SPY_BENCHMARK"
+    assert roles[next(iter(selected))]=="FROZEN_SELECTED_STOCK"
+    assert scope["entry_day_only_not_full_history"]
+    assert not scope["does_not_qualify_returns"] is False
+    assert not scope["trading_authorized"]
+    with pytest.raises(m3.EntryAnchorStop,match="vendor-revised"):
+        m3.verify(initial_report=a,initial_prices=p,
+                  subsequent_report=b,subsequent_prices=changed)
+
+
+def test_unused_entry_revision_still_blocks_all_26_column_vintage():
+    a,p,b,q=samples()
+    selected=set(a["original_pretrade_selection"])
+    sectors={m3.p4l.SECTORS[t] for t in selected}
+    outside=next(s for s in m3.p4l.SECTORS
+                 if m3.p4l.SECTORS[s] not in sectors)
+    changed=q.copy()
+    changed.loc["2026-10-27",outside]*=0.999
+    diag=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=changed,initial_report=a)
+    scope=diag["frozen_forward_entry_exposure"]
+    assert scope["only_outside_fixed_forward_payoff_entry_symbols_revised"]
+    assert scope["fixed_forward_payoff_entry_symbols_revised"]==[]
+    assert not scope["trading_authorized"]
+    assert not scope["does_not_qualify_returns"] is False
+    assert diag["not_a_return_or_alpha_estimate"]
+    with pytest.raises(m3.EntryAnchorStop,match="vendor-revised"):
+        m3.verify(initial_report=a,initial_prices=p,
+                  subsequent_report=b,subsequent_prices=changed)
+    # A forged or incomplete first-entry report cannot classify as harmless.
+    forged=deepcopy(a)
+    forged["original_fixed_run_id"]=0
+    untrusted=m3.entry_revision_diagnostic(
+        initial_prices=p,subsequent_prices=changed,initial_report=forged)
+    assert untrusted["frozen_forward_entry_exposure"]["status"]==(
+        "UNVERIFIABLE_FROZEN_PAYOFF_DEPENDENCIES")
