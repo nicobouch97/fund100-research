@@ -281,7 +281,7 @@ def test_quality_stability_accepts_53_week_fiscal_year():
         "ticker": "CAT", "annual_filing_dates_reviewed": 2,
         "available_score_count": 2,
         "annual_events": [
-            {"score": 1, "source_10k_fiscal_period_end": "2023-12-30"},
+            {"score": 1, "source_10k_fiscal_period_end": "2023-12-23"},
             {"score": 2, "source_10k_fiscal_period_end": "2024-12-28"},
         ],
     }]
