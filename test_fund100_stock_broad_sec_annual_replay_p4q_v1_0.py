@@ -97,6 +97,8 @@ def test_historical_original_accession_replay_not_later_comparative(archive):
         "0": 0, "1": 0, "2": 1, "3": 1}
     assert stability["adjacent_annual_pairs_with_both_scores"] == 1
     assert stability["adjacent_annual_pairs_with_missing_score"] == 23
+    assert stability["adjacent_filings_with_nonconsecutive_fiscal_periods"] == 0
+    assert stability["fiscal_year_adjacency_required_not_merely_filing_adjacency"]
     assert stability["unchanged_score_pairs"] == 0
     assert stability["improved_score_pairs"] == 0
     assert stability["deteriorated_score_pairs"] == 1
@@ -108,6 +110,9 @@ def test_historical_original_accession_replay_not_later_comparative(archive):
     assert stability["score_persistence_is_not_stock_return_predictiveness"]
     cat = next(row for row in out["observations"] if row["ticker"] == "CAT")
     assert cat["annual_filing_dates_reviewed"] == 3
+    assert [e["source_10k_fiscal_period_end"] for e in cat["annual_events"]] == [
+        "2023-12-31", "2024-12-31", "2025-12-31"
+    ]
     assert [e["score"] for e in cat["annual_events"]] == [None, 3, 2]
     assert cat["annual_events"][1]["revenue_growth_yoy"] == .2
     assert cat["annual_events"][2]["revenue_growth_yoy"] < 0
@@ -180,7 +185,11 @@ def test_quality_stability_never_bridges_missing_middle_year():
         "ticker": "CAT",
         "annual_filing_dates_reviewed": 3,
         "available_score_count": 2,
-        "annual_events": [{"score": 3}, {"score": None}, {"score": 1}],
+        "annual_events": [
+            {"score": 3, "source_10k_fiscal_period_end": "2022-12-31"},
+            {"score": None},
+            {"score": 1, "source_10k_fiscal_period_end": "2024-12-31"},
+        ],
     }]
     s = p4q.annual_score_stability(observations)
     assert s["adjacent_annual_pairs_with_both_scores"] == 0
@@ -195,8 +204,8 @@ def test_quality_stability_counts_threshold_crossings_only_with_evidence():
         "annual_filing_dates_reviewed": 5,
         "available_score_count": 5,
         "annual_events": [
-            {"score": 1}, {"score": 2}, {"score": 3},
-            {"score": 1}, {"score": 1},
+            {"score": score, "source_10k_fiscal_period_end": f"{year}-12-31"}
+            for year, score in zip(range(2020, 2025), [1, 2, 3, 1, 1])
         ],
     }]
     s = p4q.annual_score_stability(observations)
@@ -220,3 +229,63 @@ def test_quality_stability_rejects_non_integer_scores_and_mismatched_counts():
     row["available_score_count"] = 0
     with pytest.raises(p4q.AnnualReplayStop, match="reconciliation"):
         p4q.annual_score_stability([row])
+
+
+def test_quality_stability_does_not_treat_skipped_fiscal_year_as_one_year():
+    observations = [{
+        "ticker": "CAT", "annual_filing_dates_reviewed": 2,
+        "available_score_count": 2,
+        "annual_events": [
+            {"score": 3, "source_10k_fiscal_period_end": "2022-12-31"},
+            {"score": 1, "source_10k_fiscal_period_end": "2024-12-31"},
+        ],
+    }]
+    result = p4q.annual_score_stability(observations)
+    assert result["adjacent_annual_pairs_with_both_scores"] == 0
+    assert result["adjacent_filings_with_nonconsecutive_fiscal_periods"] == 1
+    assert result["score_at_least_2_exits"] == 0
+    assert result["issuers_with_any_score_change"] == 0
+
+
+def test_quality_stability_does_not_treat_same_fiscal_year_refiling_as_new_year():
+    observations = [{
+        "ticker": "CAT", "annual_filing_dates_reviewed": 2,
+        "available_score_count": 2,
+        "annual_events": [
+            {"score": 1, "source_10k_fiscal_period_end": "2024-12-31"},
+            {"score": 3, "source_10k_fiscal_period_end": "2024-12-31"},
+        ],
+    }]
+    result = p4q.annual_score_stability(observations)
+    assert result["adjacent_annual_pairs_with_both_scores"] == 0
+    assert result["adjacent_filings_with_nonconsecutive_fiscal_periods"] == 1
+    assert result["score_at_least_2_entries"] == 0
+
+
+@pytest.mark.parametrize("bad_end", [None, "2024-02-30", "20241231", "2024-12-31Z"])
+def test_quality_stability_rejects_missing_or_invalid_scored_fiscal_end(bad_end):
+    observations = [{
+        "ticker": "CAT", "annual_filing_dates_reviewed": 2,
+        "available_score_count": 2,
+        "annual_events": [
+            {"score": 1, "source_10k_fiscal_period_end": "2023-12-31"},
+            {"score": 2, "source_10k_fiscal_period_end": bad_end},
+        ],
+    }]
+    with pytest.raises(p4q.AnnualReplayStop, match="fiscal period end"):
+        p4q.annual_score_stability(observations)
+
+
+def test_quality_stability_accepts_53_week_fiscal_year():
+    observations = [{
+        "ticker": "CAT", "annual_filing_dates_reviewed": 2,
+        "available_score_count": 2,
+        "annual_events": [
+            {"score": 1, "source_10k_fiscal_period_end": "2023-12-30"},
+            {"score": 2, "source_10k_fiscal_period_end": "2024-12-28"},
+        ],
+    }]
+    result = p4q.annual_score_stability(observations)
+    assert result["adjacent_annual_pairs_with_both_scores"] == 1
+    assert result["adjacent_filings_with_nonconsecutive_fiscal_periods"] == 0
+    assert result["score_at_least_2_entries"] == 1
