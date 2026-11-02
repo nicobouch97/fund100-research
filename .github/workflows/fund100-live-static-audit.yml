@@ -13,6 +13,10 @@ on:
       # Shared market-data changes affect frozen forward research and deserve the full audit.
       - "fund100.py"
       - "test_fund100.py"
+      # Public FRED macro inputs feed the prospective commodity research ledger.
+      # Audit source retry and integrity logic alongside LIVE boundaries.
+      - "fund100_commodity_macro_c2_source_v1_0.py"
+      - "test_fund100_commodity_macro_c2_v1_0.py"
       # Frozen prospective ledger changes must pass the full LIVE static audit.
       - "fund100_forward.py"
       - "fund100_forward_v1_1.py"
@@ -305,6 +309,10 @@ on:
       # Shared market-data changes affect frozen forward research and deserve the full audit.
       - "fund100.py"
       - "test_fund100.py"
+      # Public FRED macro inputs feed the prospective commodity research ledger.
+      # Audit source retry and integrity logic alongside LIVE boundaries.
+      - "fund100_commodity_macro_c2_source_v1_0.py"
+      - "test_fund100_commodity_macro_c2_v1_0.py"
       # Frozen prospective ledger changes must pass the full LIVE static audit.
       - "fund100_forward.py"
       - "fund100_forward_v1_1.py"
