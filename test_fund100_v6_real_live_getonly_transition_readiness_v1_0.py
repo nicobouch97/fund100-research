@@ -163,3 +163,35 @@ def test_policy_approval_creep_is_blocked():
     f["policy"]["live_order_authorization_present"]=True
     with pytest.raises(v6.ReadinessStop):
         v6.check_account(**f)
+
+
+@pytest.mark.parametrize("field,value",[
+    ("account_blocked",None),
+    ("account_blocked",0),
+    ("account_blocked","false"),
+    ("account_blocked",True),
+    ("trading_blocked",None),
+    ("trading_blocked",0),
+    ("trading_blocked","false"),
+    ("trading_blocked",True),
+])
+def test_live_broker_block_flags_require_explicit_false(field,value):
+    f=fx()
+    f["account"][field]=value
+    with pytest.raises(v6.ReadinessStop,match="block flags"):
+        v6.check_account(**f)
+
+
+@pytest.mark.parametrize("field",["account_blocked","trading_blocked"])
+def test_missing_live_broker_block_flags_fail_closed(field):
+    f=fx()
+    del f["account"][field]
+    with pytest.raises(v6.ReadinessStop,match="block flags"):
+        v6.check_account(**f)
+
+
+def test_whitespace_only_live_broker_account_identity_refused():
+    f=fx()
+    f["account"]["id"]="   "
+    with pytest.raises(v6.ReadinessStop,match="identity missing"):
+        v6.check_account(**f)
