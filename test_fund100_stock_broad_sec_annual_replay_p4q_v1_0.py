@@ -111,7 +111,7 @@ def test_historical_original_accession_replay_not_later_comparative(archive):
     cat = next(row for row in out["observations"] if row["ticker"] == "CAT")
     assert cat["annual_filing_dates_reviewed"] == 3
     assert [e["source_10k_fiscal_period_end"] for e in cat["annual_events"]] == [
-        "2023-12-31", "2024-12-31", "2025-12-31"
+        None, "2024-12-31", "2025-12-31"
     ]
     assert [e["score"] for e in cat["annual_events"]] == [None, 3, 2]
     assert cat["annual_events"][1]["revenue_growth_yoy"] == .2
