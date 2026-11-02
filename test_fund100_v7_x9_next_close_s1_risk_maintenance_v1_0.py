@@ -402,6 +402,7 @@ def test_risk_repair_partial_ticket_limit_and_full_position_exception():
         "RISK_REPAIR_PARTIAL_TICKET_OUTSIDE_PILOT_LIMITS")
     assert check(units,px,{"XLK":2.0}) is None
     assert check(units,px,{"XLE":1.0}) is None
+    assert check({"XLK":0.005},{"XLK":100.0},{"XLK":0.005}) is None
     assert check(units,px,{"XLK":2.01})==(
         "RISK_REPAIR_UNOWNED_OR_INVALID_SHARES")
 
