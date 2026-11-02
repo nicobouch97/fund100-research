@@ -1552,6 +1552,11 @@ def fresh_snapshot(
         live.get_open_orders()
     )
 
+    if not isinstance(account, dict):
+        raise ProductionStop(
+            "LIVE PRODUCTION STOP: malformed broker account response."
+        )
+
     if (
         account.get(
             "status"
@@ -1564,16 +1569,13 @@ def fresh_snapshot(
             "LIVE account is not ACTIVE."
         )
 
-    if (
-        account.get(
-            "trading_blocked"
-        )
-        is True
-    ):
-
+    # Both Alpaca account flags must be explicit booleans.  Missing,
+    # null or string values cannot be interpreted as permission to trade.
+    if (account.get("trading_blocked") is not False
+            or account.get("account_blocked") is not False):
         raise ProductionStop(
-            "LIVE PRODUCTION STOP: "
-            "LIVE account is trading blocked."
+            "LIVE PRODUCTION STOP: account/trading block status is "
+            "blocked or unverified."
         )
 
     current_binding = (
@@ -1618,6 +1620,11 @@ def fresh_snapshot(
         positions_raw
     ):
 
+        if not isinstance(raw_position, dict):
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: malformed broker position entry."
+            )
+
         symbol = (
             normalize_symbol(
                 raw_position.get(
@@ -1632,6 +1639,11 @@ def fresh_snapshot(
             raise ProductionStop(
                 "LIVE PRODUCTION STOP: "
                 f"unmanaged LIVE position detected: {symbol}."
+            )
+
+        if symbol in positions:
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: duplicate broker position symbol."
             )
 
         quantity = decimal_value(
@@ -1661,6 +1673,11 @@ def fresh_snapshot(
             ),
         )
 
+        if market_value < Decimal("0"):
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: negative broker position market value."
+            )
+
         positions[
             symbol
         ] = {
@@ -1671,7 +1688,13 @@ def fresh_snapshot(
                 market_value,
         }
 
+    seen_open_client_ids = set()
     for order in open_orders:
+
+        if not isinstance(order, dict):
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: malformed broker open order entry."
+            )
 
         cid = (
             str(
@@ -1692,6 +1715,12 @@ def fresh_snapshot(
                 "LIVE PRODUCTION STOP: "
                 "foreign open LIVE order detected."
             )
+
+        if cid in seen_open_client_ids:
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: duplicate open broker client ID."
+            )
+        seen_open_client_ids.add(cid)
 
     equity = decimal_value(
         account.get(
@@ -1716,6 +1745,12 @@ def fresh_snapshot(
         raise ProductionStop(
             "LIVE PRODUCTION STOP: "
             "LIVE account equity is not positive."
+        )
+
+    if cash < Decimal("0"):
+        raise ProductionStop(
+            "LIVE PRODUCTION STOP: negative cash implies unverified "
+            "debit or margin financing."
         )
 
     return {
