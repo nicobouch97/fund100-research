@@ -3,6 +3,25 @@
 Status: engineering plan, 14 October 2026. This document is **not**
 authority to trade or expand LIVE permissions.
 
+## 2 November 2026 — historical SEC quality chronology fiscal-year integrity
+
+P4Q's original 10-K score-persistence diagnostic must compare **consecutive
+original fiscal periods**, not merely consecutive filing dates. Missing annual
+filings, late 10-Ks and same-year refilings can otherwise manufacture a false
+one-year score improvement/deterioration. The research-only replay now binds
+each scored event to its own accession's SEC fiscal-period end, counts a
+one-year transition only across adjacent fiscal years with 330–400 days
+between fiscal ends (including 52/53-week calendars), and separately reports
+unusable nonconsecutive filing pairs. It does **not** infer missing scores,
+reselect the issuer cohort, improve a backtest, or establish predictive alpha.
+
+The major independent research blocker remains a **historically investable
+security-level universe including delisted shares, as-of fundamentals,
+corporate actions and total-return prices**. The current 2026-survivor SEC
+cohort and retrospective price windows cannot be promoted. This is
+research-evidence repair only: no LIVE risk/STOP/capital/permission changes.
+
+
 ## 30 October 2026 — genuine V6 cash-floor release issue, monthly repair engineering
 
 The original V6-S1 95%-entry study detected **2,792 historical closes with cash below 5%** under the unchanged 10-percentage-point sector-band rule. Merely checking cash before BUY is not a guaranteed ongoing reserve. The **offline** recurring core now proposes a **single after-cost monthly SELL-only risk/cash repair** when cash, gross exposure or 50% issuer limits drift, even if the ordinary +/-10pp sector band has not triggered; respects 6/20/35 risk STOP, private-order/restart HOLD, original $130.30 contributed-principal cap, $65 ticket ceiling and a 1%-of-trade friction check. The signed recurring bridge still **refuses real SELL without authenticated share quantities**. This reduces a real implementation gap but **does not claim to maintain a continuous 5% cash minimum between monthly reviews**, nor authenticate the broker, alter the signed original ACWI first SELL, enable the LIVE writer or issue a trading mandate. A legitimate deployed continuous-risk rule needs separately proven regular broker checks and stop/repair authority.
