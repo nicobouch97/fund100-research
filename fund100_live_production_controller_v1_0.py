@@ -744,9 +744,17 @@ def normalize_target_weights(
             )
         )
 
-        if not symbol:
+        if not isinstance(raw_symbol, str) or not raw_symbol.strip():
 
-            continue
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: invalid target weight symbol."
+            )
+
+        if symbol in result:
+
+            raise ProductionStop(
+                "LIVE PRODUCTION STOP: duplicate normalized target weight symbol."
+            )
 
         weight = decimal_value(
             raw_weight,
