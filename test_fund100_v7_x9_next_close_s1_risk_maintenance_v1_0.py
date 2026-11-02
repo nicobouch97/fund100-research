@@ -336,3 +336,55 @@ def test_sell_only_risk_repairs_preempt_month_end_rotations():
     assert report["monthly_prefunded_executions"]==0
     assert report["monthly_rotation_signals"]==0
     assert report["actual_broker_orders"]==0
+
+
+def test_monthly_execution_close_gate_catches_cash_risk_and_tickets():
+    # $100 hypothetical account: 95% long, 5% opening cash.
+    units={"XLK":.475,"XLE":.285,"IWM":.19}
+    px={s:100.0 for s in x9.S1}
+    check=x9._monthly_execution_hold_reason
+    fee=.0015
+    assert check(units,5.,px,{"XLK":-.05,"XLE":.02},fee) is None
+    assert check(units,5.,px,{"XLE":.10},fee)==(
+        "BUY_REQUIRES_UNVERIFIED_SAME_EVENT_SELL_CREDIT")
+    assert check(units,5.,px,{"XLK":-.50},fee)==(
+        "SELL_EXCEEDS_OWNED_QUANTITY")
+    assert check(units,5.,px,{"XLK":-.001,"XLE":.001},fee)==(
+        "ROUTINE_TICKET_OUTSIDE_PILOT_DOLLAR_LIMITS")
+    assert check({"XLK":1.0,"XLE":0.0,"IWM":0.0},100.,px,
+                 {"XLK":-.70},fee)==(
+        "ROUTINE_TICKET_OUTSIDE_PILOT_DOLLAR_LIMITS")
+    # Prefunded $4 BUY still consumes the 5% cash reserve.
+    assert check(units,5.,px,{"XLE":.04},fee)==(
+        "POST_FEE_CASH_GROSS_OR_CONCENTRATION_BREACH")
+    assert x9.MODELED_MAX_ROUTINE_TICKET_USD==65.0
+    assert x9.BROKER_GETS==x9.BROKER_POSTS==x9.BROKER_ORDERS==0
+
+
+def test_integrated_engine_records_atomic_envelope_hold_without_orders(monkeypatch):
+    # Pure arithmetic is exercised above. Force the execution-time decision
+    # on an otherwise valid historical monthly signal to prove that the
+    # integrated engine never books a synthetic partial rotation.
+    dates=pd.bdate_range("2021-01-01",periods=520)
+    t=np.arange(len(dates),dtype=float)
+    frame=pd.DataFrame({s:np.full(len(dates),100.) for s in x9.S1},
+                       index=dates)
+    frame["XLK"]=100*(.9991**t)
+    frame[original.BENCH]=100.
+    monkeypatch.setattr(x9,"_monthly_execution_hold_reason",
+                        lambda *args:"POST_FEE_CASH_GROSS_OR_CONCENTRATION_BREACH")
+    report=x9.simulate(frame,start="2020-01-01",cost_bps=15,
+                       capital_usd=130.30,prefunded_monthly=True,
+                       risk_history_variant=x9.BROKER_HISTORY_PROXY)
+    holds=[e for e in report["trade_log"]
+           if e["kind"]=="MONTHLY_EXECUTION_ENVELOPE_HOLD"]
+    assert report["monthly_rotation_signals"]>0
+    assert holds
+    assert report["monthly_execution_envelope_holds"]==len(holds)
+    assert report["monthly_prefunded_executions"]==0
+    assert report["monthly_prefunded_buy_sides"]==0
+    assert all(e["reason"]=="POST_FEE_CASH_GROSS_OR_CONCENTRATION_BREACH"
+               and e["no_orders_executed"] for e in holds)
+    assert all(e["signal_session"]<e["execution_session"] for e in holds)
+    assert report["execution_close_risk_and_ticket_checks_reject_atomic_basket"]
+    assert report["actual_broker_orders"]==0
