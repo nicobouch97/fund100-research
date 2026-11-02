@@ -5,7 +5,7 @@ reviewed proposed repair introduces a final local kill-switch check and
 limits HTTP POST to the exact order endpoint. This is defense-in-depth:
 it does not authenticate a remote change to an already-running process.
 
-Source audit only: no GitHub Settings, Alpaca requests, orders or keys.\n\nThe source fingerprint for the production controller is updated to the\n2026-10-28 main version, which adds account-level risk checks, operator\nSTOP re-reads and stricter event parsing. It is still an EXACT blob pin,\nnot a wildcard acceptance of arbitrary production code. Only the shared\nbootstrap transport owns the network POST; any changed order call sites\nremain subject to this AST scanner and its negative tests.
+Source audit only: no GitHub Settings, Alpaca requests, orders or keys.\n\nThe exact production-controller source fingerprint was reviewed and repinned\non 2026-11-02 for fail-closed broker snapshot validation (explicit unblocked\naccount flags, duplicate record rejection and nonnegative cash/market values).\nThe underlying 2026-10-28 risk and operator STOP checks remain unchanged. It is still an EXACT blob pin,\nnot a wildcard acceptance of arbitrary production code. Only the shared\nbootstrap transport owns the network POST; any changed order call sites\nremain subject to this AST scanner and its negative tests.
 This contract is intentionally RED on the unchanged protected baseline.
 """
 
@@ -21,7 +21,7 @@ BOOTSTRAP = "fund100_live_bootstrap_v1_0.py"
 PRODUCTION = "fund100_live_production_controller_v1_0.py"
 REVIEWED_WRITER_BLOBS = {
     BOOTSTRAP: "3d866d415ba228b6c538adac6d0a70e6b93de34d",
-    PRODUCTION: "e441cd43930010d34ef02c901ccfb633babd45f6",
+    PRODUCTION: "aaadd997c97c6f0f15fceb143fcc4cbecba24b7c",
 }
 
 # These exact AST tests have predictable meaning, regardless of formatting.

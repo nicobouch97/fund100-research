@@ -728,3 +728,120 @@ def test_actual_orchestrator_buy_materialization_accepts_prefunded_batch(monkeyp
     )
     assert result["orders"] == _prefunded_buy()
     assert last["BUY"] == _prefunded_buy()
+
+
+# LIVE snapshot parsing is a broker-safety boundary, not a trading release.
+# These tests inject invented responses; no Alpaca credentials or HTTP.
+def _fake_live_snapshot(monkeypatch, *, account=None, positions=None, orders=None):
+    base_account = {
+        "status": "ACTIVE", "account_blocked": False,
+        "trading_blocked": False, "equity": "100.00", "cash": "20.00",
+    }
+    base_positions = [{"symbol": "ACWI", "qty": "1", "market_value": "80.00"}]
+    monkeypatch.setattr(
+        production.live, "get_account",
+        lambda: base_account if account is None else account,
+    )
+    monkeypatch.setattr(
+        production.live, "get_positions",
+        lambda: base_positions if positions is None else positions,
+    )
+    monkeypatch.setattr(
+        production.live, "get_open_orders",
+        lambda: [] if orders is None else orders,
+    )
+    monkeypatch.setattr(production.live, "account_binding", lambda _: "test-binding")
+    return production.fresh_snapshot(
+        allowed_client_ids={"test-allowed-order"},
+        universe={"ACWI"},
+        expected_account_binding="test-binding",
+    )
+
+
+def test_live_snapshot_accepts_unique_explicitly_unblocked_broker_state(monkeypatch):
+    snap = _fake_live_snapshot(monkeypatch)
+    assert snap["cash"] == Decimal("20.00")
+    assert snap["positions"]["ACWI"]["market_value"] == Decimal("80.00")
+
+
+@pytest.mark.parametrize("field,bad_value", [
+    ("trading_blocked", None),
+    ("trading_blocked", "false"),
+    ("trading_blocked", 0),
+    ("trading_blocked", True),
+    ("account_blocked", None),
+    ("account_blocked", "false"),
+    ("account_blocked", 0),
+    ("account_blocked", True),
+])
+def test_live_snapshot_requires_exact_unblocked_account_flags(
+    monkeypatch, field, bad_value
+):
+    account = {
+        "status": "ACTIVE", "account_blocked": False,
+        "trading_blocked": False, "equity": "100", "cash": "20",
+    }
+    account[field] = bad_value
+    with pytest.raises(production.ProductionStop, match="block status"):
+        _fake_live_snapshot(monkeypatch, account=account)
+
+
+@pytest.mark.parametrize("field", ["account_blocked", "trading_blocked"])
+def test_live_snapshot_missing_block_flags_fail_closed(monkeypatch, field):
+    account = {
+        "status": "ACTIVE", "account_blocked": False,
+        "trading_blocked": False, "equity": "100", "cash": "20",
+    }
+    account.pop(field)
+    with pytest.raises(production.ProductionStop, match="block status"):
+        _fake_live_snapshot(monkeypatch, account=account)
+
+
+def test_live_snapshot_rejects_non_object_account(monkeypatch):
+    with pytest.raises(production.ProductionStop, match="malformed broker account"):
+        _fake_live_snapshot(monkeypatch, account=[])
+
+
+def test_live_snapshot_rejects_duplicate_positions_instead_of_understating_risk(
+    monkeypatch,
+):
+    rows = [
+        {"symbol": "ACWI", "qty": "1", "market_value": "80"},
+        {"symbol": "ACWI", "qty": "2", "market_value": "160"},
+    ]
+    with pytest.raises(production.ProductionStop, match="duplicate broker position"):
+        _fake_live_snapshot(monkeypatch, positions=rows)
+
+
+def test_live_snapshot_rejects_negative_position_value(monkeypatch):
+    rows = [{"symbol": "ACWI", "qty": "1", "market_value": "-5"}]
+    with pytest.raises(production.ProductionStop, match="negative broker position"):
+        _fake_live_snapshot(monkeypatch, positions=rows)
+
+
+def test_live_snapshot_rejects_duplicate_open_order_ids(monkeypatch):
+    rows = [{"client_order_id": "test-allowed-order"}] * 2
+    with pytest.raises(production.ProductionStop, match="duplicate open broker"):
+        _fake_live_snapshot(monkeypatch, orders=rows)
+
+
+@pytest.mark.parametrize("bad_positions,bad_orders", [
+    ([None], None),
+    (None, [None]),
+])
+def test_live_snapshot_malformed_entries_fail_with_controlled_stop(
+    monkeypatch, bad_positions, bad_orders
+):
+    with pytest.raises(production.ProductionStop, match="malformed broker"):
+        _fake_live_snapshot(
+            monkeypatch, positions=bad_positions, orders=bad_orders,
+        )
+
+
+def test_live_snapshot_rejects_negative_cash_before_any_writer(monkeypatch):
+    account = {
+        "status": "ACTIVE", "account_blocked": False,
+        "trading_blocked": False, "equity": "100", "cash": "-1",
+    }
+    with pytest.raises(production.ProductionStop, match="negative cash"):
+        _fake_live_snapshot(monkeypatch, account=account)

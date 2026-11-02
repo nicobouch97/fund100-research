@@ -269,10 +269,13 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-live-micro-pilot-prepare.yml",
         "fund100_live_pilot_prepare_v1_0.py",
     ): "dfebc7cedcd9820b1141c74a69d85e500c287748",
+    # Reviewed 2 Nov 2026: production snapshot parsing now rejects
+    # ambiguous block flags, duplicate broker records and negative cash.
+    # Exact source pin only; no expansion of credential/job permissions.
     (
         ".github/workflows/fund100-v5-live-production.yml",
         "fund100_live_production_controller_v1_0.py",
-    ): "e441cd43930010d34ef02c901ccfb633babd45f6",
+    ): "aaadd997c97c6f0f15fceb143fcc4cbecba24b7c",
     (
         ".github/workflows/fund100-live-emergency-stop.yml",
         "fund100_live_operator_control_v1_0.py",
