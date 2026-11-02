@@ -154,6 +154,7 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
     sell_sides=0
     skipped_sides=0
     stop_full_position_minimum_exceptions=0
+    repair_full_position_minimum_exceptions=0
     monthly_signals=monthly_executions=monthly_funding_holds=0
     monthly_execution_envelope_holds=0
     risk_repair_execution_holds=0
@@ -263,11 +264,17 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
                     # Alpaca accepts a sub-$1 fractional share sale.
                     full_stop_exit=(pending["kind"]=="STOP_EXIT" and
                                     requested_qty>=units[s]-1e-12)
+                    full_repair_exit=(prefunded_monthly and
+                                      pending["kind"]=="RISK_REPAIR" and
+                                      requested_qty>=units[s]-1e-12)
                     if notional+1e-10<MODELED_MIN_SELL_USD:
-                        if not full_stop_exit:
+                        if not (full_stop_exit or full_repair_exit):
                             skipped_sides+=1
                             continue
-                        stop_full_position_minimum_exceptions+=1
+                        if full_stop_exit:
+                            stop_full_position_minimum_exceptions+=1
+                        else:
+                            repair_full_position_minimum_exceptions+=1
                     units[s]-=qty
                     cash+=notional*(1-fee)
                     total_sell_fees+=notional*fee
@@ -489,6 +496,7 @@ def simulate(prices:pd.DataFrame,*,start:str,cost_bps:int,capital_usd:float=100.
         "modeled_fixed_end_liquidation_fee_usd":_metric(last_exit_fee),
         "modeled_sell_sides_below_minimum_skipped":skipped_sides,
         "hypothetical_full_stop_position_minimum_exceptions":stop_full_position_minimum_exceptions,
+        "hypothetical_full_repair_position_minimum_exceptions":repair_full_position_minimum_exceptions,
         "sub_minimum_full_stop_fills_not_broker_verified":True,
         "risk_breach_session_counts_after_delay":breaches,
         "risk_risk_limits_not_guaranteed_by_next_close_intervention":True,
