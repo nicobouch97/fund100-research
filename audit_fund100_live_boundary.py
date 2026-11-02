@@ -214,7 +214,7 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
     (
         ".github/workflows/fund100-v6-real-live-getonly-transition.yml",
         "fund100_v6_real_live_getonly_transition_readiness_v1_0.py",
-    ): "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
+    ): "cebb99bf22ea175a23cf2c0802d1822ae740534f",
     # V6-S1 original five-GET risk-history read: exact file pin only.
     # Separate permission from original four-GET inspector; no write rights.
     (
@@ -406,7 +406,7 @@ def approved_scoped_live_script(
             "fund100_alpaca_live_readonly_smoke.py":
                 "cf871f849a140c7b1db29fd991c8e00da31e1974",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
-                "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
+                "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_v6_brokerless_transition_preview_v1_0.py":
                 "a0b4efc660f30395b6cdda104f0eddf63b8a6dd9",
             "fund100_live_operator_control_v1_0.py":
@@ -441,7 +441,7 @@ def approved_scoped_live_script(
             "fund100_alpaca_live_readonly_smoke.py":
                 "cf871f849a140c7b1db29fd991c8e00da31e1974",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
-                "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
+                "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_live_portfolio_risk_v1_0.py":
                 PINNED_PRODUCTION_PORTFOLIO_MODULE,
         }
@@ -469,7 +469,7 @@ def approved_scoped_live_script(
             "fund100_alpaca_live_readonly_smoke.py":
                 "cf871f849a140c7b1db29fd991c8e00da31e1974",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
-                "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
+                "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_v6_s1_live_risk_history_getonly_v1_0.py":
                 "e195746ed594c3215f6d83198c64778a24a8cf63",
             "fund100_live_portfolio_risk_v1_0.py":
@@ -575,7 +575,7 @@ def approved_scoped_live_script(
             "fund100_alpaca_live_readonly_smoke.py":
                 "cf871f849a140c7b1db29fd991c8e00da31e1974",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
-                "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
+                "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_v6_s1_live_risk_history_getonly_v1_0.py":
                 "e195746ed594c3215f6d83198c64778a24a8cf63",
             "fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py":
@@ -619,7 +619,7 @@ def approved_scoped_live_script(
             "fund100_alpaca_live_readonly_smoke.py":
                 "cf871f849a140c7b1db29fd991c8e00da31e1974",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
-                "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
+                "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_v6_s1_authentic_live_fill_schema_getonly_v1_0.py":
                 "c4a18c4f0e9e3f10beaf69aedef13a091f47a6e9",
             "fund100_v6_brokerless_transition_preview_v1_0.py":
@@ -653,7 +653,7 @@ def approved_scoped_live_script(
             "fund100_alpaca_live_readonly_smoke.py":
                 "cf871f849a140c7b1db29fd991c8e00da31e1974",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
-                "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
+                "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_v6_brokerless_transition_preview_v1_0.py":
                 "a0b4efc660f30395b6cdda104f0eddf63b8a6dd9",
             "fund100_live_operator_control_v1_0.py":
@@ -684,7 +684,7 @@ def approved_scoped_live_script(
             "fund100_alpaca_live_readonly_smoke.py":
                 "cf871f849a140c7b1db29fd991c8e00da31e1974",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
-                "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
+                "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_v6_brokerless_transition_preview_v1_0.py":
                 "a0b4efc660f30395b6cdda104f0eddf63b8a6dd9",
             "fund100_live_operator_control_v1_0.py":
@@ -715,7 +715,7 @@ def approved_scoped_live_script(
             "fund100_alpaca_live_readonly_smoke.py":
                 "cf871f849a140c7b1db29fd991c8e00da31e1974",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
-                "7fc9f7b0c75ca265ceb3e9a9a7106eae34d262a2",
+                "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_v6_s1_frac_live_sell_writer_candidate_v1_0.py":
                 "b18d23664197ac791a129aef970921cd3c9efc01",
             "fund100_v6_brokerless_transition_preview_v1_0.py":
