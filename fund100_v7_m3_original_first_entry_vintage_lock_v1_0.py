@@ -41,9 +41,62 @@ def _canonical_prices(raw:pd.DataFrame)->pd.DataFrame:
     except p4l.BroadStockStop as e:
         raise EntryAnchorStop("Unverifiable original price schema") from e
 
+def _frozen_forward_entry_exposure(changes:list[dict],initial_report:dict|None)->dict:
+    """Classify which *fixed forward payoff* inputs have revised entry quotes.
+
+    This is a forensic dependency map, NOT an exception to the immutable
+    26-column vintage guard. It does not assess other historical drift,
+    actual total returns, or whether the vendor's correction was justified.
+    """
+    unassessed={"status":"UNASSESSED_FROZEN_PAYOFF_DEPENDENCIES",
+                "entry_day_only_not_full_history":True,
+                "does_not_qualify_returns":True,
+                "trading_authorized":False}
+    if initial_report is None:
+        return unassessed
+    try:
+        _proof(initial_report,"ENTRY_CLOSE_OBSERVED_AWAITING_FIRST_FUTURE_MARK")
+        selected=initial_report["original_pretrade_selection"]
+        if (type(selected) is not list or not selected
+            or len(set(selected))!=len(selected)
+            or any(type(s) is not str or s not in p4l.SECTORS
+                   for s in selected)):
+            return {**unassessed,"status":"UNVERIFIABLE_FROZEN_PAYOFF_DEPENDENCIES"}
+        control=set(m1._frozen_sector_control(selected))
+        selected_set=set(selected)
+        classifications={}
+        for item in changes:
+            ticker=item["symbol"]
+            if ticker in selected_set:
+                role="FROZEN_SELECTED_STOCK"
+            elif ticker==p4l.BENCHMARK:
+                role="FROZEN_SPY_BENCHMARK"
+            elif ticker in control:
+                role="FROZEN_SECTOR_CONTROL"
+            else:
+                role="OUTSIDE_FIXED_FORWARD_PAYOFF"
+            classifications[ticker]=role
+        affected=sorted(t for t,role in classifications.items()
+                        if role!="OUTSIDE_FIXED_FORWARD_PAYOFF")
+        return {
+            "status":"ENTRY_ONLY_DEPENDENCY_CLASSIFIED_NOT_QUALIFIED",
+            "entry_day_revision_roles":classifications,
+            "fixed_forward_payoff_entry_symbols_revised":affected,
+            "only_outside_fixed_forward_payoff_entry_symbols_revised":
+                bool(changes) and not affected,
+            "entry_day_only_not_full_history":True,
+            "original_full_26_column_vintage_still_must_match":True,
+            "does_not_qualify_returns":True,
+            "trading_authorized":False,
+        }
+    except (EntryAnchorStop,KeyError,TypeError,ValueError,AttributeError):
+        return {**unassessed,"status":"UNVERIFIABLE_FROZEN_PAYOFF_DEPENDENCIES"}
+
+
 def entry_revision_diagnostic(*,initial_prices:pd.DataFrame,
                               subsequent_prices:pd.DataFrame,
-                              dividend_events:list[dict]|None=None)->dict:
+                              dividend_events:list[dict]|None=None,
+                              initial_report:dict|None=None)->dict:
     """Describe blocked adjusted-close drift; never qualify revised returns.
 
     Vendor auto-adjusted prices can change after corporate actions or data
@@ -73,6 +126,8 @@ def entry_revision_diagnostic(*,initial_prices:pd.DataFrame,
         "changed_entry_symbols":len(changes),
         "total_compared_symbols":len(original.columns),
         "changes":changes,
+        "frozen_forward_entry_exposure":_frozen_forward_entry_exposure(
+            changes,initial_report),
         "dividend_factor_crosscheck":_dividend_factor_crosscheck(
             changes,original,later,dividend_events),
         "cannot_distinguish_corporate_actions_from_vendor_corrections":True,
@@ -625,7 +680,9 @@ def main():
                 events=doc["events"]
             diagnostic=entry_revision_diagnostic(
                 initial_prices=initial_prices,subsequent_prices=subsequent_prices,
-                dividend_events=events)
+                dividend_events=events,
+                initial_report=json.loads((a.first_entry_dir/
+                    "frozen-forward-stocks-versus-SPY.json").read_text()))
             if events is not None:
                 diagnostic["conditional_dividend_costed_forward_mark"]=(
                     conditional_dividend_costed_mark(
