@@ -27,6 +27,7 @@ CSV_FIELDS = (
 )
 MIN_TRAILING_SESSIONS = 20
 MAX_TRAILING_WINDOW_DAYS = 45
+MAX_LAST_BAR_AGE_DAYS = 10  # Calendar days; accommodates weekends/market holidays
 
 
 @dataclass(frozen=True)
@@ -163,6 +164,8 @@ def observations_from_history(
             raise ValueError(f"{row.symbol}: bar before listing date")
 
         latest = history[-1]
+        if (as_of - latest.session).days > MAX_LAST_BAR_AGE_DAYS:
+            raise ValueError(f"{row.symbol}: latest daily bar is stale")
         tail = history[-MIN_TRAILING_SESSIONS:]
         if (latest.session - tail[0].session).days > MAX_TRAILING_WINDOW_DAYS:
             raise ValueError(f"{row.symbol}: trailing data contains gaps")
