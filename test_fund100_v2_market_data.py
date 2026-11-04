@@ -205,3 +205,20 @@ def test_module_never_returns_executable_order_payload():
     assert not hasattr(rows[0], "orders")
     assert not hasattr(rows[0], "target_weights")
     assert not hasattr(rows[0], "broker_write_mode")
+
+
+def test_old_but_contiguous_20_bar_window_is_rejected():
+    # A complete historical window must not masquerade as current liquidity.
+    old_bars = tuple(
+        DailyBar(b.symbol, b.session - timedelta(days=30), b.close_usd,
+                 b.volume_shares, b.quoted_spread_bps)
+        for b in history()
+    )
+    with pytest.raises(ValueError, match="stale"):
+        observations_from_history([catalog()], old_bars, as_of=AS_OF)
+
+
+def test_recent_weekend_lag_is_accepted():
+    bars = tuple(b for b in history() if b.session <= AS_OF - timedelta(days=3))
+    rows = observations_from_history([catalog()], bars, as_of=AS_OF)
+    assert rows[0].price_usd == 100.0
