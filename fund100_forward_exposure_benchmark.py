@@ -69,3 +69,52 @@ def compounded_nav(returns: Sequence[float], start_nav: float = 100.0) -> float:
             raise ValueError("invalid return")
         nav *= 1 + value
     return nav
+
+
+def dated_exposure_matched_benchmark(
+    acwi_observations: Sequence[tuple[str, float]],
+    cash_observations: Sequence[tuple[str, float]],
+    exposure_observations: Sequence[tuple[str, str, float]],
+    *,
+    one_way_cost_bps: float = 15.0,
+    initial_equity_weight: float | None = None,
+) -> list[tuple[str, float]]:
+    """Fail closed unless all session keys match and exposure was known beforehand.
+
+    Each exposure tuple is (session_date, observed_at_utc, equity_weight).
+    observed_at_utc is an ISO timestamp with explicit UTC offset. It must
+    precede the session date at 00:00 UTC (conservative cutoff); no forward
+    filling, implicit sorting, or synthetic cash yields are permitted.
+    """
+    from datetime import date, datetime, time, timezone
+
+    n = len(acwi_observations)
+    if not n or len(cash_observations) != n or len(exposure_observations) != n:
+        raise ValueError("nonempty equal-length dated observations required")
+    sessions: list[str] = []
+    for (a_date, _), (c_date, _), (w_date, observed_at, _) in zip(
+        acwi_observations, cash_observations, exposure_observations
+    ):
+        try:
+            session = date.fromisoformat(a_date)
+            if session.isoformat() != a_date or a_date != c_date or a_date != w_date:
+                raise ValueError("misaligned session dates")
+            stamp = datetime.fromisoformat(observed_at)
+            if stamp.tzinfo is None or stamp.utcoffset() is None:
+                raise ValueError("exposure timestamp must be timezone aware")
+            cutoff = datetime.combine(session, time.min, tzinfo=timezone.utc)
+            if stamp.astimezone(timezone.utc) >= cutoff:
+                raise ValueError("exposure was not observed before session")
+            if sessions and a_date <= sessions[-1]:
+                raise ValueError("sessions must be strictly increasing")
+        except (TypeError, AttributeError) as exc:
+            raise ValueError("invalid dated observation") from exc
+        sessions.append(a_date)
+    returns = exposure_matched_benchmark(
+        [v for _, v in acwi_observations],
+        [v for _, v in cash_observations],
+        [v for _, _, v in exposure_observations],
+        one_way_cost_bps=one_way_cost_bps,
+        initial_equity_weight=initial_equity_weight,
+    )
+    return list(zip(sessions, returns))
