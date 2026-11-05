@@ -2,8 +2,8 @@
 
 The reviewed blueprint is never installed under .github/workflows here. It
 must NOT be interpreted as authority to enable V6, mutate private signed
-heads or send an Alpaca order. Only a new, explicit funded approval can
-authorize a separately reviewed source/GO transition.
+heads or send an Alpaca order. A separately audited, valid standing HIGH
+source/GO transition is required; this research blueprint cannot grant it.
 """
 from pathlib import Path
 import pytest
@@ -35,7 +35,7 @@ def test_blueprint_is_review_only_not_runnable_workflow():
     assert "ALPACA_LIVE_SECRET" not in live
     assert "issues: write" not in live
 
-def test_funded_blueprint_manual_main_first_attempt_and_real_owner_only():
+def test_funded_blueprint_bot_dispatched_main_first_attempt_only():
     s=source()
     section=s.split("\non:\n",1)[1].split("\npermissions:",1)[0]
     assert section.count("  workflow_dispatch:")==1
@@ -46,20 +46,20 @@ def test_funded_blueprint_manual_main_first_attempt_and_real_owner_only():
         "github.event_name == 'workflow_dispatch'",
         "github.ref == 'refs/heads/main'",
         "github.run_attempt == 1",
-        "github.actor == 'nicobouch97'",
-        "inputs.confirmation == 'AUTHORIZE_AUTONOMOUS_HIGH_PILOT_ONCE'",
+        "github.actor == 'github-actions[bot]'",
         "test \"$GITHUB_RUN_ATTEMPT\" = '1'",
         'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
-        "test \"$GITHUB_ACTOR\" = 'nicobouch97'",
+        "test \"$GITHUB_ACTOR\" = 'github-actions[bot]'",
     ):
         assert check in s
 
-def test_authorisation_is_standing_high_pilot_once_not_per_trade():
+def test_standing_high_pilot_needs_no_third_owner_text_control():
     s=source()
-    assert entry.MANUAL_CONFIRMATION=="AUTHORIZE_AUTONOMOUS_HIGH_PILOT_ONCE"
-    assert "no manual approval for later orders" in s.lower()
+    assert "no per-order owner" in s.lower()
     assert "future autonomous multi-event order loop" in s.lower()
-    assert "FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM" in s
+    assert "FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM" not in s
+    assert "inputs.confirmation" not in s
+    assert "confirmation:" not in s
     assert "FUND100_ORIGINAL_ACWI_FIRST_ORDER_CONFIRM" not in s
     assert "APPROVE_ONE_ORIGINAL_ACWI_SELL_NO_RETRY" not in s
     # This workflow is STILL initial migration only, not a recurring strategy
@@ -116,7 +116,6 @@ def test_exact_go_kill_legacy_v5_stop_and_single_original_send():
     for needle in (
         "FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}",
         "FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}",
-        "FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM: ${{ inputs.confirmation }}",
         "test \"$FUND100_BROKER_KILL_SWITCH\" = 'DISENGAGED'",
         "test \"$FUND100_RISK_LEVEL\" = 'HIGH'",
         '''grep -Eq '"trading_enabled": false' fund100_live_operator_control.json''',
