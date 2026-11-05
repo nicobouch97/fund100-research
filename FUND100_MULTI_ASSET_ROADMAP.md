@@ -5,7 +5,7 @@ authority to trade or expand LIVE permissions.
 
 ## 5 November 2026 — owner-confirmed broad-universe five-pillar stock investment + algorithms
 
-The currently verified cross-asset results remain governed by [research_lab/STRATEGY_EVIDENCE_AND_LAUNCH_PRIORITY_SNAPSHOT_2026_10_30.md](research_lab/STRATEGY_EVIDENCE_AND_LAUNCH_PRIORITY_SNAPSHOT_2026_10_30.md); this proposed capability does **not** overturn any prior model rejection or justify new trading permission.
+The proposed five-pillar strategy is **not established alpha**, and independent economic testing must precede allocation. The currently verified cross-asset results remain governed by [research_lab/STRATEGY_EVIDENCE_AND_LAUNCH_PRIORITY_SNAPSHOT_2026_10_30.md](research_lab/STRATEGY_EVIDENCE_AND_LAUNCH_PRIORITY_SNAPSHOT_2026_10_30.md); this proposed capability does **not** overturn any prior model rejection or justify new trading permission.
 
 The eventual autonomous stock strategy must search an **investable, point-in-time, multi-sector universe of thousands of common shares**, not just the present 8-, 24- or 100-issuer source-frozen research samples. It must evaluate **(1) price versus defensible value, (2) business quality, (3) future growth/prospects, (4) market expectations/mispricing, and (5) entry timing/risk/cost**. This is an owner-confirmed functional acceptance requirement; it is **not a claim that these algorithms, a thousand-name historical source, independent alpha, or new LIVE broker permissions already exist**.
 
