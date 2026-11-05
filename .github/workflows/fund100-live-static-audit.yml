@@ -23,6 +23,10 @@ on:
       - "test_fund100_forward_complete_nyse_sessions.py"
       - "fund100_forward_evidence_scorecard_v1_0.py"
       - "test_fund100_forward_evidence_scorecard_v1_0.py"
+      # Research-only exposure-matched comparator must pass full LIVE audit
+      # before its inputs can ever be attached to regular reporting.
+      - "fund100_forward_exposure_benchmark.py"
+      - "test_fund100_forward_exposure_benchmark.py"
       - "test_fund100_main_only_forward_ledger_workflows.py"
       - ".github/workflows/fund100-forward.yml"
       - "test_fund100_alpaca_live_*.py"
@@ -319,6 +323,10 @@ on:
       - "test_fund100_forward_complete_nyse_sessions.py"
       - "fund100_forward_evidence_scorecard_v1_0.py"
       - "test_fund100_forward_evidence_scorecard_v1_0.py"
+      # Research-only exposure-matched comparator must pass full LIVE audit
+      # before its inputs can ever be attached to regular reporting.
+      - "fund100_forward_exposure_benchmark.py"
+      - "test_fund100_forward_exposure_benchmark.py"
       - "test_fund100_main_only_forward_ledger_workflows.py"
       - ".github/workflows/fund100-forward.yml"
       - "test_fund100_alpaca_live_*.py"
