@@ -58,5 +58,27 @@ class ExposureMatchedBenchmarkTests(unittest.TestCase):
         self.assertAlmostEqual(compounded_nav([0.1, -0.1]), 99.0)
 
 
+
+    def test_dated_alignment_and_pre_session_cutoff(self):
+        from fund100_forward_exposure_benchmark import dated_exposure_matched_benchmark
+        a = [("2026-11-02", 0.04), ("2026-11-03", 0.0)]
+        c = [("2026-11-02", 0.002), ("2026-11-03", 0.0)]
+        w = [("2026-11-02", "2026-11-01T22:00:00+00:00", 0.25),
+             ("2026-11-03", "2026-11-02T22:00:00+00:00", 0.25)]
+        result = dated_exposure_matched_benchmark(a, c, w)
+        self.assertEqual([x[0] for x in result], ["2026-11-02", "2026-11-03"])
+        self.assertAlmostEqual(result[0][1], 0.0115)
+        bad = [
+            (a, c[::-1], w),
+            (a[::-1], c, w),
+            (a, c, [(w[0][0], "2026-11-02T00:00:00+00:00", 0.25), w[1]]),
+            (a, c, [(w[0][0], "2026-11-01T22:00:00", 0.25), w[1]]),
+            (a, c, [w[0], w[0]]),
+        ]
+        for aa, cc, ww in bad:
+            with self.subTest(aa=aa, cc=cc, ww=ww):
+                with self.assertRaises(ValueError):
+                    dated_exposure_matched_benchmark(aa, cc, ww)
+
 if __name__ == "__main__":
     unittest.main()
