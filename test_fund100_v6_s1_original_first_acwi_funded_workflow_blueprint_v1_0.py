@@ -35,22 +35,23 @@ def test_blueprint_is_review_only_not_runnable_workflow():
     assert "ALPACA_LIVE_SECRET" not in live
     assert "issues: write" not in live
 
-def test_funded_blueprint_bot_dispatched_main_first_attempt_only():
+def test_funded_blueprint_direct_scheduled_main_first_attempt_only():
     s=source()
     section=s.split("\non:\n",1)[1].split("\npermissions:",1)[0]
-    assert section.count("  workflow_dispatch:")==1
-    for trigger in ("  push:","  schedule:","  pull_request:",
+    assert section.count("  schedule:")==1
+    assert '    - cron: "07 15 * * 1-5"' in section
+    for trigger in ("  push:","  workflow_dispatch:","  pull_request:",
                     "  workflow_run:","  repository_dispatch:"):
         assert trigger not in section
     for check in (
-        "github.event_name == 'workflow_dispatch'",
+        "github.event_name == 'schedule'",
         "github.ref == 'refs/heads/main'",
         "github.run_attempt == 1",
-        "github.actor == 'github-actions[bot]'",
+        "github.workflow_ref == '"+
+        entry.EXPECTED_FIRST_ACWI_WORKFLOW_REF+"'",
         "test \"$GITHUB_RUN_ATTEMPT\" = '1'",
         "test \"$GITHUB_WORKFLOW_REF\" = 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main'",
         'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
-        "test \"$GITHUB_ACTOR\" = 'github-actions[bot]'",
     ):
         assert check in s
 
@@ -66,8 +67,8 @@ def test_standing_high_pilot_needs_no_third_owner_text_control():
     assert "APPROVE_ONE_ORIGINAL_ACWI_SELL_NO_RETRY" not in s
     # This workflow is STILL initial migration only, not a recurring strategy
     # runner. A separately reviewed automated loop must make future decisions.
-    assert s.count("  workflow_dispatch:")==1
-    assert "  schedule:" not in s
+    assert s.count("  schedule:")==1
+    assert "  workflow_dispatch:" not in s
     assert "  push:" not in s
     assert "  workflow_run:" not in s
     assert "review-only" in str(BLUEPRINT).lower()

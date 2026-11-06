@@ -68,7 +68,8 @@ def setup(monkeypatch):
     for key,val in (
         ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
         ("GITHUB_REF","refs/heads/main"),
-        ("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_EVENT_NAME","schedule"),
+        ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main"),
         ("GITHUB_RUN_ATTEMPT","1"),
         ("GITHUB_RUN_ID",c["owner_run_id"]),
         ("GITHUB_SHA",c["current_main_sha"]),
@@ -349,7 +350,8 @@ def test_hydrate_exact_original_chain_context_from_signed_read_sources(monkeypat
     for name,value in (
         ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
         ("GITHUB_REF","refs/heads/main"),
-        ("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_EVENT_NAME","schedule"),
+        ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main"),
         ("GITHUB_RUN_ATTEMPT","1"),
         ("GITHUB_RUN_ID",c["owner_run_id"]),
         ("GITHUB_SHA",c["current_main_sha"]),
@@ -403,7 +405,8 @@ def test_context_hydration_fails_closed_without_any_order(monkeypatch,tamper):
     source=fx.setup()
     for name,value in (
         ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
-        ("GITHUB_REF","refs/heads/main"),("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_REF","refs/heads/main"),("GITHUB_EVENT_NAME","schedule"),
+        ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main"),
         ("GITHUB_RUN_ATTEMPT","1"),("GITHUB_RUN_ID",source["owner_run_id"]),
         ("GITHUB_SHA",source["current_main_sha"]),
         ("FUND100_BROKER_KILL_SWITCH","ENGAGED"),("FUND100_RISK_LEVEL","HIGH"),
@@ -444,7 +447,8 @@ def test_active_original_hydration_without_source_release_has_no_private_reads(
     for k,v in (
         ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
         ("GITHUB_REF","refs/heads/main"),
-        ("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_EVENT_NAME","schedule"),
+        ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main"),
         ("GITHUB_RUN_ATTEMPT","1"),
         ("GITHUB_RUN_ID",current["owner_run_id"]),
         ("GITHUB_SHA",current["current_main_sha"]),
@@ -473,7 +477,8 @@ def test_active_original_hydration_cannot_reuse_stopped_admission(
     for k,v in (
         ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
         ("GITHUB_REF","refs/heads/main"),
-        ("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_EVENT_NAME","schedule"),
+        ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main"),
         ("GITHUB_RUN_ATTEMPT","1"),
         ("GITHUB_RUN_ID",source["owner_run_id"]),
         ("GITHUB_SHA",source["current_main_sha"]),
@@ -502,7 +507,8 @@ def test_active_original_source_hydration_reaches_same_context_only_with_real_go
     for name,value in (
         ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
         ("GITHUB_REF","refs/heads/main"),
-        ("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_EVENT_NAME","schedule"),
+        ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main"),
         ("GITHUB_RUN_ATTEMPT","1"),
         ("GITHUB_RUN_ID",source["owner_run_id"]),
         ("GITHUB_SHA",source["current_main_sha"]),

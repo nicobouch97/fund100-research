@@ -21,7 +21,8 @@ def trusted_actions_attempt(monkeypatch):
     for name,value in (
         ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
         ("GITHUB_REF","refs/heads/main"),
-        ("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_EVENT_NAME","schedule"),
+        ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main"),
         ("GITHUB_RUN_ATTEMPT","1"),
         ("GITHUB_RUN_ID",original["owner_run_id"]),
         ("GITHUB_SHA",original["current_main_sha"]),
@@ -198,6 +199,9 @@ def test_any_real_order_or_retry_enablement_is_an_immediate_stop(change,monkeypa
     ("GITHUB_REPOSITORY","attacker/bad"),
     ("GITHUB_REF","refs/heads/not-main"),
     ("GITHUB_EVENT_NAME","pull_request"),
+    ("GITHUB_EVENT_NAME","workflow_dispatch"),
+    ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/untrusted.yml@refs/heads/main"),
+    ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/feature"),
     ("GITHUB_RUN_ATTEMPT","2"),
     ("GITHUB_RUN_ID","39812340002"),
     ("GITHUB_SHA","b"*40),
@@ -209,6 +213,22 @@ def test_untrusted_workflow_identity_cannot_claim_or_access_private_head(name,va
     with pytest.raises(x.OwnerClaimStop,match="trusted first-run"):
         x.claim_for_same_attempt_only(**params(fake))
     assert fake.put_count==0 and not fake.gets
+
+
+def test_legacy_protected_dispatch_is_read_only_not_mutation_identity(monkeypatch):
+    # No credentials, broker POST or private PUT: identity check only.
+    monkeypatch.setattr(x,"SIGNED_OWNER_CLAIM_TRANSPORT_RELEASED",True)
+    monkeypatch.setenv("GITHUB_EVENT_NAME","workflow_dispatch")
+    fake=FakeGit(fixture.setup()["fence_source"])
+    args=params(fake)
+    with pytest.raises(x.OwnerClaimStop,match="trusted first-run"):
+        x.claim_for_same_attempt_only(**args)
+    assert fake.put_count==0 and not fake.gets
+    x._require_real_same_run(
+        owner_run_id=args["owner_run_id"],
+        owner_attempt=args["owner_attempt"],
+        current_main_sha=args["current_main_sha"],
+        read_only_context=True)
 
 
 def test_candidate_has_no_entrypoint_or_live_order_transport():

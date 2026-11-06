@@ -10,7 +10,7 @@ def env(monkeypatch):
         ("GITHUB_ACTIONS","true"),
         ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
         ("GITHUB_REF","refs/heads/main"),
-        ("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_EVENT_NAME","schedule"),
         ("GITHUB_ACTOR","github-actions[bot]"),
         ("GITHUB_WORKFLOW_REF",entry.EXPECTED_FIRST_ACWI_WORKFLOW_REF),
         ("GITHUB_RUN_ATTEMPT","1"),
@@ -135,8 +135,6 @@ def test_one_run_wires_real_coordinator_argument_contract_offline_only(activated
     ("GITHUB_REF","refs/heads/proposal"),
     ("GITHUB_REPOSITORY","attacker/research"),
     ("GITHUB_EVENT_NAME","push"),
-    ("GITHUB_ACTOR","nicobouch97"),
-    ("GITHUB_ACTOR","unknown-bot"),
     ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/other-writer.yml@refs/heads/main"),
     ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/unreviewed"),
     ("GITHUB_WORKFLOW_REF",""),
@@ -146,7 +144,7 @@ def test_one_run_wires_real_coordinator_argument_contract_offline_only(activated
     ("FUND100_BROKER_KILL_SWITCH","ENGAGED"),
     ("FUND100_RISK_LEVEL","LOW"),
     ("FUND100_ENABLE_LIVE_READONLY","NO"),
-    ("GITHUB_EVENT_NAME","schedule"),
+    ("GITHUB_EVENT_NAME","workflow_dispatch"),
 ])
 def test_wrong_first_run_or_operator_scope_cannot_read_or_trade(
         activated_offline,monkeypatch,name,bad):

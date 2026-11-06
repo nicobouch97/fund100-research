@@ -15,12 +15,15 @@ name: Fund-100 V6-S1 ONE-TIME AUTONOMOUS HIGH PILOT ACTIVATION (NOT ACTIVE)
 # current-main operator GO, broker kill and reconciled idempotent orders.
 # This first-attempt workflow only migrates the original ACWI inventory;
 # it does NOT yet provide the future autonomous multi-event order loop.
-# An autonomous *separate* reviewed main-only scheduler may dispatch this
-# event once when the standing mandate, signed owner/ledger and real broker
-# conditions permit; this blueprint has NO active scheduler or dispatch job.
-# Never trigger this mutation directly on push, schedule, workflow_run or retries.
+# A directly scheduled main-only workflow eliminates an untrusted upstream
+# dispatcher. At most one original signed owner claim can ever succeed;
+# later scheduled runs must fail closed on spent/unknown owner or broker state.
+# GitHub cron can delay or skip runs; fresh broker market-clock source is
+# mandatory and a missed slot is not permission to retry a lost order ack.
+# This is REVIEW-ONLY, NOT INSTALLED.
 on:
-  workflow_dispatch:
+  schedule:
+    - cron: "07 15 * * 1-5"
 
 permissions:
   contents: read
@@ -38,10 +41,10 @@ jobs:
     # Uses standing mandate and signed one-time owner fence; does not request
     # an owner-entered launch phrase or any individual order approval.
     if: >-
-      github.event_name == 'workflow_dispatch' &&
+      github.event_name == 'schedule' &&
       github.ref == 'refs/heads/main' &&
       github.run_attempt == 1 &&
-      github.actor == 'github-actions[bot]'
+      github.workflow_ref == 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main'
     runs-on: ubuntu-latest
     environment: fund100-live-broker
     timeout-minutes: 10
@@ -66,12 +69,11 @@ jobs:
           set -euo pipefail
           test "$GITHUB_ACTIONS" = 'true'
           test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
-          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+          test "$GITHUB_EVENT_NAME" = 'schedule'
           # GitHub's bot actor alone cannot authenticate the executing workflow.
           test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main'
           test "$GITHUB_REF" = 'refs/heads/main'
           test "$GITHUB_RUN_ATTEMPT" = '1'
-          test "$GITHUB_ACTOR" = 'github-actions[bot]'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$FUND100_RISK_LEVEL" = 'HIGH'
           test "$FUND100_BROKER_KILL_SWITCH" = 'DISENGAGED'

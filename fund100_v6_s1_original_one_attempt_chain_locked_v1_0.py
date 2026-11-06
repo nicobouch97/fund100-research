@@ -78,7 +78,8 @@ def prepare_original_acwi_context_getonly(*,private_read_token:str,
         current_main_sha=os.environ["GITHUB_SHA"]
         ownership._require_real_same_run(
             owner_run_id=owner_run_id,owner_attempt=1,
-            current_main_sha=current_main_sha)
+            current_main_sha=current_main_sha,
+            read_only_context=not active_execution)
         if (type(active_execution) is not bool
             or os.environ.get("FUND100_RISK_LEVEL")!="HIGH"
             or type(hmac_hex) is not str

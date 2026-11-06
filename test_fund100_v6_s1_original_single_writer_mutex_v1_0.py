@@ -62,10 +62,11 @@ def test_first_funded_blueprint_remains_review_only_not_live_authorization():
     assert "REVIEW-ONLY SOURCE. NOT AN ACTIVE GITHUB ACTION" in data
     assert "AUTHORIZE_AUTONOMOUS_HIGH_PILOT_ONCE" not in data
     assert "inputs.confirmation" not in data
-    assert "github.actor == 'github-actions[bot]'" in data
+    assert "github.event_name == 'schedule'" in data
+    assert "github.workflow_ref == 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main'" in data
     assert "github.run_attempt == 1" in data
-    assert "  workflow_dispatch:" in data
-    for forbidden in ("  push:","  schedule:","  workflow_run:","  repository_dispatch:"):
+    assert '    - cron: "07 15 * * 1-5"' in data
+    for forbidden in ("  push:","  workflow_dispatch:","  workflow_run:","  repository_dispatch:"):
         assert forbidden not in data
     assert V6_FUNDING.startswith("release_candidates/")
     assert group(data)==ACCOUNT_WRITER_MUTEX
