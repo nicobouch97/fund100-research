@@ -29,8 +29,9 @@ EXPECTED_FIRST_ACWI_WORKFLOW_REF=(
 # Launch-level funded HIGH mandate (NOT approval for each order).
 # This one-shot entry handles only the FIRST ACWI inventory-migration sale;
 # autonomous later trades use a separate event-driven production controller.
-# workflow_dispatch may be initiated by an autonomous protected controller.
-# It is a same-run identity constraint, not an owner-entered approval prompt.
+# Direct schedule on the pinned protected main workflow avoids relying on
+# an unverified upstream workflow_dispatch initiator. GitHub's scheduled
+# GITHUB_ACTOR is variable and NOT reliable execution provenance.
 # Execution still requires source-code release, authenticated current-main V6
 # operator GO, broker kill DISENGAGED, immutable signed head, and fresh risk.
 REQUIRED_SECRETS=(
@@ -67,8 +68,7 @@ def run_protected_first_acwi_once()->dict:
     if (e.get("GITHUB_ACTIONS")!="true"
         or e.get("GITHUB_REPOSITORY")!="nicobouch97/fund100-research"
         or e.get("GITHUB_REF")!="refs/heads/main"
-        or e.get("GITHUB_EVENT_NAME")!="workflow_dispatch"
-        or e.get("GITHUB_ACTOR")!="github-actions[bot]"
+        or e.get("GITHUB_EVENT_NAME")!="schedule"
         or e.get("GITHUB_WORKFLOW_REF")!=EXPECTED_FIRST_ACWI_WORKFLOW_REF
         or e.get("GITHUB_RUN_ATTEMPT")!="1"
         or type(e.get("GITHUB_RUN_ID")) is not str
