@@ -36,6 +36,12 @@ on:
       - "fund100_v5_*.py"
       - "fund100_v6_s1_frac_live_sell_writer_candidate_v1_0.py"
       - "test_fund100_v6_s1_frac_live_sell_writer_candidate_v1_0.py"
+      # Original seven-GET risk-vintage evidence must also pass the full
+      # LIVE safety suite, not just isolated offline source-scope tests.
+      - "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py"
+      - "test_fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py"
+      - "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
+      - "test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       - "fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0.py"
       - "test_fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0.py"
       - "research_lab/V6_S1_HIGH_RECONCILED_LIVE_EXECUTION_POLICY_CANDIDATE_2026_10_21.json"
@@ -336,6 +342,12 @@ on:
       - "fund100_v5_*.py"
       - "fund100_v6_s1_frac_live_sell_writer_candidate_v1_0.py"
       - "test_fund100_v6_s1_frac_live_sell_writer_candidate_v1_0.py"
+      # Original seven-GET risk-vintage evidence must also pass the full
+      # LIVE safety suite, not just isolated offline source-scope tests.
+      - "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py"
+      - "test_fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py"
+      - "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
+      - "test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       - "fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0.py"
       - "test_fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0.py"
       - "research_lab/V6_S1_HIGH_RECONCILED_LIVE_EXECUTION_POLICY_CANDIDATE_2026_10_21.json"
