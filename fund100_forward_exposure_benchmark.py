@@ -51,8 +51,8 @@ def exposure_matched_benchmark(
         turnover = 0.0 if previous_end_weight is None else abs(weight - previous_end_weight)
         gross = weight * equity_r + (1 - weight) * cash_r
         net = gross - turnover * one_way_cost_bps / 10000
-        if net <= -1:
-            raise ValueError("net return below -100%")
+        if not math.isfinite(gross) or not math.isfinite(net) or net <= -1:
+            raise ValueError("invalid or nonfinite net comparator return")
         output.append(net)
         # End-of-session weight drifts after returns; next day's target
         # rebalances from this actual comparator weight, not yesterday's target.
@@ -63,11 +63,15 @@ def exposure_matched_benchmark(
 def compounded_nav(returns: Sequence[float], start_nav: float = 100.0) -> float:
     if not math.isfinite(start_nav) or start_nav <= 0:
         raise ValueError("invalid starting NAV")
+    if not returns:
+        raise ValueError("nonempty return history required")
     nav = start_nav
     for value in returns:
         if not math.isfinite(value) or value <= -1:
             raise ValueError("invalid return")
         nav *= 1 + value
+        if not math.isfinite(nav) or nav <= 0:
+            raise ValueError("nonfinite or underflowed compounded NAV")
     return nav
 
 
