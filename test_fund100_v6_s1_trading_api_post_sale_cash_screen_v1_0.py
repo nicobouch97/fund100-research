@@ -133,10 +133,11 @@ def test_unrelated_but_well_formed_sell_receipt_does_not_prove_original_migratio
 
 
 def test_incorrect_signed_legacy_source_mapping_fails_closed(monkeypatch):
+    s=fixture()
     monkeypatch.setattr(original_cas,"CLIENT_IDS",{"ACWI":"altered"})
     with pytest.raises(cash.TradingCashStop,
                        match="Original signed migration identity source changed"):
-        check()
+        check(s)
 
 
 def test_original_exit_receipts_must_be_three_independent_order_ids():
