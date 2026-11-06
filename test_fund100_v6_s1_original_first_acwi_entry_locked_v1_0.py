@@ -144,7 +144,7 @@ def test_one_run_wires_real_coordinator_argument_contract_offline_only(activated
     ("FUND100_BROKER_KILL_SWITCH","ENGAGED"),
     ("FUND100_RISK_LEVEL","LOW"),
     ("FUND100_ENABLE_LIVE_READONLY","NO"),
-    ("GITHUB_EVENT_NAME","schedule"),
+    ("GITHUB_EVENT_NAME","workflow_dispatch"),
 ])
 def test_wrong_first_run_or_operator_scope_cannot_read_or_trade(
         activated_offline,monkeypatch,name,bad):
