@@ -62,9 +62,12 @@ class ExposureMatchedBenchmarkTests(unittest.TestCase):
             with self.subTest(returns=returns[:2]), self.assertRaises(ValueError):
                 compounded_nav(returns)
 
-    def test_finite_inputs_cannot_produce_nonfinite_comparator(self):
-        with self.assertRaisesRegex(ValueError, "nonfinite"):
-            exposure_matched_benchmark([1e308], [1e308], [0.5])
+    def test_extreme_finite_cost_cannot_produce_invalid_comparator(self):
+        with self.assertRaisesRegex(ValueError, "invalid"):
+            exposure_matched_benchmark(
+                [0.01], [0.0], [1.0],
+                one_way_cost_bps=1e308, initial_equity_weight=0.0
+            )
 
 
 
