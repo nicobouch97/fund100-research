@@ -45,6 +45,11 @@ def run(changes=None):
 
 def assert_stopped(r):
     assert r["actual_high_6_20_35_risk_cleared"] is False
+    assert r["postfunded_account_risk_research_status"] in (
+        "NOT_EVALUATED_HOLD",
+        "POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY",
+        "POSTFUNDED_POSSIBLE_HIGH_RISK_BREACH_HOLD",
+        "POSTFUNDED_AMBIGUOUS_FLOW_OR_MARKS_HOLD")
     assert r["extended_history_independent_risk_source_qualified"] is False
     assert r["live_buy_sell_authorized"] is False
     assert r["broker_get_requests"] == 8
@@ -60,6 +65,70 @@ def test_genuine_earlier_unfunded_prefix_is_only_review_candidate():
     r = run()
     assert r["status"] == "PREFUNDING_NULL_ZERO_PREFIX_SEEN_REVIEW_ONLY"
     assert_stopped(r)
+
+
+
+def test_reuse_existing_private_postfunding_risk_observation_only():
+    r = run()
+    assert r["status"] == "PREFUNDING_NULL_ZERO_PREFIX_SEEN_REVIEW_ONLY"
+    assert (r["postfunded_account_risk_research_status"] ==
+            "POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY")
+    assert_stopped(r)
+
+
+def test_real_funded_mark_breach_cannot_be_described_as_clean():
+    def change(d):
+        # Maintain the exact 1M suffix vintage even with a sharp loss.
+        # The fixed account last_equity stays reconciled to the final mark.
+        d["three_month_history"]["equity"][6] = 70
+        d["month_history"]["equity"][2] = 70
+    r = run(change)
+    assert r["status"] == "PREFUNDING_NULL_ZERO_PREFIX_SEEN_REVIEW_ONLY"
+    assert (r["postfunded_account_risk_research_status"] !=
+            "POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY")
+    assert_stopped(r)
+
+
+def test_same_day_booking_does_not_certify_earlier_transfer_time():
+    def change(d):
+        d["activities"][0]["date"] = "2026-10-27"
+    r = run(change)
+    assert r["status"] == "PREFUNDING_NULL_ZERO_PREFIX_SEEN_REVIEW_ONLY"
+    assert r["postfunded_account_risk_research_status"] != (
+        "POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY")
+    assert_stopped(r)
+
+
+def test_prefix_outside_verified_sept_activity_coverage_stays_unevaluated():
+    def change(d):
+        from datetime import datetime, timezone
+        for i, day in enumerate(("2026-08-19","2026-08-20")):
+            d["three_month_history"]["timestamp"][i] = int(
+                datetime.fromisoformat(day).replace(
+                    tzinfo=timezone.utc).timestamp())
+    # The intentionally wide timestamp gap must be refused by the source
+    # reader rather than taking unverifiable return intervals as daily.
+    r = run(change)
+    assert r["postfunded_account_risk_research_status"] == "NOT_EVALUATED_HOLD"
+    assert_stopped(r)
+
+
+def test_source_failure_never_releases_risk_or_live_orders():
+    def change(d):
+        d["activities"][0]["net_amount"] = "not-a-cash-number"
+    r = run(change)
+    assert r["status"] == "HOLD_ACTIVITY_TIMING_OR_IDENTITY_UNTRUSTED"
+    assert r["postfunded_account_risk_research_status"] == "NOT_EVALUATED_HOLD"
+    assert_stopped(r)
+
+
+def test_extended_source_prints_only_fixed_research_category(capsys,monkeypatch):
+    monkeypatch.setattr(q, "runtime", lambda: run())
+    q.main()
+    printed = capsys.readouterr().out
+    assert "postfunded_account_risk_research_status: POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY" in printed
+    for bad in ("PRIVATE-SYNTHETIC","2026-10-26","2026-11-05","100."):
+        assert bad not in printed
 
 
 def test_longer_history_earliest_already_funded_remains_hold():

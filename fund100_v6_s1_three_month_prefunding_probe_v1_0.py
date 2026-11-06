@@ -4,9 +4,8 @@ New isolated *eighth* GET of 3M/1D history. Original source-bound seven
 GETs, account binding, cashflow evidence, STOP and broker kill remain intact.
 Public result is categorical only, never a risk clearance or trade mandate.
 
-This module has no active GitHub Actions credential workflow. Its proposed
-review-only workflow must receive an independent exact-source review before
-any authenticated broker invocation.
+Its deployed protected main-only workflow is separately source-hash scoped
+for the fixed eight GETs; no automatic high-risk clearance or orders.
 """
 from __future__ import annotations
 
@@ -105,6 +104,7 @@ def _report(status, *, original_verified=True):
         "original_seven_get_account_binding_verified": original_verified,
         "extended_history_source_economic_transfer_time_verified": False,
         "extended_history_independent_risk_source_qualified": False,
+        "postfunded_account_risk_research_status": "NOT_EVALUATED_HOLD",
         "actual_high_6_20_35_risk_cleared": False,
         "cash_floor_or_settlement_verified": False,
         "operator_stop_and_kill_unchanged": True,
@@ -205,7 +205,49 @@ def inspect(*, original_report, month_history, three_month_history,
         return _report("HOLD_BOOKING_AFTER_FIRST_FUNDED_CLOSE")
     # Pre-funding zero/null is a plausible history anchor, but booking date
     # lacks clock precision; additional source and independent risk work needed.
-    return _report("PREFUNDING_NULL_ZERO_PREFIX_SEEN_REVIEW_ONLY")
+    report = _report("PREFUNDING_NULL_ZERO_PREFIX_SEEN_REVIEW_ONLY")
+    # Use the EXISTING source-conservative account risk evaluator in PRIVATE
+    # memory on the authenticated funded-era segment, never guessed returns.
+    # The queried three-month window can start before the verified Sep-01
+    # activity coverage. Trim earlier history instead of asserting that the
+    # nontrade activity source covers the entire three-month account life.
+    # Crucially, preserve the zero/null prefix INSIDE the covered interval.
+    covered = [
+        i for i, stamp in enumerate(long_times)
+        if datetime.fromtimestamp(stamp, timezone.utc).date()
+           >= date(2026, 9, 1)
+    ]
+    if not covered:
+        return report
+    start = covered[0]
+    if start >= prefix:
+        # Unfunded observations are only outside the verified activity
+        # source, so there is no bounded inception placement to assess.
+        return report
+    daily = {
+        "timeframe": "1D",
+        "timestamp": long_times[start:],
+        "equity": three_month_history["equity"][start:],
+    }
+    try:
+        import fund100_v6_s1_live_cashflow_risk_bounds_v1_0 as cashrisk
+        research = cashrisk.inspect(
+            history=daily, activities=activities, account=account,
+            observed_at_utc=observed_at_utc)
+    except Exception:
+        return report
+    # Only fixed public categories, no private returns, activity amounts
+    # or dates. This is not a signed high-risk certificate or a trade GO.
+    if (research.get("strictly_postfunding_account_6_20_35_source_verified")
+        is True and
+        research.get("source_rejection_category") == "NONE"):
+        category = "POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY"
+    elif research.get("status") == "HIGH_RISK_BREACH_POSSIBLE_HOLD":
+        category = "POSTFUNDED_POSSIBLE_HIGH_RISK_BREACH_HOLD"
+    else:
+        category = "POSTFUNDED_AMBIGUOUS_FLOW_OR_MARKS_HOLD"
+    report["postfunded_account_risk_research_status"] = category
+    return report
 
 
 def runtime():
@@ -272,6 +314,7 @@ def main():
     # Only fixed categorical values, no financial observations in stdout.
     print("schema:", result["schema"])
     print("prefunding_history_source_status:", result["status"])
+    print("postfunded_account_risk_research_status:", result["postfunded_account_risk_research_status"])
     print("actual_high_6_20_35_risk_cleared:", result["actual_high_6_20_35_risk_cleared"])
     print("live_buy_sell_authorized:", result["live_buy_sell_authorized"])
     print("broker_get_requests:", result["broker_get_requests"])

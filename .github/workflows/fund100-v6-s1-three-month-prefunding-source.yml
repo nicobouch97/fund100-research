@@ -46,7 +46,7 @@ jobs:
           assert len(source.REQUEST_PLAN) == 8
           assert source.REQUEST_PLAN[-1] == (
               '/v2/account/portfolio/history', {'period':'3M','timeframe':'1D'})
-          assert audit.git_blob_digest(Path(script)) == '42b2050038024f2b415f91b8a38a7a36799d4b32'
+          assert audit.git_blob_digest(Path(script)) == 'b1a7fa3cb5cb03dfa9fb030b44677e4f9464b24d'
           assert audit.approved_scoped_live_script(
               workflow, script, Path(workflow).read_text())
           print('Eight GET source PINNED. Original STOP remains. No broker credentials.')
@@ -82,7 +82,7 @@ jobs:
           import audit_fund100_live_boundary as audit
           workflow = '.github/workflows/fund100-v6-s1-three-month-prefunding-source.yml'
           script = 'fund100_v6_s1_three_month_prefunding_probe_v1_0.py'
-          assert audit.git_blob_digest(Path(script)) == '42b2050038024f2b415f91b8a38a7a36799d4b32'
+          assert audit.git_blob_digest(Path(script)) == 'b1a7fa3cb5cb03dfa9fb030b44677e4f9464b24d'
           assert audit.approved_scoped_live_script(
               workflow, script, Path(workflow).read_text())
           print('Source-only main workflow qualifies for eight GET. All trading remains STOP.')
