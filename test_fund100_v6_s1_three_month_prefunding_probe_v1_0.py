@@ -169,6 +169,27 @@ def test_main_only_runtime_rejects_before_any_network(monkeypatch):
         q.runtime()
 
 
+
+def test_wrong_workflow_ref_on_main_rejected_without_accessing_credentials(monkeypatch):
+    fake = SimpleNamespace()
+    for name in (
+      "fund100_alpaca_live_readonly_smoke", "fund100_live_operator_control_v1_0",
+      "fund100_v6_brokerless_transition_preview_v1_0",
+      "fund100_v6_real_live_getonly_transition_readiness_v1_0",
+      "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0",
+      "fund100_v6_s1_live_private_xle_activity_getonly_v1_0",
+      "fund100_v6_s1_live_risk_history_getonly_v1_0",
+    ):
+        monkeypatch.setitem(sys.modules, name, fake)
+    monkeypatch.setenv("GITHUB_WORKFLOW_REF", "nicobouch97/fund100-research/.github/workflows/other.yml@refs/heads/main")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "nicobouch97/fund100-research")
+    monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "ENGAGED")
+    monkeypatch.setenv("FUND100_RISK_LEVEL", "HIGH")
+    with pytest.raises(q.ExtendedSourceStop, match="Protected main"):
+        q.runtime()
+
+
 def test_runtime_uses_only_original_seven_plus_one_fixed_extra_get(monkeypatch):
     d = data()
     fake_live = SimpleNamespace(
