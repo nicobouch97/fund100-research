@@ -48,6 +48,7 @@ def test_funded_blueprint_bot_dispatched_main_first_attempt_only():
         "github.run_attempt == 1",
         "github.actor == 'github-actions[bot]'",
         "test \"$GITHUB_RUN_ATTEMPT\" = '1'",
+        "test \"$GITHUB_WORKFLOW_REF\" = 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main'",
         'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
         "test \"$GITHUB_ACTOR\" = 'github-actions[bot]'",
     ):
@@ -59,6 +60,7 @@ def test_standing_high_pilot_needs_no_third_owner_text_control():
     assert "future autonomous multi-event order loop" in s.lower()
     assert "FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM" not in s
     assert "inputs.confirmation" not in s
+    assert entry.EXPECTED_FIRST_ACWI_WORKFLOW_REF in s
     assert "confirmation:" not in s
     assert "FUND100_ORIGINAL_ACWI_FIRST_ORDER_CONFIRM" not in s
     assert "APPROVE_ONE_ORIGINAL_ACWI_SELL_NO_RETRY" not in s

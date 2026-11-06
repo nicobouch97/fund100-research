@@ -67,6 +67,8 @@ jobs:
           test "$GITHUB_ACTIONS" = 'true'
           test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
           test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+          # GitHub's bot actor alone cannot authenticate the executing workflow.
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main'
           test "$GITHUB_REF" = 'refs/heads/main'
           test "$GITHUB_RUN_ATTEMPT" = '1'
           test "$GITHUB_ACTOR" = 'github-actions[bot]'

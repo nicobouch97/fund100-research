@@ -12,6 +12,7 @@ def env(monkeypatch):
         ("GITHUB_REF","refs/heads/main"),
         ("GITHUB_EVENT_NAME","workflow_dispatch"),
         ("GITHUB_ACTOR","github-actions[bot]"),
+        ("GITHUB_WORKFLOW_REF",entry.EXPECTED_FIRST_ACWI_WORKFLOW_REF),
         ("GITHUB_RUN_ATTEMPT","1"),
         ("GITHUB_RUN_ID","40255512345"),
         ("GITHUB_SHA","a"*40),
@@ -33,6 +34,18 @@ def env(monkeypatch):
     for key,val in keys.items():
         monkeypatch.setenv(key,val)
     return keys
+
+
+def test_workflow_ref_is_reviewed_main_only_and_not_currently_installed():
+    from pathlib import Path
+    assert entry.EXPECTED_FIRST_ACWI_WORKFLOW_REF == (
+        "nicobouch97/fund100-research/.github/workflows/"
+        "fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main")
+    assert not Path(
+        ".github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml"
+    ).exists()
+    assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
+    assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
 
 
 def test_unreleased_main_entry_blocks_before_any_source_or_side_effect(monkeypatch):
@@ -124,6 +137,9 @@ def test_one_run_wires_real_coordinator_argument_contract_offline_only(activated
     ("GITHUB_EVENT_NAME","push"),
     ("GITHUB_ACTOR","nicobouch97"),
     ("GITHUB_ACTOR","unknown-bot"),
+    ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/other-writer.yml@refs/heads/main"),
+    ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/unreviewed"),
+    ("GITHUB_WORKFLOW_REF",""),
     ("GITHUB_RUN_ATTEMPT","2"),
     ("GITHUB_RUN_ID","invalid"),
     ("GITHUB_SHA","wrong"),

@@ -29,6 +29,7 @@ def first_protected_original_run(monkeypatch,signed_chain_setup):
     for name,value in (
         ("GITHUB_ACTIONS","true"),
         ("GITHUB_ACTOR","github-actions[bot]"),
+        ("GITHUB_WORKFLOW_REF",entry.EXPECTED_FIRST_ACWI_WORKFLOW_REF),
         ("FUND100_RISK_LEVEL","HIGH"),
         ("FUND100_BROKER_KILL_SWITCH","DISENGAGED"),
         ("FUND100_ENABLE_LIVE_READONLY","YES_READ_ONLY_LIVE"),
@@ -81,6 +82,7 @@ def test_entire_one_process_entry_calls_real_original_chain_and_one_fake_post(
     ("GITHUB_RUN_ATTEMPT","2"),
     ("GITHUB_EVENT_NAME","push"),
     ("GITHUB_ACTOR","nicobouch97"),
+    ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/untrusted.yml@refs/heads/main"),
     ("GITHUB_REF","refs/heads/unreviewed"),
     ("FUND100_BROKER_KILL_SWITCH","ENGAGED"),
     ("GITHUB_EVENT_NAME","schedule"),
