@@ -144,7 +144,20 @@ def _read(history, activities, account, observed_at_utc):
         if booking_date == first_funded_date else
         "BOOKED_AFTER_FIRST_FUNDED_SAMPLE_DATE"
     )
-    return equity, flow, unfunded_prefix, possible_inception, current, boundary
+    # On a 1M account-history slice already fully funded at its first close,
+    # an observed booking DATE may help decide whether to request an earlier
+    # broker-history window. It is NOT an economic cashflow timestamp; NONE
+    # of these labels can by itself qualify funded 6/20/35 risk or trading.
+    no_prefix_relation = (
+        "PREFUNDING_PREFIX_PRESENT_NOT_APPLICABLE" if unfunded_prefix else
+        "NO_PREFIX_BOOKED_BEFORE_FIRST_VISIBLE_CLOSE"
+        if booking_date < first_funded_date else
+        "NO_PREFIX_BOOKED_ON_FIRST_VISIBLE_CLOSE"
+        if booking_date == first_funded_date else
+        "NO_PREFIX_BOOKED_AFTER_FIRST_VISIBLE_CLOSE"
+    )
+    return (equity, flow, unfunded_prefix, possible_inception, current,
+            boundary, no_prefix_relation)
 
 def _scenario(values, flow, at, weight, current):
     unit = Decimal(1)
@@ -190,9 +203,11 @@ def inspect(*, history, activities, account, observed_at_utc):
     evaluated = False
     unfunded_prefix = False
     boundary = "SOURCE_NOT_QUALIFIED"
+    no_prefix_relation = "SOURCE_NOT_QUALIFIED"
     postfunded_risk_proven = False
     try:
-        values, flow, unfunded_prefix, possible_inception, current, boundary = _read(
+        (values, flow, unfunded_prefix, possible_inception, current,
+         boundary, no_prefix_relation) = _read(
             history, activities, account, observed_at_utc
         )
         evaluated = True
@@ -269,6 +284,9 @@ def inspect(*, history, activities, account, observed_at_utc):
         "one_cashflow_sensitivity_evaluated_in_memory": evaluated,
         "unfunded_history_prefix_observed": unfunded_prefix,
         "initial_cashflow_booking_vs_first_funded_sample": boundary,
+        "no_prefix_booking_date_relative_to_first_visible_sample":
+            no_prefix_relation,
+        "no_prefix_booking_date_is_economic_transfer_timestamp": False,
         "strictly_postfunding_account_6_20_35_source_verified":
             postfunded_risk_proven,
         "broker_actual_economic_transfer_time_verified": False,
