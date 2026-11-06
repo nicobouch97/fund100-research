@@ -160,6 +160,7 @@ def test_main_only_runtime_rejects_before_any_network(monkeypatch):
     }
     for name, obj in mods.items():
         monkeypatch.setitem(sys.modules, name, obj)
+    monkeypatch.setenv("GITHUB_WORKFLOW_REF", "untrusted/.github/workflows/other.yml@refs/heads/main")
     monkeypatch.setenv("GITHUB_REF", "refs/pull/531/merge")
     monkeypatch.setenv("GITHUB_REPOSITORY", "nicobouch97/fund100-research")
     monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "ENGAGED")
@@ -204,6 +205,9 @@ def test_runtime_uses_only_original_seven_plus_one_fixed_extra_get(monkeypatch):
     }
     for name, obj in stubs.items():
         monkeypatch.setitem(sys.modules, name, obj)
+    monkeypatch.setenv("GITHUB_WORKFLOW_REF",
+        "nicobouch97/fund100-research/.github/workflows/"
+        "fund100-v6-s1-three-month-prefunding-source.yml@refs/heads/main")
     monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
     monkeypatch.setenv("GITHUB_REPOSITORY", "nicobouch97/fund100-research")
     monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "ENGAGED")
@@ -231,6 +235,9 @@ def test_runtime_rejects_source_parameter_drift_before_broker_reads(monkeypatch)
       "fund100_v6_s1_live_risk_history_getonly_v1_0",
     ):
         monkeypatch.setitem(sys.modules, name, fake)
+    monkeypatch.setenv("GITHUB_WORKFLOW_REF",
+        "nicobouch97/fund100-research/.github/workflows/"
+        "fund100-v6-s1-three-month-prefunding-source.yml@refs/heads/main")
     monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
     monkeypatch.setenv("GITHUB_REPOSITORY", "nicobouch97/fund100-research")
     monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "ENGAGED")
