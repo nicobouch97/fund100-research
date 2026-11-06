@@ -219,7 +219,10 @@ def runtime():
     import fund100_v6_s1_live_private_xle_activity_getonly_v1_0 as six
     import fund100_v6_s1_live_risk_history_getonly_v1_0 as five
 
-    if (os.getenv("GITHUB_REF") != "refs/heads/main"
+    if (os.getenv("GITHUB_WORKFLOW_REF") !=
+        "nicobouch97/fund100-research/.github/workflows/"
+        "fund100-v6-s1-three-month-prefunding-source.yml@refs/heads/main"
+        or os.getenv("GITHUB_REF") != "refs/heads/main"
         or os.getenv("GITHUB_REPOSITORY") != "nicobouch97/fund100-research"
         or os.getenv("FUND100_BROKER_KILL_SWITCH") != "ENGAGED"
         or os.getenv("FUND100_RISK_LEVEL") != "HIGH"):
