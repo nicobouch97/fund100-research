@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 import fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0 as cash
+import fund100_v6_s1_private_git_cas_protocol_v1_0 as original_cas
 
 NOW="2026-11-10T20:45:00Z"
 FILLED="2026-11-02T15:30:00Z"
@@ -11,7 +12,7 @@ FILLED="2026-11-02T15:30:00Z"
 def fixture():
     fills={s:{
         "symbol":s,"side":"sell","status":"filled",
-        "client_order_id":"synthetic-"+s,
+        "client_order_id":original_cas.CLIENT_IDS[s],
         "reconciled_original_exact_qty":True,
         "filled_exact_qty":True,
         "broker_fills_complete":True,
@@ -109,6 +110,33 @@ def test_original_exit_receipt_requires_canonical_client_id(bad_id):
     assert report["status"]=="HOLD_ORIGINAL_EXIT_FILL_OR_QUANTITY_UNCONFIRMED"
     assert report["actual_settled_proceeds_certified"] is False
     assert report["broker_post_attempts"]==0
+
+
+def test_original_receipts_match_precommitted_signed_legacy_migration_ids():
+    expected=original_cas.CLIENT_IDS
+    assert set(expected)=={"ACWI","EEM","XLV"}
+    s=fixture()
+    assert {symbol:fill["client_order_id"]
+            for symbol,fill in s["original_exit_fills"].items()}==expected
+    assert check(s)["status"]=="CONSERVATIVE_TRADING_API_CASH_ENVELOPE_PASSED_NOT_AUTHORIZED"
+    assert check(s)["actual_settled_proceeds_certified"] is False
+
+
+@pytest.mark.parametrize("symbol",["ACWI","EEM","XLV"])
+def test_unrelated_but_well_formed_sell_receipt_does_not_prove_original_migration(symbol):
+    s=fixture()
+    s["original_exit_fills"][symbol]["client_order_id"]="unrelated-valid-order-"+symbol
+    result=check(s)
+    assert result["status"]=="HOLD_ORIGINAL_EXIT_FILL_OR_QUANTITY_UNCONFIRMED"
+    assert result["broker_post_attempts"]==0
+    assert result["actual_settled_proceeds_certified"] is False
+
+
+def test_incorrect_signed_legacy_source_mapping_fails_closed(monkeypatch):
+    monkeypatch.setattr(original_cas,"CLIENT_IDS",{"ACWI":"altered"})
+    with pytest.raises(cash.TradingCashStop,
+                       match="Original signed migration identity source changed"):
+        check()
 
 
 def test_original_exit_receipts_must_be_three_independent_order_ids():
