@@ -166,6 +166,43 @@ def test_no_unfunded_prefix_means_no_inception_reinterpretation():
     assert r["status"]=="NO_QUALITY_ADMISSIBLE_PLACEMENT_HOLD"
 
 
+@pytest.mark.parametrize("booking,relation",[
+    ("2026-10-11","NO_PREFIX_BOOKED_BEFORE_FIRST_VISIBLE_CLOSE"),
+    ("2026-10-12","NO_PREFIX_BOOKED_ON_FIRST_VISIBLE_CLOSE"),
+    ("2026-10-13","NO_PREFIX_BOOKED_AFTER_FIRST_VISIBLE_CLOSE"),
+])
+def test_no_prefix_booking_relation_is_redacted_and_never_risk_clearance(
+        booking,relation):
+    # Equity starts already funded, so date-only activity cannot establish
+    # economic transfer timing; the historical 6/20/35 lock stays untouched.
+    d=dataset(["100","100","100","100","100","100"],flow="100")
+    d["activities"][0]["date"]=booking
+    r=check(d)
+    assert r["initial_cashflow_booking_vs_first_funded_sample"]==(
+        "NO_PRE_FUNDING_PREFIX_TO_ANCHOR")
+    assert r["no_prefix_booking_date_relative_to_first_visible_sample"]==relation
+    assert r["no_prefix_booking_date_is_economic_transfer_timestamp"] is False
+    assert r["strictly_postfunding_account_6_20_35_source_verified"] is False
+    assert r["status"]=="NO_QUALITY_ADMISSIBLE_PLACEMENT_HOLD"
+    assert booking not in str(r)
+
+
+def test_existing_real_prefunding_prefix_does_not_claim_no_prefix_booking():
+    r=check(initial_funding_case())
+    assert r["no_prefix_booking_date_relative_to_first_visible_sample"]==(
+        "PREFUNDING_PREFIX_PRESENT_NOT_APPLICABLE")
+    assert not r["no_prefix_booking_date_is_economic_transfer_timestamp"]
+
+
+def test_malformed_account_history_never_claims_booking_relation():
+    d=dataset()
+    d["account"]["last_equity"]="BAD"
+    r=check(d)
+    assert r["no_prefix_booking_date_relative_to_first_visible_sample"]==(
+        "SOURCE_NOT_QUALIFIED")
+    assert r["strictly_postfunding_account_6_20_35_source_verified"] is False
+
+
 def test_unfunded_null_and_zero_prefix_are_not_market_returns():
     d=unfunded_prefix_case()
     result=check(d)
