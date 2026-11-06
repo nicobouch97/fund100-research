@@ -42,6 +42,11 @@ on:
       - "test_fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py"
       - "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       - "test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
+      # New 3M original funding source/permission boundary needs full audit.
+      - "fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
+      - "test_fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
+      - "test_fund100_v6_s1_three_month_protected_scope_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-three-month-prefunding-source.yml"
       - "fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0.py"
       - "test_fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0.py"
       - "research_lab/V6_S1_HIGH_RECONCILED_LIVE_EXECUTION_POLICY_CANDIDATE_2026_10_21.json"
@@ -348,6 +353,11 @@ on:
       - "test_fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py"
       - "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       - "test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
+      # New 3M original funding source/permission boundary needs full audit.
+      - "fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
+      - "test_fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
+      - "test_fund100_v6_s1_three_month_protected_scope_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-three-month-prefunding-source.yml"
       - "fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0.py"
       - "test_fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0.py"
       - "research_lab/V6_S1_HIGH_RECONCILED_LIVE_EXECUTION_POLICY_CANDIDATE_2026_10_21.json"
