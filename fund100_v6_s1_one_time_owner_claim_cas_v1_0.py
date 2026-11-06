@@ -46,17 +46,25 @@ def _token(value,label):
         raise OwnerClaimStop("Missing distinct private "+label+" principal")
     return value
 
-def _require_real_same_run(*,owner_run_id,owner_attempt,current_main_sha):
-    """Require the attested GitHub runner identity, not caller-made IDs.
+def _require_real_same_run(*,owner_run_id,owner_attempt,current_main_sha,
+                           read_only_context=False):
+    """Require a first-run GitHub identity without relying on an upstream bot.
 
-    This is additional to the HMAC owner proof, never a trading release.
-    GitHub workflow_dispatch must be the SAME run that would eventually
-    perform the sole signed PRE_POST transition and broker send.
+    Mutable owner/seq2 stages accept ONLY the pinned, directly scheduled
+    first-ACWI workflow. The legacy protected GET-only source admission still
+    accepts a manual read-only dispatch; it cannot claim an owner or send an
+    order. This additional gate is not a signed-head or broker release.
     """
     e=os.environ
-    if (e.get("GITHUB_REPOSITORY")!="nicobouch97/fund100-research"
+    event=e.get("GITHUB_EVENT_NAME")
+    if (type(read_only_context) is not bool
+        or (event!="schedule" and not
+            (read_only_context and event=="workflow_dispatch"))
+        or (event=="schedule" and e.get("GITHUB_WORKFLOW_REF")!=
+            "nicobouch97/fund100-research/.github/workflows/"
+            "fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main")
+        or e.get("GITHUB_REPOSITORY")!="nicobouch97/fund100-research"
         or e.get("GITHUB_REF")!="refs/heads/main"
-        or e.get("GITHUB_EVENT_NAME")!="workflow_dispatch"
         or e.get("GITHUB_RUN_ATTEMPT")!="1"
         or e.get("GITHUB_RUN_ID")!=owner_run_id
         or e.get("GITHUB_SHA")!=current_main_sha
