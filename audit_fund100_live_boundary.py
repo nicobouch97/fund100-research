@@ -230,13 +230,13 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
     (
         ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml",
         "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
-    ): "162b90ab620ab0708543f34e79bfd7cfdd64f053",
+    ): "a9d06686dfc86a2c006250c29cfe87848e747db3",
     # Single-job S1 readiness: exact already-pinned seven-GET reader only,
     # zero Git writes or live broker orders; mutation coordinator HARD LOCKED.
     (
         ".github/workflows/fund100-v6-s1-original-one-attempt-protected-entrypoint.yml",
         "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
-    ): "162b90ab620ab0708543f34e79bfd7cfdd64f053",
+    ): "a9d06686dfc86a2c006250c29cfe87848e747db3",
     # Original BUY receipt ↔ actual FILL matching, precisely six GET, no writes.
     (
         ".github/workflows/fund100-v6-s1-real-buy-receipt-fill-six-get.yml",
@@ -581,7 +581,7 @@ def approved_scoped_live_script(
             "fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py":
                 "cea00b694b52e3ad1835305796608684c765e8e4",
             "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py":
-                "134bcd824759904e817f71e5168769c3d7f6004d",
+                "ae6831f2eef6dc07a7a5eaed3cdfdb48e51b41ed",
             "fund100_v6_s1_staged_controller_core_v1_0.py":
                 "640066fddb56c1d8a6cd19d7377147dc426329ec",
             # The staged core now obtains immutable original ACWI/EEM/XLV
