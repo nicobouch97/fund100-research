@@ -231,6 +231,12 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml",
         "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
     ): "a9d06686dfc86a2c006250c29cfe87848e747db3",
+    # Isolated 3M/1D funding-anchor inspector: original seven GETs
+    # plus one extra history GET. No broker POST or LIVE risk clearance.
+    (
+        ".github/workflows/fund100-v6-s1-three-month-prefunding-source.yml",
+        "fund100_v6_s1_three_month_prefunding_probe_v1_0.py",
+    ): "42b2050038024f2b415f91b8a38a7a36799d4b32",
     # Single-job S1 readiness: exact already-pinned seven-GET reader only,
     # zero Git writes or live broker orders; mutation coordinator HARD LOCKED.
     (
@@ -598,6 +604,70 @@ def approved_scoped_live_script(
             candidate_path = ROOT / dependency
             if (not candidate_path.is_file()
                 or git_blob_digest(candidate_path) != expected_digest):
+                return False
+
+    if script == "fund100_v6_s1_three_month_prefunding_probe_v1_0.py":
+        # Sole, fixed 8-GET historical source with NO order methods or
+        # operator authority. Never grant these credentials to a PR head,
+        # job other than the reviewed protected one, or changed dependencies.
+        if workflow != ".github/workflows/fund100-v6-s1-three-month-prefunding-source.yml":
+            return False
+        for evidence in (
+            "name: Fund-100 V6-S1 Protected Three-Month Prefunding Eight GET (NO ORDERS)",
+            "permissions:\n  contents: read",
+            "if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'",
+            "environment: fund100-live-broker",
+            "FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE",
+            "FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}",
+            "FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}",
+            "FUND100_LIVE_WRITE_MODE: DISABLED",
+            "ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}",
+            "ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}",
+            "persist-credentials: false",
+            "python fund100_v6_s1_three_month_prefunding_probe_v1_0.py",
+            "test \"$FUND100_BROKER_KILL_SWITCH\" = 'ENGAGED'",
+            "grep -Eq '\"trading_enabled\": false' fund100_live_operator_control.json",
+        ):
+            if evidence not in source:
+                return False
+        for forbidden in (
+            "  schedule:", "contents: write", "actions: write",
+            "issues: write", "FUND100_LIVE_WRITE_MODE: ENABLED",
+            "FUND100_PRIVATE_STATE_WRITE_TOKEN",
+            "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN",
+            "FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN",
+            "method=\"POST\"", "method=\"DELETE\"",
+            "python fund100_alpaca_live_writer_",
+        ):
+            if forbidden in source:
+                return False
+        immutable_dependencies = {
+            "fund100_alpaca_live_readonly_smoke.py":
+                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+            "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
+                "cebb99bf22ea175a23cf2c0802d1822ae740534f",
+            "fund100_v6_brokerless_transition_preview_v1_0.py":
+                "a0b4efc660f30395b6cdda104f0eddf63b8a6dd9",
+            "fund100_v6_s1_live_risk_history_getonly_v1_0.py":
+                "e195746ed594c3215f6d83198c64778a24a8cf63",
+            "fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py":
+                "cea00b694b52e3ad1835305796608684c765e8e4",
+            "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py":
+                "a9d06686dfc86a2c006250c29cfe87848e747db3",
+            "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py":
+                "ae6831f2eef6dc07a7a5eaed3cdfdb48e51b41ed",
+            "fund100_v6_s1_staged_controller_core_v1_0.py":
+                "640066fddb56c1d8a6cd19d7377147dc426329ec",
+            "fund100_v6_s1_private_git_cas_protocol_v1_0.py":
+                "9b9f8917faa21b4157600ac642f80595445a7276",
+            "fund100_live_portfolio_risk_v1_0.py":
+                PINNED_PRODUCTION_PORTFOLIO_MODULE,
+            "fund100_live_operator_control_v1_0.py":
+                PINNED_PRODUCTION_OPERATOR_MODULE,
+        }
+        for filename, expected_digest in immutable_dependencies.items():
+            dep = ROOT / filename
+            if not dep.is_file() or git_blob_digest(dep) != expected_digest:
                 return False
 
     if script == "fund100_v6_s1_actual_live_original_buy_receipt_fill_six_get_v1_0.py":
