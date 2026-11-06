@@ -217,6 +217,7 @@ def test_untrusted_workflow_identity_cannot_claim_or_access_private_head(name,va
 
 def test_legacy_protected_dispatch_is_read_only_not_mutation_identity(monkeypatch):
     # No credentials, broker POST or private PUT: identity check only.
+    monkeypatch.setattr(x,"SIGNED_OWNER_CLAIM_TRANSPORT_RELEASED",True)
     monkeypatch.setenv("GITHUB_EVENT_NAME","workflow_dispatch")
     fake=FakeGit(fixture.setup()["fence_source"])
     args=params(fake)
