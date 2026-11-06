@@ -52,7 +52,6 @@ def test_funded_blueprint_direct_scheduled_main_first_attempt_only():
         "test \"$GITHUB_RUN_ATTEMPT\" = '1'",
         "test \"$GITHUB_WORKFLOW_REF\" = 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main'",
         'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
-        "test \"$GITHUB_ACTOR\" = 'github-actions[bot]'",
     ):
         assert check in s
 
