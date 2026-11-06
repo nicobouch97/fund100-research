@@ -21,7 +21,8 @@ def trusted_actions_attempt(monkeypatch):
     for name,value in (
         ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
         ("GITHUB_REF","refs/heads/main"),
-        ("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_EVENT_NAME","schedule"),
+        ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main"),
         ("GITHUB_RUN_ATTEMPT","1"),
         ("GITHUB_RUN_ID",original["owner_run_id"]),
         ("GITHUB_SHA",original["current_main_sha"]),
