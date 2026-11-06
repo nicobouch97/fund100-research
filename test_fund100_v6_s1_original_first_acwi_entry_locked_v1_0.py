@@ -10,7 +10,7 @@ def env(monkeypatch):
         ("GITHUB_ACTIONS","true"),
         ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
         ("GITHUB_REF","refs/heads/main"),
-        ("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_EVENT_NAME","schedule"),
         ("GITHUB_ACTOR","github-actions[bot]"),
         ("GITHUB_WORKFLOW_REF",entry.EXPECTED_FIRST_ACWI_WORKFLOW_REF),
         ("GITHUB_RUN_ATTEMPT","1"),
