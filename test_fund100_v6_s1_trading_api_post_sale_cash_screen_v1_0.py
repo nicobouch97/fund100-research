@@ -78,6 +78,46 @@ def test_incomplete_or_unsupported_broker_inputs_hold(change,stage):
     assert check(s)["status"]==stage
     assert check(s)["broker_post_attempts"]==0
 
+@pytest.mark.parametrize("field,value",[
+    ("original_deposit_events",True),
+    ("original_deposit_events",1.0),
+    ("original_deposit_events","1"),
+    ("unreconciled_external_cashflows",False),
+    ("unreconciled_external_cashflows",0.0),
+    ("unreconciled_external_cashflows","0"),
+    ("unreconciled_open_orders",False),
+    ("unreconciled_open_orders",0.0),
+    ("unreconciled_open_orders","0"),
+])
+def test_boolean_or_forged_numeric_history_counts_cannot_pass(field,value):
+    s=fixture()
+    s[field]=value
+    report=check(s)
+    assert report["status"]=="HOLD_UNPROVEN_OR_UNRECONCILED_ACCOUNT_HISTORY"
+    assert report["eligible_for_separate_approved_live_buy"] is False
+    assert report["broker_post_attempts"]==0
+
+
+@pytest.mark.parametrize("bad_id",[
+    "", " ", True, 12345, None, "leading newline\\n", "a"*49,
+    "not/a-valid-client", "id\\rnext", "id\\nnext",
+])
+def test_original_exit_receipt_requires_canonical_client_id(bad_id):
+    s=fixture()
+    s["original_exit_fills"]["ACWI"]["client_order_id"]=bad_id
+    report=check(s)
+    assert report["status"]=="HOLD_ORIGINAL_EXIT_FILL_OR_QUANTITY_UNCONFIRMED"
+    assert report["actual_settled_proceeds_certified"] is False
+    assert report["broker_post_attempts"]==0
+
+
+def test_original_exit_receipts_must_be_three_independent_order_ids():
+    s=fixture()
+    s["original_exit_fills"]["EEM"]["client_order_id"]=(
+        s["original_exit_fills"]["ACWI"]["client_order_id"])
+    assert check(s)["status"]=="HOLD_ORIGINAL_EXIT_FILL_OR_QUANTITY_UNCONFIRMED"
+
+
 def test_original_funding_is_a_maximum_not_a_required_exact_deposit():
     s=fixture()
     s["original_deposit_total_usd"]="120.00"
