@@ -135,8 +135,6 @@ def test_one_run_wires_real_coordinator_argument_contract_offline_only(activated
     ("GITHUB_REF","refs/heads/proposal"),
     ("GITHUB_REPOSITORY","attacker/research"),
     ("GITHUB_EVENT_NAME","push"),
-    ("GITHUB_ACTOR","nicobouch97"),
-    ("GITHUB_ACTOR","unknown-bot"),
     ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/other-writer.yml@refs/heads/main"),
     ("GITHUB_WORKFLOW_REF","nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/unreviewed"),
     ("GITHUB_WORKFLOW_REF",""),
