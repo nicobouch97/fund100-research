@@ -19,6 +19,8 @@ from decimal import Decimal, InvalidOperation
 import re
 from zoneinfo import ZoneInfo
 
+import fund100_v6_s1_private_git_cas_protocol_v1_0 as original_cas
+
 SCHEMA="FUND100_V6_S1_TRADING_API_POSTSALE_CASH_SCREEN_OFFLINE_V1"
 MODE="INJECTED_UNAUTHENTICATED_TRADING_API_FIXTURES_ONLY"
 LIVE_BUY_RELEASED=False
@@ -171,6 +173,13 @@ def screen(*,snapshot:dict,now_utc:str,buy_symbol:str,
         return _hold("HOLD_ACCOUNT_NOT_UNLEVERAGED_ACTIVE_OR_PENDING_TRANSFER")
     if set(positions)!={"XLE"}:
         return _hold("HOLD_LEGACY_NOT_FLAT_OR_XLE_NOT_RETAINED")
+    # Match receipts to the SAME immutable original legacy-migration intent
+    # used by the offline private-CAS plan and staged controller. A plausible
+    # but unrelated broker order is NOT proof the original ACWI/EEM/XLV sale
+    # actually completed. The caller snapshot remains unauthenticated.
+    if (tuple(original_cas.LEGACY)!=("ACWI","EEM","XLV")
+        or set(original_cas.CLIENT_IDS)!=EXIT):
+        raise TradingCashStop("Original signed migration identity source changed")
     last=None
     seen_client_order_ids=set()
     for symbol in sorted(EXIT):
@@ -183,6 +192,7 @@ def screen(*,snapshot:dict,now_utc:str,buy_symbol:str,
             or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,47}",
                             fill["client_order_id"]) is None
             or fill["client_order_id"] in seen_client_order_ids
+            or fill["client_order_id"]!=original_cas.CLIENT_IDS[symbol]
             or fill.get("reconciled_original_exact_qty") is not True
             or fill.get("filled_exact_qty") is not True
             or fill.get("broker_fills_complete") is not True):
