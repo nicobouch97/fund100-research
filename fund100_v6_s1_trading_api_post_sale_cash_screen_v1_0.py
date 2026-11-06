@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
+import re
 from zoneinfo import ZoneInfo
 
 SCHEMA="FUND100_V6_S1_TRADING_API_POSTSALE_CASH_SCREEN_OFFLINE_V1"
@@ -118,12 +119,18 @@ def screen(*,snapshot:dict,now_utc:str,buy_symbol:str,
         return _hold("HOLD_INVALID_OR_EXCESS_INITIAL_PILOT_FUNDING")
     if initial_deposit>CAP:
         return _hold("HOLD_INVALID_OR_EXCESS_INITIAL_PILOT_FUNDING")
-    if (snapshot.get("original_deposit_events")!=1
+    # JSON booleans are Python ints (True == 1, False == 0). Do NOT let
+    # malformed boolean activity counts pretend to prove settled funding,
+    # a single original deposit, or absence of pending broker orders.
+    if (type(snapshot.get("original_deposit_events")) is not int
+        or snapshot["original_deposit_events"]!=1
         or snapshot.get("all_order_pages_complete") is not True
         or snapshot.get("all_fill_pages_complete") is not True
         or snapshot.get("all_nontrade_activity_pages_complete") is not True
-        or snapshot.get("unreconciled_external_cashflows")!=0
-        or snapshot.get("unreconciled_open_orders")!=0):
+        or type(snapshot.get("unreconciled_external_cashflows")) is not int
+        or snapshot["unreconciled_external_cashflows"]!=0
+        or type(snapshot.get("unreconciled_open_orders")) is not int
+        or snapshot["unreconciled_open_orders"]!=0):
         return _hold("HOLD_UNPROVEN_OR_UNRECONCILED_ACCOUNT_HISTORY")
     account=snapshot.get("account")
     positions=snapshot.get("positions")
@@ -165,17 +172,22 @@ def screen(*,snapshot:dict,now_utc:str,buy_symbol:str,
     if set(positions)!={"XLE"}:
         return _hold("HOLD_LEGACY_NOT_FLAT_OR_XLE_NOT_RETAINED")
     last=None
+    seen_client_order_ids=set()
     for symbol in sorted(EXIT):
         fill=fills[symbol]
         if (type(fill) is not dict
             or fill.get("symbol")!=symbol
             or fill.get("side")!="sell"
             or fill.get("status")!="filled"
-            or fill.get("client_order_id") is None
+            or type(fill.get("client_order_id")) is not str
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,47}",
+                            fill["client_order_id"]) is None
+            or fill["client_order_id"] in seen_client_order_ids
             or fill.get("reconciled_original_exact_qty") is not True
             or fill.get("filled_exact_qty") is not True
             or fill.get("broker_fills_complete") is not True):
             return _hold("HOLD_ORIGINAL_EXIT_FILL_OR_QUANTITY_UNCONFIRMED")
+        seen_client_order_ids.add(fill["client_order_id"])
         when=_clock(fill.get("filled_at"),"exit fill")
         if when>observed:
             return _hold("HOLD_SALE_AFTER_ACCOUNT_OBSERVATION")
