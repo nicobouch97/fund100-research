@@ -18,6 +18,14 @@ SCHEMA="FUND100_V6_S1_FIRST_ACWI_ORIGINAL_EXECUTION_ENTRY_HARD_LOCKED_V1"
 ORIGINAL_ACWI_ENTRYPOINT_RELEASED=False
 RETRY_AFTER_UNCERTAIN_OUTCOME=False
 MAX_CHAIN_INVOCATIONS=1
+# GitHub Actions workflow identity is different from the dispatch actor.
+# Only an independently reviewed, protected main-only execution workflow can
+# invoke this entry after an eventual release. This target is NOT installed:
+# the only currently deployed original first-ACWI workflow is GET ONLY.
+EXPECTED_FIRST_ACWI_WORKFLOW_REF=(
+    "nicobouch97/fund100-research/.github/workflows/"
+    "fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main"
+)
 # Launch-level funded HIGH mandate (NOT approval for each order).
 # This one-shot entry handles only the FIRST ACWI inventory-migration sale;
 # autonomous later trades use a separate event-driven production controller.
@@ -61,6 +69,7 @@ def run_protected_first_acwi_once()->dict:
         or e.get("GITHUB_REF")!="refs/heads/main"
         or e.get("GITHUB_EVENT_NAME")!="workflow_dispatch"
         or e.get("GITHUB_ACTOR")!="github-actions[bot]"
+        or e.get("GITHUB_WORKFLOW_REF")!=EXPECTED_FIRST_ACWI_WORKFLOW_REF
         or e.get("GITHUB_RUN_ATTEMPT")!="1"
         or type(e.get("GITHUB_RUN_ID")) is not str
         or re.fullmatch(r"[1-9][0-9]{0,18}",e["GITHUB_RUN_ID"]) is None
