@@ -188,16 +188,13 @@ def test_sparse_history_cannot_forge_20d_liquidity():
         observations_from_history([catalog()], bars, as_of=AS_OF)
 
 
-def test_last_market_bar_drives_snapshot_freshness():
+def test_combined_availability_does_not_backdate_catalog():
     rows = observations_from_history(
         [catalog()], history()[:-5], as_of=AS_OF
     )
-    assert rows[0].observed_on < AS_OF
-    result = select_universe(
-        rows, UniversePolicy(as_of=AS_OF, max_observation_age_days=1)
-    )
-    assert result.symbols == ()
-    assert "market_snapshot_missing_stale_or_future" in result.rejected[0].reasons
+    assert rows[0].observed_on == AS_OF
+    # The independent ten-day bar-age gate enforces market freshness.
+    # observed_on represents combined availability, not the last bar date.
 
 
 def test_module_never_returns_executable_order_payload():
@@ -205,3 +202,31 @@ def test_module_never_returns_executable_order_payload():
     assert not hasattr(rows[0], "orders")
     assert not hasattr(rows[0], "target_weights")
     assert not hasattr(rows[0], "broker_write_mode")
+
+
+def test_old_but_contiguous_20_bar_window_is_rejected():
+    # A complete historical window must not masquerade as current liquidity.
+    old_bars = tuple(
+        DailyBar(b.symbol, b.session - timedelta(days=30), b.close_usd,
+                 b.volume_shares, b.quoted_spread_bps)
+        for b in history()
+    )
+    with pytest.raises(ValueError, match="stale"):
+        observations_from_history([catalog()], old_bars, as_of=AS_OF)
+
+
+def test_recent_weekend_lag_is_accepted():
+    bars = tuple(b for b in history() if b.session <= AS_OF - timedelta(days=3))
+    rows = observations_from_history([catalog()], bars, as_of=AS_OF)
+    assert rows[0].price_usd == 100.0
+
+
+def test_catalog_observed_after_market_bar_cannot_be_backdated():
+    bars = tuple(b for b in history() if b.session <= date(2026, 10, 6))
+    rows = observations_from_history(
+        [catalog(observed_on=date(2026, 10, 9))], bars, as_of=AS_OF
+    )
+    assert rows[0].observed_on == date(2026, 10, 9)
+    result = select_universe(rows, UniversePolicy(as_of=date(2026, 10, 7)))
+    assert result.symbols == ()
+    assert "market_snapshot_missing_stale_or_future" in result.rejected[0].reasons
