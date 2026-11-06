@@ -1,0 +1,84 @@
+# REVIEW ONLY — DO NOT INSTALL WITHOUT EXACT LIVE CREDENTIAL-SCOPE AUDIT.
+# Future destination after standalone release review:
+# .github/workflows/fund100-v6-s1-three-month-prefunding-source.yml
+#
+# This blueprint is deliberately outside .github/workflows. It cannot run
+# with broker credentials until separately installed, source-hash scoped,
+# and verified on protected main. It must NOT be used to enable any order.
+name: Fund-100 V6-S1 Original Three-Month Prefunding Eight GET (NO ORDERS)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
+      - "test_fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-three-month-prefunding-source.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-original-v6-s1-three-month-history-readonly
+  cancel-in-progress: false
+
+jobs:
+  offline-source-and-safety-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run credentialless bounded 3M probe tests
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_s1_three_month_prefunding_probe_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+
+  protected-original-eight-get:
+    if: github.ref == 'refs/heads/main'
+    needs: offline-source-and-safety-regressions
+    environment: fund100-live-broker
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Enforce original STOP, reviewed source and NEW EXACT credential-scope allowlist
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          test "$FUND100_RISK_LEVEL" = "HIGH"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python - <<'PY'
+          from pathlib import Path
+          import audit_fund100_live_boundary as audit
+          p = Path('fund100_v6_s1_three_month_prefunding_probe_v1_0.py')
+          assert audit.git_blob_digest(p) == '42b2050038024f2b415f91b8a38a7a36799d4b32'
+          destination = '.github/workflows/fund100-v6-s1-three-month-prefunding-source.yml'
+          # This will REFUSE deployment until the original LIVE auditor is
+          # explicitly extended in its approved exact-workflow/source contract.
+          assert audit.approved_scoped_live_script(
+              destination, p.name, Path(destination).read_text())
+          PY
+      - name: Observe original account plus 3M history (EIGHT LIVE GET ONLY)
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_v6_s1_three_month_prefunding_probe_v1_0.py

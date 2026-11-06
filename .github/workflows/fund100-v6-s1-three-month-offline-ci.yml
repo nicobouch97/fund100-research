@@ -1,0 +1,52 @@
+name: Fund-100 V6-S1 Three-Month Funding Probe Offline CI (NO BROKER)
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
+      - "test_fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
+      - "release_candidates/fund100-v6-s1-three-month-prefunding-source.REVIEW-ONLY.yml"
+      - ".github/workflows/fund100-v6-s1-three-month-offline-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
+      - "test_fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-three-month-offline-ci.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  brokerless-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install offline test runner
+        run: python -m pip install 'pytest>=8,<9'
+      - name: Validate only synthetic extended-history evidence
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v6_s1_three_month_prefunding_probe_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+      - name: Prohibit broker credentials and order authority
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('fund100_v6_s1_three_month_prefunding_probe_v1_0.py')
+          code=p.read_text()
+          assert 'ALPACA_LIVE_KEY' not in code
+          assert 'ALPACA_LIVE_SECRET' not in code
+          assert 'method="POST"' not in code
+          assert not any(isinstance(n,ast.FunctionDef) and n.name in ('submit_order','place_order','cancel_order') for n in ast.walk(ast.parse(code)))
+          print('Brokerless CI: no LIVE order authority.')
+          PY
