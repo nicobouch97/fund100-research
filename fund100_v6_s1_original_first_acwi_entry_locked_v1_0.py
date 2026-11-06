@@ -60,6 +60,7 @@ def run_protected_first_acwi_once()->dict:
         or e.get("GITHUB_REPOSITORY")!="nicobouch97/fund100-research"
         or e.get("GITHUB_REF")!="refs/heads/main"
         or e.get("GITHUB_EVENT_NAME")!="workflow_dispatch"
+        or e.get("GITHUB_ACTOR")!="github-actions[bot]"
         or e.get("GITHUB_RUN_ATTEMPT")!="1"
         or type(e.get("GITHUB_RUN_ID")) is not str
         or re.fullmatch(r"[1-9][0-9]{0,18}",e["GITHUB_RUN_ID"]) is None
