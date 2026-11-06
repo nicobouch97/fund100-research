@@ -57,6 +57,15 @@ class ExposureMatchedBenchmarkTests(unittest.TestCase):
     def test_compounding(self):
         self.assertAlmostEqual(compounded_nav([0.1, -0.1]), 99.0)
 
+    def test_compounding_refuses_empty_overflow_and_underflow(self):
+        for returns in ([], [1e308, 1e308], [-0.9999999999999999] * 30):
+            with self.subTest(returns=returns[:2]), self.assertRaises(ValueError):
+                compounded_nav(returns)
+
+    def test_finite_inputs_cannot_produce_nonfinite_comparator(self):
+        with self.assertRaisesRegex(ValueError, "nonfinite"):
+            exposure_matched_benchmark([1e308], [1e308], [0.5])
+
 
 
     def test_stale_exposure_is_rejected_without_forward_fill(self):
