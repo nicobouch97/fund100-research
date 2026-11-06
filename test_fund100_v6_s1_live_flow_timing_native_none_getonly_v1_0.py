@@ -23,6 +23,14 @@ def test_real_source_validation_never_outputs_private_transaction_values():
     assert r["broker_cashflow_types_none_pnl_comparison"]=="BROKER_NATIVE_NONE_PNL_SERIES_SAME"
     assert not r["actual_cashflow_adjusted_dietz_returns_calculated"]
     assert not r["actual_s1_6_20_35_risk_verified"]
+    assert r["no_prefix_booking_date_relative_to_first_visible_sample"] in {
+        "SOURCE_NOT_QUALIFIED",
+        "PREFUNDING_PREFIX_PRESENT_NOT_APPLICABLE",
+        "NO_PREFIX_BOOKED_BEFORE_FIRST_VISIBLE_CLOSE",
+        "NO_PREFIX_BOOKED_ON_FIRST_VISIBLE_CLOSE",
+        "NO_PREFIX_BOOKED_AFTER_FIRST_VISIBLE_CLOSE",
+    }
+    assert r["no_prefix_booking_date_is_economic_transfer_timestamp"] is False
     assert not r["live_buy_sell_authorized"]
     assert r["broker_get_requests"]==7 and r["broker_non_get_requests"]==r["live_orders"]==0
     for text in ("FAKE-1","FAKE-2","110.00","SYNTHETIC-ACCOUNT-ID"):

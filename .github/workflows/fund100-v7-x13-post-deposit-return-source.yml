@@ -53,7 +53,7 @@ jobs:
               '/v2/account/activities','/v2/account/portfolio/history')
           from pathlib import Path
           import audit_fund100_live_boundary as audit
-          pinned='162b90ab620ab0708543f34e79bfd7cfdd64f053'
+          pinned='a9d06686dfc86a2c006250c29cfe87848e747db3'
           script=Path('fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py')
           assert audit.git_blob_digest(script)==pinned
           assert 'post_last_transfer_source_diagnostic' not in inspect.getsource(seven.evaluate)
