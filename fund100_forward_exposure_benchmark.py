@@ -78,6 +78,7 @@ def dated_exposure_matched_benchmark(
     *,
     one_way_cost_bps: float = 15.0,
     initial_equity_weight: float | None = None,
+    max_exposure_age_days: float = 7.0,
 ) -> list[tuple[str, float]]:
     """Fail closed unless all session keys match and exposure was known beforehand.
 
@@ -85,8 +86,13 @@ def dated_exposure_matched_benchmark(
     observed_at_utc is an ISO timestamp with explicit UTC offset. It must
     precede the session date at 00:00 UTC (conservative cutoff); no forward
     filling, implicit sorting, or synthetic cash yields are permitted.
+    Reject exposure snapshots older than max_exposure_age_days before the
+    conservative session cutoff; this checks freshness, not source provenance.
     """
     from datetime import date, datetime, time, timezone
+
+    if not math.isfinite(max_exposure_age_days) or max_exposure_age_days <= 0:
+        raise ValueError("invalid maximum exposure age")
 
     n = len(acwi_observations)
     if not n or len(cash_observations) != n or len(exposure_observations) != n:
@@ -103,8 +109,11 @@ def dated_exposure_matched_benchmark(
             if stamp.tzinfo is None or stamp.utcoffset() is None:
                 raise ValueError("exposure timestamp must be timezone aware")
             cutoff = datetime.combine(session, time.min, tzinfo=timezone.utc)
-            if stamp.astimezone(timezone.utc) >= cutoff:
+            age_days = (cutoff - stamp.astimezone(timezone.utc)).total_seconds() / 86400
+            if age_days <= 0:
                 raise ValueError("exposure was not observed before session")
+            if age_days > max_exposure_age_days:
+                raise ValueError("stale pre-session exposure observation")
             if sessions and a_date <= sessions[-1]:
                 raise ValueError("sessions must be strictly increasing")
         except (TypeError, AttributeError) as exc:

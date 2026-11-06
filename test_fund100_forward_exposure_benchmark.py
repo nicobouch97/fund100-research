@@ -59,6 +59,23 @@ class ExposureMatchedBenchmarkTests(unittest.TestCase):
 
 
 
+    def test_stale_exposure_is_rejected_without_forward_fill(self):
+        from fund100_forward_exposure_benchmark import dated_exposure_matched_benchmark
+        a = [("2026-11-05", 0.01)]
+        c = [("2026-11-05", 0.0001)]
+        stale = [("2026-11-05", "2026-10-20T20:00:00+00:00", 0.25)]
+        with self.assertRaisesRegex(ValueError, "stale"):
+            dated_exposure_matched_benchmark(a, c, stale)
+        fresh = [("2026-11-05", "2026-11-04T20:00:00+00:00", 0.25)]
+        self.assertEqual(len(dated_exposure_matched_benchmark(a, c, fresh)), 1)
+        for age in (0, -1, float("nan"), float("inf")):
+            with self.subTest(age=age), self.assertRaises(ValueError):
+                dated_exposure_matched_benchmark(a, c, fresh, max_exposure_age_days=age)
+        # Research may explicitly choose a longer window, but never silently.
+        self.assertEqual(len(dated_exposure_matched_benchmark(
+            a, c, stale, max_exposure_age_days=30
+        )), 1)
+
     def test_dated_alignment_and_pre_session_cutoff(self):
         from fund100_forward_exposure_benchmark import dated_exposure_matched_benchmark
         a = [("2026-11-02", 0.04), ("2026-11-03", 0.0)]
