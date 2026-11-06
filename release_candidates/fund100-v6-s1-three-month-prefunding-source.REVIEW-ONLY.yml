@@ -68,7 +68,7 @@ jobs:
           from pathlib import Path
           import audit_fund100_live_boundary as audit
           p = Path('fund100_v6_s1_three_month_prefunding_probe_v1_0.py')
-          assert audit.git_blob_digest(p) == '842e0fd5c697b067dc2bcc76f3b4374c00d6f2ae'
+          assert audit.git_blob_digest(p) == '42b2050038024f2b415f91b8a38a7a36799d4b32'
           destination = '.github/workflows/fund100-v6-s1-three-month-prefunding-source.yml'
           # This will REFUSE deployment until the original LIVE auditor is
           # explicitly extended in its approved exact-workflow/source contract.
