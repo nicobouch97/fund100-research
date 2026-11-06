@@ -116,6 +116,8 @@ def observations_from_history(
     each historical session. This is a LIQUIDITY measure, not an alpha score.
     No missing row may be forward-filled. A catalog entry without sufficient
     recent bars aborts the batch rather than disappearing silently.
+    The combined observation is not available before either its catalog
+    observation or its latest bar; bar freshness is checked separately.
     """
     if not isinstance(as_of, date):
         raise ValueError("Valid as_of date is mandatory")
@@ -177,7 +179,7 @@ def observations_from_history(
         output.append(AssetObservation(
             symbol=row.symbol,
             asset_class=row.asset_class,
-            observed_on=min(row.observed_on, latest.session),
+            observed_on=max(row.observed_on, latest.session),
             listed_on=row.listed_on,
             active=row.active,
             tradable=row.tradable,
