@@ -1,28 +1,26 @@
 # FUND-100 REVIEW-ONLY SOURCE. NOT AN ACTIVE GITHUB ACTION.
 # This file is intentionally outside .github/workflows/ and CANNOT run.
-# Requires a separate human-reviewed, explicitly funded launch transition
+# Requires a separately audited, legitimate standing HIGH release transition
 # BEFORE any file is copied into .github/workflows/.
 # Do not release by copying this YAML alone: current V6 entry, coordinator,
 # owner-CAS/seq2/public witness, immutable release, active HIGH risk and
 # V6-specific writer are all hardcoded FALSE on production main. Those
 # source releases, independently authorised current-main V6 GO and broker
-# kill DISENGAGED need a separate funded launch change and consent.
+# kill DISENGAGED need a separate funded launch review.
 name: Fund-100 V6-S1 ONE-TIME AUTONOMOUS HIGH PILOT ACTIVATION (NOT ACTIVE)
 
-# Exactly ONE initial standing real-money HIGH pilot authorisation.
+# One original signed ACWI migration under the pre-established standing HIGH mandate.
 # Future strategy decisions/orders must be automated with NO per-order owner
 # confirmation, using separately reviewed recurring V6 source, fresh risk,
 # current-main operator GO, broker kill and reconciled idempotent orders.
 # This first-attempt workflow only migrates the original ACWI inventory;
 # it does NOT yet provide the future autonomous multi-event order loop.
-# Never trigger this migration on push, schedule, workflow_run or retries.
+# An autonomous *separate* reviewed main-only scheduler may dispatch this
+# event once when the standing mandate, signed owner/ledger and real broker
+# conditions permit; this blueprint has NO active scheduler or dispatch job.
+# Never trigger this mutation directly on push, schedule, workflow_run or retries.
 on:
   workflow_dispatch:
-    inputs:
-      confirmation:
-        description: 'Authorise HIGH pilot ONCE; no manual approval for later orders'
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -37,14 +35,13 @@ concurrency:
 jobs:
   first-original-acwi-sell-once:
     # This candidate does NOT authorise a pilot or run as a workflow.
-    # On actual future launch, this is ONE-TIME mandate consent, never
-    # a request for individual follow-on strategy order approval.
+    # Uses standing mandate and signed one-time owner fence; does not request
+    # an owner-entered launch phrase or any individual order approval.
     if: >-
       github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/main' &&
       github.run_attempt == 1 &&
-      github.actor == 'nicobouch97' &&
-      inputs.confirmation == 'AUTHORIZE_AUTONOMOUS_HIGH_PILOT_ONCE'
+      github.actor == 'github-actions[bot]'
     runs-on: ubuntu-latest
     environment: fund100-live-broker
     timeout-minutes: 10
@@ -55,7 +52,6 @@ jobs:
       FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
       FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
       FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
-      FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM: ${{ inputs.confirmation }}
     steps:
       - name: Checkout exact protected main SHA; do not persist credential
         uses: actions/checkout@v4
@@ -73,18 +69,17 @@ jobs:
           test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
           test "$GITHUB_REF" = 'refs/heads/main'
           test "$GITHUB_RUN_ATTEMPT" = '1'
-          test "$GITHUB_ACTOR" = 'nicobouch97'
+          test "$GITHUB_ACTOR" = 'github-actions[bot]'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$FUND100_RISK_LEVEL" = 'HIGH'
           test "$FUND100_BROKER_KILL_SWITCH" = 'DISENGAGED'
           test "$FUND100_ENABLE_LIVE_READONLY" = 'YES_READ_ONLY_LIVE'
-          test "$FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM" = 'AUTHORIZE_AUTONOMOUS_HIGH_PILOT_ONCE'
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
           grep -Eq '"trading_enabled": true' fund100_v6_s1_operator_control.json
           grep -Eq '"first_original_acwi_sell_enabled": true' fund100_v6_s1_operator_control.json
       - name: One authenticated first-attempt original signed ACWI SELL; NEVER RETRY
         # Only this step receives live/WRITE credentials, and only after the
-        # protected main/manual/HIGH/current STOP checks above. No retry,
+        # protected main/HIGH/current STOP checks above. No retry,
         # followup continuation step, debug credential print or log artifact.
         env:
           FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}

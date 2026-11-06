@@ -11,13 +11,13 @@ def env(monkeypatch):
         ("GITHUB_REPOSITORY","nicobouch97/fund100-research"),
         ("GITHUB_REF","refs/heads/main"),
         ("GITHUB_EVENT_NAME","workflow_dispatch"),
+        ("GITHUB_ACTOR","github-actions[bot]"),
         ("GITHUB_RUN_ATTEMPT","1"),
         ("GITHUB_RUN_ID","40255512345"),
         ("GITHUB_SHA","a"*40),
         ("FUND100_RISK_LEVEL","HIGH"),
         ("FUND100_BROKER_KILL_SWITCH","DISENGAGED"),
         ("FUND100_ENABLE_LIVE_READONLY","YES_READ_ONLY_LIVE"),
-        ("FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM",entry.MANUAL_CONFIRMATION),
     ):
         monkeypatch.setenv(name,value)
     keys={
@@ -88,6 +88,20 @@ def activated_offline(monkeypatch):
     return keys,events,context
 
 
+def test_no_owner_entered_confirmation_required_for_one_mocked_first_run(
+        activated_offline,monkeypatch):
+    # Synthetic-only; source release constants remain literal False in main.
+    _keys,events,_context=activated_offline
+    monkeypatch.delenv("FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM",raising=False)
+    outcome=entry.run_protected_first_acwi_once()
+    assert outcome["resubmission_permitted"] is False
+    assert events==["signed_read","coordinator_one_attempt"]
+    from pathlib import Path
+    source=Path(entry.__file__).read_text(encoding="utf-8")
+    assert "FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM" not in source
+    assert "ORIGINAL_ACWI_ENTRYPOINT_RELEASED=False" in source
+
+
 def test_one_run_wires_real_coordinator_argument_contract_offline_only(activated_offline):
     keys,events,context=activated_offline
     observed=entry.run_protected_first_acwi_once()
@@ -108,13 +122,15 @@ def test_one_run_wires_real_coordinator_argument_contract_offline_only(activated
     ("GITHUB_REF","refs/heads/proposal"),
     ("GITHUB_REPOSITORY","attacker/research"),
     ("GITHUB_EVENT_NAME","push"),
+    ("GITHUB_ACTOR","nicobouch97"),
+    ("GITHUB_ACTOR","unknown-bot"),
     ("GITHUB_RUN_ATTEMPT","2"),
     ("GITHUB_RUN_ID","invalid"),
     ("GITHUB_SHA","wrong"),
     ("FUND100_BROKER_KILL_SWITCH","ENGAGED"),
     ("FUND100_RISK_LEVEL","LOW"),
     ("FUND100_ENABLE_LIVE_READONLY","NO"),
-    ("FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM","YES"),
+    ("GITHUB_EVENT_NAME","schedule"),
 ])
 def test_wrong_first_run_or_operator_scope_cannot_read_or_trade(
         activated_offline,monkeypatch,name,bad):

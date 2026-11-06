@@ -28,10 +28,10 @@ def first_protected_original_run(monkeypatch,signed_chain_setup):
     monkeypatch.setattr(entry,"ORIGINAL_ACWI_ENTRYPOINT_RELEASED",True)
     for name,value in (
         ("GITHUB_ACTIONS","true"),
+        ("GITHUB_ACTOR","github-actions[bot]"),
         ("FUND100_RISK_LEVEL","HIGH"),
         ("FUND100_BROKER_KILL_SWITCH","DISENGAGED"),
         ("FUND100_ENABLE_LIVE_READONLY","YES_READ_ONLY_LIVE"),
-        ("FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM",entry.MANUAL_CONFIRMATION),
         ("FUND100_PRIVATE_STATE_READ_TOKEN",READ),
         ("FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN",WRITE),
         ("FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX",context["key"].hex()),
@@ -70,6 +70,7 @@ def test_entire_one_process_entry_calls_real_original_chain_and_one_fake_post(
     assert result["broker_send_attempts"]==1
     assert result["independent_fill_and_settlement_verified"] is False
     assert result["resubmission_permitted"] is False
+    assert "FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM" not in __import__("inspect").getsource(entry)
     assert result["secret_or_private_source_in_report"] is None
     for secret in (KEY,SECRET,READ,WRITE,ISSUE,ADMIN,PUBLISH):
         assert secret not in str(result)
@@ -79,9 +80,10 @@ def test_entire_one_process_entry_calls_real_original_chain_and_one_fake_post(
 @pytest.mark.parametrize("bad_name,bad_value",[
     ("GITHUB_RUN_ATTEMPT","2"),
     ("GITHUB_EVENT_NAME","push"),
+    ("GITHUB_ACTOR","nicobouch97"),
     ("GITHUB_REF","refs/heads/unreviewed"),
     ("FUND100_BROKER_KILL_SWITCH","ENGAGED"),
-    ("FUND100_AUTONOMOUS_PILOT_LAUNCH_CONFIRM","INSPECT_ORIGINAL_ACWI_LOCKED_NO_ORDERS"),
+    ("GITHUB_EVENT_NAME","schedule"),
     ("FUND100_RISK_LEVEL","LOW"),
 ])
 def test_entire_entry_never_hydrates_or_claims_if_real_admission_rejected(

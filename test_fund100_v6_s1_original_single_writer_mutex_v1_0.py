@@ -60,8 +60,9 @@ def test_current_v6_inspection_cannot_order_or_steal_live_write_credentials():
 def test_first_funded_blueprint_remains_review_only_not_live_authorization():
     data=yaml(V6_FUNDING)
     assert "REVIEW-ONLY SOURCE. NOT AN ACTIVE GITHUB ACTION" in data
-    assert "AUTHORIZE_AUTONOMOUS_HIGH_PILOT_ONCE" in data
-    assert "github.actor == 'nicobouch97'" in data
+    assert "AUTHORIZE_AUTONOMOUS_HIGH_PILOT_ONCE" not in data
+    assert "inputs.confirmation" not in data
+    assert "github.actor == 'github-actions[bot]'" in data
     assert "github.run_attempt == 1" in data
     assert "  workflow_dispatch:" in data
     for forbidden in ("  push:","  schedule:","  workflow_run:","  repository_dispatch:"):
