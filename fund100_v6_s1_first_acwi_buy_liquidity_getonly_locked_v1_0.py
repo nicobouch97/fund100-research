@@ -28,6 +28,7 @@ import fund100_v6_s1_live_risk_history_getonly_v1_0 as five
 import fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 as seven
 import fund100_v6_s1_three_month_prefunding_probe_v1_0 as extended
 import fund100_v6_s1_live_cashflow_risk_bounds_v1_0 as cashrisk
+import fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0 as scope
 
 SCHEMA="FUND100_V6_S1_FIRST_ACWI_ONLY_FRESH_BROKER_LIQUIDITY_GET_V1"
 SOURCE_RELEASED=False
@@ -58,7 +59,7 @@ def _scope():
         or os.getenv("GITHUB_ACTIONS")!="true"
         or os.getenv("GITHUB_REPOSITORY")!="nicobouch97/fund100-research"
         or os.getenv("GITHUB_REF")!="refs/heads/main"
-        or os.getenv("GITHUB_WORKFLOW_REF")!=postorder.EXPECTED_WORKFLOW_REF
+        or not scope.qualifies(environ=dict(os.environ))
         or os.getenv("GITHUB_RUN_ATTEMPT")!="1"
         or os.getenv("FUND100_RISK_LEVEL")!="HIGH"
         or os.getenv("FUND100_ENABLE_LIVE_READONLY")!="YES_READ_ONLY_LIVE"

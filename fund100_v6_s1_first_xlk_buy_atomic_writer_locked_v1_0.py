@@ -38,6 +38,7 @@ import fund100_v6_s1_private_git_cas_protocol_v1_0 as original
 import fund100_v6_s1_public_genesis_witness_v1_0 as witness
 import fund100_v6_s1_immutable_release_anchor_v1_0 as anchor
 import fund100_v6_s1_operator_control_v2_0 as operator
+import fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0 as scope
 
 SCHEMA="FUND100_V6_S1_FIRST_XLK_BUY_ATOMIC_CAS_SINGLE_WRITER_LOCKED_V1"
 RUNTIME_RELEASED=False
@@ -74,6 +75,8 @@ def _locked():
         or RESTART_OR_RESUBMIT_RELEASED is not False
         or MAX_FIRST_BUY_POSTS!=1
         or risk.SOURCE_RELEASED is not True
+        or scope.FIRST_XLK_BUY_POSTORDER_GET_DELEGATION_RELEASED is not True
+        or EXPECTED_REF!=scope.FIRST_XLK_FUNDED_BUY_WORKFLOW_REF
         or e.get("GITHUB_ACTIONS")!="true"
         or e.get("GITHUB_REPOSITORY")!="nicobouch97/fund100-research"
         or e.get("GITHUB_REF")!="refs/heads/main"
