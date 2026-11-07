@@ -278,3 +278,49 @@ def test_broker_api_endpoints_are_finite_read_only_and_no_sensitive_value_is_rep
                       "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN",
                       "def main(", "submit_authorized_order_batch("):
         assert forbidden not in source
+
+
+
+@pytest.mark.parametrize("positive_comparable", [
+    "BROKER_NATIVE_NONE_PNL_SERIES_SAME",
+    "BROKER_NATIVE_NONE_PNL_SERIES_DIFFERS",
+])
+def test_first_buy_accepts_only_positive_comparable_native_histories_in_fake_source(
+        monkeypatch, positive_comparable):
+    params,data,calls,immutable,priv,broker,counts=joined(monkeypatch)
+    monkeypatch.setattr(m.seven,"broker_native_none_source",
+                        lambda *_:positive_comparable)
+    got=m.inspect(**params)
+    assert got["funding_adjusted_post_acwi_high_6_20_35_source_screen_passed"] is True
+    assert got["next_legacy_sell_or_live_buy_authorized"] is False
+    assert got["broker_POSTs"]==got["private_Git_PUTs"]==0
+    assert len(calls)==8
+    assert_stopped(got)
+
+
+@pytest.mark.parametrize("unproven",[
+    None,False,True,"","BROKER_NATIVE_NONE_UNKNOWN",
+    "BROKER_NATIVE_NONE_TIME_SERIES_NOT_COMPARABLE",
+    "BROKER_NATIVE_NONE_PNL_SERIES_MISSING_OR_UNCOMPARABLE",
+    "BROKER_NATIVE_NONE_PNL_SERIES_SAME_REVISED",
+    "POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY",
+])
+def test_first_buy_unknown_or_negative_native_history_always_holds_even_with_other_good_gets(
+        monkeypatch,unproven):
+    params,data,calls,immutable,priv,broker,counts=joined(monkeypatch)
+    monkeypatch.setattr(m.seven,"broker_native_none_source",lambda *_:unproven)
+    with pytest.raises(m.LiquidityStop,match="HOLD"):
+        m.inspect(**params)
+    assert len(calls)==8
+    assert m.SOURCE_RELEASED is False and m.NO_BROKER_POST
+
+
+def test_first_buy_native_history_parser_exception_is_not_an_authorisation(monkeypatch):
+    params,data,calls,immutable,priv,broker,counts=joined(monkeypatch)
+    def invalid(*_):
+        raise m.seven.FlowTimingStop("Broker missing native PnL")
+    monkeypatch.setattr(m.seven,"broker_native_none_source",invalid)
+    with pytest.raises(m.LiquidityStop,match="HOLD"):
+        m.inspect(**params)
+    assert len(calls)==8
+    assert m.SOURCE_RELEASED is False
