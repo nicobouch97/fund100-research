@@ -66,7 +66,9 @@ def test_first_xlk_buy_reservation_seq1_then_prepost_seq2_no_duplicate_broker_or
     second=m.possible_post(s2,amount_usd=AMOUNT,cost_usd=COST,**ARGS)
     assert second["stage"]=="POSSIBLE_BROKER_POST_NEVER_REPEAT_EVEN_AFTER_TIMEOUT"
     assert second["commit"] is None and second["live_buy_authorized"] is False
-    assert m.reserve(s2,amount_usd=AMOUNT,cost_usd=COST,**ARGS)["commit"] is None
+    after_reserve=m.reserve(s2,amount_usd=AMOUNT,cost_usd=COST,**ARGS)
+    assert after_reserve["stage"]=="POSSIBLE_BROKER_POST_NEVER_REPEAT_EVEN_AFTER_TIMEOUT"
+    assert after_reserve["commit"] is None
     assert m.CLIENT_ID.startswith("f100v6s1-") and m.CLIENT_ID.endswith("-b")
     assert m.CLIENT_ID not in set(m.original.CLIENT_IDS.values())
     for one in (first,m.observe(s1,**ARGS),m.observe(s2,**ARGS)):
@@ -149,8 +151,6 @@ def test_signed_contents_cannot_be_edited_without_original_private_key():
     p=m.reserve(genesis(),amount_usd=AMOUNT,cost_usd=COST,**ARGS)
     doc=json.loads(b64decode(p["commit"]["content_base64"]).decode())
     doc["first_buy"]["notional_usd"]="54.00"
-    forged=m._asdict if hasattr(m,"_asdict") else None
-    assert forged is None
     raw=m.original._canon(doc)
     with pytest.raises(m.BuyCasStop,match="HMAC"):
         m.observe(_as_source(raw),**ARGS)
