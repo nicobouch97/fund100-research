@@ -138,7 +138,7 @@ def test_active_high_exact_real_get_path_yields_only_sell_scope(monkeypatch):
     assert got["maximum_new_order_notional_usd"]=="65.00"
     assert got["capital_ceiling_usd"]=="130.30"
     assert got["broker_post_attempts"]==0
-    assert s["reads"]==7 and s["operator_gets"]==2
+    assert s["reads"]==8 and s["operator_gets"]==2
     for private in (ACCOUNT,QTY,KEY,SECRET):
         assert private not in str(got)
     assert all(got.get(k) is None for k in (
@@ -171,13 +171,13 @@ def test_independent_current_v6_operator_must_be_enabled_before_and_after_reads(
     old=active.broker.get_json
     def changed(**kwargs):
         response=old(**kwargs)
-        if s["reads"]==7:s["operator"]=False
+        if s["reads"]==8:s["operator"]=False
         return response
     monkeypatch.setattr(active.broker,"get_json",changed)
     with pytest.raises(active.ActiveSellStop):
         active.inspect_active_original_acwi_sell(
             original_qty=QTY,key=KEY,secret=SECRET)
-    assert s["reads"]==7
+    assert s["reads"]==8
 
 def test_original_v5_operator_must_remain_stop_even_if_v6_operator_enabled(monkeypatch):
     state,_=mock_sources(monkeypatch)
@@ -211,7 +211,7 @@ def test_active_broker_source_rejects_modified_account_holdings_clock_or_funding
     with pytest.raises(active.ActiveSellStop):
         active.inspect_active_original_acwi_sell(
             original_qty=QTY,key=KEY,secret=SECRET)
-    assert s["reads"]==7
+    assert s["reads"]==8
 
 @pytest.mark.parametrize("risk",[
     {"strictly_postfunding_account_6_20_35_source_verified":False},
@@ -230,7 +230,7 @@ def test_risk_break_cannot_authorize_sell(monkeypatch,risk):
     with pytest.raises(active.ActiveSellStop):
         active.inspect_active_original_acwi_sell(
             original_qty=QTY,key=KEY,secret=SECRET)
-    assert s["reads"]==7
+    assert s["reads"]==8
 
 
 
@@ -246,7 +246,7 @@ def test_original_first_sell_requires_explicit_false_broker_unblocked_flags(
     with pytest.raises(active.ActiveSellStop):
         active.inspect_active_original_acwi_sell(
             original_qty=QTY,key=KEY,secret=SECRET)
-    assert state["reads"]==7
+    assert state["reads"]==8
 
 
 @pytest.mark.parametrize("field",["account_blocked","trading_blocked"])
@@ -257,7 +257,7 @@ def test_original_first_sell_missing_broker_block_flag_fails_closed(monkeypatch,
     with pytest.raises(active.ActiveSellStop):
         active.inspect_active_original_acwi_sell(
             original_qty=QTY,key=KEY,secret=SECRET)
-    assert state["reads"]==7
+    assert state["reads"]==8
 
 
 def test_full_existing_acwi_inventory_exit_can_exceed_new_order_65_without_expanding_exposure(monkeypatch):
@@ -270,7 +270,7 @@ def test_full_existing_acwi_inventory_exit_can_exceed_new_order_65_without_expan
     state,_=mock_sources(monkeypatch,mutations=owned_inventory)
     got=active.inspect_active_original_acwi_sell(
         original_qty=QTY,key=KEY,secret=SECRET)
-    assert state["reads"]==7
+    assert state["reads"]==8
     assert got["full_original_acwi_exit_bounded_by_authenticated_inventory"] is True
     assert got["maximum_new_order_notional_usd"]=="65.00"
     assert got["capital_ceiling_usd"]=="130.30"
