@@ -61,7 +61,7 @@ jobs:
       - name: Credentialless original signing/one fake broker POST regression tests
         run: |
           set -euo pipefail
-          python -m pip install 'pytest>=8,<9'
+          python -m pip install 'pytest>=8,<9' 'pandas>=2.2,<3' 'exchange-calendars>=4.13,<5'
           python -m pytest -q \
             test_fund100_v6_s1_qty_sell_inside_reviewed_writer_v1_0.py \
             test_fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0.py \
