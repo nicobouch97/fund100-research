@@ -93,7 +93,7 @@ def test_owner_claim_must_refer_to_exact_current_seq2_and_original_source_sha(mo
     assert r["signed_sources_for_independent_postorder_reget"]["prepost_run_id"]==(
         params["signed_sources"]["prepost_run_id"])
     assert r["candidate_provider_immutable_asset"].startswith(b"{")
-    assert r["candidate_provider_immutable_asset"].endswith(b"\\n")
+    assert r["candidate_provider_immutable_asset"].endswith(b"\n")
 
 
 def test_never_creates_execution_authority_or_adds_credential_network_sinks():
