@@ -127,6 +127,134 @@ def test_restart_preserves_same_client_id_and_never_orders_again():
     assert r["candidate_instruction"] is None
     assert_no_broker(r)
 
+def cash_envelope(x):
+    """All account and original exit receipts remain INVENTED test fixtures."""
+    return {
+        "mode":c.cashscreen.MODE,
+        "source_authenticated_live":False,
+        "operator_stopped":x["operator_stopped"],
+        "kill_switch":x["kill_switch"],
+        "risk_level":x["risk_level"],
+        "observed_at_utc":x["observed_at_utc"],
+        "original_deposit_events":1,
+        "original_deposit_total_usd":"130.30",
+        "all_order_pages_complete":True,
+        "all_fill_pages_complete":True,
+        "all_nontrade_activity_pages_complete":True,
+        "unreconciled_external_cashflows":0,
+        "unreconciled_open_orders":0,
+        "account":{
+            "status":"ACTIVE","trading_blocked":False,"account_blocked":False,
+            "multiplier":"1","trade_suspended_by_user":False,
+            "pattern_day_trader":False,
+            "cash":x["cash_usd"],"equity":x["equity_usd"],
+            "buying_power":x["cash_usd"],
+            "non_marginable_buying_power":x["cash_usd"],
+        },
+        "positions":{
+            "XLE":x["positions"]["XLE"]["market_value_usd"],
+        },
+        "original_exit_fills":{
+            sym:{
+                "symbol":sym,"side":"sell","status":"filled",
+                "client_order_id":c.candidate_id(sym,"sell"),
+                "reconciled_original_exact_qty":True,
+                "filled_exact_qty":True,
+                "broker_fills_complete":True,
+                "filled_at":"2026-10-19T17:29:00Z",
+            } for sym in c.OLD
+        },
+    }
+
+
+def test_first_staged_buy_uses_actual_locked_offline_one_x_equity_cash_envelope_not_a_fake_settlement():
+    x,_=exited()
+    assert x["independent_t_plus_one_settlement_proven"] is False
+    assert x["settled_cash_usd"]=="0.30"
+    assert c.assess(snap=x,now_utc=NOW)["stage"]=="WAIT_ACTUAL_BROKER_SETTLEMENT_PROOF"
+    x["research_trading_api_cash_snapshot"]=cash_envelope(x)
+    r=c.assess(snap=x,now_utc=NOW,equity_reinvest_unsettled=True)
+    assert r["stage"]=="SYNTHETIC_CANDIDATE_BUY_NO_TRANSPORT",r
+    a=r["candidate_instruction"]
+    assert a["symbol"]=="XLK" and a["side"]=="buy"
+    assert a["executable"] is False
+    assert a["client_order_id"].startswith("SIM-")
+    assert c.Decimal(a["notional"])<=c.MAX_ORDER
+    assert c.Decimal(x["cash_usd"])-c.Decimal(a["notional"])-c.Decimal(".10") >=c.Decimal(x["equity_usd"])*c.CASH_FLOOR
+    assert_no_broker(r)
+    assert r["proved_real_cash_settlement"] is False
+    assert r["prior_fill_history_from_live_authenticated"] is False
+    assert c.TRANSPORT_RELEASED is False and c.PUBLIC_EXECUTION_ENABLED is False
+    assert c.cashscreen.LIVE_BUY_RELEASED is False
+
+
+@pytest.mark.parametrize("mutation,stage",[
+    (lambda x:x.pop("research_trading_api_cash_snapshot"),
+     "HOLD_MISSING_LIMITED_MARGIN_CASH_SOURCE"),
+    (lambda x:x["research_trading_api_cash_snapshot"]["account"].update(multiplier="2"),
+     "HOLD_LIMITED_MARGIN_BUY_CASH_SCREEN_INVALID"),
+    (lambda x:x["research_trading_api_cash_snapshot"]["account"].update(pattern_day_trader=True),
+     "HOLD_LIMITED_MARGIN_BUY_CASH_SCREEN_INVALID"),
+    (lambda x:x["research_trading_api_cash_snapshot"]["account"].update(trade_suspended_by_user=True),
+     "HOLD_LIMITED_MARGIN_BUY_CASH_SCREEN_INVALID"),
+    (lambda x:x["research_trading_api_cash_snapshot"].update(original_deposit_total_usd="130.31"),
+     "HOLD_LIMITED_MARGIN_BUY_CASH_SCREEN_INVALID"),
+    (lambda x:x["research_trading_api_cash_snapshot"].update(all_fill_pages_complete=False),
+     "HOLD_LIMITED_MARGIN_BUY_CASH_SCREEN_INVALID"),
+    (lambda x:x["research_trading_api_cash_snapshot"]["account"].update(cash="99.99"),
+     "HOLD_LIMITED_MARGIN_SIGNED_EXIT_OR_CASH_MISMATCH"),
+    (lambda x:x["research_trading_api_cash_snapshot"]["positions"].update(XLE="18.00"),
+     "HOLD_LIMITED_MARGIN_SIGNED_EXIT_OR_CASH_MISMATCH"),
+    (lambda x:x["research_trading_api_cash_snapshot"]["original_exit_fills"]["EEM"].update(client_order_id="wrong"),
+     "HOLD_LIMITED_MARGIN_SIGNED_EXIT_OR_CASH_MISMATCH"),
+    (lambda x:x["research_trading_api_cash_snapshot"].update(observed_at_utc="2026-10-19T17:29:55Z"),
+     "HOLD_LIMITED_MARGIN_OBSERVATIONS_NOT_SAME_ORIGINAL_SOURCE"),
+    (lambda x:x["research_trading_api_cash_snapshot"]["account"].update(non_marginable_buying_power="0.00"),
+     "WAIT_CASH_FLOOR_OR_SIZING_MINIMUM"),
+])
+def test_one_x_first_staged_buy_rejects_mismatched_account_fills_and_available_cash(mutation,stage):
+    x,_=exited()
+    x["research_trading_api_cash_snapshot"]=cash_envelope(x)
+    mutation(x)
+    r=c.assess(snap=x,now_utc=NOW,equity_reinvest_unsettled=True)
+    assert r["stage"]==stage,r
+    assert_no_broker(r)
+
+
+@pytest.mark.parametrize("mode",["true",1,0,None,{},[]])
+def test_one_x_staged_buy_requires_explicit_literal_route_not_truthy_broker_permission(mode):
+    x,_=exited()
+    x["research_trading_api_cash_snapshot"]=cash_envelope(x)
+    with pytest.raises(c.TransitionStop,match="literal bool"):
+        c.assess(snap=x,now_utc=NOW,equity_reinvest_unsettled=mode)
+
+
+def test_one_x_reinvestment_does_not_relabel_unsettled_cash_as_settled_or_auto_continue_second_buy():
+    x,_=exited()
+    x["research_trading_api_cash_snapshot"]=cash_envelope(x)
+    a=c.assess(snap=x,now_utc=NOW,equity_reinvest_unsettled=True)["candidate_instruction"]
+    assert a["symbol"]=="XLK"
+    assert x["settled_cash_usd"]=="0.30"
+    fake_buy_fill(x,a)
+    # The initial adapter is **one** first BUY only. After the first
+    # actual purchase, further BUYs need a separately reconciled new
+    # snapshot; an old XLE-only proof can never be reused to buy IWM.
+    x["research_trading_api_cash_snapshot"]=cash_envelope({
+        **x,"positions":{"XLE":x["positions"]["XLE"]}})
+    r=c.assess(snap=x,now_utc=NOW,equity_reinvest_unsettled=True)
+    assert r["stage"]=="HOLD_LIMITED_MARGIN_OBSERVATIONS_NOT_SAME_ORIGINAL_SOURCE"
+    assert_no_broker(r)
+
+
+def test_one_x_staged_buy_rejects_optimistically_rounded_subcent_execution_cost():
+    x,_=exited()
+    x["research_trading_api_cash_snapshot"]=cash_envelope(x)
+    x["hypothetical_fee_buffers_usd"]["XLK"]="0.001"
+    r=c.assess(snap=x,now_utc=NOW,equity_reinvest_unsettled=True)
+    assert r["stage"]=="HOLD_LIMITED_MARGIN_BUY_CASH_SCREEN_INVALID"
+    assert_no_broker(r)
+
+
 def test_three_sells_in_order_then_confirm_no_automatic_buy_without_settlement():
     x,ids=exited()
     assert [a["symbol"] for a in ids]==["ACWI","EEM","XLV"]
