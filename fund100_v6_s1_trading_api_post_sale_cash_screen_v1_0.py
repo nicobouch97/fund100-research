@@ -6,6 +6,16 @@ proceeds. Use an intentionally conservative wait, *both* cash and
 non_marginable_buying_power, reconstructed sale/fill/position evidence and
 a 5% post-buy buffer. None of these alone certifies settled proceeds.
 
+For US equities/ETFs only, Alpaca also documents standard limited-margin
+accounts (Trading API multiplier='1') may reinvest unsettled *stock-sale*
+proceeds without waiting for cash settlement. A separately selected OFFLINE
+screen reuses the same cash/fill/cap checks without the arbitrary weekday
+delay, but demands explicit unblocked/non-PDT account flags. Neither
+calculation is authenticated or grants LIVE BUY permission. This does not
+extend to crypto, cash withdrawals, margin leverage or shorting.
+References: https://docs.alpaca.markets/us/docs/account-plans
+https://alpaca.markets/support/alpaca-cash-accounts
+
 Every input here is CALLER-ASSERTED and cannot confer source authenticity.
 The future protected LIVE reader must independently authenticate the whole
 account, all FILL and funding history, order status, and market calendar
@@ -86,7 +96,12 @@ def _hold(stage,*,sessions=0):
         "independent_exchange_calendar_verified":False,
         "eligible_for_separate_approved_live_buy":False,
         "new_buy_notional_validated_for_research_only":
-            stage=="CONSERVATIVE_TRADING_API_CASH_ENVELOPE_PASSED_NOT_AUTHORIZED",
+            stage in (
+                "CONSERVATIVE_TRADING_API_CASH_ENVELOPE_PASSED_NOT_AUTHORIZED",
+                "LIMITED_MARGIN_EQUITY_REINVESTMENT_ENVELOPE_PASSED_NOT_AUTHORIZED"),
+        "unsettled_equity_reinvestment_live_permitted":False,
+        "one_x_limited_margin_equity_only_reinvestment_math_passed":
+            stage=="LIMITED_MARGIN_EQUITY_REINVESTMENT_ENVELOPE_PASSED_NOT_AUTHORIZED",
         "original_contribution_cap_usd":"130.30",
         "max_new_buy_usd":"65.00",
         "cash_floor_fraction":"0.05",
@@ -97,8 +112,16 @@ def _hold(stage,*,sessions=0):
     }
 
 def screen(*,snapshot:dict,now_utc:str,buy_symbol:str,
-           buy_usd:str,worst_case_all_in_cost_usd:str)->dict:
-    """Pure offline assessment of a proposed future BUY; never trade."""
+           buy_usd:str,worst_case_all_in_cost_usd:str,
+           equity_reinvest_unsettled:bool=False)->dict:
+    """Pure offline assessment of a future equity BUY; never trade.
+
+    The optional limited-margin path is a *mathematical research envelope*,
+    not a broker permission assertion. Caller-supplied snapshots cannot
+    establish a live fill, broker permission, risk approval or settlement.
+    """
+    if type(equity_reinvest_unsettled) is not bool:
+        raise TradingCashStop("Invalid equity reinvestment research mode")
     if (type(snapshot) is not dict
         or snapshot.get("mode")!=MODE
         or snapshot.get("source_authenticated_live") is not False
@@ -203,7 +226,17 @@ def screen(*,snapshot:dict,now_utc:str,buy_symbol:str,
             return _hold("HOLD_SALE_AFTER_ACCOUNT_OBSERVATION")
         last=when if last is None or when>last else last
     sessions=_completed_weekdays_after(last_sale=last,now=now)
-    if sessions<3 or now-last<timedelta(days=3):
+    if equity_reinvest_unsettled:
+        # Alpaca's Trading API multiplier=1 is the standard limited-margin
+        # class, allowing eligible equity proceeds to be reinvested without
+        # proving legal T+1 cash settlement. Do not allow a caller to
+        # masquerade as an unrestricted broker account: literal booleans
+        # only, with an independent LIVE account/orders gate still required.
+        if (account.get("trade_suspended_by_user") is not False
+            or account.get("pattern_day_trader") is not False):
+            return _hold("HOLD_UNQUALIFIED_LIMITED_MARGIN_EQUITY_ACCOUNT",
+                         sessions=sessions)
+    elif sessions<3 or now-last<timedelta(days=3):
         return _hold("WAIT_CONSERVATIVE_POSTSALE_TPLUSONE_BUFFER",sessions=sessions)
     try:
         cash=_usd(account.get("cash"),"cash")
@@ -233,5 +266,8 @@ def screen(*,snapshot:dict,now_utc:str,buy_symbol:str,
     if (buy_symbol=="XLE" and xle+buy>MAX_XLE_TARGET*(equity-cost)
         or buy_symbol!="XLE" and buy>MAX_SYMBOL*(equity-cost)):
         return _hold("BLOCK_POST_ORDER_SYMBOL_CONCENTRATION",sessions=sessions)
-    return _hold("CONSERVATIVE_TRADING_API_CASH_ENVELOPE_PASSED_NOT_AUTHORIZED",
-                 sessions=sessions)
+    return _hold(
+        "LIMITED_MARGIN_EQUITY_REINVESTMENT_ENVELOPE_PASSED_NOT_AUTHORIZED"
+        if equity_reinvest_unsettled
+        else "CONSERVATIVE_TRADING_API_CASH_ENVELOPE_PASSED_NOT_AUTHORIZED",
+        sessions=sessions)
