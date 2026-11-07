@@ -239,6 +239,11 @@ def test_original_xlk_one_shot_cas_broker_negative_paths_do_not_duplicate(monkey
     else:
         assert f.private_puts==1 and f.broker_posts==1
     if case not in ("cas_conflict","existing_broker_id"):
+        # The synthetic *corrupted read response* is a transient test
+        # transport fault. On a later process it may recover, but the signed
+        # seq2 MUST still prohibit another broker BUY submission.
+        if case=="readback_mismatch":
+            f.corrupt_readback=False
         assert_no_second_buy(f,kwargs)
 
 @pytest.mark.parametrize("change",[
