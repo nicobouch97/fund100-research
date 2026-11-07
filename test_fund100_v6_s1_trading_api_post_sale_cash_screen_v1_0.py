@@ -30,6 +30,7 @@ def fixture():
         "account":{
             "status":"ACTIVE","trading_blocked":False,"account_blocked":False,
             "multiplier":"1","pending_transfer_in":"0","pending_transfer_out":"0",
+            "trade_suspended_by_user":False,"pattern_day_trader":False,
             "cash":"100.00","equity":"120.00","buying_power":"100.00",
             "non_marginable_buying_power":"100.00",
         },
@@ -37,11 +38,13 @@ def fixture():
         "original_exit_fills":fills,
     }
 
-def check(snapshot=None,*,buy="50.00",cost="0.10",symbol="XLK",now=NOW):
+def check(snapshot=None,*,buy="50.00",cost="0.10",symbol="XLK",now=NOW,
+          reinvest=False):
     return cash.screen(
         snapshot=fixture() if snapshot is None else snapshot,
         now_utc=now,buy_symbol=symbol,buy_usd=buy,
-        worst_case_all_in_cost_usd=cost)
+        worst_case_all_in_cost_usd=cost,
+        equity_reinvest_unsettled=reinvest)
 
 def test_trading_api_fields_and_conservative_buffer_can_pass_math_without_authority():
     report=check()
@@ -184,6 +187,103 @@ def test_nonzero_or_malformed_pending_transfer_always_holds(pending):
     s=fixture()
     s["account"]["pending_transfer_in"]=pending
     assert check(s)["status"]=="HOLD_ACCOUNT_NOT_UNLEVERAGED_ACTIVE_OR_PENDING_TRANSFER"
+
+
+def test_limited_margin_one_x_equity_reinvestment_skips_arbitrary_three_day_wait_offline_only():
+    s=fixture()
+    for f in s["original_exit_fills"].values():
+        f["filled_at"]="2026-11-10T20:40:00Z"
+    # Legacy conservative settlement-sensitive screen still HOLDs.
+    assert check(s)["status"]=="WAIT_CONSERVATIVE_POSTSALE_TPLUSONE_BUFFER"
+    r=check(s,reinvest=True)
+    assert r["status"]=="LIMITED_MARGIN_EQUITY_REINVESTMENT_ENVELOPE_PASSED_NOT_AUTHORIZED"
+    assert r["conservative_completed_weekdays_after_last_sale"]==0
+    assert r["one_x_limited_margin_equity_only_reinvestment_math_passed"] is True
+    assert r["new_buy_notional_validated_for_research_only"] is True
+    assert r["actual_settled_proceeds_certified"] is False
+    assert r["unsettled_equity_reinvestment_live_permitted"] is False
+    assert r["eligible_for_separate_approved_live_buy"] is False
+    assert r["independent_broker_history_authenticated"] is False
+    assert r["broker_requests"]==r["broker_post_attempts"]==0
+    assert r["order_payload"] is None
+    assert cash.LIVE_BUY_RELEASED is False
+
+
+@pytest.mark.parametrize("change",[
+    lambda s:s["account"].pop("trade_suspended_by_user"),
+    lambda s:s["account"].update(trade_suspended_by_user=True),
+    lambda s:s["account"].update(trade_suspended_by_user=0),
+    lambda s:s["account"].pop("pattern_day_trader"),
+    lambda s:s["account"].update(pattern_day_trader=True),
+    lambda s:s["account"].update(pattern_day_trader=0),
+])
+def test_unsettled_equity_reinvestment_rejects_unknown_or_restricted_account(change):
+    s=fixture();change(s)
+    r=check(s,reinvest=True)
+    assert r["status"]=="HOLD_UNQUALIFIED_LIMITED_MARGIN_EQUITY_ACCOUNT"
+    assert r["one_x_limited_margin_equity_only_reinvestment_math_passed"] is False
+    assert r["eligible_for_separate_approved_live_buy"] is False
+
+
+@pytest.mark.parametrize("change,stage",[
+    (lambda s:s["account"].update(multiplier="2"),
+     "HOLD_ACCOUNT_NOT_UNLEVERAGED_ACTIVE_OR_PENDING_TRANSFER"),
+    (lambda s:s["account"].update(multiplier="4"),
+     "HOLD_ACCOUNT_NOT_UNLEVERAGED_ACTIVE_OR_PENDING_TRANSFER"),
+    (lambda s:s["account"].update(trading_blocked=True),
+     "HOLD_ACCOUNT_NOT_UNLEVERAGED_ACTIVE_OR_PENDING_TRANSFER"),
+    (lambda s:s.update(unreconciled_open_orders=1),
+     "HOLD_UNPROVEN_OR_UNRECONCILED_ACCOUNT_HISTORY"),
+    (lambda s:s["original_exit_fills"]["ACWI"].update(status="partially_filled"),
+     "HOLD_ORIGINAL_EXIT_FILL_OR_QUANTITY_UNCONFIRMED"),
+    (lambda s:s["original_exit_fills"]["XLV"].update(broker_fills_complete=False),
+     "HOLD_ORIGINAL_EXIT_FILL_OR_QUANTITY_UNCONFIRMED"),
+    (lambda s:s["positions"].update(ACWI="0.10"),
+     "HOLD_LEGACY_NOT_FLAT_OR_XLE_NOT_RETAINED"),
+    (lambda s:s["account"].update(cash="5.00",equity="120.00"),
+     "HOLD_TRADING_ACCOUNT_BALANCE_RECONCILIATION"),
+    (lambda s:s["account"].update(pending_transfer_in="1.00"),
+     "HOLD_ACCOUNT_NOT_UNLEVERAGED_ACTIVE_OR_PENDING_TRANSFER"),
+    (lambda s:s.update(all_fill_pages_complete=False),
+     "HOLD_UNPROVEN_OR_UNRECONCILED_ACCOUNT_HISTORY"),
+])
+def test_unsettled_reinvestment_reuses_original_order_cash_and_funding_controls(change,stage):
+    s=fixture();change(s)
+    r=check(s,reinvest=True)
+    assert r["status"]==stage
+    assert r["unsettled_equity_reinvestment_live_permitted"] is False
+    assert r["broker_post_attempts"]==0
+
+
+@pytest.mark.parametrize("mode",["true",1,0,None,[],{}])
+def test_unsettled_reinvestment_mode_is_not_truthy_caller_shortcut(mode):
+    s=fixture()
+    with pytest.raises(cash.TradingCashStop,match="Invalid equity reinvestment"):
+        cash.screen(snapshot=s,now_utc=NOW,buy_symbol="XLK",
+                    buy_usd="50.00",worst_case_all_in_cost_usd="0.10",
+                    equity_reinvest_unsettled=mode)
+
+
+def test_same_day_limited_margin_still_requires_sufficient_nonmarginable_cash_and_reserve():
+    s=fixture()
+    for f in s["original_exit_fills"].values():
+        f["filled_at"]="2026-11-10T20:40:00Z"
+    r=check(s,reinvest=True,buy="65.00",cost="35.00")
+    assert r["status"]=="BLOCK_INSUFFICIENT_CONSERVATIVE_CASH_OR_RESERVE"
+    assert r["actual_settled_proceeds_certified"] is False
+    assert r["eligible_for_separate_approved_live_buy"] is False
+
+
+def test_limited_margin_reinvestment_is_equity_etf_only_and_source_not_authenticated():
+    s=fixture()
+    for symbol in ("BTC/USD","ACWI","USDT","AAPL"):
+        r=check(s,reinvest=True,symbol=symbol)
+        assert r["status"]=="BLOCK_NEW_ORDER_UNIVERSE_OR_65_USD_LIMIT"
+    r=check(s,reinvest=True,symbol="XLK")
+    assert r["status"]=="LIMITED_MARGIN_EQUITY_REINVESTMENT_ENVELOPE_PASSED_NOT_AUTHORIZED"
+    assert r["broker_api_withdrawable_field_required"] is False
+    assert r["actual_settled_proceeds_certified"] is False
+    assert r["independent_broker_history_authenticated"] is False
 
 
 def test_tplusone_calendar_not_used_as_immediate_buy_license():
