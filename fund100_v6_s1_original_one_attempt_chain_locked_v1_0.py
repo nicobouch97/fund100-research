@@ -273,6 +273,8 @@ def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
         raise ChainStop("Original immutable anchor unavailable; no private claim") from None
 
     # Existing STOP-only V1 CANNOT return the live-authorized V2 report.
+    # V2 source must report all EIGHT authenticated same-process GETs;
+    # a stale seven-GET preflight is not a valid original SELL contract.
     # A future approved, genuinely activated V2 must do so before ANY CAS.
     try:
         ready=risk.inspect_actual_original_seven_get(
@@ -281,7 +283,7 @@ def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
         if (ready.get("status")!=
                 "ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2"
             or ready.get("broker_order_authorized") is not True
-            or ready.get("same_process_real_broker_gets")!=7
+            or ready.get("same_process_real_broker_gets")!=8
             or ready.get("original_acwi_exact_fractional_holdings_verified") is not True
             or ready.get("original_open_market_and_no_pending_order_verified") is not True
             or ready.get("original_strict_postfunding_6_20_35_risk_pass") is not True
