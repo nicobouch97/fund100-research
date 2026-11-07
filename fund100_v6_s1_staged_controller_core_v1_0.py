@@ -376,7 +376,7 @@ def assess(*,snap:dict,now_utc:str,
                 proof=cashscreen.screen(
                     snapshot=cash_source,now_utc=now_utc,buy_symbol=sym,
                     buy_usd=format(size,".2f"),
-                    worst_case_all_in_cost_usd=format(cost,".2f"),
+                    worst_case_all_in_cost_usd=str(cost),
                     equity_reinvest_unsettled=True)
             except (ValueError,TypeError):
                 return blocked("HOLD_LIMITED_MARGIN_BUY_CASH_SCREEN_INVALID",
