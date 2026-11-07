@@ -140,6 +140,10 @@ def test_fake_authenticated_first_acwi_source_permits_exactly_one_buy_private_cr
     assert store.creates==1 and store.updates==1
     no_orders(f,store)
     # Already seq1 is NOT a new strategy-sized trade with new client ID.
+    # The earlier shared writer fixture asserts a FIXED 29.40 risk input;
+    # permit the altered *risk-screen* amount here to reach the HMAC-signed
+    # private reservation drift gate that this regression actually tests.
+    monkeypatch.setattr(a.writer,"_risk_go",lambda **kw:True)
     kwargs["amount_usd"]="29.39"
     with pytest.raises(a.AutoReserveStop,match="drift"):
         a.autoreserve(**kwargs)
