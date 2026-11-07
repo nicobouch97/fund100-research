@@ -81,6 +81,21 @@ jobs:
           grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
           grep -Eq '"trading_enabled": true' fund100_v6_s1_operator_control.json
           grep -Eq '"first_original_acwi_sell_enabled": true' fund100_v6_s1_operator_control.json
+      - name: Install pinned funded XNYS risk-calendar dependencies (no secrets)
+        # First-release active HIGH risk now checks EVERY funded XNYS close.
+        # Use only the exact Python 3.12 wheels already exercised in mock CI.
+        # No order credentials or private Git tokens are present here;
+        # the previous hard GO and BROKER KILL checks must pass first.
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input --only-binary=:all: 'pandas==2.3.3' 'exchange-calendars==4.13.2'
+          python - <<'PY'
+          import pandas
+          import exchange_calendars
+          assert pandas.__version__=='2.3.3'
+          assert exchange_calendars.__version__=='4.13.2'
+          print('Funded XNYS risk-calendar runtime installed; no broker credentials or order.')
+          PY
       - name: One authenticated first-attempt original signed ACWI SELL; NEVER RETRY
         # Only this step receives live/WRITE credentials, and only after the
         # protected main/HIGH/current STOP checks above. No retry,
