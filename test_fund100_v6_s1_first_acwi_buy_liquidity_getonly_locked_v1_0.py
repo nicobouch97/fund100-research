@@ -141,6 +141,81 @@ def test_locked_postorder_cash_source_rejects_stale_ambiguous_funding_margin_or_
     assert m.SOURCE_RELEASED is False and m.NO_BROKER_POST
 
 
+def test_exact_first_xlk_buy_spend_screen_uses_current_post_acwi_risk_and_fresh_nonmarginable_power(monkeypatch):
+    params,data,calls,immutable,priv,broker,counts=joined(monkeypatch)
+    params["first_xlk_buy_notional_usd"]="29.40"
+    params["worst_case_all_in_cost_usd"]="0.10"
+    r=m.inspect(**params)
+    assert r["status"]=="TEST_ONLY_FIRST_ACWI_POSTSALE_1X_LIQUIDITY_GET_SOURCE_NOT_AUTHORIZED"
+    assert r["first_xlk_exact_order_notional_and_all_in_cost_screen_passed"] is True
+    assert r["first_xlk_exact_cash_and_1x_nonmarginable_bp_screen_from_same_gets"] is True
+    assert r["funding_adjusted_post_acwi_high_6_20_35_source_screen_passed"] is True
+    assert r["broker_risk_data_releasable_as_trading_permission"] is False
+    assert r["first_xlk_order_identified_and_signed_in_private_buy_CAS"] is False
+    assert r["first_xlk_buy_live_authorized"] is False
+    assert r["broker_current_account_source_authenticated"] is False
+    assert r["broker_POSTs"]==0 and r["private_Git_PUTs"]==0
+    assert len(calls)==8
+    assert_stopped(r)
+
+
+@pytest.mark.parametrize("value,cost",[
+    ("29.41","0.10"),  # available cash and gross both fail
+    ("65.00","0.10"),  # per-order cap alone is NOT spendable funds
+    ("30.00","0.10"),  # 5% reserve and post-cost max gross
+    ("29.40","0.29"),  # within 1% cost but cash reserve too tight
+    ("52.26","0.10"),  # above planned XLK target
+    ("0.99","0.00"),   # order min
+    ("65.01","0.00"),  # order max
+    ("29.40","0.30"),  # execution cost >1%
+    ("29.4001","0.10"), # subcent changes amount
+    ("29.40","0.1001"), # subcent hides fee
+    ("NaN","0.10"),
+    ("1e1","0.10"),
+    ("-1.00","0.10"),
+])
+def test_exact_first_xlk_buy_never_overstates_headroom_or_hides_cost(monkeypatch,value,cost):
+    params,data,calls,immutable,priv,broker,counts=joined(monkeypatch)
+    params.update(first_xlk_buy_notional_usd=value,
+                  worst_case_all_in_cost_usd=cost)
+    with pytest.raises(m.LiquidityStop):
+        m.inspect(**params)
+    assert m.NO_BROKER_POST and m.SOURCE_RELEASED is False
+
+
+@pytest.mark.parametrize("field",[
+    "first_xlk_buy_notional_usd","worst_case_all_in_cost_usd",
+])
+def test_missing_any_exact_order_field_stops_before_source_gets(monkeypatch,field):
+    params,data,calls,immutable,priv,broker,counts=joined(monkeypatch)
+    params.update(first_xlk_buy_notional_usd="29.40",
+                  worst_case_all_in_cost_usd="0.10")
+    params.pop(field)
+    with pytest.raises(m.LiquidityStop,match="must be paired"):
+        m.inspect(**params)
+    assert calls==[] and priv==broker==[]
+
+
+def test_first_xlk_buy_blocked_by_actual_nonmarginable_buying_power_even_if_cash_sufficient(monkeypatch):
+    params,data,calls,immutable,priv,broker,counts=joined(monkeypatch)
+    data[0]["non_marginable_buying_power"]="25.00"
+    params.update(first_xlk_buy_notional_usd="29.40",
+                  worst_case_all_in_cost_usd="0.10")
+    with pytest.raises(m.LiquidityStop,match="HOLD"):
+        m.inspect(**params)
+    assert len(calls)==8
+
+
+def test_first_xlk_budget_can_be_screened_only_after_full_same_process_risk_source(monkeypatch):
+    params,data,calls,immutable,priv,broker,counts=joined(monkeypatch)
+    data[7]["equity"][-2]=80
+    params.update(first_xlk_buy_notional_usd="29.40",
+                  worst_case_all_in_cost_usd="0.10")
+    with pytest.raises(m.LiquidityStop,match="HOLD"):
+        m.inspect(**params)
+    assert len(calls)<=8
+
+
 def test_positive_original_signed_join_cannot_be_replaced_by_caller_go_flag(monkeypatch):
     params,data,calls,immutable,priv,broker,counts=joined(monkeypatch)
     original=m.postorder.inspect_original_once

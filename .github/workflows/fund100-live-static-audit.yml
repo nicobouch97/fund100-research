@@ -189,6 +189,10 @@ on:
       - "test_fund100_v6_s1_original_acwi_fill_pagination_v1_0.py"
       - "fund100_v6_s1_original_postorder_signed_immutable_broker_join_locked_v1_0.py"
       - "test_fund100_v6_s1_original_postorder_signed_immutable_broker_join_locked_v1_0.py"
+      # First BUY must be checked against same-source signed ACWI FILL,
+      # fresh post-ACWI actual HIGH risk and exact available 1x cash.
+      - "fund100_v6_s1_first_acwi_buy_liquidity_getonly_locked_v1_0.py"
+      - "test_fund100_v6_s1_first_acwi_buy_liquidity_getonly_locked_v1_0.py"
       - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "test_fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0.py"
@@ -499,6 +503,10 @@ on:
       - "test_fund100_v6_s1_original_acwi_fill_pagination_v1_0.py"
       - "fund100_v6_s1_original_postorder_signed_immutable_broker_join_locked_v1_0.py"
       - "test_fund100_v6_s1_original_postorder_signed_immutable_broker_join_locked_v1_0.py"
+      # First BUY must be checked against same-source signed ACWI FILL,
+      # fresh post-ACWI actual HIGH risk and exact available 1x cash.
+      - "fund100_v6_s1_first_acwi_buy_liquidity_getonly_locked_v1_0.py"
+      - "test_fund100_v6_s1_first_acwi_buy_liquidity_getonly_locked_v1_0.py"
       - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "test_fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0.py"
