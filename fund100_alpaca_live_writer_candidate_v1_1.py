@@ -1093,7 +1093,8 @@ def submit_v6_s1_original_acwi_fractional_sell(*,
         raise LiveWriterCandidateLocked(
             "Original ACWI independently checked immutable release HEAD invalid")
     # Last-mile risk MUST be obtained by the broker-keyed same-process
-    # seven-GET reader, never from a caller-supplied boolean or prior job
+    # source reader (8 GETs for active V2), never from a caller-supplied
+    # boolean or prior job
     # report. The existing original reader still requires an operator STOP
     # and hence CANNOT authorize a funded order. A separately reviewed risk
     # policy will have to implement and release a new active-order contract.
@@ -1103,10 +1104,10 @@ def submit_v6_s1_original_acwi_fractional_sell(*,
             original_qty=original_qty,key=key,secret=secret)
     except Exception:
         raise LiveWriterCandidateLocked(
-            "Original ACWI actual broker order-time seven-GET risk unavailable") from None
+            "Original ACWI actual broker order-time source risk unavailable") from None
     if (order_time.get("status")!=
             "ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2"
-        or order_time.get("same_process_real_broker_gets")!=7
+        or order_time.get("same_process_real_broker_gets")!=8
         or order_time.get("original_acwi_exact_fractional_holdings_verified") is not True
         or order_time.get("original_open_market_and_no_pending_order_verified") is not True
         or order_time.get("original_strict_postfunding_6_20_35_risk_pass") is not True
@@ -1124,7 +1125,7 @@ def submit_v6_s1_original_acwi_fractional_sell(*,
     # IMPORTANT: the original V1 reader only returns STILL_STOPPED and
     # broker_order_authorized=False. Live POST is therefore impossible until
     # a separately reviewed, source-authenticated active risk V2 exists.
-    # A STOP or emergency broker kill may arrive AFTER the seven-GET
+    # A STOP or emergency broker kill may arrive AFTER the eight-GET
     # check. Re-authenticate original V5 STOP, current-main V6 GO and the
     # DISENGAGED kill switch at the last broker POST boundary. This helper
     # is SOURCE-released only for the exact original ACWI active HIGH path.
