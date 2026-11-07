@@ -17,6 +17,7 @@ ACTIVE_WRITERS=(
 )
 V6_INSPECTION=".github/workflows/fund100-v6-s1-original-acwi-one-attempt-locked.yml"
 V6_FUNDING="release_candidates/fund100-v6-s1-original-first-acwi-funded-once.REVIEW-ONLY.yml"
+V6_DORMANT=".github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml"
 ACCOUNT_WRITER_MUTEX="fund100-alpaca-live-account-writer"
 
 def yaml(name):
@@ -33,9 +34,22 @@ def group(data):
 def test_v6_first_funded_attempt_shares_real_v5_writer_lock():
     expected=group(yaml(ACTIVE_WRITERS[0]))
     assert expected==ACCOUNT_WRITER_MUTEX
-    for path in ACTIVE_WRITERS+(V6_INSPECTION,V6_FUNDING):
+    for path in ACTIVE_WRITERS+(V6_INSPECTION,V6_FUNDING,V6_DORMANT):
         assert group(yaml(path))==expected, path
         assert "fund100-v5-002-live-production" not in yaml(path)
+
+def test_dormant_first_acwi_funded_workflow_still_requires_distinct_deployment_gate():
+    active=yaml(V6_DORMANT)
+    assert group(active)==ACCOUNT_WRITER_MUTEX
+    assert "vars.FUND100_V6_S1_FIRST_ACWI_LIVE_DEPLOYED == 'REVIEWED_SOURCE_ONLY_ONE_SHOT'" in active
+    assert "github.event_name == 'schedule'" in active
+    assert "cancel-in-progress: false" in active
+    assert "GITHUB_WORKFLOW_REF" in active
+    assert "test \"$FUND100_BROKER_KILL_SWITCH\" = 'DISENGAGED'" in active
+    # This internal deployment gate does not grant GO, fill evidence or release.
+    from fund100_v6_s1_original_first_acwi_entry_locked_v1_0 import ORIGINAL_ACWI_ENTRYPOINT_RELEASED
+    assert ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
+
 
 def test_current_v6_inspection_cannot_order_or_steal_live_write_credentials():
     from fund100_v6_s1_original_first_acwi_entry_locked_v1_0 import (

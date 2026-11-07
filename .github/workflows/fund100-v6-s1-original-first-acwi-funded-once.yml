@@ -1,0 +1,120 @@
+# FUND-100 DORMANT SCHEDULED ORIGINAL ACWI FIRST SELL — NOT LIVE RELEASED
+# This is the reviewed first-ACWI blueprint mirrored under Actions so the
+# eventual source-approved first sale has a pinned, isolated workflow identity.
+# The job is SKIPPED unless separately controlled internal deployment variable
+# is set to its exact reviewed value. It MUST ALSO pass original V6 operator
+# GO, environment broker kill DISENGAGED, exact-main/high source checks and
+# EVERY independent Python code-hard-lock before it could reach an order.
+# ALL production source/writer/owner release booleans remain FALSE on main.
+# Installation of this workflow is NOT initial pilot activation.
+name: Fund-100 V6-S1 Dormant Original First ACWI Funded SELL (NOT RELEASED)
+
+# One original signed ACWI migration under the pre-established standing HIGH mandate.
+# Future strategy decisions/orders must be automated with NO per-order owner
+# confirmation, using separately reviewed recurring V6 source, fresh risk,
+# current-main operator GO, broker kill and reconciled idempotent orders.
+# This first-attempt workflow only migrates the original ACWI inventory;
+# it does NOT yet provide the future autonomous multi-event order loop.
+# A directly scheduled main-only workflow eliminates an untrusted upstream
+# dispatcher. At most one original signed owner claim can ever succeed;
+# later scheduled runs must fail closed on spent/unknown owner or broker state.
+# GitHub cron can delay or skip runs; fresh broker market-clock source is
+# mandatory and a missed slot is not permission to retry a lost order ack.
+# Installed as a dormant shell; internal funded source release not performed.
+on:
+  schedule:
+    - cron: "07 15 * * 1-5"
+
+permissions:
+  contents: read
+  issues: read
+
+# MUST match the existing V5 writer's exact mutex group and the current V6
+# locked first-original workflow; never run two writers concurrently.
+concurrency:
+  group: fund100-alpaca-live-account-writer
+  cancel-in-progress: false
+
+jobs:
+  first-original-acwi-sell-once:
+    # A separate reviewed internal deployment variable MUST be enabled after
+    # original source/signature, high-risk and full funded one-shot release.
+    # Unlike emergency STOP or risk tier, user never has to change this per
+    # trade; it is a one-time engineering deployment boundary.
+    if: >-
+      vars.FUND100_V6_S1_FIRST_ACWI_LIVE_DEPLOYED == 'REVIEWED_SOURCE_ONLY_ONE_SHOT' &&
+      github.event_name == 'schedule' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1 &&
+      github.workflow_ref == 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    env:
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+    steps:
+      - name: Checkout exact protected main SHA; do not persist credential
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fail closed before original single-process transaction
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = 'true'
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_EVENT_NAME" = 'schedule'
+          # GitHub's bot actor alone cannot authenticate the executing workflow.
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$FUND100_RISK_LEVEL" = 'HIGH'
+          test "$FUND100_BROKER_KILL_SWITCH" = 'DISENGAGED'
+          test "$FUND100_ENABLE_LIVE_READONLY" = 'YES_READ_ONLY_LIVE'
+          # The real V6 main code still denies any broker POST without an
+          # independent explicit source release; never rely on variables alone.
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": true' fund100_v6_s1_operator_control.json
+          grep -Eq '"first_original_acwi_sell_enabled": true' fund100_v6_s1_operator_control.json
+      - name: Install pinned funded XNYS risk-calendar dependencies (no secrets)
+        # First-release active HIGH risk now checks EVERY funded XNYS close.
+        # Use only the exact Python 3.12 wheels already exercised in mock CI.
+        # No order credentials or private Git tokens are present here;
+        # the previous hard GO and BROKER KILL checks must pass first.
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input --only-binary=:all: 'pandas==2.3.3' 'exchange-calendars==4.13.2'
+          python - <<'PY'
+          import pandas
+          import exchange_calendars
+          assert pandas.__version__=='2.3.3'
+          assert exchange_calendars.__version__=='4.13.2'
+          print('Funded XNYS risk-calendar runtime installed; no broker credentials or order.')
+          PY
+      - name: One authenticated first-attempt original signed ACWI SELL; NEVER RETRY
+        # Only this step receives live/WRITE credentials, and only after the
+        # protected main/HIGH/current STOP checks above. No retry,
+        # followup continuation step, debug credential print or log artifact.
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}
+          FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN }}
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Current main always raises source-hard-locked before broker or CAS.
+          # Only a future audited source-release PR can make this reachable.
+          python -B fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py

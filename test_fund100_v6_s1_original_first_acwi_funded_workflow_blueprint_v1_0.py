@@ -1,9 +1,9 @@
-"""Offline-only acceptance contract for the NONEXECUTABLE first funded workflow.
+"""Offline-only acceptance contract for the frozen original funded blueprint.
 
-The reviewed blueprint is never installed under .github/workflows here. It
-must NOT be interpreted as authority to enable V6, mutate private signed
-heads or send an Alpaca order. A separately audited, valid standing HIGH
-source/GO transition is required; this research blueprint cannot grant it.
+The review-only blueprint stays in release_candidates; a separate dormant
+scheduled workflow may mirror it but is SKIPPED without an independently
+reviewed internal deployment gate and all original source-code hard locks.
+Neither file authorises a private state write or Alpaca SELL.
 """
 from pathlib import Path
 import pytest
@@ -122,8 +122,16 @@ def test_funded_first_acwi_nyse_runtime_installs_only_after_go_and_without_secre
     assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in before+install
     assert "python -B fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py" in execute
     assert BLUEPRINT.parts[0]=="release_candidates"
-    # Still NO deployed scheduled funded execution workflow.
-    assert not Path(".github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml").exists()
+    # The future funded workflow is now installed ONLY as a DORMANT
+    # scheduled shell. The original review-only blueprint and all original
+    # broker/immutable/HMAC/owner release flags remain hard locked.
+    new=Path(".github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml")
+    assert new.exists()
+    deployed=new.read_text()
+    assert "FUND100_V6_S1_FIRST_ACWI_LIVE_DEPLOYED == 'REVIEWED_SOURCE_ONLY_ONE_SHOT'" in deployed
+    assert "FUND100_BROKER_KILL_SWITCH" in deployed
+    assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
+    assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
 
 
 def test_secrets_limited_to_final_single_step_and_exact_protected_names():

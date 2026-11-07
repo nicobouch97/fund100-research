@@ -36,14 +36,17 @@ def env(monkeypatch):
     return keys
 
 
-def test_workflow_ref_is_reviewed_main_only_and_not_currently_installed():
+def test_workflow_ref_is_reviewed_main_only_and_schedule_is_dormant():
     from pathlib import Path
     assert entry.EXPECTED_FIRST_ACWI_WORKFLOW_REF == (
         "nicobouch97/fund100-research/.github/workflows/"
         "fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main")
-    assert not Path(
-        ".github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml"
-    ).exists()
+    future=Path(
+        ".github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml")
+    assert future.is_file()
+    source=future.read_text()
+    assert "vars.FUND100_V6_S1_FIRST_ACWI_LIVE_DEPLOYED == 'REVIEWED_SOURCE_ONLY_ONE_SHOT'" in source
+    assert "github.run_attempt == 1" in source
     assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
     assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
 
