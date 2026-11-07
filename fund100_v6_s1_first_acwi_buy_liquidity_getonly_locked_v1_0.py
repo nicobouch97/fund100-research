@@ -253,10 +253,18 @@ def inspect(*,private_read_token:str,private_write_token:str,
         long_times,long_vals,prefix=extended._daily(longer,t,maximum=100)
         if (not prefix or len(long_times)<=len(times)
             or long_times[-len(times):]!=times
-            or long_vals[-len(times):]!=vals
-            or seven.broker_native_none_source(month,none) in (
-                "BROKER_NATIVE_NONE_TIME_SERIES_NOT_COMPARABLE",
-                "BROKER_NATIVE_NONE_PNL_SERIES_MISSING_OR_UNCOMPARABLE")):
+            or long_vals[-len(times):]!=vals):
+            raise LiquidityStop("Same-account 1M/3M/native history inconsistent")
+        # This is a separate live BUY permission boundary: the diagnostic
+        # comparison of broker native NONE versus original raw PnL is not
+        # itself the historical cashflow-adjusted HIGH risk certificate.
+        # Any unknown, missing or newly introduced broker comparison status
+        # must HOLD, rather than becoming implicitly source-comparable.
+        native_comparison=seven.broker_native_none_source(month,none)
+        if native_comparison not in (
+            "BROKER_NATIVE_NONE_PNL_SERIES_SAME",
+            "BROKER_NATIVE_NONE_PNL_SERIES_DIFFERS",
+        ):
             raise LiquidityStop("Same-account 1M/3M/native history inconsistent")
         first_covered=next(
             (i for i,stamp in enumerate(long_times)

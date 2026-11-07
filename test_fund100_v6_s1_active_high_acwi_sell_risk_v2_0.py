@@ -363,3 +363,51 @@ def test_live_source_cannot_send_broker_order_and_original_hist_evidence_is_unch
     assert "v6_operator.require_s1_running()" in code
     assert "operator.validate_control(operator.read_current_control()) is not False" in code
     assert "trading_enabled\":False" in code
+
+
+
+@pytest.mark.parametrize("positive_comparable", [
+    "BROKER_NATIVE_NONE_PNL_SERIES_SAME",
+    "BROKER_NATIVE_NONE_PNL_SERIES_DIFFERS",
+])
+def test_only_two_known_comparable_native_history_results_admit_active_sell(
+        monkeypatch, positive_comparable):
+    state,_=mock_sources(monkeypatch)
+    monkeypatch.setattr(active.seven,"broker_native_none_source",
+                        lambda *_:positive_comparable)
+    got=active.inspect_active_original_acwi_sell(
+        original_qty=QTY,key=KEY,secret=SECRET)
+    assert got["original_strict_postfunding_6_20_35_risk_pass"] is True
+    assert got["same_process_real_broker_gets"]==8
+    assert got["broker_post_attempts"]==got["orders_submitted_here"]==0
+    assert state["reads"]==8
+
+
+@pytest.mark.parametrize("unproven", [
+    None,False,True,"","BROKER_NATIVE_NONE_UNKNOWN",
+    "BROKER_NATIVE_NONE_TIME_SERIES_NOT_COMPARABLE",
+    "BROKER_NATIVE_NONE_PNL_SERIES_MISSING_OR_UNCOMPARABLE",
+    "BROKER_NATIVE_NONE_PNL_SERIES_SAME_REVISED",
+    "POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY",
+])
+def test_unknown_or_negative_native_history_cannot_issue_actual_live_risk_pass(
+        monkeypatch, unproven):
+    state,_=mock_sources(monkeypatch)
+    monkeypatch.setattr(active.seven,"broker_native_none_source",
+                        lambda *_:unproven)
+    with pytest.raises(active.ActiveSellStop,match="Second original portfolio-history"):
+        active.inspect_active_original_acwi_sell(
+            original_qty=QTY,key=KEY,secret=SECRET)
+    assert state["reads"]==8
+    assert active.NO_BROKER_POST is True
+
+
+def test_native_comparison_diagnostic_failure_cannot_be_suppressed(monkeypatch):
+    state,_=mock_sources(monkeypatch)
+    def failed(*_):
+        raise active.seven.FlowTimingStop("Untrusted broker NONE source")
+    monkeypatch.setattr(active.seven,"broker_native_none_source",failed)
+    with pytest.raises(active.ActiveSellStop,match="inadmissible"):
+        active.inspect_active_original_acwi_sell(
+            original_qty=QTY,key=KEY,secret=SECRET)
+    assert state["reads"]==8
