@@ -193,6 +193,9 @@ on:
       # fresh post-ACWI actual HIGH risk and exact available 1x cash.
       - "fund100_v6_s1_first_acwi_buy_liquidity_getonly_locked_v1_0.py"
       - "test_fund100_v6_s1_first_acwi_buy_liquidity_getonly_locked_v1_0.py"
+      # Signed one-shot first XLK BUY writer has a future LIVE POST boundary.
+      - "fund100_v6_s1_first_xlk_buy_atomic_writer_locked_v1_0.py"
+      - "test_fund100_v6_s1_first_xlk_buy_atomic_writer_locked_v1_0.py"
       - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "test_fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0.py"
@@ -507,6 +510,9 @@ on:
       # fresh post-ACWI actual HIGH risk and exact available 1x cash.
       - "fund100_v6_s1_first_acwi_buy_liquidity_getonly_locked_v1_0.py"
       - "test_fund100_v6_s1_first_acwi_buy_liquidity_getonly_locked_v1_0.py"
+      # Signed one-shot first XLK BUY writer has a future LIVE POST boundary.
+      - "fund100_v6_s1_first_xlk_buy_atomic_writer_locked_v1_0.py"
+      - "test_fund100_v6_s1_first_xlk_buy_atomic_writer_locked_v1_0.py"
       - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "test_fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0.py"
