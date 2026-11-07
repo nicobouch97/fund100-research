@@ -188,11 +188,14 @@ def _plan(source,*,amount_usd,cost_usd,action,
         if existing["notional_usd"]!=format(amount,".2f") or (
             existing["all_in_cost_usd"]!=format(cost,".2f")):
             raise BuyCasStop("Cannot change first BUY notional/cost after reservation")
-        if action=="reserve":
-            return {"stage":"ALREADY_RESERVED_NO_NEW_CAS_OR_BROKER_ORDER",
-                    "commit":None,"live_buy_authorized":False}
+        # Do not misclassify an irreversible possible POST as merely
+        # reserved. A future writer must *never* treat seq2 as a pre-submit
+        # state, even after an ambiguous 404/timeout.
         if doc["sequence"]==2:
             return {"stage":"POSSIBLE_BROKER_POST_NEVER_REPEAT_EVEN_AFTER_TIMEOUT",
+                    "commit":None,"live_buy_authorized":False}
+        if action=="reserve":
+            return {"stage":"ALREADY_RESERVED_NO_NEW_CAS_OR_BROKER_ORDER",
                     "commit":None,"live_buy_authorized":False}
     if action=="reserve":
         if doc["sequence"]!=0:
