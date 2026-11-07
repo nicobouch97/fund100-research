@@ -12,6 +12,7 @@ from hashlib import sha256
 
 import fund100_v6_s1_low_churn_migration_v2_0 as previous
 import fund100_v6_s1_private_git_cas_protocol_v1_0 as original_cas
+import fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0 as cashscreen
 
 SCHEMA="FUND100_V6_S1_FAKE_BROKER_ORDER_CONTROLLER_SNAPSHOT_V1"
 RESULT_SCHEMA="FUND100_V6_S1_STAGED_CONTROLLER_RESEARCH_ONLY_V1"
@@ -149,7 +150,18 @@ def assess_stopped_live_readiness(*, source_report: dict) -> dict:
     return report
 
 
-def assess(*,snap:dict,now_utc:str)->dict:
+def assess(*,snap:dict,now_utc:str,
+           equity_reinvest_unsettled:bool=False)->dict:
+    """Research-only first ETF BUY: optional 1x limited-margin cash screen.
+
+    This DOES NOT authenticate a broker account, fill, private signed head,
+    settlement, user mandate or LIVE order. Default legacy route unchanged.
+    The 1x alternative checks the same original signed exit identities and
+    the *actual* cash-screen function, rather than trusting a purported
+    caller-authorized report or pretending unsettled cash is settled.
+    """
+    if type(equity_reinvest_unsettled) is not bool:
+        raise TransitionStop("Limited margin planning route must be literal bool")
     p=previous.policy()  # source-locked V2 draft + original V1 policy
     if p["may_place_buy_orders"] is not False or p["may_place_sell_orders"] is not False:
         raise TransitionStop("Current source research only")
@@ -267,7 +279,58 @@ def assess(*,snap:dict,now_utc:str)->dict:
     # ALL three original SELL IDs filled and their positions actually flat.
     if set(holdings)&set(OLD):
         raise TransitionStop("Unreconciled legacy holdings after source ledger")
-    if snap.get("independent_t_plus_one_settlement_proven") is not True:
+    # First new ETF BUY can alternatively use a separately rechecked 1x
+    # retail limited-margin *equity-only* cash envelope. No simulated or
+    # caller-supplied clearance can become live execution authority.
+    available=settled
+    cash_source=None
+    if equity_reinvest_unsettled:
+        if snap.get("independent_t_plus_one_settlement_proven") is not False:
+            return blocked("HOLD_CONFLICTING_CASH_SOURCE_MODE",
+                           holdings=holdings,prior_orders=open_orders)
+        cash_source=snap.get("research_trading_api_cash_snapshot")
+        if type(cash_source) is not dict:
+            return blocked("HOLD_MISSING_LIMITED_MARGIN_CASH_SOURCE",
+                           holdings=holdings,prior_orders=open_orders)
+        account=cash_source.get("account")
+        fills=cash_source.get("original_exit_fills")
+        old_positions=cash_source.get("positions")
+        # Join one identical synthetic account observation and signed
+        # original order history across both modules. Never accept two
+        # contradictory views of cash/holdings/legacy fills.
+        if (type(account) is not dict or type(fills) is not dict
+            or type(old_positions) is not dict
+            or set(holdings)!={"XLE"}
+            or set(old_positions)!={"XLE"}
+            or cash_source.get("observed_at_utc")!=snap.get("observed_at_utc")
+            or cash_source.get("risk_level")!=snap.get("risk_level")
+            or cash_source.get("operator_stopped")!=snap.get("operator_stopped")
+            or cash_source.get("kill_switch")!=snap.get("kill_switch")
+            or cash_source.get("source_authenticated_live") is not False
+            or cash_source.get("mode")!=cashscreen.MODE):
+            return blocked("HOLD_LIMITED_MARGIN_OBSERVATIONS_NOT_SAME_ORIGINAL_SOURCE",
+                           holdings=holdings,prior_orders=open_orders)
+        try:
+            if (cashscreen._usd(account.get("cash"),"cash")!=cash
+                or cashscreen._usd(account.get("equity"),"equity")!=equity
+                or cashscreen._usd(old_positions["XLE"],"XLE")!=holdings["XLE"]["market"]
+                or set(fills)!=set(OLD)
+                or any(
+                    type(fills[sym]) is not dict
+                    or fills[sym].get("client_order_id")!=candidate_id(sym,"sell")
+                    or fills[sym].get("status")!=history[candidate_id(sym,"sell")]["status"]
+                    or fills[sym].get("symbol")!=sym
+                    for sym in OLD)):
+                return blocked("HOLD_LIMITED_MARGIN_SIGNED_EXIT_OR_CASH_MISMATCH",
+                               holdings=holdings,prior_orders=open_orders)
+            buying=cashscreen._usd(account.get("buying_power"),"buying power")
+            nonmargin=cashscreen._usd(
+                account.get("non_marginable_buying_power"),"nonmarginable buying power")
+            available=min(cash,buying,nonmargin)
+        except (KeyError,TypeError,cashscreen.TradingCashStop):
+            return blocked("HOLD_LIMITED_MARGIN_SIGNED_EXIT_OR_CASH_MISMATCH",
+                           holdings=holdings,prior_orders=open_orders)
+    elif snap.get("independent_t_plus_one_settlement_proven") is not True:
         return blocked("WAIT_ACTUAL_BROKER_SETTLEMENT_PROOF",
                        holdings=holdings,prior_orders=open_orders)
     if cash/equity<CASH_FLOOR or gross/equity>MAX_GROSS:
@@ -298,7 +361,7 @@ def assess(*,snap:dict,now_utc:str)->dict:
         if desired<MIN_ORDER:
             continue
         cost=amount(quotes[sym],sym+" full cost")
-        cash_limit=min(cash,settled)-target_nav*CASH_FLOOR-cost
+        cash_limit=min(cash,available)-target_nav*CASH_FLOOR-cost
         exposure_limit=equity*MAX_GROSS-gross
         symbol_limit=equity*MAX_SYMBOL-holdings.get(sym,{}).get("market",Decimal(0))
         size=min(desired,MAX_ORDER,cash_limit,exposure_limit,symbol_limit)
@@ -306,8 +369,28 @@ def assess(*,snap:dict,now_utc:str)->dict:
         if size<MIN_ORDER:
             return blocked("WAIT_CASH_FLOOR_OR_SIZING_MINIMUM",
                            holdings=holdings,prior_orders=open_orders)
-        if cash-size-cost<equity*CASH_FLOOR or settled-size-cost<equity*CASH_FLOOR:
+        if cash-size-cost<equity*CASH_FLOOR or available-size-cost<equity*CASH_FLOOR:
             raise TransitionStop("Cash floor could be violated by candidate")
+        if equity_reinvest_unsettled:
+            try:
+                proof=cashscreen.screen(
+                    snapshot=cash_source,now_utc=now_utc,buy_symbol=sym,
+                    buy_usd=format(size,".2f"),
+                    worst_case_all_in_cost_usd=format(cost,".2f"),
+                    equity_reinvest_unsettled=True)
+            except (ValueError,TypeError):
+                return blocked("HOLD_LIMITED_MARGIN_BUY_CASH_SCREEN_INVALID",
+                               holdings=holdings,prior_orders=open_orders)
+            if (proof.get("schema")!=cashscreen.SCHEMA
+                or proof.get("status")!=
+                    "LIMITED_MARGIN_EQUITY_REINVESTMENT_ENVELOPE_PASSED_NOT_AUTHORIZED"
+                or proof.get("one_x_limited_margin_equity_only_reinvestment_math_passed")
+                    is not True
+                or proof.get("actual_settled_proceeds_certified") is not False
+                or proof.get("eligible_for_separate_approved_live_buy") is not False
+                or proof.get("broker_post_attempts")!=0):
+                return blocked("HOLD_LIMITED_MARGIN_BUY_CASH_SCREEN_INVALID",
+                               holdings=holdings,prior_orders=open_orders)
         return blocked("SYNTHETIC_CANDIDATE_BUY_NO_TRANSPORT",
                        candidate={"client_order_id":candidate_id(sym,"buy"),
                          "symbol":sym,"side":"buy","notional":str(size),"type":"market",
