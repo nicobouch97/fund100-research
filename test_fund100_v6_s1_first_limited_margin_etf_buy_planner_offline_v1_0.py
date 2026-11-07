@@ -121,7 +121,7 @@ def test_no_reused_xle_only_snapshot_after_first_xlk_purchase():
     x["order_history"][stage.candidate_id("XLK","buy")]={
         "symbol":"XLK","side":"buy","notional":"61.89","status":"filled"}
     r=run(x,c)
-    assert r["status"]=="HOLD_THREE_LEGACY_EXITS_NOT_FULLY_RECONCILED"
+    assert r["status"]=="HOLD_LIMITED_MARGIN_OBSERVATION_OR_ORIGINAL_FILL_MISMATCH"
     assert_stop(r)
 
 
