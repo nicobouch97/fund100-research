@@ -69,6 +69,7 @@ def test_first_acwi_hard_stop_runs_before_any_broker_or_private_token_exists():
     assert "retry:" not in t and "continue-on-error: true" not in t
     assert "permissions:" in t and "contents: read" in t
     assert "issues: write" in t
+    assert t.count("actions: read")==2  # Exact signed run metadata provenance
     assert "'pandas==2.3.3'" in t and "'exchange-calendars==4.13.2'" in t
 
 def test_original_acwi_code_source_and_writer_releases_are_all_still_false():
