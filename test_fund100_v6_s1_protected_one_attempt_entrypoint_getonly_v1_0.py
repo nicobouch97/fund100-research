@@ -40,8 +40,17 @@ def test_broker_key_only_to_existing_pinned_seven_get_step():
     assert w.count("ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}")==1
     assert w.count("python "+SOURCE)==1
     assert "id: risk_source" in w
+    # Separate HIGH-risk qualification remains fail-closed. Unlike the
+    # source-only final summary, it is SKIPPED if no explicit risk_pass
+    # indicator is provided by the genuine credentialed reader.
     assert "if: steps.risk_source.outputs.risk_pass == 'true'" in w
-    assert "test \"${{ steps.risk_source.outputs.risk_pass }}\" = 'true'" in w
+    # The source-only report must require the real broker-read STEP to
+    # succeed, not mistake a missing risk_pass for failed source access.
+    assert "if: steps.risk_source.conclusion == 'success'" in w
+    assert "test \"${{ steps.risk_source.outcome }}\" = 'success'" in w
+    assert "test \"${{ steps.risk_source.outputs.risk_pass }}\" = 'true'" not in w
+    assert "Funding-adjusted LIVE 6/20/35 risk authorization: **NOT VERIFIED**" in w
+    assert "NO LIVE risk permit or funded trade release" in w
     broker=w.split("      - name: Protected actual original seven GET source")[1]
     broker=broker.split("      - name: Confirm source-verified postfunding")[0]
     assert "env:" in broker and "ALPACA_LIVE_KEY" in broker
@@ -73,6 +82,28 @@ def test_scope_or_lock_removal_cannot_keep_readonly_credential_approval(old,repl
     w=workflow()
     assert old in w
     assert not audit.approved_scoped_live_script(PATH,SOURCE,w.replace(old,replacement))
+
+def test_source_success_cannot_be_mislabeled_as_authenticated_account_risk_go():
+    w=workflow()
+    assert w.count("id: risk_source")==1
+    # The source reader does not issue a GitHub output for the higher
+    # 6/20/35 gate; don't interpret successful source discovery as that GO.
+    risk_step=w.split("      - name: Protected actual original seven GET source")[1]
+    risk_step=risk_step.split("      - name: Confirm source-verified postfunding")[0]
+    assert "python "+SOURCE in risk_step
+    assert "risk_pass=" not in risk_step
+    strict=w.split("      - name: Confirm source-verified postfunding")[1]
+    strict=strict.split("      - name: Signed original seq1, owner fence")[0]
+    assert "if: steps.risk_source.outputs.risk_pass == 'true'" in strict
+    report=w.split("      - name: Non-executable readiness only")[1]
+    assert "if: steps.risk_source.conclusion == 'success'" in report
+    assert "test \"${{ steps.risk_source.outcome }}\" = 'success'" in report
+    assert "Funding-adjusted LIVE 6/20/35 risk authorization: **NOT VERIFIED**" in report
+    assert "LIVE first original ACWI order transport: **HARD LOCKED**" in report
+    assert "broker_order_authorized" not in report
+    assert "run_protected_first_acwi_once()" not in w
+    assert audit.approved_scoped_live_script(PATH,SOURCE,w)
+
 
 def test_locked_coordinator_not_executed_and_hard_stop_unchanged():
     w=workflow()
