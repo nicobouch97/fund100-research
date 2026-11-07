@@ -303,7 +303,11 @@ def submit_one_original_xlk_buy(*,amount_usd:str,cost_usd:str,
     updated=_get_both(url=GITHUB_BUY_CONTENTS_URL,
        read_token=private_read_token,write_token=private_write_token,
        transport=private_transport)
-    updated_sha,post=buy._read(updated,**args)
+    try:
+        updated_sha,post=buy._read(updated,**args)
+    except Exception:
+        raise FirstBuyWriterStop(
+            "BUY CAS remote readback HMAC/SHA uncertain; NEVER POST") from None
     if (updated_sha!=plan["new_blob_sha"]
         or post["sequence"]!=2
         or post["prior_blob_sha"]!=sha):
