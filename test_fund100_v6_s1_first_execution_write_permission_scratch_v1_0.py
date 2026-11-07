@@ -99,11 +99,11 @@ def test_exact_disposable_private_and_draft_writes_and_cleanup(monkeypatch):
     assert [x[0] for x in fake.trace]==[
         "GET","PUT","GET","DELETE","GET","POST","GET","DELETE","GET"]
     private,tag=probe._paths(RUN)
-    assert all(("/v2/orders" not in url and
-        "v6_s1_first_acwi_execution_owner_fence" not in url and
-        "v6_s1_private_order_state" not in url and
-        tag in url if "/releases" in url and url==probe.PUBLIC_RELEASES+"/123456789" else True)
-        for _,url,_ in fake.trace)
+    assert all("/v2/orders" not in url and
+               "v6_s1_first_acwi_execution_owner_fence" not in url and
+               "v6_s1_private_order_state" not in url and
+               "v6-s1-first-acwi" not in url
+               for _,url,_ in fake.trace)
     assert all(t in (READ,WRITE,RELEASE) for _,_,t in fake.trace)
     for t in (READ,WRITE,RELEASE):
         assert t not in str(result)
