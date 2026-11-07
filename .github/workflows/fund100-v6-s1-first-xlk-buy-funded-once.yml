@@ -17,6 +17,7 @@ on:
 permissions:
   contents: read
   issues: read
+  actions: read
 
 # Identical mutex to ACTUAL V5 production, bootstrap, first V6 ACWI SELL.
 # No funded broker mutation may overlap any of these writers.
@@ -40,6 +41,7 @@ jobs:
     permissions:
       contents: read
       issues: read
+      actions: read
     env:
       FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
       FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
