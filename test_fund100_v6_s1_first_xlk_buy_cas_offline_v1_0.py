@@ -75,6 +75,15 @@ def test_first_xlk_buy_reservation_seq1_then_prepost_seq2_no_duplicate_broker_or
         assert one["private_usd_amount"] is None
 
 
+def test_whole_dollars_normalise_to_cent_exact_fixed_amount_under_hmac():
+    committed=m.reserve(genesis(),amount_usd="30",cost_usd="0",**ARGS)
+    state=source_from_commit(committed)
+    signed=json.loads(b64decode(state["content"]).decode())
+    assert signed["first_buy"]["notional_usd"]=="30.00"
+    assert signed["first_buy"]["all_in_cost_usd"]=="0.00"
+    assert m.reserve(state,amount_usd="30.00",cost_usd="0.00",**ARGS)["commit"] is None
+
+
 def test_first_xlk_buy_commit_contains_exact_original_hmac_signed_notional_and_immutable_binding():
     s0=genesis()
     p=m.reserve(s0,amount_usd=AMOUNT,cost_usd=COST,**ARGS)
@@ -96,7 +105,7 @@ def test_first_xlk_buy_commit_contains_exact_original_hmac_signed_notional_and_i
     ("0.99","0.00"),("65.01","0.10"),("1000.00","0.00"),
     ("1.00","0.02"),("29.40","1.00"),("NaN","0.10"),
     ("1e1","0.10"),("1.001","0.00"),("29.40","0.101"),
-    ("-1.00","0.00"),("30","0.00"),(30,"0.00"),
+    ("-1.00","0.00"),(30,"0.00"),
     (True,"0.00"),("29.40",False),
 ])
 def test_first_buy_cap_and_exact_costs_cannot_be_evaded(amount,cost):
