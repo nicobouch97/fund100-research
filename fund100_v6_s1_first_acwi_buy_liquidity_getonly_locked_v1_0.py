@@ -91,13 +91,33 @@ def inspect(*,private_read_token:str,private_write_token:str,
             public_read_token:str,hmac_hex:str,
             broker_key:str,broker_secret:str,
             fake_postorder_kwargs:dict|None=None,
-            fake_account_get=None,now_utc:str|None=None)->dict:
+            fake_account_get=None,now_utc:str|None=None,
+            first_xlk_buy_notional_usd:str|None=None,
+            worst_case_all_in_cost_usd:str|None=None)->dict:
     """GET authentic signed ACWI FILL/flat THEN current buying-power source.
 
     No buyer, budget order object, current realized risk GO or executable
     instrument is returned. Cash remains private and never appears in the
     result; only the qualitative >=$1 capacity category is exposed.
     """
+    # The exact order proposal is *only* an amount/cost, NEVER a permit
+    # or a caller-supplied "cash-screen passed" flag. Reject partial or
+    # malformed proposals before any broker/source access.
+    proposed=(first_xlk_buy_notional_usd is not None
+              or worst_case_all_in_cost_usd is not None)
+    if proposed and (first_xlk_buy_notional_usd is None
+                     or worst_case_all_in_cost_usd is None):
+        raise LiquidityStop("Exact XLK notional and ALL-IN cost must be paired")
+    amount=None
+    cost=None
+    if proposed:
+        amount=_money(first_xlk_buy_notional_usd,"XLK exact notional",positive=True)
+        cost=_money(worst_case_all_in_cost_usd,"XLK worst-case all-in cost")
+        if (amount.as_tuple().exponent<-2
+            or cost.as_tuple().exponent<-2
+            or amount<policy.MIN_BUY or amount>policy.MAX_ORDER
+            or cost>amount*Decimal(".01")):
+            raise LiquidityStop("First XLK order notional/cost outside source cap")
     mock=(fake_postorder_kwargs is not None
           or fake_account_get is not None or now_utc is not None)
     if mock:
@@ -266,6 +286,26 @@ def inspect(*,private_read_token:str,private_write_token:str,
             raise LiquidityStop("Post-ACWI 6/20/35 actual account HIGH risk source HOLD")
         available=min(cash,buying,nonmargin)
         room=available-equity*policy.CASH_FLOOR
+        if proposed:
+            # IMPORTANT: do this AFTER the same-process 8 new GETs, not
+            # against a caller-supplied account figure or old SELL risk GO.
+            # Only this one staged first BUY may coexist with legacy
+            # original EEM/XLV/XLE. Never assume unsettled proceeds settled:
+            # the 1x equity-only class and actual NONMARGINABLE buying power
+            # must BOTH be sufficient at this observation.
+            nav_after_cost=equity-cost
+            gross=sum(marks.values(),Decimal(0))
+            if (nav_after_cost<=0
+                or amount>policy.TARGET["XLK"]*min(equity,policy.CAP)
+                or amount>policy.MAX_SYMBOL*nav_after_cost
+                or gross+amount>policy.MAX_GROSS*nav_after_cost
+                or any(v>policy.MAX_SYMBOL*nav_after_cost
+                       for v in marks.values())
+                or marks["XLE"]>policy.TARGET["XLE"]*nav_after_cost
+                or available-amount-cost<policy.CASH_FLOOR*equity
+                or cash-amount-cost<policy.CASH_FLOOR*equity):
+                raise LiquidityStop(
+                    "Exact XLK first BUY exceeds current authenticated cash, target or risk envelope")
     except Exception:
         raise LiquidityStop(
             "First ACWI real postorder/broker cash or liquidity source HOLD") from None
@@ -283,10 +323,16 @@ def inspect(*,private_read_token:str,private_write_token:str,
         "account_unleveraged_limited_margin_1x_mathematically_verified":True,
         "first_new_etf_buy_headroom_at_least_one_usd_before_fees":
             room>=policy.MIN_BUY,
+        "first_xlk_exact_order_notional_and_all_in_cost_screen_passed":
+            bool(proposed),
+        "first_xlk_exact_cash_and_1x_nonmarginable_bp_screen_from_same_gets":
+            bool(proposed),
         "available_buying_power_or_cash_values_returned":False,
         "funding_adjusted_post_acwi_high_6_20_35_source_screen_passed":True,
         "actual_posttrade_high_6_20_35_risk_verified":not mock,
         "broker_risk_data_releasable_as_trading_permission":False,
+        "first_xlk_order_identified_and_signed_in_private_buy_CAS":False,
+        "first_xlk_buy_live_authorized":False,
         "sale_proceeds_settled_verified":False,
         "next_legacy_sell_or_live_buy_authorized":False,
         "original_acwi_resubmission_permitted":False,
