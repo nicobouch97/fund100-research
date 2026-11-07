@@ -47,12 +47,11 @@ jobs:
           grep -Eq '"first_original_acwi_sell_enabled": false' fund100_v6_s1_operator_control.json
 
   protected-disposable-scratch-write:
+    # Explicitly dormant: merging or pushing must NEVER perform remote writes.
+    # Separate owner authorization and a reviewed follow-up are required before
+    # this job may be enabled; offline credentialless CI remains available.
     needs: credentialless-fake-write-protocol
-    if: >-
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main' &&
-      github.run_attempt == 1 &&
-      github.workflow_ref == 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-first-execution-write-permission-scratch.yml@refs/heads/main'
+    if: ${{ false }}
     runs-on: ubuntu-latest
     environment: fund100-live-broker
     timeout-minutes: 8
