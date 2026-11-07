@@ -9,6 +9,8 @@ import exchange_calendars as xcals
 import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
 import fund100_v6_s1_fresh_acwi_order_time_risk_getonly_v1_0 as stopped
 
+ORIGINAL_CASHRISK_INSPECT=active.cashrisk.inspect
+
 QTY="1.0"
 KEY="synthetic-no-live-key"
 SECRET="synthetic-no-live-secret"
@@ -311,11 +313,10 @@ def test_funding_prefix_missing_inside_covered_history_fails_closed(monkeypatch)
 
 def test_funded_market_session_gap_can_not_hide_daily_loss(monkeypatch):
     def mutate(doc):
-        # Remove one funded daily mark from 3M and 1M, preserving suffix.
-        del doc[7]["timestamp"][-3]
-        del doc[7]["equity"][-3]
-        del doc[4]["timestamp"][-3]
-        del doc[4]["equity"][-3]
+        # Remove one funded older daily close outside the 1M suffix.
+        # The 1M suffix remains identical, so XNYS completeness matters.
+        del doc[7]["timestamp"][5]
+        del doc[7]["equity"][5]
     state,_=mock_sources(monkeypatch,mutations=mutate)
     with pytest.raises(active.ActiveSellStop,match="exchange-session"):
         active.inspect_active_original_acwi_sell(
@@ -337,12 +338,10 @@ def test_mutated_cashflow_timing_missing_research_risk_stays_locked(monkeypatch)
 
 
 def test_3m_funding_history_uses_existing_cashrisk_on_actual_dates(monkeypatch):
-    from datetime import date
     state,docs=mock_sources(monkeypatch)
-    # This test deliberately unpatches the stub and computes actual private-
-    # shaped historical risk using synthetic values and the real evaluator.
-    original=__import__("fund100_v6_s1_live_cashflow_risk_bounds_v1_0")
-    monkeypatch.setattr(active.cashrisk,"inspect",original.inspect)
+    # This test deliberately restores the original evaluator, which was
+    # saved before the fixture installed a synthetic mock.
+    monkeypatch.setattr(active.cashrisk,"inspect",ORIGINAL_CASHRISK_INSPECT)
     r=active.inspect_active_original_acwi_sell(
         original_qty=QTY,key=KEY,secret=SECRET)
     assert r["same_process_real_broker_gets"]==8
