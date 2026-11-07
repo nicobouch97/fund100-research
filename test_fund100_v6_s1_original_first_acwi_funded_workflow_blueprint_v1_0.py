@@ -94,6 +94,38 @@ def test_one_protected_job_has_exact_writer_mutex_and_tiny_issue_write_scope():
     assert "id-token: write" not in s
     assert "pull-requests: write" not in s
 
+def test_funded_first_acwi_nyse_runtime_installs_only_after_go_and_without_secrets():
+    # The active V2 first-sale reader now uses pandas and the XNYS session
+    # calendar to reject missing funded close observations. The inactive
+    # first-funded blueprint must NOT fail at runtime with ModuleNotFoundError
+    # after acquiring original signed execution permission.
+    from pathlib import Path
+    v2=Path("fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py").read_text()
+    assert "import pandas as pd" in v2
+    assert "import exchange_calendars as xcals" in v2
+    s=source()
+    marker="      - name: Install pinned funded XNYS risk-calendar dependencies (no secrets)"
+    assert s.count(marker)==1
+    before,tail=s.split(marker)
+    install,execute=tail.split(
+        "      - name: One authenticated first-attempt original signed ACWI SELL; NEVER RETRY")
+    assert "test \"$FUND100_BROKER_KILL_SWITCH\" = 'DISENGAGED'" in before
+    assert "test \"$FUND100_RISK_LEVEL\" = 'HIGH'" in before
+    assert 'grep -Eq \'"trading_enabled": true\' fund100_v6_s1_operator_control.json' in before
+    assert "python -m pip install --disable-pip-version-check --no-input --only-binary=:all: 'pandas==2.3.3' 'exchange-calendars==4.13.2'" in install
+    assert "assert pandas.__version__=='2.3.3'" in install
+    assert "assert exchange_calendars.__version__=='4.13.2'" in install
+    assert "secrets." not in before+install
+    assert "GITHUB_TOKEN:" not in before+install
+    assert "ALPACA_LIVE_KEY" not in before+install
+    assert "ALPACA_LIVE_SECRET" not in before+install
+    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in before+install
+    assert "python -B fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py" in execute
+    assert BLUEPRINT.parts[0]=="release_candidates"
+    # Still NO deployed scheduled funded execution workflow.
+    assert not Path(".github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml").exists()
+
+
 def test_secrets_limited_to_final_single_step_and_exact_protected_names():
     s=source()
     initial,execution=s.split(
@@ -129,7 +161,8 @@ def test_exact_go_kill_legacy_v5_stop_and_single_original_send():
     assert s.count("python -B fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py")==1
     assert "ALPACA_LIVE_KEY" in s and "ALPACA_LIVE_SECRET" in s
     assert "curl " not in s and "git push" not in s
-    assert "pip install" not in s
+    assert s.count("python -m pip install")==1
+    assert "'pandas==2.3.3' 'exchange-calendars==4.13.2'" in s
     assert "continue-on-error: true" not in s
     assert "strategy:" not in s
 
