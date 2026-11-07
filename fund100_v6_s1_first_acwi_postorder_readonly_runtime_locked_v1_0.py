@@ -72,7 +72,7 @@ def inspect_original_once(*,private_read_token:str,private_write_token:str,
                           private_transport=None,public_immutable_transport=None,
                           broker_transport=None,now_utc=None,
                           issue_page_get=None,comment_get=None,
-                          first_run_get=None)->dict:
+                          first_run_get=None,owner_get=None)->dict:
     """Authentic GET-only join only once released; all mock inputs explicit.
 
     Source material remains in-process and is never logged or included in
@@ -80,7 +80,7 @@ def inspect_original_once(*,private_read_token:str,private_write_token:str,
     """
     mock=_is_mock(
         private_transport,public_immutable_transport,broker_transport,now_utc,
-        issue_page_get,comment_get,first_run_get)
+        issue_page_get,comment_get,first_run_get,owner_get)
     if mock:
         if (not callable(private_transport)
             or not callable(public_immutable_transport)
@@ -88,6 +88,7 @@ def inspect_original_once(*,private_read_token:str,private_write_token:str,
             or not callable(issue_page_get)
             or not callable(comment_get)
             or not callable(first_run_get)
+            or not callable(owner_get)
             or type(now_utc) is not str):
             raise PostorderRuntimeStop("Partial/mock transport not permitted")
     else:
@@ -107,8 +108,9 @@ def inspect_original_once(*,private_read_token:str,private_write_token:str,
         ledger_source=chain.ownership._get_bounded_json(
             url=chain.ownership.ORIGINAL_ORDER_LEDGER_URL+"?ref=main",
             token=private_read_token,transport=private_transport)
-        owner_source=chain.ownership._get_signed_source(
-            token=private_read_token,transport=private_transport)
+        owner_source=(chain.ownership._get_signed_source(
+            token=private_read_token) if not mock else
+            owner_get(token=private_read_token))
         genesis=(
             recovery._get(
                 url=recovery.PUBLIC_COMMENT_PREFIX+intent.GENESIS_COMMENT_ID,
