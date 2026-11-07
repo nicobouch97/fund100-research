@@ -59,6 +59,7 @@ def test_first_buy_funded_schedule_shares_all_live_order_mutex_and_stops_early()
     assert "environment: fund100-live-broker" in w
     assert "persist-credentials: false" in w
     assert "contents: read" in w and "issues: read" in w
+    assert w.count("actions: read")==2  # Authenticated original Actions run proof
     first=w.index("- name: Fail closed before first XLK BUY source or private HTTP")
     pip=w.index("- name: Install pinned first BUY XNYS risk calendar")
     secrets=w.index("FUND100_PRIVATE_STATE_READ_TOKEN:")
