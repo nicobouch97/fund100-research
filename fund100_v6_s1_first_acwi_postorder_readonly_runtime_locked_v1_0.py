@@ -27,6 +27,7 @@ import fund100_v6_s1_original_one_attempt_chain_locked_v1_0 as chain
 import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent
 import fund100_v6_s1_first_private_head_external_witness_offline_v1_0 as first
 import fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0 as second
+import fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0 as scope
 
 SCHEMA="FUND100_V6_S1_ORIGINAL_ACWI_POSTORDER_PROTECTED_READONLY_GET_V1"
 AUTHENTICATED_POSTORDER_RUNTIME_RELEASED=False
@@ -34,10 +35,8 @@ NO_BROKER_POST=True
 NO_PRIVATE_GIT_PUT=True
 NO_ORIGINAL_ACWI_RESUBMISSION=True
 NO_FOLLOW_ON_SELL_OR_BUY_RELEASE=True
-EXPECTED_WORKFLOW_REF=(
-    "nicobouch97/fund100-research/.github/workflows/"
-    "fund100-v6-s1-original-postorder-getonly.yml@refs/heads/main"
-)
+EXPECTED_WORKFLOW_REF=scope.READONLY_POSTORDER_WORKFLOW_REF
+FIRST_BUY_WORKFLOW_REF=scope.FIRST_XLK_FUNDED_BUY_WORKFLOW_REF
 
 class PostorderRuntimeStop(RuntimeError):
     pass
@@ -53,7 +52,7 @@ def _require_scoped_source():
         or e.get("GITHUB_ACTIONS")!="true"
         or e.get("GITHUB_REPOSITORY")!="nicobouch97/fund100-research"
         or e.get("GITHUB_REF")!="refs/heads/main"
-        or e.get("GITHUB_WORKFLOW_REF")!=EXPECTED_WORKFLOW_REF
+        or not scope.qualifies(environ=dict(e))
         or e.get("GITHUB_RUN_ATTEMPT")!="1"
         or e.get("GITHUB_EVENT_NAME") not in ("schedule","workflow_dispatch")
         or e.get("FUND100_ENABLE_LIVE_READONLY")!="YES_READ_ONLY_LIVE"
