@@ -147,10 +147,17 @@ jobs:
           print('IMMUTABLE_RELEASE_SETTING_ENABLED_PROVIDER_VERIFIED; STILL STOP.')
           PY
       - name: Non-executable readiness only - no owner CAS, release, or Alpaca POST
+        # A successful seven-GET source read is NOT a 6/20/35 trade permit.
+        # The original reader has no risk_pass output: treating an absent
+        # output as 'false' and requiring 'true' made this job fail even
+        # though the independent original-account and private-source READs
+        # passed. Keep the stricter risk_pass qualification step above
+        # separately fail-closed; this last step reports SOURCE ONLY.
+        if: steps.risk_source.conclusion == 'success'
         run: |
           set -euo pipefail
           test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
-          test "${{ steps.risk_source.outputs.risk_pass }}" = 'true'
+          test "${{ steps.risk_source.outcome }}" = 'success'
           grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
           echo 'ONE protected job checked real account and signed state GET only.'
           echo 'Original first ACWI one-attempt coordinator NOT CALLED; NO LIVE orders.'
@@ -159,11 +166,12 @@ jobs:
           # GitHub's summary is non-sensitive and not an execution permit.
           cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
           ### Fund-100 V6 first ACWI readiness (READ ONLY)
-          - Actual protected broker account/risk GET source: **PASS**
+          - Authenticated original broker seven-GET source: **PASS (SOURCE ONLY)**
+          - Funding-adjusted LIVE 6/20/35 risk authorization: **NOT VERIFIED**
           - Original signed ACWI seq1 and unclaimed owner HMAC GET: **PASS**
           - Provider immutable release administration GET: **PASS**
           - LIVE first original ACWI order transport: **HARD LOCKED**
           - Operator STOP / broker kill switch: **ENGAGED**
           - New orders or private writes: **ZERO**
-          - Status: **Launch source checks up to date; execution not released**
+          - Status: **Read-only evidence verified; NO LIVE risk permit or funded trade release**
           EOF
