@@ -98,7 +98,7 @@ def setup(monkeypatch):
         return {
             "status":"ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2",
             "broker_order_authorized":True,
-            "same_process_real_broker_gets":7,
+            "same_process_real_broker_gets":8,
             "original_acwi_exact_fractional_holdings_verified":True,
             "original_open_market_and_no_pending_order_verified":True,
             "original_strict_postfunding_6_20_35_risk_pass":True,
@@ -285,6 +285,8 @@ def test_preclaim_blockers_cannot_start_any_write(setup,monkeypatch,mode):
 
 
 @pytest.mark.parametrize("field,bad",[
+    ("same_process_real_broker_gets",7),
+    ("same_process_real_broker_gets",6),
     ("sell_only_original_legacy_ACWI",False),
     ("buy_authorized",True),
     ("capital_ceiling_usd","999.00"),

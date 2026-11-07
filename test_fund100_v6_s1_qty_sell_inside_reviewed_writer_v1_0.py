@@ -24,7 +24,7 @@ def fake_FUTURE_risk_V2_release_only_in_credentialless_test(monkeypatch):
         assert key==TEST_KEY and secret==TEST_SECRET
         return {
             "status":"ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2",
-            "same_process_real_broker_gets":7,
+            "same_process_real_broker_gets":8,
             "original_acwi_exact_fractional_holdings_verified":True,
             "original_open_market_and_no_pending_order_verified":True,
             "original_strict_postfunding_6_20_35_risk_pass":True,
@@ -330,13 +330,14 @@ def test_final_writer_broker_risk_source_unavailable_blocks_any_post(monkeypatch
     fake=FakeBrokerPost()
     def unavailable(**kwargs):raise TimeoutError("no actual risk GET")
     monkeypatch.setattr(risk,"inspect_actual_original_seven_get",unavailable)
-    with pytest.raises(writer.LiveWriterCandidateLocked,match="seven-GET risk unavailable"):
+    with pytest.raises(writer.LiveWriterCandidateLocked,match="source risk unavailable"):
         call(fake)
     assert fake.calls==0
 
 
 @pytest.mark.parametrize("tamper",[
     ("status","FORGED_GO"),("same_process_real_broker_gets",6),
+    ("same_process_real_broker_gets",7),
     ("original_acwi_exact_fractional_holdings_verified",False),
     ("original_open_market_and_no_pending_order_verified",False),
     ("original_strict_postfunding_6_20_35_risk_pass",False),
@@ -356,7 +357,7 @@ def test_final_writer_rejects_incomplete_or_stale_same_process_broker_risk(
     def report(**kwargs):
         r={
             "status":"ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2",
-            "same_process_real_broker_gets":7,
+            "same_process_real_broker_gets":8,
             "original_acwi_exact_fractional_holdings_verified":True,
             "original_open_market_and_no_pending_order_verified":True,
             "original_strict_postfunding_6_20_35_risk_pass":True,
@@ -390,7 +391,7 @@ def test_final_writer_rejects_missing_original_active_high_sell_scope_before_any
     def report(**kwargs):
         r={
             "status":"ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2",
-            "same_process_real_broker_gets":7,
+            "same_process_real_broker_gets":8,
             "original_acwi_exact_fractional_holdings_verified":True,
             "original_open_market_and_no_pending_order_verified":True,
             "original_strict_postfunding_6_20_35_risk_pass":True,
