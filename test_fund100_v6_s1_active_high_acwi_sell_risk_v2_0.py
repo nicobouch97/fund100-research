@@ -3,9 +3,13 @@ from copy import deepcopy
 from datetime import datetime,timezone,timedelta
 from hashlib import sha256
 import pytest
+import pandas as pd
+import exchange_calendars as xcals
 
 import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
 import fund100_v6_s1_fresh_acwi_order_time_risk_getonly_v1_0 as stopped
+
+ORIGINAL_CASHRISK_INSPECT=active.cashrisk.inspect
 
 QTY="1.0"
 KEY="synthetic-no-live-key"
@@ -18,7 +22,8 @@ def mock_sources(monkeypatch, *, enabled=True, mutations=None):
         "GITHUB_ACTIONS":"true",
         "GITHUB_REPOSITORY":"nicobouch97/fund100-research",
         "GITHUB_REF":"refs/heads/main",
-        "GITHUB_EVENT_NAME":"workflow_dispatch",
+        "GITHUB_EVENT_NAME":"schedule",
+        "GITHUB_WORKFLOW_REF":active.FIRST_ACWI_SCHEDULE_REF,
         "GITHUB_RUN_ATTEMPT":"1","FUND100_RISK_LEVEL":"HIGH",
         "FUND100_BROKER_KILL_SWITCH":"DISENGAGED",
         "FUND100_ENABLE_LIVE_READONLY":"YES_READ_ONLY_LIVE",
@@ -61,14 +66,28 @@ def mock_sources(monkeypatch, *, enabled=True, mutations=None):
          "market_value":"10.00"}
         for s in ("ACWI","EEM","XLE","XLV")
     ]
+    # Derive exact XNYS sessions (no Sundays, fake weekdays or skipped
+    # market closes) so the new 3M source has a genuine pre-funding prefix.
+    market=xcals.get_calendar("XNYS")
+    days=market.sessions_in_range(
+        pd.Timestamp(now.date())-pd.Timedelta(days=40),
+        pd.Timestamp(now.date())-pd.Timedelta(days=1))[-12:]
+    assert len(days)==12
+    stamps=[int(x.timestamp()) for x in days]
+    nav=[None,0,0,0]+[100]*8
+    month={"timeframe":"1D","timestamp":stamps[-6:],"equity":nav[-6:]}
+    extended_history={"timeframe":"1D","timestamp":stamps,"equity":nav}
+    first_funded=days[4].date()
+    funding_date=(first_funded-timedelta(days=1)).isoformat()
     docs=[
         account,positions,[],
         {"is_open":True,"timestamp":now.isoformat(),
          "next_close":(now+timedelta(hours=2)).isoformat()},
-        {"history":"masked"},
+        month,
         [{"id":"funding-only","activity_type":"CSD","net_amount":"100.00",
-          "date":"2026-10-01"}],
+          "date":funding_date}],
         {"history":"masked-none"},
+        extended_history,
     ]
     if mutations is not None:mutations(docs)
     endpoints=(
@@ -79,11 +98,12 @@ def mock_sources(monkeypatch, *, enabled=True, mutations=None):
         (active.five.HISTORY_PATH,active.five.HISTORY_PARAMS),
         (active.six.ACTIVITIES_PATH,active.six.ACTIVITY_PARAMS),
         (active.five.HISTORY_PATH,active.seven.EXTRA_PARAMS),
+        (active.five.HISTORY_PATH,active.extended.EXTENDED_PARAMS),
     )
     def get_json(*,path,params,key,secret):
         assert key==KEY and secret==SECRET
         n=state["reads"]
-        assert n<7 and (path,params)==endpoints[n]
+        assert n<8 and (path,params)==endpoints[n]
         state["reads"]+=1
         return deepcopy(docs[n])
     monkeypatch.setattr(active.broker,"get_json",get_json)
@@ -111,14 +131,14 @@ def test_active_high_exact_real_get_path_yields_only_sell_scope(monkeypatch):
         original_qty=QTY,key=KEY,secret=SECRET)
     assert got["status"]=="ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2"
     assert got["broker_order_authorized"] is True
-    assert got["same_process_real_broker_gets"]==7
+    assert got["same_process_real_broker_gets"]==8
     assert got["sell_only_original_legacy_ACWI"] is True
     assert got["buy_authorized"] is False
     assert got["full_original_acwi_exit_bounded_by_authenticated_inventory"] is True
     assert got["maximum_new_order_notional_usd"]=="65.00"
     assert got["capital_ceiling_usd"]=="130.30"
     assert got["broker_post_attempts"]==0
-    assert s["reads"]==7 and s["operator_gets"]==2
+    assert s["reads"]==8 and s["operator_gets"]==2
     for private in (ACCOUNT,QTY,KEY,SECRET):
         assert private not in str(got)
     assert all(got.get(k) is None for k in (
@@ -127,7 +147,8 @@ def test_active_high_exact_real_get_path_yields_only_sell_scope(monkeypatch):
 
 @pytest.mark.parametrize("key,value",[
     ("GITHUB_ACTIONS","false"),("GITHUB_REF","refs/heads/test"),
-    ("GITHUB_EVENT_NAME","push"),("GITHUB_RUN_ATTEMPT","2"),
+    ("GITHUB_EVENT_NAME","push"),
+    ("GITHUB_WORKFLOW_REF","untrusted/.github/workflows/other.yml@refs/heads/main"),("GITHUB_RUN_ATTEMPT","2"),
     ("FUND100_RISK_LEVEL","LOW"),("FUND100_BROKER_KILL_SWITCH","ENGAGED"),
     ("FUND100_ENABLE_LIVE_READONLY","NO"),
 ])
@@ -150,13 +171,13 @@ def test_independent_current_v6_operator_must_be_enabled_before_and_after_reads(
     old=active.broker.get_json
     def changed(**kwargs):
         response=old(**kwargs)
-        if s["reads"]==7:s["operator"]=False
+        if s["reads"]==8:s["operator"]=False
         return response
     monkeypatch.setattr(active.broker,"get_json",changed)
     with pytest.raises(active.ActiveSellStop):
         active.inspect_active_original_acwi_sell(
             original_qty=QTY,key=KEY,secret=SECRET)
-    assert s["reads"]==7
+    assert s["reads"]==8
 
 def test_original_v5_operator_must_remain_stop_even_if_v6_operator_enabled(monkeypatch):
     state,_=mock_sources(monkeypatch)
@@ -190,7 +211,7 @@ def test_active_broker_source_rejects_modified_account_holdings_clock_or_funding
     with pytest.raises(active.ActiveSellStop):
         active.inspect_active_original_acwi_sell(
             original_qty=QTY,key=KEY,secret=SECRET)
-    assert s["reads"]==7
+    assert s["reads"]==8
 
 @pytest.mark.parametrize("risk",[
     {"strictly_postfunding_account_6_20_35_source_verified":False},
@@ -209,7 +230,7 @@ def test_risk_break_cannot_authorize_sell(monkeypatch,risk):
     with pytest.raises(active.ActiveSellStop):
         active.inspect_active_original_acwi_sell(
             original_qty=QTY,key=KEY,secret=SECRET)
-    assert s["reads"]==7
+    assert s["reads"]==8
 
 
 
@@ -225,7 +246,7 @@ def test_original_first_sell_requires_explicit_false_broker_unblocked_flags(
     with pytest.raises(active.ActiveSellStop):
         active.inspect_active_original_acwi_sell(
             original_qty=QTY,key=KEY,secret=SECRET)
-    assert state["reads"]==7
+    assert state["reads"]==8
 
 
 @pytest.mark.parametrize("field",["account_blocked","trading_blocked"])
@@ -236,7 +257,7 @@ def test_original_first_sell_missing_broker_block_flag_fails_closed(monkeypatch,
     with pytest.raises(active.ActiveSellStop):
         active.inspect_active_original_acwi_sell(
             original_qty=QTY,key=KEY,secret=SECRET)
-    assert state["reads"]==7
+    assert state["reads"]==8
 
 
 def test_full_existing_acwi_inventory_exit_can_exceed_new_order_65_without_expanding_exposure(monkeypatch):
@@ -249,7 +270,7 @@ def test_full_existing_acwi_inventory_exit_can_exceed_new_order_65_without_expan
     state,_=mock_sources(monkeypatch,mutations=owned_inventory)
     got=active.inspect_active_original_acwi_sell(
         original_qty=QTY,key=KEY,secret=SECRET)
-    assert state["reads"]==7
+    assert state["reads"]==8
     assert got["full_original_acwi_exit_bounded_by_authenticated_inventory"] is True
     assert got["maximum_new_order_notional_usd"]=="65.00"
     assert got["capital_ceiling_usd"]=="130.30"
@@ -258,6 +279,76 @@ def test_full_existing_acwi_inventory_exit_can_exceed_new_order_65_without_expan
     assert got["orders_submitted_here"]==got["broker_post_attempts"]==0
     assert "80.00" not in str(got)
     assert active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is True  # test fixture only
+
+
+def test_original_one_month_source_without_earlier_prefunding_does_not_pass(monkeypatch):
+    def mutate(doc):
+        doc[7] = deepcopy(doc[4])
+    state,_=mock_sources(monkeypatch,mutations=mutate)
+    with pytest.raises(active.ActiveSellStop,match="disagreement"):
+        active.inspect_active_original_acwi_sell(
+            original_qty=QTY,key=KEY,secret=SECRET)
+    assert state["reads"]==8
+
+
+def test_changed_funded_mark_in_3m_cannot_reuse_original_1m(monkeypatch):
+    def mutate(doc):
+        doc[7]["equity"][-1]=float(98)
+    state,_=mock_sources(monkeypatch,mutations=mutate)
+    with pytest.raises(active.ActiveSellStop,match="disagreement"):
+        active.inspect_active_original_acwi_sell(
+            original_qty=QTY,key=KEY,secret=SECRET)
+    assert state["reads"]==8
+
+
+def test_funding_prefix_missing_inside_covered_history_fails_closed(monkeypatch):
+    def mutate(doc):
+        doc[7]["equity"][:4]=[100,100,100,100]
+    state,_=mock_sources(monkeypatch,mutations=mutate)
+    with pytest.raises(active.ActiveSellStop,match="disagreement"):
+        active.inspect_active_original_acwi_sell(
+            original_qty=QTY,key=KEY,secret=SECRET)
+    assert state["reads"]==8
+
+
+def test_funded_market_session_gap_can_not_hide_daily_loss(monkeypatch):
+    def mutate(doc):
+        # Remove one funded older daily close outside the 1M suffix.
+        # The 1M suffix remains identical, so XNYS completeness matters.
+        del doc[7]["timestamp"][5]
+        del doc[7]["equity"][5]
+    state,_=mock_sources(monkeypatch,mutations=mutate)
+    with pytest.raises(active.ActiveSellStop,match="exchange-session"):
+        active.inspect_active_original_acwi_sell(
+            original_qty=QTY,key=KEY,secret=SECRET)
+    assert state["reads"]==8
+
+
+def test_mutated_cashflow_timing_missing_research_risk_stays_locked(monkeypatch):
+    state,_=mock_sources(monkeypatch)
+    monkeypatch.setattr(active.cashrisk,"inspect",lambda **kw:{
+        "schema":active.cashrisk.STATUS_SCHEMA,
+        "strictly_postfunding_account_6_20_35_source_verified":False,
+        "source_rejection_category":"NONE",
+    })
+    with pytest.raises(active.ActiveSellStop,match="HIGH risk"):
+        active.inspect_active_original_acwi_sell(
+            original_qty=QTY,key=KEY,secret=SECRET)
+    assert state["reads"]==8
+
+
+def test_3m_funding_history_uses_existing_cashrisk_on_actual_dates(monkeypatch):
+    state,docs=mock_sources(monkeypatch)
+    # This test deliberately restores the original evaluator, which was
+    # saved before the fixture installed a synthetic mock.
+    monkeypatch.setattr(active.cashrisk,"inspect",ORIGINAL_CASHRISK_INSPECT)
+    r=active.inspect_active_original_acwi_sell(
+        original_qty=QTY,key=KEY,secret=SECRET)
+    assert r["same_process_real_broker_gets"]==8
+    assert r["original_strict_postfunding_6_20_35_risk_pass"] is True
+    assert state["reads"]==8
+    assert "private" not in str(r).lower()
+
 
 def test_live_source_cannot_send_broker_order_and_original_hist_evidence_is_unchanged():
     from pathlib import Path

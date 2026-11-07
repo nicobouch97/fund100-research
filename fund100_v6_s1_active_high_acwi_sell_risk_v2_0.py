@@ -1,4 +1,4 @@
-"""Original first ACWI sell: real GET-derived ACTIVE HIGH source V2 (HARD LOCKED).
+"""Original first ACWI sell: source-bound ACTIVE HIGH 8-GET risk V2 (HARD LOCKED).
 
 This is a tightly scoped *sell-only* pretrade gate, not a new order writer.
 Unlike the original V1 read-only risk source, this version requires the
@@ -12,7 +12,7 @@ must explicitly select this version; historical STOP-only V1 remains intact.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from hashlib import sha256
 import os
@@ -25,6 +25,7 @@ import fund100_v6_s1_live_risk_history_getonly_v1_0 as five
 import fund100_v6_s1_live_private_xle_activity_getonly_v1_0 as six
 import fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 as seven
 import fund100_v6_s1_live_cashflow_risk_bounds_v1_0 as cashrisk
+import fund100_v6_s1_three_month_prefunding_probe_v1_0 as extended
 import fund100_v6_s1_independent_high_exante_policy_v1_0 as limits
 import fund100_v6_s1_operator_control_v2_0 as v6_operator
 
@@ -33,6 +34,10 @@ ACTIVE_HIGH_SELL_SOURCE_RELEASED=False
 NO_BROKER_POST=True
 SYMBOL="ACWI"
 ORIGINAL_POSITIONS=frozenset(("ACWI","EEM","XLE","XLV"))
+FIRST_ACWI_SCHEDULE_REF=(
+    "nicobouch97/fund100-research/.github/workflows/"
+    "fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main"
+)
 
 class ActiveSellStop(RuntimeError):
     pass
@@ -49,7 +54,8 @@ def _scope():
         or os.getenv("GITHUB_ACTIONS")!="true"
         or os.getenv("GITHUB_REPOSITORY")!="nicobouch97/fund100-research"
         or os.getenv("GITHUB_REF")!="refs/heads/main"
-        or os.getenv("GITHUB_EVENT_NAME")!="workflow_dispatch"
+        or os.getenv("GITHUB_EVENT_NAME")!="schedule"
+        or os.getenv("GITHUB_WORKFLOW_REF")!=FIRST_ACWI_SCHEDULE_REF
         or os.getenv("GITHUB_RUN_ATTEMPT")!="1"
         or os.getenv("FUND100_RISK_LEVEL")!="HIGH"
         or os.getenv("FUND100_BROKER_KILL_SWITCH")!="DISENGAGED"
@@ -68,9 +74,9 @@ def _scope():
         raise ActiveSellStop("LIVE operator or broker GET eligibility unavailable") from None
 
 def evaluate_original_sell_only(*,account,positions,orders,clock,history,
-                                activities,native_none_history,bootstrap,
+                                activities,native_none_history,extended_history,bootstrap,
                                 original_policy,original_qty,observed_at_utc):
-    """Review the actual seven GET objects. Never accept a cached redacted GO.
+    """Review eight fresh authenticated GET objects; never accept a cached GO.
 
     Original bootstrap/policy are historical signed evidence, not current
     operator instructions. Must be followed by another authenticated current
@@ -148,12 +154,48 @@ def evaluate_original_sell_only(*,account,positions,orders,clock,history,
             for row in activities if row["activity_type"]=="CSD"]
         if len(deposits)!=1 or not Decimal(0)<deposits[0]<=limits.CAP:
             raise ActiveSellStop("Original authorized $130.30 funded capital breached")
-        # Apply unchanged authenticated 6% daily / 20% drawdown /
-        # 35% volatility risk guard to the actual 1M funded equity history.
-        # This proof itself is categorical historical equity risk, and does
-        # not establish strategy returns or a future account-risk permit.
+        # The historical 1M source began AFTER funding and cannot prove
+        # inception. Reconcile an independently queried 3M suffix in this
+        # SAME broker process. No new request methods or dynamic routes.
+        # Trim pre-Sept rows only because the authenticated nontrade query
+        # explicitly begins 2026-09-01. A pre-funding prefix must remain
+        # INSIDE that verified coverage, otherwise HOLD.
+        try:
+            now=extended._now(observed_at_utc)
+            month_times,month_values,_=extended._daily(history,now,maximum=70)
+            longer_times,longer_values,prefix=extended._daily(
+                extended_history,now,maximum=100)
+        except extended.ExtendedSourceStop:
+            raise ActiveSellStop("Unqualified original 3M portfolio history") from None
+        if (len(longer_times)<=len(month_times)
+            or longer_times[-len(month_times):]!=month_times
+            or longer_values[-len(month_times):]!=month_values
+            or prefix==0):
+            raise ActiveSellStop("Original 1M and 3M historical source disagreement")
+        first_covered=next(
+            (i for i,t in enumerate(longer_times)
+             if datetime.fromtimestamp(t,timezone.utc).date()>=date(2026,9,1)),
+            len(longer_times))
+        if first_covered>=prefix:
+            raise ActiveSellStop("No prefunding history inside verified activity dates")
+        # A missing exchange session can hide a sharp one-day portfolio
+        # loss as a multi-session mark. Require all funded NYSE sessions.
+        import pandas as pd
+        import exchange_calendars as xcals
+        funded_sessions=pd.DatetimeIndex([
+            datetime.fromtimestamp(t,timezone.utc).date()
+            for t in longer_times[prefix:]])
+        scheduled=xcals.get_calendar("XNYS").sessions_in_range(
+            funded_sessions[0],funded_sessions[-1]).tz_localize(None).normalize()
+        if not funded_sessions.equals(scheduled):
+            raise ActiveSellStop("Funded exchange-session observations incomplete")
+        funded_history={
+            "timeframe":"1D",
+            "timestamp":longer_times[first_covered:],
+            "equity":extended_history["equity"][first_covered:],
+        }
         status=cashrisk.inspect(
-            history=history,activities=activities,account=account,
+            history=funded_history,activities=activities,account=account,
             observed_at_utc=observed_at_utc)
         if (status.get("schema")!=cashrisk.STATUS_SCHEMA
             or status.get("strictly_postfunding_account_6_20_35_source_verified") is not True
@@ -171,7 +213,7 @@ def evaluate_original_sell_only(*,account,positions,orders,clock,history,
     return {
         "schema":SCHEMA,
         "status":"ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2",
-        "same_process_real_broker_gets":7,
+        "same_process_real_broker_gets":8,
         "original_acwi_exact_fractional_holdings_verified":True,
         "original_open_market_and_no_pending_order_verified":True,
         "original_strict_postfunding_6_20_35_risk_pass":True,
@@ -190,7 +232,7 @@ def evaluate_original_sell_only(*,account,positions,orders,clock,history,
     }
 
 def inspect_active_original_acwi_sell(*,original_qty:str,key:str,secret:str)->dict:
-    """Seven actual Alpaca GETs in exactly the same final writer process."""
+    """Eight fixed Alpaca GETs in the same future final writer process."""
     _scope()
     approved=(
         ("/v2/account",None),("/v2/positions",None),
@@ -198,9 +240,11 @@ def inspect_active_original_acwi_sell(*,original_qty:str,key:str,secret:str)->di
         ("/v2/clock",None),
         (five.HISTORY_PATH,five.HISTORY_PARAMS),
         (six.ACTIVITIES_PATH,six.ACTIVITY_PARAMS),
-        (five.HISTORY_PATH,seven.EXTRA_PARAMS))
-    if tuple(p for p,_ in approved)!=seven.PATHS:
-        raise ActiveSellStop("Original 7GET source endpoints changed")
+        (five.HISTORY_PATH,seven.EXTRA_PARAMS),
+        (five.HISTORY_PATH,extended.EXTENDED_PARAMS))
+    if (tuple(p for p,_ in approved[:7])!=seven.PATHS
+        or approved[-1]!=(five.HISTORY_PATH,{"period":"3M","timeframe":"1D"})):
+        raise ActiveSellStop("Original 8-GET endpoint or parameter scope changed")
     docs=[]
     for path,params in approved:
         try:
@@ -218,5 +262,6 @@ def inspect_active_original_acwi_sell(*,original_qty:str,key:str,secret:str)->di
     return evaluate_original_sell_only(
         account=docs[0],positions=docs[1],orders=docs[2],clock=docs[3],
         history=docs[4],activities=docs[5],native_none_history=docs[6],
+        extended_history=docs[7],
         bootstrap=boots,original_policy=old_policy,
         original_qty=original_qty,observed_at_utc=now)
