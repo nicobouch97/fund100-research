@@ -204,6 +204,9 @@ on:
       # First original XLK BUY same-process reserve -> CAS/POST entry must pass LIVE audit.
       - "fund100_v6_s1_first_xlk_buy_original_entry_locked_v1_0.py"
       - "test_fund100_v6_s1_first_xlk_buy_original_entry_locked_v1_0.py"
+      # Dormant scheduled first XLK BUY path and lock/mutex tests need full LIVE audit.
+      - ".github/workflows/fund100-v6-s1-first-xlk-buy-funded-once.yml"
+      - "test_fund100_v6_s1_first_xlk_buy_funded_workflow_dormant_v1_0.py"
       - "fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0.py"
       - "test_fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0.py"
       - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
@@ -531,6 +534,9 @@ on:
       # First original XLK BUY same-process reserve -> CAS/POST entry must pass LIVE audit.
       - "fund100_v6_s1_first_xlk_buy_original_entry_locked_v1_0.py"
       - "test_fund100_v6_s1_first_xlk_buy_original_entry_locked_v1_0.py"
+      # Dormant scheduled first XLK BUY path and lock/mutex tests need full LIVE audit.
+      - ".github/workflows/fund100-v6-s1-first-xlk-buy-funded-once.yml"
+      - "test_fund100_v6_s1_first_xlk_buy_funded_workflow_dormant_v1_0.py"
       - "fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0.py"
       - "test_fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0.py"
       - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
