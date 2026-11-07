@@ -81,12 +81,17 @@ def test_scheduled_entrypoint_checks_current_risk_and_remains_hard_locked():
 def test_human_readable_readiness_summary_cannot_claim_execution_release():
     w=original()
     assert 'cat >> "$GITHUB_STEP_SUMMARY"' in w
-    assert "Actual protected broker account/risk GET source: **PASS**" in w
+    assert "Authenticated original broker seven-GET source: **PASS (SOURCE ONLY)**" in w
+    assert "Funding-adjusted LIVE 6/20/35 risk authorization: **NOT VERIFIED**" in w
+    assert "Actual protected broker account/risk GET source: **PASS**" not in w
     assert "Provider immutable release administration GET: **PASS**" in w
     assert "LIVE first original ACWI order transport: **HARD LOCKED**" in w
     assert "Operator STOP / broker kill switch: **ENGAGED**" in w
     assert "New orders or private writes: **ZERO**" in w
-    assert "Status: **Launch source checks up to date; execution not released**" in w
+    assert "Status: **Read-only evidence verified; NO LIVE risk permit or funded trade release**" in w
+    assert "if: steps.risk_source.conclusion == 'success'" in w
+    assert "test \"${{ steps.risk_source.outcome }}\" = 'success'" in w
+    assert "test \"${{ steps.risk_source.outputs.risk_pass }}\" = 'true'" not in w
     assert "Original first ACWI one-attempt coordinator NOT CALLED; NO LIVE orders." in w
 
 
