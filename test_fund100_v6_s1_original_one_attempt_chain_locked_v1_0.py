@@ -5,6 +5,7 @@ import os
 import pytest
 
 import fund100_v6_s1_original_one_attempt_chain_locked_v1_0 as chain
+import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
 import fund100_v6_s1_acwi_unique_owner_fence_offline_v1_0 as fence
 import fund100_v6_s1_private_git_cas_protocol_v1_0 as ledger
 import fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0 as prepost
@@ -75,6 +76,9 @@ def setup(monkeypatch):
         ("GITHUB_SHA",c["current_main_sha"]),
     ):monkeypatch.setenv(key,val)
     monkeypatch.setattr(chain,"ONE_ATTEMPT_EXECUTION_RELEASED",True)
+    # Keep the entire coordinator fake-transport fixture strictly offline.
+    # The real ACTIVE gate is exercised independently in its dedicated tests.
+    monkeypatch.setattr(active,"_scope",lambda:None)
     state={"owner":initial,"ledger":c["reserved_source"],
            "events":[],"write_calls":0}
     def log(x):state["events"].append(x)
@@ -568,3 +572,41 @@ def test_active_original_source_hydration_reaches_same_context_only_with_real_go
             private_read_token="read-only-test-not-real",
             public_read_token="public-only-test-not-real",
             hmac_hex=source["key"].hex(),active_execution=True)
+
+
+
+def test_revoked_current_main_go_before_irreversible_owner_cas_has_zero_writes(
+        setup,monkeypatch):
+    """Revocation after genuine-shaped 8-GET risk and private source GETs
+    must STOP while owner0 is still unclaimed; no seq2/release/broker POST.
+    """
+    state,args=setup
+    checks=[]
+    def revoked():
+        checks.append("current-V6-GO-revoked")
+        raise active.ActiveSellStop("V6 STOP re-engaged during remote source hydration")
+    monkeypatch.setattr(active,"_scope",revoked)
+    with pytest.raises(chain.ChainStop,match="operator STOP before owner claim"):
+        chain.run_exact_first_acwi_attempt(**args)
+    assert checks==["current-V6-GO-revoked"]
+    assert state["events"]==["setting","absent","broker_preflight"]
+    assert state["write_calls"]==0
+    assert "claim" not in state["events"]
+    assert "seq2" not in state["events"]
+    assert "publish" not in state["events"]
+    assert "writer" not in state["events"]
+    assert chain.RESTART_RECOVERY_CAN_RESEND is False
+
+
+def test_current_go_is_rechecked_once_after_source_reads_before_first_cas(
+        setup,monkeypatch):
+    state,args=setup
+    checks=[]
+    def qualified():
+        checks.append((state["events"][:],state["write_calls"]))
+    monkeypatch.setattr(active,"_scope",qualified)
+    report=chain.run_exact_first_acwi_attempt(**args)
+    assert checks==[(["setting","absent","broker_preflight"],0)]
+    assert state["events"][-1]=="writer"
+    assert state["write_calls"]==4
+    assert report["allow_restart_or_second_order"] is False
