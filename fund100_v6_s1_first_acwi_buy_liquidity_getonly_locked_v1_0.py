@@ -14,7 +14,7 @@ counted as LIVE authenticated current funds. No cash settlement is inferred.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 import os
 
@@ -24,19 +24,26 @@ import fund100_v6_s1_original_acwi_broker_fill_flat_getonly_bridge_v1_0 as acwi
 import fund100_v6_s1_original_acwi_fill_flat_offline_v1_0 as original
 import fund100_v6_s1_live_private_xle_activity_getonly_v1_0 as funding
 import fund100_v6_s1_independent_high_exante_policy_v1_0 as policy
+import fund100_v6_s1_live_risk_history_getonly_v1_0 as five
+import fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 as seven
+import fund100_v6_s1_three_month_prefunding_probe_v1_0 as extended
+import fund100_v6_s1_live_cashflow_risk_bounds_v1_0 as cashrisk
 
 SCHEMA="FUND100_V6_S1_FIRST_ACWI_ONLY_FRESH_BROKER_LIQUIDITY_GET_V1"
 SOURCE_RELEASED=False
 NO_BROKER_POST=True
 NO_PRIVATE_GIT_WRITE=True
 NO_SECOND_LEGACY_SELL_OR_BUY=True
-GETS_AFTER_ORIGINAL_POSTORDER=5
+GETS_AFTER_ORIGINAL_POSTORDER=8
 APPROVED=(
     ("/v2/account",None),
     ("/v2/positions",None),
     ("/v2/orders",{"status":"open","limit":100}),
     ("/v2/clock",None),
     (funding.ACTIVITIES_PATH,funding.ACTIVITY_PARAMS),
+    (five.HISTORY_PATH,five.HISTORY_PARAMS),
+    (five.HISTORY_PATH,seven.EXTRA_PARAMS),
+    (five.HISTORY_PATH,extended.EXTENDED_PARAMS),
 )
 RETAIN=("EEM","XLV","XLE")
 
@@ -148,7 +155,7 @@ def inspect(*,private_read_token:str,private_write_token:str,
                  live.get_json(path=path,params=params,
                                key=broker_key,secret=broker_secret))
             observed.append(val)
-        account,positions,orders,clock,activities=observed
+        account,positions,orders,clock,activities,month,none,longer=observed
         t=_timestamp(now_utc) if mock else datetime.now(timezone.utc)
         if (type(clock) is not dict
             or clock.get("is_open") is not True
@@ -214,6 +221,49 @@ def inspect(*,private_read_token:str,private_write_token:str,
                 raise LiquidityStop("Unreconciled withdrawals/deposits or transfers")
         if len(deposits)!=1 or deposits[0]>policy.CAP:
             raise LiquidityStop("Not one original <=$130.30 pilot contribution")
+        # Same-source eight-GET funded history, NOT a previous pre-ACWI
+        # approval. The original active sell-only risk source demands all
+        # FOUR original holdings and cannot be reused after ACWI is sold.
+        # Reuse its STRICT postfunding-risk equations and 3M/1M vintage
+        # checks here with the actual three-remaining-position account.
+        import pandas as pd
+        import exchange_calendars as xcals
+        times,vals,_=extended._daily(month,t,maximum=70)
+        long_times,long_vals,prefix=extended._daily(longer,t,maximum=100)
+        if (not prefix or len(long_times)<=len(times)
+            or long_times[-len(times):]!=times
+            or long_vals[-len(times):]!=vals
+            or seven.broker_native_none_source(month,none) in (
+                "BROKER_NATIVE_NONE_TIME_SERIES_NOT_COMPARABLE",
+                "BROKER_NATIVE_NONE_PNL_SERIES_MISSING_OR_UNCOMPARABLE")):
+            raise LiquidityStop("Same-account 1M/3M/native history inconsistent")
+        first_covered=next(
+            (i for i,stamp in enumerate(long_times)
+             if datetime.fromtimestamp(stamp,timezone.utc).date()>=date(2026,9,1)),
+            len(long_times))
+        if first_covered>=prefix:
+            raise LiquidityStop("Prefunding history not within original cashflow coverage")
+        funded=pd.DatetimeIndex([
+            datetime.fromtimestamp(stamp,timezone.utc).date()
+            for stamp in long_times[prefix:]])
+        scheduled=xcals.get_calendar("XNYS").sessions_in_range(
+            funded[0],funded[-1]).tz_localize(None).normalize()
+        if not funded.equals(scheduled):
+            raise LiquidityStop("Missing funded NYSE session history")
+        eligible={
+            "timeframe":"1D",
+            "timestamp":long_times[first_covered:],
+            "equity":longer["equity"][first_covered:],
+        }
+        evaluated=cashrisk.inspect(
+            history=eligible,activities=activities,
+            account=account,observed_at_utc=t.isoformat().replace("+00:00","Z"))
+        if (evaluated.get("schema")!=cashrisk.STATUS_SCHEMA
+            or evaluated.get("strictly_postfunding_account_6_20_35_source_verified")
+                is not True
+            or evaluated.get("source_rejection_category")!="NONE"
+            or evaluated.get("live_buy_sell_authorized") is not False):
+            raise LiquidityStop("Post-ACWI 6/20/35 actual account HIGH risk source HOLD")
         available=min(cash,buying,nonmargin)
         room=available-equity*policy.CASH_FLOOR
     except Exception:
@@ -234,7 +284,9 @@ def inspect(*,private_read_token:str,private_write_token:str,
         "first_new_etf_buy_headroom_at_least_one_usd_before_fees":
             room>=policy.MIN_BUY,
         "available_buying_power_or_cash_values_returned":False,
-        "actual_posttrade_high_6_20_35_risk_verified":False,
+        "funding_adjusted_post_acwi_high_6_20_35_source_screen_passed":True,
+        "actual_posttrade_high_6_20_35_risk_verified":not mock,
+        "broker_risk_data_releasable_as_trading_permission":False,
         "sale_proceeds_settled_verified":False,
         "next_legacy_sell_or_live_buy_authorized":False,
         "original_acwi_resubmission_permitted":False,

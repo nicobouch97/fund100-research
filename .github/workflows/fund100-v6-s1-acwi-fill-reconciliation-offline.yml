@@ -30,5 +30,5 @@ jobs:
           python-version: '3.12'
       - name: Test source-linked sell, fill and flat position scenarios
         run: |
-          python -m pip install 'pytest>=8,<9'
+          python -m pip install --disable-pip-version-check --no-input --only-binary=:all: 'pytest>=8,<9' 'pandas==2.3.3' 'exchange-calendars==4.13.2'
           python -m pytest -q test_fund100_v6_s1_original_acwi_fill_flat_offline_v1_0.py test_fund100_v6_s1_original_acwi_broker_fill_flat_getonly_bridge_v1_0.py test_fund100_v6_s1_original_acwi_fill_pagination_v1_0.py test_fund100_v6_s1_original_postorder_signed_immutable_broker_join_locked_v1_0.py test_fund100_v6_s1_first_acwi_postorder_durable_rehydrate_offline_v1_0.py test_fund100_v6_s1_first_acwi_postorder_readonly_runtime_locked_v1_0.py test_fund100_v6_s1_first_acwi_buy_liquidity_getonly_locked_v1_0.py
