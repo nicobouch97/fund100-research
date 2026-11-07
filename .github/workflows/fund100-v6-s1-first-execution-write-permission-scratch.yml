@@ -1,0 +1,110 @@
+# P0 proof of distinct private Contents(write) and public Release(write)
+# using DISPOSABLE objects, NEVER original signed owner/ledger/release.
+# No broker tokens, no original execution GO, no order and no follow-on job.
+name: Fund-100 V6-S1 Scoped Scratch WRITE Principal Proof (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_s1_first_execution_write_permission_scratch_v1_0.py"
+      - "test_fund100_v6_s1_first_execution_write_permission_scratch_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-first-execution-write-permission-scratch.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v6_s1_first_execution_write_permission_scratch_v1_0.py"
+      - "test_fund100_v6_s1_first_execution_write_permission_scratch_v1_0.py"
+      - ".github/workflows/fund100-v6-s1-first-execution-write-permission-scratch.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-s1-disposable-first-execution-write-principal-proof
+  cancel-in-progress: false
+
+jobs:
+  credentialless-fake-write-protocol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test fixed disposable paths and irreversible-failure HOLD (NO NETWORK)
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_s1_first_execution_write_permission_scratch_v1_0.py
+      - name: Confirm original production order pathways still hard locked
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          grep -Eq '"first_original_acwi_sell_enabled": false' fund100_v6_s1_operator_control.json
+
+  protected-disposable-scratch-write:
+    needs: credentialless-fake-write-protocol
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1 &&
+      github.workflow_ref == 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-first-execution-write-permission-scratch.yml@refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 8
+    env:
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+    steps:
+      - name: Checkout exact protected main without token persistence
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Confirm full STOP and original source pin before WRITE principals
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = 'true'
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_EVENT_NAME" = 'push'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-first-execution-write-permission-scratch.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          test "$FUND100_RISK_LEVEL" = 'HIGH'
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          grep -Eq '"first_original_acwi_sell_enabled": false' fund100_v6_s1_operator_control.json
+          python - <<'PY'
+          from pathlib import Path
+          import audit_fund100_live_boundary as audit
+          import fund100_v6_s1_original_first_acwi_entry_locked_v1_0 as entry
+          import fund100_v6_s1_original_one_attempt_chain_locked_v1_0 as chain
+          assert audit.git_blob_digest(Path("fund100_v6_s1_first_execution_write_permission_scratch_v1_0.py")) == "bdbd84ed9d922a1f31f8447a204d922b31c836e3"
+          assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
+          assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
+          print('Exact stopped first-execution scratch script pinned, broker order forbidden.')
+          PY
+      - name: Prove exact private WRITE and public DRAFT release principals; cleanup both
+        # The only step with GitHub PRIVATE Contents(write) / Public Releases(write)
+        # credentials. Never contains Alpaca or original live broker secrets.
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN }}
+        run: |
+          set -euo pipefail
+          python -B fund100_v6_s1_first_execution_write_permission_scratch_v1_0.py
+      - name: Preserve original funded STOP with no brokerage involvement
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'Disposable GitHub principal capability only; no live order permission.'
