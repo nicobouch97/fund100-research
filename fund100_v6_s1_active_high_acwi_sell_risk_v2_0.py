@@ -201,10 +201,20 @@ def evaluate_original_sell_only(*,account,positions,orders,clock,history,
             or status.get("strictly_postfunding_account_6_20_35_source_verified") is not True
             or status.get("source_rejection_category")!="NONE"):
             raise ActiveSellStop("Fresh cashflow-sensitive HIGH risk 6/20/35 HOLD")
-        if (type(native_none_history) is not dict
-            or seven.broker_native_none_source(history,native_none_history)
-               in ("BROKER_NATIVE_NONE_TIME_SERIES_NOT_COMPARABLE",
-                   "BROKER_NATIVE_NONE_PNL_SERIES_MISSING_OR_UNCOMPARABLE")):
+        if type(native_none_history) is not dict:
+            raise ActiveSellStop("Second original portfolio-history source not comparable")
+        # The native NONE history is independent diagnostic evidence, not a
+        # risk-return substitute. Only two explicitly recognized, comparable
+        # broker responses are eligible for this active SELL source; an
+        # unknown/nullable/new diagnostic must NEVER become an implicit GO.
+        # SAME and DIFFERS are both comparable vintages. Cashflow-adjusted
+        # actual HIGH 6/20/35 risk is proved separately above using original
+        # 3M history, activities and account, not the NONE profit_loss_pct.
+        native_comparison=seven.broker_native_none_source(history,native_none_history)
+        if native_comparison not in (
+            "BROKER_NATIVE_NONE_PNL_SERIES_SAME",
+            "BROKER_NATIVE_NONE_PNL_SERIES_DIFFERS",
+        ):
             raise ActiveSellStop("Second original portfolio-history source not comparable")
     except ActiveSellStop:
         raise
