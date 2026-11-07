@@ -228,6 +228,20 @@ def submit_one_original_xlk_buy(*,amount_usd:str,cost_usd:str,
        private_transport=None,broker_transport=None)->dict:
     """One CAS seq1 -> seq2, one BUY POST, never restart this invocation."""
     _locked()  # FIRST executable operation: no GET/PUT/POST on current main.
+    # When BOTH production releases are independently reviewed and true,
+    # transport callbacks are ALWAYS forbidden. A caller must never be able
+    # to splice an invented private CAS receipt or broker order response
+    # into a funded real-order attempt. Only credentialless tests, with BOTH
+    # release constants still false and _locked monkeypatched test-locally,
+    # may inject the whole pair of fake HTTP transports.
+    injected=(private_transport is not None or broker_transport is not None)
+    if injected and (
+        RUNTIME_RELEASED is not False
+        or BROKER_BUY_POST_RELEASED is not False
+        or not callable(private_transport)
+        or not callable(broker_transport)):
+        raise FirstBuyWriterStop(
+            "First XLK funded BUY transport injection forbidden")
     _distinct(private_read_token,private_write_token,public_read_token,
               broker_key,broker_secret)
     if type(hmac_key) is not bytes or len(hmac_key)<32:

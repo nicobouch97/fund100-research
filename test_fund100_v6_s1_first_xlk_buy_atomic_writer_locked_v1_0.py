@@ -259,6 +259,31 @@ def test_private_sha_and_hmac_integrity_required_before_any_cas_or_broker_post(m
         w.submit_one_original_xlk_buy(**kwargs)
     assert f.private_puts==f.broker_posts==0
 
+@pytest.mark.parametrize("real_runtime,real_broker",[
+    (True,True),(True,False),(False,True),
+])
+def test_no_mock_transport_may_cross_real_funded_buy_release_boundary(monkeypatch,real_runtime,real_broker):
+    f,kwargs,checks=prepared(monkeypatch)
+    monkeypatch.setattr(w,"RUNTIME_RELEASED",real_runtime)
+    monkeypatch.setattr(w,"BROKER_BUY_POST_RELEASED",real_broker)
+    with pytest.raises(w.FirstBuyWriterStop,
+                       match="transport injection forbidden"):
+        w.submit_one_original_xlk_buy(**kwargs)
+    assert f.requests==[] and f.private_puts==f.broker_posts==0
+    assert checks==[]
+
+
+@pytest.mark.parametrize("missing",["private_transport","broker_transport"])
+def test_partial_fake_transport_is_rejected_before_source_read(monkeypatch,missing):
+    f,kwargs,checks=prepared(monkeypatch)
+    kwargs[missing]=None
+    with pytest.raises(w.FirstBuyWriterStop,
+                       match="transport injection forbidden"):
+        w.submit_one_original_xlk_buy(**kwargs)
+    assert f.requests==[] and f.private_puts==f.broker_posts==0
+    assert checks==[]
+
+
 def test_first_xlk_broker_http_endpoints_and_stop_controls_cannot_be_changed_by_ambient_env(monkeypatch):
     monkeypatch.setenv("GITHUB_ACTIONS","true")
     monkeypatch.setenv("GITHUB_REPOSITORY","nicobouch97/fund100-research")
