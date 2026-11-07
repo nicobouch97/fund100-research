@@ -13,6 +13,8 @@ on:
       - "test_fund100_v6_s1_first_xlk_buy_cas_offline_v1_0.py"
       - "fund100_v6_s1_first_xlk_buy_atomic_writer_locked_v1_0.py"
       - "test_fund100_v6_s1_first_xlk_buy_atomic_writer_locked_v1_0.py"
+      - "fund100_v6_s1_first_xlk_buy_autoreserve_locked_v1_0.py"
+      - "test_fund100_v6_s1_first_xlk_buy_autoreserve_locked_v1_0.py"
       - "fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0.py"
       - "test_fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0.py"
       - "fund100_v6_s1_funding_adjusted_risk_dietz_v1_0.py"
@@ -43,6 +45,7 @@ jobs:
           python -m pytest -q test_fund100_v6_s1_first_acwi_only_reinvestment_planner_offline_v1_0.py
           python -m pytest -q test_fund100_v6_s1_first_xlk_buy_cas_offline_v1_0.py
           python -m pytest -q test_fund100_v6_s1_first_xlk_buy_atomic_writer_locked_v1_0.py
+          python -m pytest -q test_fund100_v6_s1_first_xlk_buy_autoreserve_locked_v1_0.py
           python -m pytest -q test_fund100_v6_s1_funding_adjusted_risk_dietz_v1_0.py
           python -m pytest -q test_fund100_v6_s1_low_churn_migration_v2_0.py
           python -m pytest -q test_fund100_v6_s1_cash_at_order_no_churn_v1_0.py
