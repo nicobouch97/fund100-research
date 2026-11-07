@@ -54,7 +54,7 @@ def _first_run(comment:dict)->str:
     if type(body) is not str:
         raise DurableRecoveryStop("Missing original first public run evidence")
     match=re.search(
-        r"(?m)^Source: https://github\\.com/nicobouch97/"
+        r"(?m)^Source: https://github\.com/nicobouch97/"
         r"fund100-research/actions/runs/([1-9][0-9]{0,18})$",
         body)
     if match is None:
@@ -156,7 +156,7 @@ def reconstruct(*,current_seq2_source:dict,current_owner1_source:dict,
             or checked.get("stable_original_client_order_id")!=cas.CLIENT_IDS["ACWI"]
             or checked.get("live_order_authorized") is not False
             or type(asset) is not bytes
-            or not asset.endswith(b"\\n")):
+            or not asset.endswith(b"\n")):
             raise DurableRecoveryStop("Original postorder signed or immutable candidate invalid")
         if (claim.get("client_id_commitment")!=sha256((
             "fund100-original-ACWI-owner-client-id-v1|"+
