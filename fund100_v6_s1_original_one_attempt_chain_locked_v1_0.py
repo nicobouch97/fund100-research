@@ -331,6 +331,22 @@ def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
     except Exception:
         raise ChainStop("Original signed seq1/unclaimed owner invalid; no private claim") from None
 
+    # A STOP may be issued during the authenticated broker risk observation
+    # or the subsequent independent private seq1/owner0 HEAD re-GETs. Those
+    # operations are still side-effect-free, so re-authenticate the current
+    # V5 STOP / V6 GO / first-ACWI schedule scope / emergency kill latch
+    # immediately BEFORE the first irreversible signed owner CAS. A prior
+    # eight-GET risk PASS is NOT a standing permission to spend owner seq0.
+    #
+    # This is an extra revocation gate, not a replacement for the active V2
+    # post-GET check or the final pre-broker-POST operator recheck. Every
+    # failure below performs ZERO private/public mutation and ZERO orders.
+    try:
+        import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+        active._scope()
+    except Exception:
+        raise ChainStop("Original ACTIVE first-ACWI operator STOP before owner claim") from None
+
     # No rerun/repair from here: any ambiguous Git or public HTTP outcome HOLD.
     try:
         claim=ownership.claim_for_same_attempt_only(
