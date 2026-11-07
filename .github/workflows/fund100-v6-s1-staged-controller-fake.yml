@@ -13,6 +13,8 @@ on:
       - "test_fund100_v6_s1_first_xlk_buy_cas_offline_v1_0.py"
       - "fund100_v6_s1_first_xlk_buy_atomic_writer_locked_v1_0.py"
       - "test_fund100_v6_s1_first_xlk_buy_atomic_writer_locked_v1_0.py"
+      - "fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0.py"
+      - "test_fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0.py"
       - "fund100_v6_s1_funding_adjusted_risk_dietz_v1_0.py"
       - "test_fund100_v6_s1_funding_adjusted_risk_dietz_v1_0.py"
       - "research_lab/V6_S1_CONTROLLER_TWO_PHASE_RESTART_PROTOCOL_2026_10_19.md"
