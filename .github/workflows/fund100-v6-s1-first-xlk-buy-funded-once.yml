@@ -1,0 +1,107 @@
+# FUND-100 DORMANT FIRST ORIGINAL XLK BUY — NOT LIVE RELEASED
+# Install only a scheduled workflow ID, NOT standing trade authorisation.
+# The whole job is SKIPPED unless the reviewed internal deployment variable
+# is separately set. Every source-reader, HMAC/CAS writer, broker/BUY authorisation
+# and first-order-size risk release flag remains FALSE on current main.
+# The funded one-shot BUY can only follow fully signed ACWI FILL/flat and
+# fresh real 1x cash/nonmarginable buying power and HIGH 6/20/35 risk.
+name: Fund-100 V6-S1 Dormant Original First XLK Funded BUY (NOT RELEASED)
+
+on:
+  schedule:
+    # After the original ACWI migration candidate's 15:07 UTC slot.
+    # GitHub schedules may be delayed or skipped: a missed slot never
+    # authorises any duplicate broker order or fabricated same-day fill.
+    - cron: "27 15 * * 1-5"
+
+permissions:
+  contents: read
+  issues: read
+  actions: read
+
+# Identical mutex to ACTUAL V5 production, bootstrap, first V6 ACWI SELL.
+# No funded broker mutation may overlap any of these writers.
+concurrency:
+  group: fund100-alpaca-live-account-writer
+  cancel-in-progress: false
+
+jobs:
+  first-original-xlk-buy-once:
+    # A one-time engineering deployment gate, not an owner per-order approval.
+    # It is UNSET today; this job must not receive secrets or run on main.
+    if: >-
+      vars.FUND100_V6_S1_FIRST_XLK_BUY_LIVE_DEPLOYED == 'REVIEWED_SOURCE_ONLY_ONE_SHOT' &&
+      github.event_name == 'schedule' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1 &&
+      github.workflow_ref == 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-first-xlk-buy-funded-once.yml@refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      actions: read
+    env:
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+    steps:
+      - name: Checkout exact protected main SHA without credential persistence
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fail closed before first XLK BUY source or private HTTP
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = 'true'
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_EVENT_NAME" = 'schedule'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-first-xlk-buy-funded-once.yml@refs/heads/main'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$FUND100_RISK_LEVEL" = 'HIGH'
+          test "$FUND100_BROKER_KILL_SWITCH" = 'DISENGAGED'
+          test "$FUND100_ENABLE_LIVE_READONLY" = 'YES_READ_ONLY_LIVE'
+          # Preserve the old V5 switch STOP: V6 operator is a separate
+          # reviewed standing risk GO and never overwrites the old controller.
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": true' fund100_v6_s1_operator_control.json
+          grep -Eq '"risk_level": "HIGH"' fund100_v6_s1_operator_control.json
+          grep -Eq '"pilot_capital_ceiling_usd": "130.30"' fund100_v6_s1_operator_control.json
+          # The Python entry is additionally code-HARD-LOCKED; a GitHub
+          # variable change alone can never release this broker path.
+      - name: Install pinned first BUY XNYS risk calendar without credentials
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input --only-binary=:all: 'pandas==2.3.3' 'exchange-calendars==4.13.2'
+          python - <<'PY'
+          import pandas
+          import exchange_calendars
+          assert pandas.__version__ == '2.3.3'
+          assert exchange_calendars.__version__ == '4.13.2'
+          print('First BUY risk runtime installed; NO private/BROKER credentials.')
+          PY
+      - name: Single signed original XLK BUY reservation then one broker POST; NEVER RETRY
+        # ALL mutable private Git and broker credentials exist ONLY HERE.
+        # One process: authenticated completed ACWI FILL, fresh eight
+        # account/risk GETs, original immutable witness, BUY genesis/seq1,
+        # seq2 HMAC CAS, another risk check, max one broker BUY POST.
+        # Any uncertainty permanently HOLDS; no retries or follow-on jobs.
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # main production source/writer releases are ALL still FALSE.
+          # Never use workflow_dispatch, order-sized job inputs or fake GETs.
+          python -B fund100_v6_s1_first_xlk_buy_original_entry_locked_v1_0.py

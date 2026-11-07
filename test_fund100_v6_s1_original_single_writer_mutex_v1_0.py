@@ -18,6 +18,7 @@ ACTIVE_WRITERS=(
 V6_INSPECTION=".github/workflows/fund100-v6-s1-original-acwi-one-attempt-locked.yml"
 V6_FUNDING="release_candidates/fund100-v6-s1-original-first-acwi-funded-once.REVIEW-ONLY.yml"
 V6_DORMANT=".github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml"
+V6_BUY_DORMANT=".github/workflows/fund100-v6-s1-first-xlk-buy-funded-once.yml"
 ACCOUNT_WRITER_MUTEX="fund100-alpaca-live-account-writer"
 
 def yaml(name):
@@ -34,7 +35,7 @@ def group(data):
 def test_v6_first_funded_attempt_shares_real_v5_writer_lock():
     expected=group(yaml(ACTIVE_WRITERS[0]))
     assert expected==ACCOUNT_WRITER_MUTEX
-    for path in ACTIVE_WRITERS+(V6_INSPECTION,V6_FUNDING,V6_DORMANT):
+    for path in ACTIVE_WRITERS+(V6_INSPECTION,V6_FUNDING,V6_DORMANT,V6_BUY_DORMANT):
         assert group(yaml(path))==expected, path
         assert "fund100-v5-002-live-production" not in yaml(path)
 

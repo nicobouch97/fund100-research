@@ -28,6 +28,7 @@ on:
 permissions:
   contents: read
   issues: read
+  actions: read
 
 # MUST match the existing V5 writer's exact mutex group and the current V6
 # locked first-original workflow; never run two writers concurrently.
@@ -53,6 +54,7 @@ jobs:
     permissions:
       contents: read
       issues: write
+      actions: read
     env:
       FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
       FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
