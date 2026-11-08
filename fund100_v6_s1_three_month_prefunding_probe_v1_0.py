@@ -105,6 +105,7 @@ def _report(status, *, original_verified=True):
         "extended_history_source_economic_transfer_time_verified": False,
         "extended_history_independent_risk_source_qualified": False,
         "postfunded_account_risk_research_status": "NOT_EVALUATED_HOLD",
+        "funded_XNYS_session_coverage": "UNVERIFIED_FUNDED_XNYS_SESSIONS_HOLD",
         "actual_high_6_20_35_risk_cleared": False,
         "cash_floor_or_settlement_verified": False,
         "operator_stop_and_kill_unchanged": True,
@@ -117,6 +118,30 @@ def _report(status, *, original_verified=True):
         "private_activity_dates_amounts_ids": None,
         "private_account_id": None,
     }
+
+
+def _funded_xnys_session_coverage(times: list[int], prefix: int) -> str:
+    """Pure diagnostic matching the future active seller's NYSE close rule.
+
+    A nontrading research category, never a LIVE or signed risk clearance.
+    No broker request, amount, row, or session date is disclosed.
+    """
+    try:
+        import pandas as pd
+        import exchange_calendars as xcals
+        funded = pd.DatetimeIndex([
+            datetime.fromtimestamp(t, timezone.utc).date()
+            for t in times[prefix:]
+        ])
+        if len(funded) < 6:
+            return "UNVERIFIED_FUNDED_XNYS_SESSIONS_HOLD"
+        required = xcals.get_calendar("XNYS").sessions_in_range(
+            funded[0], funded[-1]).tz_localize(None).normalize()
+        return ("COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY"
+                if funded.equals(required) else
+                "MISSING_FUNDED_XNYS_SESSIONS_HOLD")
+    except Exception:
+        return "UNVERIFIED_FUNDED_XNYS_SESSIONS_HOLD"
 
 
 def inspect(*, original_report, month_history, three_month_history,
@@ -242,6 +267,10 @@ def inspect(*, original_report, month_history, three_month_history,
         is True and
         research.get("source_rejection_category") == "NONE"):
         category = "POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY"
+        # Check the exact ACTIVE SELL session-calendar requirement on
+        # the same original 8-GET funded dates; never turn this into GO.
+        report["funded_XNYS_session_coverage"] = (
+            _funded_xnys_session_coverage(long_times, prefix))
     elif research.get("status") == "HIGH_RISK_BREACH_POSSIBLE_HOLD":
         category = "POSTFUNDED_POSSIBLE_HIGH_RISK_BREACH_HOLD"
     else:
@@ -316,6 +345,7 @@ def main():
     print("prefunding_history_source_status:", result["status"])
     print("postfunded_account_risk_research_status:", result["postfunded_account_risk_research_status"])
     print("actual_high_6_20_35_risk_cleared:", result["actual_high_6_20_35_risk_cleared"])
+    print("funded_XNYS_session_coverage:", result["funded_XNYS_session_coverage"])
     print("live_buy_sell_authorized:", result["live_buy_sell_authorized"])
     print("broker_get_requests:", result["broker_get_requests"])
     print("broker_non_get_requests:", result["broker_non_get_requests"])
