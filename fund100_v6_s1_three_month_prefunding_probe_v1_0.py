@@ -111,6 +111,7 @@ def _report(status, *, original_verified=True):
         "funded_XNYS_timestamp_label_hypothesis": "NOT_EVALUATED_HOLD",
         "funded_XNYS_utc_clock_shape": "NOT_EVALUATED_HOLD",
         "actual_high_6_20_35_risk_cleared": False,
+        "active_first_sell_pure_evaluator_replay": "NOT_EVALUATED_HOLD",
         "cash_floor_or_settlement_verified": False,
         "operator_stop_and_kill_unchanged": True,
         "live_buy_sell_authorized": False,
@@ -359,6 +360,49 @@ def inspect(*, original_report, month_history, three_month_history,
     return report
 
 
+def _active_sell_pure_replay(*, account, positions, orders, clock,
+                             history, activities, none_history,
+                             extended_history, bootstrap, policy,
+                             observed_at_utc):
+    '''Research-only replay of the *real* first SELL pure evaluator.
+
+    Does not call active._scope(), inspect_active_original_acwi_sell(),
+    authenticated broker GET, signed state CAS, immutable release or POST.
+    Caller already possesses the original eight authenticated GET payloads.
+    An OPEN broker clock is required to claim source replay success; closed
+    exchanges are categorised as HOLD, never substituted with a fake clock.
+    Only fixed categorical strings can be returned; even a full pure match
+    CANNOT become an actual order-time risk clearance under operator STOP.
+    '''
+    if type(clock) is not dict or clock.get('is_open') is not True:
+        return 'MARKET_NOT_OPEN_ACTIVE_REPLAY_HOLD'
+    try:
+        import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+        import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent
+        # The source release and every broker writer/owner/entry/chain
+        # activation are explicitly OUT OF SCOPE; a false release here
+        # ensures no future accidentally activated risk process is reused.
+        if active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is not False:
+            return 'ACTIVE_SOURCE_ALREADY_RELEASED_UNEXPECTED_HOLD'
+        qty=intent.original_acwi_qty()  # original pinned 4-ETF fill, no API
+        report=active.evaluate_original_sell_only(
+            account=account,positions=positions,orders=orders,clock=clock,
+            history=history,activities=activities,
+            native_none_history=none_history,extended_history=extended_history,
+            bootstrap=bootstrap,original_policy=policy,original_qty=qty,
+            observed_at_utc=observed_at_utc)
+        if (report.get('status')==
+                'ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2'
+            and report.get('same_process_real_broker_gets')==8
+            and report.get('original_strict_postfunding_6_20_35_risk_pass') is True
+            and report.get('sell_only_original_legacy_ACWI') is True
+            and report.get('buy_authorized') is False
+            and report.get('broker_post_attempts')==0):
+            return 'ACTIVE_PURE_SOURCE_MATCH_RESEARCH_ONLY'
+    except Exception:
+        return 'ACTIVE_PURE_SOURCE_REJECTED_HOLD'
+    return 'ACTIVE_PURE_SOURCE_REJECTED_HOLD'
+
 def runtime():
     # Imports are here to keep the offline inspector importable without
     # credentials or broker/network dependencies.
@@ -412,10 +456,18 @@ def runtime():
             observed_at_utc=acquired)
     except Exception:
         raise ExtendedSourceStop("Original seven-GET source rejected") from None
-    return inspect(original_report=original_report,
-                   month_history=replies[4], three_month_history=replies[7],
-                   account=replies[0], activities=replies[5],
-                   observed_at_utc=acquired)
+    result = inspect(original_report=original_report,
+                     month_history=replies[4], three_month_history=replies[7],
+                     account=replies[0], activities=replies[5],
+                     observed_at_utc=acquired)
+    # Evaluate only from the SAME original immutable eight-GET observations.
+    # On Sunday/market-closed this is an explicit HOLD, not fictitious GO.
+    result["active_first_sell_pure_evaluator_replay"] = _active_sell_pure_replay(
+        account=replies[0],positions=replies[1],orders=replies[2],
+        clock=replies[3],history=replies[4],activities=replies[5],
+        none_history=replies[6],extended_history=replies[7],
+        bootstrap=bootstrap,policy=policy,observed_at_utc=acquired)
+    return result
 
 
 def main():
@@ -429,6 +481,7 @@ def main():
     print("funded_XNYS_gap_kind:", result["funded_XNYS_gap_kind"])
     print("funded_XNYS_timestamp_label_hypothesis:", result["funded_XNYS_timestamp_label_hypothesis"])
     print("funded_XNYS_utc_clock_shape:", result["funded_XNYS_utc_clock_shape"])
+    print("active_first_sell_pure_evaluator_replay:", result["active_first_sell_pure_evaluator_replay"])
     print("live_buy_sell_authorized:", result["live_buy_sell_authorized"])
     print("broker_get_requests:", result["broker_get_requests"])
     print("broker_non_get_requests:", result["broker_non_get_requests"])
