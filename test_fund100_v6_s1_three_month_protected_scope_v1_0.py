@@ -12,7 +12,7 @@ import fund100_v6_s1_three_month_prefunding_probe_v1_0 as probe
 ROOT = Path(__file__).resolve().parent
 WORKFLOW = ".github/workflows/fund100-v6-s1-three-month-prefunding-source.yml"
 SOURCE = "fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
-PIN = "b1a7fa3cb5cb03dfa9fb030b44677e4f9464b24d"
+PIN = "be3d4b3be87a4d9d1063360718b35fe05906f476"
 
 
 def yml():
@@ -112,6 +112,15 @@ def test_workflow_isolated_and_unrelated_scripts_have_no_permission():
     assert not audit.approved_scoped_live_script(
         ".github/workflows/fund100-v6-s1-live-flow-timing-native-none.yml",
         SOURCE, yml())
+
+
+def test_same_calendar_versions_as_future_first_sale_with_no_broker_creds_at_install():
+    y=yml()
+    assert "'pandas==2.3.3' 'exchange-calendars==4.13.2'" in y
+    install=y.split("      - name: Install exact reviewed NYSE calendar",1)[1].split(
+        "      - name: Read actual original account",1)[0]
+    assert "ALPACA_LIVE_KEY" not in install
+    assert "ALPACA_LIVE_SECRET" not in install
 
 
 def test_only_main_readonly_job_receives_credentials():

@@ -46,7 +46,7 @@ jobs:
           assert len(source.REQUEST_PLAN) == 8
           assert source.REQUEST_PLAN[-1] == (
               '/v2/account/portfolio/history', {'period':'3M','timeframe':'1D'})
-          assert audit.git_blob_digest(Path(script)) == 'b1a7fa3cb5cb03dfa9fb030b44677e4f9464b24d'
+          assert audit.git_blob_digest(Path(script)) == 'be3d4b3be87a4d9d1063360718b35fe05906f476'
           assert audit.approved_scoped_live_script(
               workflow, script, Path(workflow).read_text())
           print('Eight GET source PINNED. Original STOP remains. No broker credentials.')
@@ -82,10 +82,21 @@ jobs:
           import audit_fund100_live_boundary as audit
           workflow = '.github/workflows/fund100-v6-s1-three-month-prefunding-source.yml'
           script = 'fund100_v6_s1_three_month_prefunding_probe_v1_0.py'
-          assert audit.git_blob_digest(Path(script)) == 'b1a7fa3cb5cb03dfa9fb030b44677e4f9464b24d'
+          assert audit.git_blob_digest(Path(script)) == 'be3d4b3be87a4d9d1063360718b35fe05906f476'
           assert audit.approved_scoped_live_script(
               workflow, script, Path(workflow).read_text())
           print('Source-only main workflow qualifies for eight GET. All trading remains STOP.')
+          PY
+      - name: Install exact reviewed NYSE calendar prior to broker credentials
+        # Same calendar versions as the dormant active original first-sale gate.
+        # No broker or private Git credentials exist in this step.
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input --only-binary=:all: 'pandas==2.3.3' 'exchange-calendars==4.13.2'
+          python - <<'PY'
+          import pandas, exchange_calendars
+          assert pandas.__version__=='2.3.3'
+          assert exchange_calendars.__version__=='4.13.2'
           PY
       - name: Read actual original account and 3M history (EIGHT GET ONLY)
         env:

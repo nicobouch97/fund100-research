@@ -51,6 +51,10 @@ def assert_stopped(r):
         "POSTFUNDED_POSSIBLE_HIGH_RISK_BREACH_HOLD",
         "POSTFUNDED_AMBIGUOUS_FLOW_OR_MARKS_HOLD")
     assert r["extended_history_independent_risk_source_qualified"] is False
+    assert r["funded_XNYS_session_coverage"] in (
+        "UNVERIFIED_FUNDED_XNYS_SESSIONS_HOLD",
+        "COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY",
+        "MISSING_FUNDED_XNYS_SESSIONS_HOLD")
     assert r["live_buy_sell_authorized"] is False
     assert r["broker_get_requests"] == 8
     assert r["broker_non_get_requests"] == r["live_orders"] == 0
@@ -73,6 +77,34 @@ def test_reuse_existing_private_postfunding_risk_observation_only():
     assert r["status"] == "PREFUNDING_NULL_ZERO_PREFIX_SEEN_REVIEW_ONLY"
     assert (r["postfunded_account_risk_research_status"] ==
             "POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY")
+    assert_stopped(r)
+
+
+
+def test_funded_nyse_closes_complete_are_research_only():
+    r=run()
+    assert r["postfunded_account_risk_research_status"]=="POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY"
+    assert r["funded_XNYS_session_coverage"]=="COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY"
+    assert_stopped(r)
+
+
+def test_missing_middle_funded_nyse_session_does_not_qualify_calendar():
+    d=data()
+    # An absent funded Thursday is not an investable zero-return mark.
+    j=4
+    d["three_month_history"]["timestamp"].pop(j)
+    d["three_month_history"]["equity"].pop(j)
+    d["month_history"]["timestamp"]=d["three_month_history"]["timestamp"][-6:]
+    d["month_history"]["equity"]=d["three_month_history"]["equity"][-6:]
+    r=q.inspect(**d)
+    assert r["status"]=="PREFUNDING_NULL_ZERO_PREFIX_SEEN_REVIEW_ONLY"
+    assert r["funded_XNYS_session_coverage"]=="MISSING_FUNDED_XNYS_SESSIONS_HOLD"
+    assert_stopped(r)
+
+
+def test_bad_historical_marks_cannot_validate_complete_funded_calendar():
+    r=run(lambda d:d["three_month_history"]["equity"].__setitem__(4,None))
+    assert r["funded_XNYS_session_coverage"]=="UNVERIFIED_FUNDED_XNYS_SESSIONS_HOLD"
     assert_stopped(r)
 
 
@@ -127,6 +159,7 @@ def test_extended_source_prints_only_fixed_research_category(capsys,monkeypatch)
     q.main()
     printed = capsys.readouterr().out
     assert "postfunded_account_risk_research_status: POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY" in printed
+    assert "funded_XNYS_session_coverage: COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY" in printed
     for bad in ("PRIVATE-SYNTHETIC","2026-10-26","2026-11-05","100."):
         assert bad not in printed
 
