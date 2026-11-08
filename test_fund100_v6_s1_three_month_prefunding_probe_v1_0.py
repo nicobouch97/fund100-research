@@ -50,7 +50,8 @@ def assert_stopped(r):
         "MARKET_NOT_OPEN_ACTIVE_REPLAY_HOLD",
         "ACTIVE_SOURCE_ALREADY_RELEASED_UNEXPECTED_HOLD",
         "ACTIVE_PURE_SOURCE_MATCH_RESEARCH_ONLY",
-        "ACTIVE_PURE_SOURCE_REJECTED_HOLD")
+        "ACTIVE_PURE_SOURCE_REJECTED_HOLD",
+        *q._ACTIVE_REPLAY_SAFE_HOLD_REASONS.values())
     assert r["postfunded_account_risk_research_status"] in (
         "NOT_EVALUATED_HOLD",
         "POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY",
@@ -278,6 +279,49 @@ def test_active_pure_replay_original_evaluator_only_no_broker_or_post(monkeypatc
     monkeypatch.setattr(active,"evaluate_original_sell_only",
                         lambda **kw:(_ for _ in ()).throw(ValueError("raw secret")))
     assert q._active_sell_pure_replay(**args)=="ACTIVE_PURE_SOURCE_REJECTED_HOLD"
+
+
+
+@pytest.mark.parametrize("reason,expected", sorted(
+    q._ACTIVE_REPLAY_SAFE_HOLD_REASONS.items()))
+def test_active_pure_replay_rejects_without_sensitive_details(
+        monkeypatch,reason,expected):
+    import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+    import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent
+    monkeypatch.setattr(active,"ACTIVE_HIGH_SELL_SOURCE_RELEASED",False)
+    monkeypatch.setattr(intent,"original_acwi_qty",lambda:"0.25")
+    def denied(**kw):
+        raise active.ActiveSellStop(reason)
+    monkeypatch.setattr(active,"evaluate_original_sell_only",denied)
+    d=data()
+    status=q._active_sell_pure_replay(
+        account=d["account"],positions=[],orders=[],clock={"is_open":True},
+        history=d["month_history"],activities=d["activities"],
+        none_history=d["month_history"],
+        extended_history=d["three_month_history"],
+        bootstrap={},policy={},observed_at_utc=d["observed_at_utc"])
+    assert status == expected
+    assert status.endswith("_HOLD")
+
+
+def test_active_pure_replay_unknown_exception_never_leaks_private_error(monkeypatch):
+    import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+    import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent
+    monkeypatch.setattr(active,"ACTIVE_HIGH_SELL_SOURCE_RELEASED",False)
+    monkeypatch.setattr(intent,"original_acwi_qty",lambda:"0.25")
+    private="Broker account binding changed: account=PRIVATE-123"
+    def denied(**kw):
+        raise active.ActiveSellStop(private)
+    monkeypatch.setattr(active,"evaluate_original_sell_only",denied)
+    d=data()
+    result=q._active_sell_pure_replay(
+        account=d["account"],positions=[],orders=[],clock={"is_open":True},
+        history=d["month_history"],activities=d["activities"],
+        none_history=d["month_history"],
+        extended_history=d["three_month_history"],
+        bootstrap={},policy={},observed_at_utc=d["observed_at_utc"])
+    assert result=="ACTIVE_PURE_SOURCE_REJECTED_HOLD"
+    assert "PRIVATE" not in result
 
 
 def test_real_funded_mark_breach_cannot_be_described_as_clean():
