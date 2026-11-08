@@ -16,6 +16,9 @@ import fund100_v6_s1_original_one_attempt_chain_locked_v1_0 as chain
 
 SCHEMA="FUND100_V6_S1_FIRST_ACWI_ORIGINAL_EXECUTION_ENTRY_HARD_LOCKED_V1"
 ORIGINAL_ACWI_ENTRYPOINT_RELEASED=False
+# Never activated by this draft: requires future reviewed protected job
+# permissions contents:write and issues:write, plus all existing LIVE gates.
+SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED=False
 RETRY_AFTER_UNCERTAIN_OUTCOME=False
 MAX_CHAIN_INVOCATIONS=1
 # GitHub Actions workflow identity is different from the dispatch actor.
@@ -79,22 +82,32 @@ def run_protected_first_acwi_once()->dict:
         or e.get("FUND100_BROKER_KILL_SWITCH")!="DISENGAGED"
         or e.get("FUND100_ENABLE_LIVE_READONLY")!="YES_READ_ONLY_LIVE"):
         raise EntryStop("Original ACWI protected first-run authorisation STOP")
+    combined=(SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED is True)
+    required=(tuple(k for k in REQUIRED_SECRETS
+                    if k!="FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN")
+              if combined else REQUIRED_SECRETS)
     if (any(type(e.get(name)) is not str or
             len(e[name].strip())<10 or
             e[name]!=e[name].strip() or
             "\r" in e[name] or "\n" in e[name]
-            for name in REQUIRED_SECRETS)
+            for name in required)
         or re.fullmatch(r"[0-9a-f]{64}",e["FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX"]) is None):
         raise EntryStop("Original signed first-run credential contract STOP")
+    if combined and "FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN" in e:
+        raise EntryStop("Obsolete long-lived public publisher still injected; STOP")
     distinct=(
         e["FUND100_PRIVATE_STATE_READ_TOKEN"],
         e["FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"],
         e["GITHUB_TOKEN"],
         e["FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN"],
-        e["FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN"],
     )
-    if len(set(distinct))!=5:
-        raise EntryStop("Original first-run requires five independent GitHub principals")
+    if combined:
+        if len(set(distinct))!=4:
+            raise EntryStop("Original four distinct scoped principals unavailable")
+    else:
+        distinct=distinct+(e["FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN"],)
+        if len(set(distinct))!=5:
+            raise EntryStop("Original first-run requires five independent GitHub principals")
 
     # Do not log original signed bytes, quantity, public comment bodies,
     # account identifiers, owner nonce or secrets. This call does NO writes.
@@ -112,7 +125,8 @@ def run_protected_first_acwi_once()->dict:
             private_write_token=e["FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN"],
             public_issue_write_token=e["GITHUB_TOKEN"],
             admin_read_token=e["FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN"],
-            public_release_write_token=e["FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN"],
+            public_release_write_token=(e["GITHUB_TOKEN"] if combined else
+                                        e["FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN"]),
             broker_key=e["ALPACA_LIVE_KEY"],
             broker_secret=e["ALPACA_LIVE_SECRET"])
         if (type(result) is not dict
