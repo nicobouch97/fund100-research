@@ -291,3 +291,16 @@ def test_pit_policy_validation_and_fingerprint_binding():
                                                  require_market_session=True))
     assert legacy.symbols == strict.symbols
     assert legacy.selection_sha256 != strict.selection_sha256
+
+
+def test_strict_pit_rejects_market_bar_before_listing_date():
+    row = observations_from_history([catalog()], history(), as_of=AS_OF)[0]
+    impossible = AssetObservation(**{
+        **row.__dict__, "listed_on": AS_OF - timedelta(days=1),
+        "market_session_on": AS_OF - timedelta(days=2),
+    })
+    result = select_universe([impossible], UniversePolicy(
+        as_of=AS_OF, require_market_session=True,
+    ))
+    assert result.symbols == ()
+    assert "market_price_bar_missing_stale_or_future" in result.rejected[0].reasons
