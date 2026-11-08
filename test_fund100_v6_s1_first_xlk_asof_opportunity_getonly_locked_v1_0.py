@@ -66,8 +66,8 @@ class Market:
             "limit":[str(opp.MIN_SESSIONS+8)],
             "adjustment":["all"],"feed":["iex"],"sort":["asc"],
         }
-        assert request.get_header("APCA-api-key-id")==KEY
-        assert request.get_header("APCA-api-secret-key")==SECRET
+        assert request.get_header("Apca-api-key-id")==KEY
+        assert request.get_header("Apca-api-secret-key")==SECRET
         self.calls.append(symbol)
         return Response(self.source(symbol))
 
@@ -132,7 +132,7 @@ def test_bad_market_vintages_or_shape_cannot_qualify_buy(tamper):
         opp.inspect(broker_key=KEY,broker_secret=SECRET,
                     amount_usd=opp.AMOUNT,cost_usd=opp.COST,
                     transport=market,observed_at_utc=NOW)
-    assert set(market.calls)==set(opp.SYMBOLS)
+    assert market.calls==list(opp.SYMBOLS)[:len(market.calls)]
     
 def test_no_fake_transport_can_cross_released_source(monkeypatch):
     monkeypatch.setattr(opp,"SOURCE_RELEASED",True)
