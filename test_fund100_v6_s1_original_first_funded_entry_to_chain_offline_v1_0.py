@@ -26,6 +26,9 @@ def first_protected_original_run(monkeypatch,signed_chain_setup):
     context=deepcopy(inputs["context"])
     # Off-line only. Production constants remain literal FALSE in main.
     monkeypatch.setattr(entry,"ORIGINAL_ACWI_ENTRYPOINT_RELEASED",True)
+    # Legacy five-principal synthetic fixture; production staged token is
+    # ephemeral and has no long-lived Release PAT in the protected workflow.
+    monkeypatch.setattr(entry,"SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED",False)
     for name,value in (
         ("GITHUB_ACTIONS","true"),
         ("GITHUB_ACTOR","github-actions[bot]"),
