@@ -180,6 +180,7 @@ def observations_from_history(
             symbol=row.symbol,
             asset_class=row.asset_class,
             observed_on=max(row.observed_on, latest.session),
+            market_session_on=latest.session,
             listed_on=row.listed_on,
             active=row.active,
             tradable=row.tradable,
