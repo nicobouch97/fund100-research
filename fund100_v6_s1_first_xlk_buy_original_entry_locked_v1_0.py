@@ -19,6 +19,7 @@ import re
 import fund100_v6_s1_first_xlk_buy_autoreserve_locked_v1_0 as reserve
 import fund100_v6_s1_first_xlk_buy_atomic_writer_locked_v1_0 as writer
 import fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0 as scope
+import fund100_v6_s1_first_xlk_asof_opportunity_getonly_locked_v1_0 as opportunity
 
 SCHEMA = "FUND100_V6_S1_FIRST_XLK_BUY_ORIGINAL_ONE_PROCESS_ENTRY_LOCKED_V1"
 FIRST_XLK_BUY_ENTRY_RELEASED = False
@@ -47,6 +48,7 @@ def _preflight() -> dict:
         or writer.RUNTIME_RELEASED is not True
         or writer.BROKER_BUY_POST_RELEASED is not True
         or scope.FIRST_XLK_BUY_POSTORDER_GET_DELEGATION_RELEASED is not True
+        or opportunity.SOURCE_RELEASED is not True
         or RETRY_ON_AMBIGUOUS_CAS_OR_BROKER_RESULT is not False
         or MAX_FUNDED_BUY_POSTS != 1
         or EXPECTED_WORKFLOW_REF != writer.EXPECTED_REF):
@@ -107,6 +109,33 @@ def execute_first_xlk_original_once() -> dict:
         source_kwargs=source_kwargs,
     )
     try:
+        # The infrastructure's fixed $29.40 is NOT investment alpha. A
+        # new source-authenticated, previous-session, costed BUY/NO_BUY
+        # decision must qualify the exact amount BEFORE irreversible BUY
+        # private genesis/seq1 CAS. No market-data response from a caller
+        # may bypass this: production inspect() always runs its own GETs.
+        decision=opportunity.inspect(
+            broker_key=e["ALPACA_LIVE_KEY"],
+            broker_secret=e["ALPACA_LIVE_SECRET"],
+            amount_usd=FIXED_FIRST_BUY_NOTIONAL_USD,
+            cost_usd=FIXED_FIRST_BUY_WORST_CASE_COST_USD)
+        if (type(decision) is not dict
+            or decision.get("schema")!=opportunity.SCHEMA
+            or decision.get("model")!=opportunity.MODEL
+            or decision.get("decision")!="BUY_XLK_ASOF_AFTER_COST_HEURISTIC"
+            or decision.get("source_is_market_api_authenticated") is not True
+            or decision.get("first_xlk_exact_amount_usd")!=FIXED_FIRST_BUY_NOTIONAL_USD
+            or decision.get("first_xlk_exact_cost_usd")!=FIXED_FIRST_BUY_WORST_CASE_COST_USD
+            or decision.get("all_source_sessions_identical") is not True
+            or decision.get("observed_completed_sessions")!=opportunity.MIN_SESSIONS
+            or type(decision.get("asof_source_sha256")) is not str
+            or re.fullmatch(r"[0-9a-f]{64}",decision["asof_source_sha256"]) is None
+            or decision.get("authenticated_market_data_GET_count")!=len(opportunity.SYMBOLS)
+            or decision.get("alpha_or_forward_outperformance_proven") is not False
+            or decision.get("live_buy_sell_authorized") is not False
+            or decision.get("private_git_writes")!=0
+            or decision.get("broker_orders_submitted")!=0):
+            raise FirstBuyEntryStop("First XLK strategy NO_BUY / unqualified as-of costed opportunity")
         reservation=reserve.autoreserve(**args)
         if (type(reservation) is not dict
             or reservation.get("schema") != reserve.SCHEMA
