@@ -1,10 +1,12 @@
 """First-funded-ACWI one-shot principal WRITE reachability, disposable ONLY.
 
 Production signed private ledger/owner and original immutable release tag are
-NEVER addressed. At most one create and one delete per exact ephemeral test
-object; no retries after unknown outcomes. No Alpaca requests or credentials.
-A successful probe proves these principals can mutate disposable targets,
-NOT that signed-account live trading or final release is authorized.
+NEVER addressed. At most one CREATE, SHA-conditional UPDATE and DELETE of one
+unique disposable private test file; no retries after ambiguous outcomes.
+The public test creates and deletes one DRAFT only, NEVER uploads/publishes an
+asset. No Alpaca requests or credentials. A successful diagnostic would prove
+private Contents create/update CAS and PUBLIC DRAFT create/delete, NOT permission
+to publish the immutable real release or to execute any funded broker order.
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
-SCHEMA = "FUND100_V6_S1_FIRST_EXECUTION_DISPOSABLE_WRITE_SCOPE_V1"
+SCHEMA = "FUND100_V6_S1_FIRST_EXECUTION_DISPOSABLE_WRITE_SCOPE_V2"
 REPO = "nicobouch97/fund100-research"
 EXPECTED_WORKFLOW_REF = (
     REPO + "/.github/workflows/"
@@ -116,7 +118,19 @@ def _fetch(*,method,url,token,body=None,missing=False,transport=None):
         if method=="DELETE" and status in (200,204):
             # GitHub Contents DELETE => 200 JSON; Releases DELETE => 204.
             return {} if not result else json.loads(result)
-        if status!=({"GET":200,"PUT":201,"POST":201}[method]):
+        # Actual signed owner/ledger transitions require Contents UPDATE
+        # with the *current remote blob SHA*, HTTP 200; CREATE without SHA
+        # must instead get HTTP 201. A mere CREATE/DELETE test cannot prove
+        # this first-order critical compare-and-swap authority.
+        if method=="PUT":
+            updating=(type(body) is dict and "sha" in body)
+            if updating and (type(body["sha"]) is not str
+                             or re.fullmatch(r"[a-f0-9]{40}",body["sha"]) is None):
+                raise ScratchStop("Invalid disposable exact-SHA update")
+            expected=200 if updating else 201
+        else:
+            expected={"GET":200,"POST":201}[method]
+        if status!=expected:
             raise ScratchStop("Diagnostic response status unexpected; never retry")
         document=json.loads(result)
         if type(document) is not dict:
@@ -130,7 +144,7 @@ def _fetch(*,method,url,token,body=None,missing=False,transport=None):
         raise ScratchStop("GitHub diagnostic outcome uncertain; never retry") from None
 
 def inspect(*,run_id,private_read,private_write,release_write,transport=None):
-    """One disposable private Contents create/delete then one DRAFT create/delete.
+    """One disposable Contents CREATE/SHA-CAS UPDATE/DELETE, then DRAFT create/delete.
 
     Never modify the original signed seq1/owner or the actual release tag.
     No retries after a 4xx, timeout, lost ack or malformed reply; abandoned
@@ -173,10 +187,39 @@ def inspect(*,run_id,private_read,private_write,release_write,transport=None):
         raise ScratchStop("Private diagnostic content changed") from None
     if checked!=content:
         raise ScratchStop("Private diagnostic test content mismatch")
+    # Crucial: original first-sale owner and ledger files already exist and
+    # require a SHA-conditional Contents UPDATE, not Contents CREATE. Use
+    # the same exact source SHA as GitHub's optimistic concurrency contract
+    # and independently GET+verify the new blob before deleting it.
+    revised=content+b"sha-cas-update-tested; no signed original state\n"
+    revised_sha=_blob_sha(revised)
+    changed=ask("PUT",private,private_write,body={
+        "branch":"main",
+        "message":"fund100: disposable private SHA-CAS update (NO TRADE)",
+        "sha":sha,
+        "content":b64encode(revised).decode("ascii"),
+    })
+    updated_info=changed.get("content")
+    if (type(updated_info) is not dict
+        or updated_info.get("path")!=info["path"]
+        or updated_info.get("sha")!=revised_sha):
+        raise ScratchStop("Private SHA-conditional update acknowledgement invalid")
+    updated=ask("GET",private+"?ref=main",private_read)
+    if (updated.get("sha")!=revised_sha
+        or updated.get("encoding")!="base64"
+        or updated.get("path")!=info["path"]
+        or type(updated.get("content")) is not str):
+        raise ScratchStop("Private disposable CAS update remote HEAD unconfirmed")
+    try:
+        revised_content=b64decode(updated["content"].replace("\n",""),validate=True)
+    except Exception:
+        raise ScratchStop("Private disposable CAS content invalid") from None
+    if revised_content!=revised:
+        raise ScratchStop("Private disposable SHA-CAS update bytes changed")
     deleted=ask("DELETE",private,private_write,body={
         "branch":"main",
         "message":"fund100: remove disposable WRITE principal probe (NO TRADE)",
-        "sha":sha,
+        "sha":revised_sha,
     })
     if (type(deleted) is not dict or type(deleted.get("commit")) is not dict
         or deleted["commit"].get("sha") is None
@@ -208,8 +251,10 @@ def inspect(*,run_id,private_read,private_write,release_write,transport=None):
         raise ScratchStop("Public disposable DRAFT cleanup unconfirmed")
     return {
         "schema":SCHEMA,
-        "status":"DISPOSABLE_PRIVATE_CONTENTS_AND_PUBLIC_DRAFT_WRITE_PROVEN",
+        "status":"DISPOSABLE_PRIVATE_CREATE_SHA_CAS_AND_PUBLIC_DRAFT_WRITE_PROVEN",
         "private_distinct_read_write_observed":True,
+        "private_contents_existing_sha_cas_update_proven":True,
+        "public_immutable_asset_upload_and_publish_proven":False,
         "public_draft_release_create_delete_proven":True,
         "original_signed_state_mutations":0,
         "original_immutable_release_mutations":0,
