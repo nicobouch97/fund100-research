@@ -16,9 +16,10 @@ import fund100_v6_s1_original_one_attempt_chain_locked_v1_0 as chain
 
 SCHEMA="FUND100_V6_S1_FIRST_ACWI_ORIGINAL_EXECUTION_ENTRY_HARD_LOCKED_V1"
 ORIGINAL_ACWI_ENTRYPOINT_RELEASED=False
-# Never activated by this draft: requires future reviewed protected job
-# permissions contents:write and issues:write, plus all existing LIVE gates.
-SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED=False
+# Staged short-lived job public issuer (protected test was previously proven).
+# This does NOT release an order: original entry, chain, private owner CAS,
+# immutable signed publisher, active HIGH risk and broker writer remain locked.
+SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED=True
 RETRY_AFTER_UNCERTAIN_OUTCOME=False
 MAX_CHAIN_INVOCATIONS=1
 # GitHub Actions workflow identity is different from the dispatch actor.

@@ -65,10 +65,31 @@ def test_future_scoped_public_release_uses_short_lived_job_token_only():
     assert "FUND100_BROKER_KILL_SWITCH" in block
     assert "FUND100_V6_S1_FIRST_ACWI_LIVE_DEPLOYED" in block
     assert "github.run_attempt == 1" in block
-    assert entry.SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED is False
-    assert chain.SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED is False
+    assert entry.SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED is True
+    assert chain.SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED is True
     assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
     assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
+
+def test_staged_public_token_does_not_release_broker_or_private_state():
+    import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+    import fund100_v6_s1_one_time_owner_claim_cas_v1_0 as owner
+    import fund100_v6_s1_immutable_release_publish_locked_v1_0 as publish
+    import fund100_alpaca_live_writer_candidate_v1_1 as writer
+    assert entry.SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED is True
+    assert chain.SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED is True
+    assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
+    assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
+    assert active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is False
+    assert owner.SIGNED_OWNER_CLAIM_TRANSPORT_RELEASED is False
+    assert owner.PREPOST_PRIVATE_CAS_RELEASED is False
+    assert owner.PREPOST_PUBLIC_WITNESS_RELEASED is False
+    assert publish.PUBLISH_SIGNED_HEAD_RELEASED is False
+    assert writer.V6_S1_ACWI_QTY_SELL_TRANSPORT_RELEASED is False
+    assert writer.V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED is False
+    assert writer.V6_S1_ACWI_FRESH_ACCOUNT_RISK_SOURCE_RELEASED is False
+    assert writer.V6_S1_ACWI_EXTERNAL_WATERMARK_RELEASED is False
+    assert writer.TRANSPORT_RELEASED is False
+    assert writer.PUBLIC_EXECUTION_ENABLED is False
 
 def test_unreleased_main_entry_blocks_before_any_source_or_side_effect(monkeypatch):
     env(monkeypatch)
@@ -90,6 +111,9 @@ def activated_offline(monkeypatch):
     keys=env(monkeypatch)
     monkeypatch.setattr(entry,"ORIGINAL_ACWI_ENTRYPOINT_RELEASED",True)
     monkeypatch.setattr(chain,"ONE_ATTEMPT_EXECUTION_RELEASED",True)
+    # Only this legacy five-principal synthetic fixture uses an old PAT.
+    # The actual dormant job is scoped to ephemeral GITHUB_TOKEN.
+    monkeypatch.setattr(entry,"SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED",False)
     events=[]
     context={k:"synthetic-"+k for k in chain.EXPECTED_CONTEXT}
     def prepare(**kwargs):

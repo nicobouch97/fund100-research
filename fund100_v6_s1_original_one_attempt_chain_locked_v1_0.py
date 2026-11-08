@@ -22,9 +22,10 @@ import fund100_alpaca_live_writer_candidate_v1_1 as writer
 
 SCHEMA="FUND100_V6_S1_ONE_ORIGINAL_EXECUTION_ATTEMPT_CHAIN_HARD_LOCKED_V1"
 ONE_ATTEMPT_EXECUTION_RELEASED=False
-# Alternative GitHub Actions public issuer: explicitly OFF until reviewed.
-# Both private principals and GitHub immutable ADMIN READ remain distinct.
-SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED=False
+# Staged protected first-ACWI GITHUB_TOKEN with public issue and Release
+# scopes. No trade: chain and independent private/immutable/broker guards OFF.
+# Private READ/WRITE and immutable ADMIN READ principals remain distinct.
+SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED=True
 RESTART_RECOVERY_CAN_RESEND=False
 MAX_REAL_ORDER_SENDS=1
 NO_ENTRYPOINT_OR_WORKFLOW=True
