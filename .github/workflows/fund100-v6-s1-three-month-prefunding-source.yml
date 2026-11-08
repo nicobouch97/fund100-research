@@ -29,8 +29,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install offline test runner
-        run: python -m pip install 'pytest>=8,<9'
+      - name: Install offline test runner and reviewed NYSE calendar
+        # This job has NO broker or private state credentials. The same
+        # pinned dependencies are used by the separately gated 8-GET job.
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input --only-binary=:all: 'pytest>=8,<9' 'pandas==2.3.3' 'exchange-calendars==4.13.2'
       - name: Prove 8-GET, original source, and signed STOP boundary offline
         run: |
           set -euo pipefail
