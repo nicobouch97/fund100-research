@@ -237,6 +237,52 @@ def test_last_mile_current_head_requires_both_distinct_principal_reads_after_rel
     assert state["write_calls"]==3
 
 
+
+def test_scoped_ephemeral_one_job_public_issuer_still_requires_separate_private_roles(
+        setup,monkeypatch):
+    state,args=setup
+    monkeypatch.setattr(chain,"SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED",True)
+    monkeypatch.setenv("GITHUB_ACTIONS","true")
+    monkeypatch.setenv("GITHUB_TOKEN",ISSUE)
+    args["public_release_write_token"]=ISSUE
+    original_http=chain.publisher._request
+    def pub_get(**kw):
+        if kw["url"]==chain.publisher.anchor.RELEASE_URL:
+            assert kw["token"]==ISSUE
+            return None
+        return original_http(**kw)
+    monkeypatch.setattr(chain.publisher,"_request",pub_get)
+    result=chain.run_exact_first_acwi_attempt(**args)
+    assert result["status"]=="ORIGINAL_ACWI_SINGLE_ATTEMPT_COMPLETED_NO_RETRY"
+    assert state["events"]==["setting","broker_preflight","claim","seq2","publish","writer"]
+    assert state["write_calls"]==4
+
+@pytest.mark.parametrize("mode",[
+    "hard-locked","no-actions","wrong-ephemeral-token",
+    "wrong-event","wrong-workflow",
+])
+def test_ephemeral_combined_public_issuer_fails_before_network_without_provenance(
+        setup,monkeypatch,mode):
+    state,args=setup
+    args["public_release_write_token"]=ISSUE
+    monkeypatch.setattr(chain,"SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED",True)
+    monkeypatch.setenv("GITHUB_ACTIONS","true")
+    monkeypatch.setenv("GITHUB_TOKEN",ISSUE)
+    if mode=="hard-locked":
+        monkeypatch.setattr(chain,"SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED",False)
+    elif mode=="no-actions":
+        monkeypatch.delenv("GITHUB_ACTIONS",raising=False)
+    elif mode=="wrong-ephemeral-token":
+        monkeypatch.setenv("GITHUB_TOKEN","other-token-from-another-job")
+    elif mode=="wrong-event":
+        monkeypatch.setenv("GITHUB_EVENT_NAME","workflow_dispatch")
+    else:
+        monkeypatch.setenv("GITHUB_WORKFLOW_REF","other/path@refs/heads/main")
+    with pytest.raises(chain.ChainStop,match="Not original approved"):
+        chain.run_exact_first_acwi_attempt(**args)
+    assert state["write_calls"]==0
+    assert state["events"]==[]
+
 def test_private_order_head_revalidation_is_inside_last_handoff_not_only_preclaim():
     from pathlib import Path
     source=Path(chain.__file__).read_text()

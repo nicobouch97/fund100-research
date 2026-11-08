@@ -133,6 +133,39 @@ def test_one_run_wires_real_coordinator_argument_contract_offline_only(activated
         assert value not in str(observed)
 
 
+
+def test_unreleased_scoped_public_alternative_still_blocks_real_order(monkeypatch):
+    env(monkeypatch)
+    monkeypatch.setattr(entry,"SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED",True)
+    monkeypatch.delenv("FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN")
+    assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
+    assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
+    with pytest.raises(entry.EntryStop,match="HARD LOCKED"):
+        entry.run_protected_first_acwi_once()
+
+
+def test_ephemeral_public_entry_rejects_legacy_pat_and_uses_only_job_token(
+        activated_offline,monkeypatch):
+    keys,events,context=activated_offline
+    monkeypatch.setattr(entry,"SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED",True)
+    with pytest.raises(entry.EntryStop,match="Obsolete long-lived"):
+        entry.run_protected_first_acwi_once()
+    assert events==[]
+    monkeypatch.delenv("FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN")
+    def captured(**kwargs):
+        events.append("ephemeral_once")
+        assert kwargs["context"]==context
+        assert kwargs["public_issue_write_token"]==keys["GITHUB_TOKEN"]
+        assert kwargs["public_release_write_token"]==keys["GITHUB_TOKEN"]
+        return {"status":"ORIGINAL_ACWI_SINGLE_ATTEMPT_COMPLETED_NO_RETRY",
+                "reviewed_broker_order_attempts":1,
+                "allow_restart_or_second_order":False}
+    monkeypatch.setattr(chain,"run_exact_first_acwi_attempt",captured)
+    got=entry.run_protected_first_acwi_once()
+    assert got["status"]=="FIRST_ORIGINAL_ACWI_ORDER_ATTEMPTED_NO_RETRY"
+    assert events==["signed_read","ephemeral_once"]
+    assert got["independent_fill_and_settlement_verified"] is False
+
 @pytest.mark.parametrize("name,bad",[
     ("GITHUB_ACTIONS","false"),
     ("GITHUB_REF","refs/heads/proposal"),
