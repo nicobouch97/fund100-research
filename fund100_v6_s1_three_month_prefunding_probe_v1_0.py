@@ -106,6 +106,7 @@ def _report(status, *, original_verified=True):
         "extended_history_independent_risk_source_qualified": False,
         "postfunded_account_risk_research_status": "NOT_EVALUATED_HOLD",
         "funded_XNYS_session_coverage": "UNVERIFIED_FUNDED_XNYS_SESSIONS_HOLD",
+        "funded_XNYS_gap_kind": "NOT_CLASSIFIED_HOLD",
         "actual_high_6_20_35_risk_cleared": False,
         "cash_floor_or_settlement_verified": False,
         "operator_stop_and_kill_unchanged": True,
@@ -120,12 +121,14 @@ def _report(status, *, original_verified=True):
     }
 
 
-def _funded_xnys_session_coverage(times: list[int], prefix: int) -> str:
-    """Pure diagnostic matching the future active seller's NYSE close rule.
+def _funded_xnys_session_diagnosis(times: list[int], prefix: int) -> tuple[str, str]:
+    """Categorise genuine funded XNYS mismatch without disclosing source dates.
 
-    A nontrading research category, never a LIVE or signed risk clearance.
-    No broker request, amount, row, or session date is disclosed.
+    Compare the exact current first-seller UTC-date convention, not a
+    reconstructed cashflow or zero-return backfill. Every mismatch HOLDS.
+    Only fixed strings leave the private broker process.
     """
+    unverified = "UNVERIFIED_FUNDED_XNYS_SESSIONS_HOLD"
     try:
         import pandas as pd
         import exchange_calendars as xcals
@@ -134,14 +137,32 @@ def _funded_xnys_session_coverage(times: list[int], prefix: int) -> str:
             for t in times[prefix:]
         ])
         if len(funded) < 6:
-            return "UNVERIFIED_FUNDED_XNYS_SESSIONS_HOLD"
+            return unverified, "TOO_FEW_FUNDED_MARKS_HOLD"
         required = xcals.get_calendar("XNYS").sessions_in_range(
             funded[0], funded[-1]).tz_localize(None).normalize()
-        return ("COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY"
-                if funded.equals(required) else
-                "MISSING_FUNDED_XNYS_SESSIONS_HOLD")
+        if funded.equals(required):
+            return ("COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY",
+                    "NO_NYSE_SESSION_DISAGREEMENT_RESEARCH_ONLY")
+        missing = len(required.difference(funded))
+        extra = len(funded.difference(required))
+        if missing and extra:
+            kind = "MISSING_AND_UNEXPECTED_NYSE_DATE_MARKS_HOLD"
+        elif missing == 1:
+            kind = "ONE_EXPECTED_NYSE_CLOSE_ABSENT_HOLD"
+        elif missing > 1:
+            kind = "MULTIPLE_EXPECTED_NYSE_CLOSES_ABSENT_HOLD"
+        elif extra:
+            kind = "UNEXPECTED_NONNYSE_DATE_MARKS_ONLY_HOLD"
+        else:
+            kind = "REPEATED_OR_UNSORTED_DAILY_MARKS_HOLD"
+        return "MISSING_FUNDED_XNYS_SESSIONS_HOLD", kind
     except Exception:
-        return "UNVERIFIED_FUNDED_XNYS_SESSIONS_HOLD"
+        return unverified, "UNUSABLE_NYSE_CALENDAR_COMPARISON_HOLD"
+
+
+def _funded_xnys_session_coverage(times: list[int], prefix: int) -> str:
+    """Compatibility wrapper: existing strict future first-seller decision."""
+    return _funded_xnys_session_diagnosis(times, prefix)[0]
 
 
 def inspect(*, original_report, month_history, three_month_history,
@@ -269,8 +290,9 @@ def inspect(*, original_report, month_history, three_month_history,
         category = "POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY"
         # Check the exact ACTIVE SELL session-calendar requirement on
         # the same original 8-GET funded dates; never turn this into GO.
-        report["funded_XNYS_session_coverage"] = (
-            _funded_xnys_session_coverage(long_times, prefix))
+        (report["funded_XNYS_session_coverage"],
+         report["funded_XNYS_gap_kind"]) = (
+            _funded_xnys_session_diagnosis(long_times, prefix))
     elif research.get("status") == "HIGH_RISK_BREACH_POSSIBLE_HOLD":
         category = "POSTFUNDED_POSSIBLE_HIGH_RISK_BREACH_HOLD"
     else:
@@ -346,6 +368,7 @@ def main():
     print("postfunded_account_risk_research_status:", result["postfunded_account_risk_research_status"])
     print("actual_high_6_20_35_risk_cleared:", result["actual_high_6_20_35_risk_cleared"])
     print("funded_XNYS_session_coverage:", result["funded_XNYS_session_coverage"])
+    print("funded_XNYS_gap_kind:", result["funded_XNYS_gap_kind"])
     print("live_buy_sell_authorized:", result["live_buy_sell_authorized"])
     print("broker_get_requests:", result["broker_get_requests"])
     print("broker_non_get_requests:", result["broker_non_get_requests"])
