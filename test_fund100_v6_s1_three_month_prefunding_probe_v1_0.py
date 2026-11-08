@@ -1,6 +1,6 @@
 """Synthetic, no-network source and credential-scope regressions for issue #531."""
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -61,6 +61,22 @@ def assert_stopped(r):
         "REPEATED_OR_UNSORTED_DAILY_MARKS_HOLD",
         "TOO_FEW_FUNDED_MARKS_HOLD",
         "UNUSABLE_NYSE_CALENDAR_COMPARISON_HOLD")
+    assert r["funded_XNYS_timestamp_label_hypothesis"] in (
+        "NOT_EVALUATED_HOLD",
+        "UTC_LABEL_COMPLETE_RESEARCH_ONLY",
+        "NY_LOCAL_AND_PRIOR_UTC_DAY_COMPLETE_RESEARCH_ONLY",
+        "NY_LOCAL_COMPLETE_RESEARCH_ONLY",
+        "PRIOR_UTC_DAY_COMPLETE_RESEARCH_ONLY",
+        "NEXT_UTC_DAY_COMPLETE_RESEARCH_ONLY",
+        "ALL_REVIEWED_DAY_LABELS_INCOMPLETE_HOLD",
+        "UNVERIFIED_TIMESTAMP_LABELS_HOLD")
+    assert r["funded_XNYS_utc_clock_shape"] in (
+        "NOT_EVALUATED_HOLD",
+        "ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY",
+        "NO_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY",
+        "MIXED_MARK_CLOCKS_HOLD",
+        "TOO_FEW_MARKS_HOLD",
+        "UNUSABLE_TIMESTAMP_CLOCK_HOLD")
     assert r["funded_XNYS_session_coverage"] in (
         "UNVERIFIED_FUNDED_XNYS_SESSIONS_HOLD",
         "COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY",
@@ -96,6 +112,8 @@ def test_funded_nyse_closes_complete_are_research_only():
     assert r["postfunded_account_risk_research_status"]=="POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY"
     assert r["funded_XNYS_session_coverage"]=="COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY"
     assert r["funded_XNYS_gap_kind"]=="NO_NYSE_SESSION_DISAGREEMENT_RESEARCH_ONLY"
+    assert r["funded_XNYS_timestamp_label_hypothesis"]=="UTC_LABEL_COMPLETE_RESEARCH_ONLY"
+    assert r["funded_XNYS_utc_clock_shape"]=="ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
     assert_stopped(r)
 
 
@@ -154,6 +172,54 @@ def test_two_missing_weekday_closes_never_promote_to_clean():
     assert kind=="MULTIPLE_EXPECTED_NYSE_CLOSES_ABSENT_HOLD"
 
 
+
+def test_next_utc_midnight_matches_original_ny_session_but_stays_hold():
+    d=data()
+    # Synthetic left-labelled midnight UTC one day after each true
+    # NYSE close: UTC dates include Saturday and omit an expected Monday.
+    for history in (d["three_month_history"],d["month_history"]):
+        history["timestamp"]=[t+86400 for t in history["timestamp"]]
+    status,kind=q._funded_xnys_session_diagnosis(
+        d["three_month_history"]["timestamp"],2)
+    label,clock=q._funded_xnys_timestamp_label_hypotheses(
+        d["three_month_history"]["timestamp"],2)
+    assert status=="MISSING_FUNDED_XNYS_SESSIONS_HOLD"
+    assert kind=="MISSING_AND_UNEXPECTED_NYSE_DATE_MARKS_HOLD"
+    assert label=="NY_LOCAL_AND_PRIOR_UTC_DAY_COMPLETE_RESEARCH_ONLY"
+    assert clock=="ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
+    d["observed_at_utc"]="2026-11-07T17:30:00Z"
+    r=q.inspect(**d)
+    assert r["funded_XNYS_timestamp_label_hypothesis"]==label
+    assert r["actual_high_6_20_35_risk_cleared"] is False
+    assert_stopped(r)
+
+
+def test_prior_utc_day_requires_unreleased_next_day_hypothesis():
+    d=data()
+    shifted=[t-86400 for t in d["three_month_history"]["timestamp"]]
+    label,clock=q._funded_xnys_timestamp_label_hypotheses(shifted,2)
+    assert label=="NEXT_UTC_DAY_COMPLETE_RESEARCH_ONLY"
+    assert clock=="ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
+
+
+def test_missing_source_close_still_missing_after_all_considered_date_labels():
+    d=data()
+    original=d["three_month_history"]["timestamp"]
+    shifted=[t+86400 for i,t in enumerate(original) if i!=4]
+    label,clock=q._funded_xnys_timestamp_label_hypotheses(shifted,2)
+    assert label=="ALL_REVIEWED_DAY_LABELS_INCOMPLETE_HOLD"
+    assert clock=="ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
+
+
+def test_mixed_utc_clock_shape_is_diagnostic_never_authorization():
+    d=data()
+    times=d["three_month_history"]["timestamp"][:]
+    times[6]+=3600
+    label,clock=q._funded_xnys_timestamp_label_hypotheses(times,2)
+    assert label=="UTC_LABEL_COMPLETE_RESEARCH_ONLY"
+    assert clock=="MIXED_MARK_CLOCKS_HOLD"
+
+
 def test_real_funded_mark_breach_cannot_be_described_as_clean():
     def change(d):
         # Maintain the exact 1M suffix vintage even with a sharp loss.
@@ -207,6 +273,8 @@ def test_extended_source_prints_only_fixed_research_category(capsys,monkeypatch)
     assert "postfunded_account_risk_research_status: POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY" in printed
     assert "funded_XNYS_session_coverage: COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY" in printed
     assert "funded_XNYS_gap_kind: NO_NYSE_SESSION_DISAGREEMENT_RESEARCH_ONLY" in printed
+    assert "funded_XNYS_timestamp_label_hypothesis: UTC_LABEL_COMPLETE_RESEARCH_ONLY" in printed
+    assert "funded_XNYS_utc_clock_shape: ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY" in printed
     for bad in ("PRIVATE-SYNTHETIC","2026-10-26","2026-11-05","100."):
         assert bad not in printed
 
