@@ -232,7 +232,7 @@ def inspect(*,run_id,private_read,private_write,release_write,transport=None):
         "target_commitish":os.environ["GITHUB_SHA"],
         "name":"Fund-100 disposable permission probe "+run_id,
         "body":"DRAFT ONLY: source principal permission check. No trade authority.",
-        "draft":True,"prerelease":True,"make_latest":False,
+        "draft":True,"prerelease":True,"make_latest":"false",
         "generate_release_notes":False,
     })
     release_id=public.get("id")
