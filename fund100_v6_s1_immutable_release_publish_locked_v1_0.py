@@ -178,7 +178,7 @@ def publish_exact_acwi_signed_seq2_release_same_attempt_only(
         "target_commitish":owner_sources["current_main_sha"],
         "name":"Fund-100 first original ACWI signed possible-POST HEAD",
         "body":"Nonsecret original ACWI signed ledger HEAD witness. No trade authority.",
-        "draft":True,"prerelease":False,"make_latest":False,
+        "draft":True,"prerelease":False,"make_latest":"false",
         "generate_release_notes":False,
     },sort_keys=True,separators=(",",":")).encode("utf-8")
     # First irreversible public step. After ANY ambiguity, never retry, even
