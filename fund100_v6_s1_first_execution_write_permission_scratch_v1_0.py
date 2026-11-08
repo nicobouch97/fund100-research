@@ -139,7 +139,14 @@ def _fetch(*,method,url,token,body=None,missing=False,transport=None):
     except HTTPError as exc:
         if missing and method=="GET" and exc.code==404:
             return None
-        raise ScratchStop("GitHub write/read diagnostic failed; never retry") from None
+        # Record only the public/private diagnostic phase and numeric status.
+        # Never print provider response body/headers, URL, token or private data;
+        # no 4xx/5xx grants retry authority after a possible remote mutation.
+        phase = ("PUBLIC_DRAFT_CREATE" if url == PUBLIC_RELEASES and method == "POST"
+                 else "PUBLIC_DRAFT_RESOURCE" if url.startswith(PUBLIC_RELEASES + "/")
+                 else "PRIVATE_DISPOSABLE_GIT")
+        status = exc.code if type(exc.code) is int and 100 <= exc.code <= 599 else "UNKNOWN"
+        raise ScratchStop(f"GitHub diagnostic HTTP {status} during {phase}; never retry") from None
     except (URLError,OSError,TimeoutError,ValueError,UnicodeError,TypeError):
         raise ScratchStop("GitHub diagnostic outcome uncertain; never retry") from None
 
