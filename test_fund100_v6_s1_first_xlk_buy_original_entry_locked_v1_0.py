@@ -162,7 +162,6 @@ def test_entry_requires_exact_source_and_no_external_amounts():
 
 
 @pytest.mark.parametrize("bad",[
-    {"decision":"NO_BUY_UNQUALIFIED_COSTED_RELATIVE_STRENGTH"},
     {"source_is_market_api_authenticated":False},
     {"asof_source_sha256":None},
     {"first_xlk_exact_amount_usd":"29.41"},
@@ -187,6 +186,34 @@ def test_unqualified_market_opportunity_never_reaches_first_buy_signed_cas_or_or
     assert evidence==["opportunity_GETonly"]
     assert events==[]
     assert entry.FIRST_XLK_BUY_ENTRY_RELEASED is False
+
+
+@pytest.mark.parametrize("decision",[
+    "NO_BUY_UNQUALIFIED_COSTED_RELATIVE_STRENGTH",
+])
+def test_valid_costed_no_buy_returns_clean_zero_order_without_signed_reservation(
+        monkeypatch,decision):
+    monkeypatch.setattr(entry,"_preflight",creds)
+    evidence=pretend_current_market_buy(
+        monkeypatch=monkeypatch,changes={"decision":decision})
+    writes=[]
+    monkeypatch.setattr(reserve,"autoreserve",
+                        lambda **kwargs:writes.append("signed_FIRST_BUY_genesis"))
+    monkeypatch.setattr(writer,"submit_one_original_xlk_buy",
+                        lambda **kwargs:writes.append("broker_BUY_POST"))
+    result=entry.execute_first_xlk_original_once()
+    assert evidence==["opportunity_GETonly"]
+    assert result=={
+        "schema":entry.SCHEMA,
+        "status":"FIRST_ORIGINAL_XLK_BUY_SKIPPED_VALID_NO_BUY",
+        "first_buy_order_send_attempts":0,
+        "fully_filled":False,
+        "eligible_to_repeat":False,
+        "further_trading_authorized":False,
+        "private_state":None,
+        "broker_account_or_credentials":None,
+    }
+    assert writes==[]
 
 
 def test_unknown_market_source_error_is_no_private_write_and_no_broker_buy(monkeypatch):
