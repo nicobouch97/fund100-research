@@ -360,6 +360,54 @@ def inspect(*, original_report, month_history, three_month_history,
     return report
 
 
+
+# Only these literal, code-owned ACTIVE seller exceptions may be classified.
+# Never expose exception strings, symbols, equity, holdings, timestamps,
+# account IDs, or anything provided by the broker in a public workflow log.
+# Every classification is a STOP-only research finding, never a trade permit.
+_ACTIVE_REPLAY_SAFE_HOLD_REASONS = {
+    "Original V5 cap and historical fill provenance changed":
+        "ACTIVE_ORIGINAL_PROVENANCE_HOLD",
+    "Original account, open orders or 4 positions invalid":
+        "ACTIVE_ACCOUNT_OR_OPEN_ORDERS_HOLD",
+    "Broker account not active, unblocked, cash only":
+        "ACTIVE_ACCOUNT_OR_OPEN_ORDERS_HOLD",
+    "Broker account binding changed":
+        "ACTIVE_ACCOUNT_OR_OPEN_ORDERS_HOLD",
+    "Proposed ACWI quantity not original historical fill":
+        "ACTIVE_ORIGINAL_HOLDINGS_HOLD",
+    "Malformed current brokerage position":
+        "ACTIVE_ORIGINAL_HOLDINGS_HOLD",
+    "Changed brokerage positions/duplicate symbol":
+        "ACTIVE_ORIGINAL_HOLDINGS_HOLD",
+    "Current original holdings no longer reconcile":
+        "ACTIVE_ORIGINAL_HOLDINGS_HOLD",
+    "Current original full ACWI holding not available":
+        "ACTIVE_ORIGINAL_HOLDINGS_HOLD",
+    "Untrusted broker currency or share value":
+        "ACTIVE_BROKER_EQUITY_CASH_HOLD",
+    "Cash/equity/holdings no longer reconcile":
+        "ACTIVE_BROKER_EQUITY_CASH_HOLD",
+    "Original ACWI liquidation exceeds current broker equity":
+        "ACTIVE_BROKER_EQUITY_CASH_HOLD",
+    "Original account funding source not singly qualified":
+        "ACTIVE_CAPITAL_OR_FUNDING_HOLD",
+    "Original authorized $130.30 funded capital breached":
+        "ACTIVE_CAPITAL_OR_FUNDING_HOLD",
+    "Unqualified original 3M portfolio history":
+        "ACTIVE_HISTORY_1M_3M_HOLD",
+    "Original 1M and 3M historical source disagreement":
+        "ACTIVE_HISTORY_1M_3M_HOLD",
+    "No prefunding history inside verified activity dates":
+        "ACTIVE_HISTORY_1M_3M_HOLD",
+    "Funded exchange-session observations incomplete":
+        "ACTIVE_FUNDED_XNYS_SESSION_HOLD",
+    "Fresh cashflow-sensitive HIGH risk 6/20/35 HOLD":
+        "ACTIVE_HIGH_6_20_35_RISK_HOLD",
+    "Second original portfolio-history source not comparable":
+        "ACTIVE_NATIVE_NONE_COMPARISON_HOLD",
+}
+
 def _active_sell_pure_replay(*, account, positions, orders, clock,
                              history, activities, none_history,
                              extended_history, bootstrap, policy,
@@ -385,12 +433,18 @@ def _active_sell_pure_replay(*, account, positions, orders, clock,
         if active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is not False:
             return 'ACTIVE_SOURCE_ALREADY_RELEASED_UNEXPECTED_HOLD'
         qty=intent.original_acwi_qty()  # original pinned 4-ETF fill, no API
-        report=active.evaluate_original_sell_only(
-            account=account,positions=positions,orders=orders,clock=clock,
-            history=history,activities=activities,
-            native_none_history=none_history,extended_history=extended_history,
-            bootstrap=bootstrap,original_policy=policy,original_qty=qty,
-            observed_at_utc=observed_at_utc)
+        try:
+            report=active.evaluate_original_sell_only(
+                account=account,positions=positions,orders=orders,clock=clock,
+                history=history,activities=activities,
+                native_none_history=none_history,extended_history=extended_history,
+                bootstrap=bootstrap,original_policy=policy,original_qty=qty,
+                observed_at_utc=observed_at_utc)
+        except active.ActiveSellStop as exc:
+            # Exact static allowlist only. Unknown or dynamic error remains
+            # opaque; no private error content is ever logged or returned.
+            return _ACTIVE_REPLAY_SAFE_HOLD_REASONS.get(
+                str(exc), 'ACTIVE_PURE_SOURCE_REJECTED_HOLD')
         if (report.get('status')==
                 'ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2'
             and report.get('same_process_real_broker_gets')==8
