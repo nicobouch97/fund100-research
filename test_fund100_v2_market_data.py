@@ -304,3 +304,16 @@ def test_strict_pit_rejects_market_bar_before_listing_date():
     ))
     assert result.symbols == ()
     assert "market_price_bar_missing_stale_or_future" in result.rejected[0].reasons
+
+
+def test_strict_pit_rejects_future_market_session_even_with_current_catalog():
+    # A manually assembled observation cannot use tomorrow's closing price.
+    row = observations_from_history([catalog()], history(), as_of=AS_OF)[0]
+    future = AssetObservation(**{
+        **row.__dict__, "market_session_on": AS_OF + timedelta(days=1),
+    })
+    result = select_universe([future], UniversePolicy(
+        as_of=AS_OF, require_market_session=True,
+    ))
+    assert result.symbols == ()
+    assert "market_price_bar_missing_stale_or_future" in result.rejected[0].reasons
