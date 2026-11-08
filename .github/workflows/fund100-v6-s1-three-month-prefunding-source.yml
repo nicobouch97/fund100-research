@@ -1,6 +1,11 @@
 name: Fund-100 V6-S1 Protected Three-Month Prefunding Eight GET (NO ORDERS)
 
 on:
+  # One unattended weekly replay during the regular New York trading session.
+  # This is a STOP-only eight-GET observation, NOT a trade release.
+  # GitHub schedule delivery is best effort; a missed slot never authorises an order.
+  schedule:
+    - cron: "07 15 * * 1"
   push:
     branches: [main]
     paths:
