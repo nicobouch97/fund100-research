@@ -87,6 +87,9 @@ class FakeGitHub:
             assert request["make_latest"]=="false"  # Documented REST string, not boolean
             assert request["tag_name"]==tag and self.release is None
             assert request["target_commitish"]==MAIN_SHA
+            if self.broken in ("public-create-403","public-create-422","public-create-500"):
+                raise HTTPError(url,int(self.broken.rsplit("-",1)[1]),
+                                "synthetic status only",None,None)
             self.release={
                 "id":123456789,"tag_name":tag,"draft":True,"assets":[]}
             return Reply(201,dict(self.release))
@@ -151,6 +154,27 @@ def test_private_write_failure_never_creates_public_release(monkeypatch,broken):
                       release_write=RELEASE,transport=fake)
     assert not any(url==probe.PUBLIC_RELEASES for _,url,_ in fake.trace)
     assert fake.release is None
+
+
+@pytest.mark.parametrize("status",[403,422,500])
+def test_public_draft_http_failure_reports_redacted_status_without_retry(monkeypatch,status):
+    # A status can distinguish permission denial from request-schema failure
+    # on a future separately authorised one-shot; it never proves permission.
+    monkeypatch.setenv("GITHUB_SHA",MAIN_SHA)
+    fake=FakeGitHub()
+    fake.broken=f"public-create-{status}"
+    with pytest.raises(probe.ScratchStop) as err:
+        probe.inspect(run_id=RUN,private_read=READ,private_write=WRITE,
+                      release_write=RELEASE,transport=fake)
+    assert str(err.value)==(
+        f"GitHub diagnostic HTTP {status} during PUBLIC_DRAFT_CREATE; never retry")
+    assert fake.private is None and fake.release is None
+    assert [method for method,_,_ in fake.trace].count("POST")==1
+    assert [method for method,_,_ in fake.trace].count("PUT")==2
+    assert not any(method=="DELETE" and url.startswith(probe.PUBLIC_RELEASES)
+                   for method,url,_ in fake.trace)
+    for credential in (READ,WRITE,RELEASE):
+        assert credential not in str(err.value)
 
 def test_sha_conditional_cas_is_to_disposable_path_with_exact_prior_sha(monkeypatch):
     monkeypatch.setenv("GITHUB_SHA",MAIN_SHA)
