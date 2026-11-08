@@ -128,6 +128,7 @@ def _reasons(row: AssetObservation, policy: UniversePolicy) -> tuple[str, ...]:
     if (policy.require_market_session or row.market_session_on is not None) and (
         not isinstance(row.market_session_on, date)
         or row.market_session_on > policy.as_of
+        or (isinstance(row.listed_on, date) and row.market_session_on < row.listed_on)
         or (policy.as_of - row.market_session_on).days > policy.max_observation_age_days
     ):
         reasons.append("market_price_bar_missing_stale_or_future")
