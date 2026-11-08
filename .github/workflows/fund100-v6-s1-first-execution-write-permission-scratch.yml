@@ -94,7 +94,7 @@ jobs:
           import audit_fund100_live_boundary as audit
           import fund100_v6_s1_original_first_acwi_entry_locked_v1_0 as entry
           import fund100_v6_s1_original_one_attempt_chain_locked_v1_0 as chain
-          assert audit.git_blob_digest(Path("fund100_v6_s1_first_execution_write_permission_scratch_v1_0.py")) == "4b18dbed708534b6a7b01e38f5fb778d15bcf07b"
+          assert audit.git_blob_digest(Path("fund100_v6_s1_first_execution_write_permission_scratch_v1_0.py")) == "46b6e6628a8e61d8ef3d3de3d0079cd97e343f7f"
           assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
           assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
           print('Exact stopped first-execution scratch script pinned, broker order forbidden.')
