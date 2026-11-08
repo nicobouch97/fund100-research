@@ -630,8 +630,15 @@ def approved_scoped_live_script(
         ):
             if evidence not in source:
                 return False
+        # Exactly one weekly source-only, regular-session STOP replay.
+        # Arbitrary cron frequency or added triggers never inherit LIVE keys.
+        schedule_contract = '  schedule:\n    - cron: "07 15 * * 1"\n  push:\n'
+        if (schedule_contract not in source
+            or source.count("  schedule:") != 1
+            or source.count("    - cron:") != 1):
+            return False
         for forbidden in (
-            "  schedule:", "contents: write", "actions: write",
+            "contents: write", "actions: write",
             "issues: write", "FUND100_LIVE_WRITE_MODE: ENABLED",
             "FUND100_PRIVATE_STATE_WRITE_TOKEN",
             "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN",
