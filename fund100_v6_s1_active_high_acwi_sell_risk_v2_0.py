@@ -13,6 +13,7 @@ must explicitly select this version; historical STOP-only V1 remains intact.
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from hashlib import sha256
 import os
@@ -172,9 +173,17 @@ def evaluate_original_sell_only(*,account,positions,orders,clock,history,
             or longer_values[-len(month_times):]!=month_values
             or prefix==0):
             raise ActiveSellStop("Original 1M and 3M historical source disagreement")
+        # Alpaca's 1D epoch timestamps are left-labelled intervals.
+        # The actual protected original-account 8-GET source showed complete
+        # XNYS session coverage ONLY under America/New_York date labels.
+        # Use the same economic session date for the funded-session calendar
+        # AND the verified 2026-09-01 activity coverage boundary. Never
+        # shift the source timestamps or synthesize an absent equity mark.
+        ny_tz=ZoneInfo("America/New_York")
         first_covered=next(
             (i for i,t in enumerate(longer_times)
-             if datetime.fromtimestamp(t,timezone.utc).date()>=date(2026,9,1)),
+             if datetime.fromtimestamp(t,timezone.utc).astimezone(
+                 ny_tz).date()>=date(2026,9,1)),
             len(longer_times))
         if first_covered>=prefix:
             raise ActiveSellStop("No prefunding history inside verified activity dates")
@@ -183,7 +192,8 @@ def evaluate_original_sell_only(*,account,positions,orders,clock,history,
         import pandas as pd
         import exchange_calendars as xcals
         funded_sessions=pd.DatetimeIndex([
-            datetime.fromtimestamp(t,timezone.utc).date()
+            datetime.fromtimestamp(t,timezone.utc).astimezone(
+                ny_tz).date()
             for t in longer_times[prefix:]])
         scheduled=xcals.get_calendar("XNYS").sessions_in_range(
             funded_sessions[0],funded_sessions[-1]).tz_localize(None).normalize()
