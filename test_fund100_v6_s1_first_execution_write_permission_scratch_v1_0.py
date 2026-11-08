@@ -212,3 +212,26 @@ def test_default_original_repo_control_is_stopped_and_script_has_no_broker_route
     assert "v6_s1_first_acwi" not in probe.PRIVATE_BASE
     assert probe.LIVE_TRADING_RELEASED is False
     assert probe.NO_ALPACA_NETWORK and probe.NO_ORIGINAL_PRIVATE_STATE_WRITE
+
+
+def test_protected_disposable_real_scope_can_run_only_on_unique_main_merge_commit():
+    # The diagnostic may use production private and public GitHub principals,
+    # but never on normal development pushes, PRs, schedules or reruns.
+    from pathlib import Path
+    path=Path(".github/workflows/fund100-v6-s1-first-execution-write-permission-scratch.yml")
+    raw=path.read_text()
+    block=raw.split("  protected-disposable-scratch-write:",1)[1]
+    marker="FUND100-ONE-TIME-STOPPED-DISPOSABLE-WRITE-PROOF-20261108-560"
+    assert raw.count(marker)==2
+    assert "github.event_name == 'push'" in block
+    assert "github.ref == 'refs/heads/main'" in block
+    assert "github.run_attempt == 1" in block
+    assert "startsWith(github.event.head_commit.message, '"+marker+"')" in block
+    assert 'test "$(git log -1 --format=%s HEAD)" = \'%s\'' % marker in block
+    assert "test \"$FUND100_BROKER_KILL_SWITCH\" = 'ENGAGED'" in block
+    assert 'grep -Eq \'"trading_enabled": false\' fund100_v6_s1_operator_control.json' in block
+    assert 'assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False' in block
+    assert 'assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False' in block
+    assert "ALPACA_LIVE_KEY" not in block
+    assert "ALPACA_LIVE_SECRET" not in block
+    assert "fund100_v6_s1_first_execution_write_permission_scratch_v1_0.py" in block
