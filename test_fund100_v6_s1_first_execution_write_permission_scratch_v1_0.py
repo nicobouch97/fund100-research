@@ -227,7 +227,7 @@ def test_protected_disposable_real_scope_can_run_only_on_unique_main_merge_commi
     assert "github.ref == 'refs/heads/main'" in block
     assert "github.run_attempt == 1" in block
     assert "startsWith(github.event.head_commit.message, '"+marker+"')" in block
-    assert 'test "$(git log -1 --format=%s HEAD)" = \'%s\'' % marker in block
+    assert ('test "$(git log -1 --format=%s HEAD)" = ' + chr(39) + marker + chr(39)) in block
     assert "test \"$FUND100_BROKER_KILL_SWITCH\" = 'ENGAGED'" in block
     assert 'grep -Eq \'"trading_enabled": false\' fund100_v6_s1_operator_control.json' in block
     assert 'assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False' in block
