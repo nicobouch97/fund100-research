@@ -7,6 +7,7 @@ import fund100_v6_s1_first_xlk_buy_original_entry_locked_v1_0 as entry
 import fund100_v6_s1_first_xlk_buy_atomic_writer_locked_v1_0 as writer
 import fund100_v6_s1_first_xlk_buy_autoreserve_locked_v1_0 as reserve
 import fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0 as scope
+import fund100_v6_s1_first_xlk_asof_opportunity_getonly_locked_v1_0 as opp
 
 def test_current_main_first_buy_entry_hard_locks_before_sources(monkeypatch):
     called=[]
@@ -27,6 +28,36 @@ def test_current_main_first_buy_entry_hard_locks_before_sources(monkeypatch):
         entry.execute_first_xlk_original_once()
     assert called==[]
 
+def pretend_current_market_buy(*,monkeypatch,changes=None):
+    # ONLY synthetic fixture: the actual market source stays hard locked.
+    proof={
+        "schema":opp.SCHEMA,"model":opp.MODEL,
+        "decision":"BUY_XLK_ASOF_AFTER_COST_HEURISTIC",
+        "source_is_market_api_authenticated":True,
+        "first_xlk_exact_amount_usd":"29.40",
+        "first_xlk_exact_cost_usd":"0.10",
+        "all_source_sessions_identical":True,
+        "observed_completed_sessions":opp.MIN_SESSIONS,
+        "asof_source_sha256":"c"*64,
+        "authenticated_market_data_GET_count":len(opp.SYMBOLS),
+        "alpha_or_forward_outperformance_proven":False,
+        "live_buy_sell_authorized":False,
+        "private_git_writes":0,"broker_orders_submitted":0,
+    }
+    if changes:proof.update(changes)
+    calls=[]
+    def inspect(**kwargs):
+        assert kwargs=={
+            "broker_key":creds()["ALPACA_LIVE_KEY"],
+            "broker_secret":creds()["ALPACA_LIVE_SECRET"],
+            "amount_usd":entry.FIXED_FIRST_BUY_NOTIONAL_USD,
+            "cost_usd":entry.FIXED_FIRST_BUY_WORST_CASE_COST_USD}
+        calls.append("opportunity_GETonly")
+        return proof
+    monkeypatch.setattr(opp,"inspect",inspect)
+    return calls
+
+
 def creds():
     return {
         "FUND100_PRIVATE_STATE_READ_TOKEN":"fake-only-private-reader-unique",
@@ -43,6 +74,7 @@ def test_fake_only_entry_routes_signed_reservation_then_atomic_writer(monkeypatc
     # too: no live identity or real source ever passes.
     called=[]
     monkeypatch.setattr(entry,"_preflight",creds)
+    market_proofs=pretend_current_market_buy(monkeypatch=monkeypatch)
     def reservation(**kwargs):
         called.append(("reservation",kwargs))
         return {
@@ -68,6 +100,7 @@ def test_fake_only_entry_routes_signed_reservation_then_atomic_writer(monkeypatc
     assert result["eligible_to_repeat"] is False
     assert result["fully_filled"] is False
     assert len(called)==2
+    assert market_proofs==["opportunity_GETonly"]
     assert [v[0] for v in called]==["reservation","writer"]
     a,b=called[0][1],called[1][1]
     assert a==b
@@ -83,6 +116,7 @@ def test_fake_only_entry_routes_signed_reservation_then_atomic_writer(monkeypatc
 @pytest.mark.parametrize("stage",["reserved_bad","reserved_existing","writer_uncertain"])
 def test_ambiguous_provisional_first_buy_never_attempts_a_second_writer(monkeypatch,stage):
     monkeypatch.setattr(entry,"_preflight",creds)
+    pretend_current_market_buy(monkeypatch=monkeypatch)
     times={"reserve":0,"writer":0}
     def fake_reserve(**kwargs):
         times["reserve"]+=1
@@ -124,3 +158,79 @@ def test_entry_requires_exact_source_and_no_external_amounts():
     assert "fund100-v6-s1-first-xlk-buy-funded-once.yml@refs/heads/main" in entry.EXPECTED_WORKFLOW_REF
     assert set(entry.REQUIRED_ENV)==set(creds())
     assert entry.FIRST_XLK_BUY_ENTRY_RELEASED is False
+
+
+
+@pytest.mark.parametrize("bad",[
+    {"source_is_market_api_authenticated":False},
+    {"asof_source_sha256":None},
+    {"first_xlk_exact_amount_usd":"29.41"},
+    {"observed_completed_sessions":62},
+    {"authenticated_market_data_GET_count":2},
+    {"live_buy_sell_authorized":True},
+    {"alpha_or_forward_outperformance_proven":True},
+    {"broker_orders_submitted":1},
+    {"private_git_writes":1},
+])
+def test_unqualified_market_opportunity_never_reaches_first_buy_signed_cas_or_order(
+        monkeypatch,bad):
+    monkeypatch.setattr(entry,"_preflight",creds)
+    evidence=pretend_current_market_buy(monkeypatch=monkeypatch,changes=bad)
+    events=[]
+    monkeypatch.setattr(reserve,"autoreserve",
+                        lambda **kw:events.append("private_BUY_genesis_or_CAS"))
+    monkeypatch.setattr(writer,"submit_one_original_xlk_buy",
+                        lambda **kw:events.append("broker_BUY_POST"))
+    with pytest.raises(entry.FirstBuyEntryStop,match="NEVER RETRY"):
+        entry.execute_first_xlk_original_once()
+    assert evidence==["opportunity_GETonly"]
+    assert events==[]
+    assert entry.FIRST_XLK_BUY_ENTRY_RELEASED is False
+
+
+@pytest.mark.parametrize("decision",[
+    "NO_BUY_UNQUALIFIED_COSTED_RELATIVE_STRENGTH",
+])
+def test_valid_costed_no_buy_returns_clean_zero_order_without_signed_reservation(
+        monkeypatch,decision):
+    monkeypatch.setattr(entry,"_preflight",creds)
+    evidence=pretend_current_market_buy(
+        monkeypatch=monkeypatch,changes={"decision":decision})
+    writes=[]
+    monkeypatch.setattr(reserve,"autoreserve",
+                        lambda **kwargs:writes.append("signed_FIRST_BUY_genesis"))
+    monkeypatch.setattr(writer,"submit_one_original_xlk_buy",
+                        lambda **kwargs:writes.append("broker_BUY_POST"))
+    result=entry.execute_first_xlk_original_once()
+    assert evidence==["opportunity_GETonly"]
+    assert result=={
+        "schema":entry.SCHEMA,
+        "status":"FIRST_ORIGINAL_XLK_BUY_SKIPPED_VALID_NO_BUY",
+        "first_buy_order_send_attempts":0,
+        "fully_filled":False,
+        "eligible_to_repeat":False,
+        "further_trading_authorized":False,
+        "private_state":None,
+        "broker_account_or_credentials":None,
+    }
+    assert writes==[]
+
+
+def test_unknown_market_source_error_is_no_private_write_and_no_broker_buy(monkeypatch):
+    monkeypatch.setattr(entry,"_preflight",creds)
+    events=[]
+    def unavailable(**kwargs):
+        events.append("market_read")
+        raise opp.OpportunityStop("Stale or unavailable IEX bars")
+    monkeypatch.setattr(opp,"inspect",unavailable)
+    monkeypatch.setattr(reserve,"autoreserve",
+                        lambda **kw:events.append("private_BUY_genesis"))
+    monkeypatch.setattr(writer,"submit_one_original_xlk_buy",
+                        lambda **kw:events.append("broker_POST"))
+    with pytest.raises(entry.FirstBuyEntryStop,match="NEVER RETRY"):
+        entry.execute_first_xlk_original_once()
+    assert events==["market_read"]
+
+def test_source_is_separately_hard_locked_on_original_main():
+    assert opp.SOURCE_RELEASED is False
+    assert opp.NO_BROKER_POST and opp.NO_PRIVATE_GIT_WRITE
