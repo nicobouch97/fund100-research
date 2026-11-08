@@ -237,7 +237,7 @@ def test_prior_utc_day_requires_unreleased_next_day_hypothesis():
     shifted=[t-86400 for t in d["three_month_history"]["timestamp"]]
     label,clock=q._funded_xnys_timestamp_label_hypotheses(shifted,2)
     assert label=="NEXT_UTC_DAY_COMPLETE_RESEARCH_ONLY"
-    assert clock=="ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
+    assert clock=="NO_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
 
 
 def test_missing_source_close_still_missing_after_all_considered_date_labels():
@@ -246,7 +246,7 @@ def test_missing_source_close_still_missing_after_all_considered_date_labels():
     shifted=[t+86400 for i,t in enumerate(original) if i!=4]
     label,clock=q._funded_xnys_timestamp_label_hypotheses(shifted,2)
     assert label=="ALL_REVIEWED_DAY_LABELS_INCOMPLETE_HOLD"
-    assert clock=="ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
+    assert clock=="NO_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
 
 
 def test_mixed_utc_clock_shape_is_diagnostic_never_authorization():
@@ -411,7 +411,7 @@ def test_extended_source_prints_only_fixed_research_category(capsys,monkeypatch)
     assert "funded_XNYS_session_coverage: COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY" in printed
     assert "funded_XNYS_gap_kind: NO_NYSE_SESSION_DISAGREEMENT_RESEARCH_ONLY" in printed
     assert "funded_XNYS_timestamp_label_hypothesis: UTC_LABEL_COMPLETE_RESEARCH_ONLY" in printed
-    assert "funded_XNYS_utc_clock_shape: ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY" in printed
+    assert "funded_XNYS_utc_clock_shape: NO_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY" in printed
     assert "active_first_sell_pure_evaluator_replay: NOT_EVALUATED_HOLD" in printed
     for bad in ("PRIVATE-SYNTHETIC","2026-10-26","2026-11-05","100."):
         assert bad not in printed
