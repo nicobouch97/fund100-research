@@ -51,8 +51,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: fund100-live-broker
     timeout-minutes: 10
+    # The currently dormant source uses one short-lived GitHub Actions
+    # token for public witness (issues:write) and immutable Release
+    # (contents:write). This CANNOT release an original ACWI order because
+    # both optional issuer switches, the one-shot entry/chain/source/writer
+    # release switches and the operator/deployment variable remain OFF.
+    # The broker and private ledger tokens do not inherit public scope.
     permissions:
-      contents: read
+      contents: write
       issues: write
       actions: read
     env:
@@ -111,7 +117,6 @@ jobs:
           FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
           FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
           FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}
-          FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN }}
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
           ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
           GITHUB_TOKEN: ${{ github.token }}

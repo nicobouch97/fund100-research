@@ -51,6 +51,25 @@ def test_workflow_ref_is_reviewed_main_only_and_schedule_is_dormant():
     assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
 
 
+
+def test_future_scoped_public_release_uses_short_lived_job_token_only():
+    # A reviewed, dormant YAML capability contract, NOT an activated order.
+    from pathlib import Path
+    workflow=Path(".github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml").read_text()
+    block=workflow.split("  first-original-acwi-sell-once:",1)[1]
+    assert "contents: write" in block and "issues: write" in block
+    assert "actions: read" in block
+    assert "FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ secrets." not in block
+    assert "GITHUB_TOKEN: ${{ github.token }}" in block
+    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets." in block
+    assert "FUND100_BROKER_KILL_SWITCH" in block
+    assert "FUND100_V6_S1_FIRST_ACWI_LIVE_DEPLOYED" in block
+    assert "github.run_attempt == 1" in block
+    assert entry.SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED is False
+    assert chain.SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED is False
+    assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
+    assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
+
 def test_unreleased_main_entry_blocks_before_any_source_or_side_effect(monkeypatch):
     env(monkeypatch)
     events=[]
