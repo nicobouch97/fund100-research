@@ -61,6 +61,82 @@ def first_protected_original_run(monkeypatch,signed_chain_setup):
     return state,inputs,source_calls
 
 
+def test_full_original_entry_with_exact_ephemeral_public_issuer_and_no_pat(
+        first_protected_original_run,monkeypatch):
+    '''Production-shaped public permissions with real coordinator and fake IO.
+
+    No original private PUT, GitHub Release or broker POST is performed.
+    Only synthetic stage adapters model the future irreversible transitions.
+    Both real entry and chain production release switches stay literal False.
+    '''
+    state,inputs,hydrations=first_protected_original_run
+    monkeypatch.setattr(entry,'SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED',True)
+    monkeypatch.setattr(chain,'SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED',True)
+    monkeypatch.delenv('FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN',raising=False)
+    assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is True  # fake fixture ONLY
+    assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is True  # fake fixture ONLY
+
+    checked=[]
+    original_public_get=chain.publisher._request
+    def exact_public_get(*,method,url,token,transport=None,allow_missing=False):
+        if url==chain.publisher.anchor.RELEASE_URL:
+            assert method=='GET' and token==ISSUE
+            assert allow_missing is True
+            checked.append('scoped-public-absence-read')
+            return None
+        assert token==ADMIN
+        return original_public_get(method=method,url=url,token=token,
+                                   transport=transport,allow_missing=allow_missing)
+    monkeypatch.setattr(chain.publisher,'_request',exact_public_get)
+    old_publish=chain.publisher.publish_exact_acwi_signed_seq2_release_same_attempt_only
+    def exact_public_publish(**kwargs):
+        assert kwargs['public_release_write_token']==ISSUE
+        assert kwargs['admin_read_token']==ADMIN
+        checked.append('scoped-public-publish')
+        return old_publish(**kwargs)
+    monkeypatch.setattr(
+        chain.publisher,'publish_exact_acwi_signed_seq2_release_same_attempt_only',
+        exact_public_publish)
+    got=entry.run_protected_first_acwi_once()
+    assert got['status']=='FIRST_ORIGINAL_ACWI_ORDER_ATTEMPTED_NO_RETRY'
+    assert got['broker_send_attempts']==1
+    assert got['resubmission_permitted'] is False
+    assert got['independent_fill_and_settlement_verified'] is False
+    assert checked==['scoped-public-absence-read','scoped-public-publish']
+    assert len(hydrations)==1
+    assert state['events']==[
+        'setting','broker_preflight','claim','seq2','publish','writer']
+    assert state['events'].count('writer')==1
+    assert state['write_calls']==4  # all synthetic, none external
+    for secret in (KEY,SECRET,READ,WRITE,ISSUE,ADMIN,PUBLISH):
+        assert secret not in str(got)
+    assert inputs['context']['original_qty'] not in str(got)
+
+
+def test_full_ephemeral_entry_rejects_legacy_pat_before_hydration(
+        first_protected_original_run,monkeypatch):
+    state,inputs,hydrations=first_protected_original_run
+    monkeypatch.setattr(entry,'SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED',True)
+    monkeypatch.setattr(chain,'SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED',True)
+    # Legacy PAT from fixture MUST be excluded from production-shaped job.
+    with pytest.raises(entry.EntryStop,match='Obsolete long-lived'):
+        entry.run_protected_first_acwi_once()
+    assert hydrations==[] and state['events']==[]
+    assert state['write_calls']==0
+
+
+def test_full_ephemeral_entry_blocks_different_public_principal_before_claim(
+        first_protected_original_run,monkeypatch):
+    state,inputs,hydrations=first_protected_original_run
+    monkeypatch.setattr(entry,'SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED',True)
+    monkeypatch.setattr(chain,'SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED',True)
+    monkeypatch.delenv('FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN',raising=False)
+    monkeypatch.setenv('GITHUB_TOKEN',READ)  # collides with private READ
+    with pytest.raises(entry.EntryStop,match='four distinct scoped principals'):
+        entry.run_protected_first_acwi_once()
+    assert hydrations==[] and state['events']==[]
+    assert state['write_calls']==0
+
 def test_entire_one_process_entry_calls_real_original_chain_and_one_fake_post(
         first_protected_original_run):
     state,inputs,hydrations=first_protected_original_run
