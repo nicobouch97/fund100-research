@@ -8,6 +8,7 @@ restart and finish the transaction. No raw signed private bytes are logged.
 """
 from __future__ import annotations
 
+import os
 import re
 
 import fund100_v6_s1_one_time_owner_claim_cas_v1_0 as ownership
@@ -21,6 +22,9 @@ import fund100_alpaca_live_writer_candidate_v1_1 as writer
 
 SCHEMA="FUND100_V6_S1_ONE_ORIGINAL_EXECUTION_ATTEMPT_CHAIN_HARD_LOCKED_V1"
 ONE_ATTEMPT_EXECUTION_RELEASED=False
+# Alternative GitHub Actions public issuer: explicitly OFF until reviewed.
+# Both private principals and GitHub immutable ADMIN READ remain distinct.
+SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED=False
 RESTART_RECOVERY_CAN_RESEND=False
 MAX_REAL_ORDER_SENDS=1
 NO_ENTRYPOINT_OR_WORKFLOW=True
@@ -247,8 +251,21 @@ def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
         if (type(public_issue_write_token) is not str
             or len(public_issue_write_token)<10
             or public_issue_write_token in (private_read_token,private_write_token,
-                                            admin_read_token,public_release_write_token)):
+                                            admin_read_token)):
             raise ChainStop("Original public issue principal not distinct")
+        if public_issue_write_token==public_release_write_token:
+            # Exactly one public GITHUB_TOKEN with issues:write and
+            # contents:write in a future reviewed SAME protected job.
+            # The signed private read/write and public ADMIN READ remain
+            # independently credentialed. This option is HARD OFF.
+            if (SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED is not True
+                or os.environ.get("GITHUB_ACTIONS")!="true"
+                or os.environ.get("GITHUB_TOKEN")!=public_issue_write_token
+                or os.environ.get("GITHUB_EVENT_NAME")!="schedule"
+                or os.environ.get("GITHUB_WORKFLOW_REF")!=(
+                    "nicobouch97/fund100-research/.github/workflows/"
+                    "fund100-v6-s1-original-first-acwi-funded-once.yml@refs/heads/main")):
+                raise ChainStop("Combined public GitHub Actions issuer HARD LOCKED")
         if (type(context["key"]) is not bytes or len(context["key"])<32):
             raise ChainStop("Original signed ledger HMAC key unavailable")
     except Exception:
