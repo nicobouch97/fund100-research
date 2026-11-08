@@ -73,7 +73,10 @@ def mock_sources(monkeypatch, *, enabled=True, mutations=None):
         pd.Timestamp(now.date())-pd.Timedelta(days=40),
         pd.Timestamp(now.date())-pd.Timedelta(days=1))[-12:]
     assert len(days)==12
-    stamps=[int(x.timestamp()) for x in days]
+    # Source 1D observations are labeled in NY-local exchange time;
+    # synthetic UTC 15:00 is always the same New York market session date.
+    # UTC midnight would be the *previous* New York calendar date.
+    stamps=[int(x.timestamp())+15*3600 for x in days]
     nav=[None,0,0,0]+[100]*8
     month={"timeframe":"1D","timestamp":stamps[-6:],"equity":nav[-6:]}
     extended_history={"timeframe":"1D","timestamp":stamps,"equity":nav}
@@ -324,6 +327,57 @@ def test_funded_market_session_gap_can_not_hide_daily_loss(monkeypatch):
     assert state["reads"]==8
 
 
+
+def test_authenticated_next_utc_date_labels_are_same_nyse_session_under_ny_local(
+        monkeypatch):
+    """Live source showed UTC missing+extra but complete XNYS under NY-local.
+
+    Synthetic +10h moves 15Z official session labels to 01Z *next* UTC day.
+    Every equity row stays intact, source suffixes agree and the strict
+    source must still invoke the original non-mocked cashflow risk inspector.
+    This does not enable the real release constant or call a broker POST.
+    """
+    def next_utc_day(docs):
+        for idx in (4,7):
+            docs[idx]["timestamp"]=[t+10*3600 for t in docs[idx]["timestamp"]]
+    state,_=mock_sources(monkeypatch,mutations=next_utc_day)
+    monkeypatch.setattr(active.cashrisk,"inspect",ORIGINAL_CASHRISK_INSPECT)
+    got=active.inspect_active_original_acwi_sell(
+        original_qty=QTY,key=KEY,secret=SECRET)
+    assert got["original_strict_postfunding_6_20_35_risk_pass"] is True
+    assert got["same_process_real_broker_gets"]==8
+    assert got["buy_authorized"] is False
+    assert got["broker_post_attempts"]==got["orders_submitted_here"]==0
+    assert state["reads"]==8
+
+
+def test_utc_midnight_looks_like_valid_exchange_date_but_nylocal_proves_not(
+        monkeypatch):
+    """Never allow old UTC-date assumption to turn Sunday-mark into a GO."""
+    def midnight(docs):
+        for idx in (4,7):
+            docs[idx]["timestamp"]=[t-15*3600 for t in docs[idx]["timestamp"]]
+    state,_=mock_sources(monkeypatch,mutations=midnight)
+    with pytest.raises(active.ActiveSellStop,match="exchange-session"):
+        active.inspect_active_original_acwi_sell(
+            original_qty=QTY,key=KEY,secret=SECRET)
+    assert state["reads"]==8
+
+
+def test_nylocal_shift_cannot_hide_real_missing_funded_session(monkeypatch):
+    def gap(docs):
+        for idx in (4,7):
+            docs[idx]["timestamp"]=[t+10*3600 for t in docs[idx]["timestamp"]]
+        # Delete a funded close that precedes the six-mark 1M suffix.
+        del docs[7]["timestamp"][5]
+        del docs[7]["equity"][5]
+    state,_=mock_sources(monkeypatch,mutations=gap)
+    with pytest.raises(active.ActiveSellStop,match="exchange-session"):
+        active.inspect_active_original_acwi_sell(
+            original_qty=QTY,key=KEY,secret=SECRET)
+    assert state["reads"]==8
+
+
 def test_mutated_cashflow_timing_missing_research_risk_stays_locked(monkeypatch):
     state,_=mock_sources(monkeypatch)
     monkeypatch.setattr(active.cashrisk,"inspect",lambda **kw:{
@@ -357,6 +411,7 @@ def test_live_source_cannot_send_broker_order_and_original_hist_evidence_is_unch
     assert "urlopen(" not in code
     assert "def main(" not in code
     assert "ACTIVE_HIGH_SELL_SOURCE_RELEASED=False" in code
+    assert 'ZoneInfo("America/New_York")' in code
     assert "broker.get_json(" in code
     assert "cashrisk.inspect(" in code
     assert "operator.read_current_control()" in code
