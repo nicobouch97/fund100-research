@@ -47,11 +47,18 @@ jobs:
           grep -Eq '"first_original_acwi_sell_enabled": false' fund100_v6_s1_operator_control.json
 
   protected-disposable-scratch-write:
-    # Explicitly dormant: merging or pushing must NEVER perform remote writes.
-    # Separate owner authorization and a reviewed follow-up are required before
-    # this job may be enabled; offline credentialless CI remains available.
+    # SINGLE USE non-trading credential proof specifically requested by owner.
+    # The only allowed push is the reviewed squash merge of this workflow
+    # with the exact unique commit subject below. A routine subsequent push,
+    # PR, schedule, rerun or manual dispatch MUST SKIP this job.
+    # No live Alpaca secrets, signed first-sale owner, ledger or asset tag.
+    # Revert to explicit if:false after observing success or terminal HOLD.
     needs: credentialless-fake-write-protocol
-    if: ${{ false }}
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1 &&
+      startsWith(github.event.head_commit.message, 'FUND100-ONE-TIME-STOPPED-DISPOSABLE-WRITE-PROOF-20261108-560')
     runs-on: ubuntu-latest
     environment: fund100-live-broker
     timeout-minutes: 8
@@ -74,6 +81,7 @@ jobs:
           test "$GITHUB_EVENT_NAME" = 'push'
           test "$GITHUB_REF" = 'refs/heads/main'
           test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$(git log -1 --format=%s HEAD)" = 'FUND100-ONE-TIME-STOPPED-DISPOSABLE-WRITE-PROOF-20261108-560'
           test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-first-execution-write-permission-scratch.yml@refs/heads/main'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
