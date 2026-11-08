@@ -9,7 +9,8 @@ for the fixed eight GETs; no automatic high-risk clearance or orders.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from decimal import Decimal, InvalidOperation
 import os
 
@@ -107,6 +108,8 @@ def _report(status, *, original_verified=True):
         "postfunded_account_risk_research_status": "NOT_EVALUATED_HOLD",
         "funded_XNYS_session_coverage": "UNVERIFIED_FUNDED_XNYS_SESSIONS_HOLD",
         "funded_XNYS_gap_kind": "NOT_CLASSIFIED_HOLD",
+        "funded_XNYS_timestamp_label_hypothesis": "NOT_EVALUATED_HOLD",
+        "funded_XNYS_utc_clock_shape": "NOT_EVALUATED_HOLD",
         "actual_high_6_20_35_risk_cleared": False,
         "cash_floor_or_settlement_verified": False,
         "operator_stop_and_kill_unchanged": True,
@@ -158,6 +161,58 @@ def _funded_xnys_session_diagnosis(times: list[int], prefix: int) -> tuple[str, 
         return "MISSING_FUNDED_XNYS_SESSIONS_HOLD", kind
     except Exception:
         return unverified, "UNUSABLE_NYSE_CALENDAR_COMPARISON_HOLD"
+
+
+
+def _funded_xnys_timestamp_label_hypotheses(
+        times: list[int], prefix: int) -> tuple[str, str]:
+    """Examine alternate timestamp labels, NEVER a SELL risk authorization.
+
+    Date shifts or NYC-zone conversion are only source-diagnostic hypotheses:
+    preserve every broker equity mark and row and use official XNYS sessions.
+    Only fixed categories, not source dates/timestamps, leave this process.
+    """
+    try:
+        import pandas as pd
+        import exchange_calendars as xcals
+        raw = times[prefix:]
+        if len(raw) < 6:
+            return "UNVERIFIED_TIMESTAMP_LABELS_HOLD", "TOO_FEW_MARKS_HOLD"
+        instants = [datetime.fromtimestamp(t, timezone.utc) for t in raw]
+        midnight = [x.hour == x.minute == x.second == x.microsecond == 0
+                    for x in instants]
+        clock = ("ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY" if all(midnight)
+                 else "NO_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
+                 if not any(midnight) else "MIXED_MARK_CLOCKS_HOLD")
+        ny = ZoneInfo("America/New_York")
+        options = {
+            "UTC": [x.date() for x in instants],
+            "NY_LOCAL": [x.astimezone(ny).date() for x in instants],
+            "UTC_PRIOR_DAY": [(x-timedelta(days=1)).date() for x in instants],
+            "UTC_NEXT_DAY": [(x+timedelta(days=1)).date() for x in instants],
+        }
+        calendar = xcals.get_calendar("XNYS")
+        match = {}
+        for label, dates in options.items():
+            observed = pd.DatetimeIndex(dates)
+            scheduled = calendar.sessions_in_range(
+                observed[0], observed[-1]).tz_localize(None).normalize()
+            match[label] = observed.equals(scheduled)
+        if match["UTC"]:
+            category = "UTC_LABEL_COMPLETE_RESEARCH_ONLY"
+        elif match["NY_LOCAL"] and match["UTC_PRIOR_DAY"]:
+            category = "NY_LOCAL_AND_PRIOR_UTC_DAY_COMPLETE_RESEARCH_ONLY"
+        elif match["NY_LOCAL"]:
+            category = "NY_LOCAL_COMPLETE_RESEARCH_ONLY"
+        elif match["UTC_PRIOR_DAY"]:
+            category = "PRIOR_UTC_DAY_COMPLETE_RESEARCH_ONLY"
+        elif match["UTC_NEXT_DAY"]:
+            category = "NEXT_UTC_DAY_COMPLETE_RESEARCH_ONLY"
+        else:
+            category = "ALL_REVIEWED_DAY_LABELS_INCOMPLETE_HOLD"
+        return category, clock
+    except Exception:
+        return "UNVERIFIED_TIMESTAMP_LABELS_HOLD", "UNUSABLE_TIMESTAMP_CLOCK_HOLD"
 
 
 def _funded_xnys_session_coverage(times: list[int], prefix: int) -> str:
@@ -293,6 +348,9 @@ def inspect(*, original_report, month_history, three_month_history,
         (report["funded_XNYS_session_coverage"],
          report["funded_XNYS_gap_kind"]) = (
             _funded_xnys_session_diagnosis(long_times, prefix))
+        (report["funded_XNYS_timestamp_label_hypothesis"],
+         report["funded_XNYS_utc_clock_shape"]) = (
+            _funded_xnys_timestamp_label_hypotheses(long_times, prefix))
     elif research.get("status") == "HIGH_RISK_BREACH_POSSIBLE_HOLD":
         category = "POSTFUNDED_POSSIBLE_HIGH_RISK_BREACH_HOLD"
     else:
@@ -369,6 +427,8 @@ def main():
     print("actual_high_6_20_35_risk_cleared:", result["actual_high_6_20_35_risk_cleared"])
     print("funded_XNYS_session_coverage:", result["funded_XNYS_session_coverage"])
     print("funded_XNYS_gap_kind:", result["funded_XNYS_gap_kind"])
+    print("funded_XNYS_timestamp_label_hypothesis:", result["funded_XNYS_timestamp_label_hypothesis"])
+    print("funded_XNYS_utc_clock_shape:", result["funded_XNYS_utc_clock_shape"])
     print("live_buy_sell_authorized:", result["live_buy_sell_authorized"])
     print("broker_get_requests:", result["broker_get_requests"])
     print("broker_non_get_requests:", result["broker_non_get_requests"])
