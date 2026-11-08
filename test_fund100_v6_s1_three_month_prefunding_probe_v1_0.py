@@ -13,8 +13,12 @@ def data():
     days = ["2026-10-23", "2026-10-26", "2026-10-27", "2026-10-28",
             "2026-10-29", "2026-10-30", "2026-11-02", "2026-11-03",
             "2026-11-04", "2026-11-05"]
-    times = [int(datetime.fromisoformat(day).replace(
-        tzinfo=timezone.utc).timestamp()) for day in days]
+    # Authenticated 1D equity timestamps are economic NYSE session labels.
+    # Use afternoon UTC for baseline so NY local calendar dates are identical;
+    # 00:00 UTC would be the previous New York date.
+    times = [int((datetime.fromisoformat(day).replace(
+        tzinfo=timezone.utc) + timedelta(hours=15)).timestamp())
+        for day in days]
     extended = [None, 0, 100, 101, 102, 101, 99, 100, 101, 100]
     return dict(
         original_report={
@@ -120,7 +124,7 @@ def test_funded_nyse_closes_complete_are_research_only():
     assert r["funded_XNYS_session_coverage"]=="COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY"
     assert r["funded_XNYS_gap_kind"]=="NO_NYSE_SESSION_DISAGREEMENT_RESEARCH_ONLY"
     assert r["funded_XNYS_timestamp_label_hypothesis"]=="UTC_LABEL_COMPLETE_RESEARCH_ONLY"
-    assert r["funded_XNYS_utc_clock_shape"]=="ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
+    assert r["funded_XNYS_utc_clock_shape"]=="NO_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
     assert_stopped(r)
 
 
@@ -152,7 +156,7 @@ def test_nonNYSE_extra_mark_is_not_misreported_as_missing_closes():
     d=data()
     times=d["three_month_history"]["timestamp"]
     # Extra Saturday with no missing official NYSE weekday.
-    saturday=int(datetime(2026,10,31,tzinfo=timezone.utc).timestamp())
+    saturday=int(datetime(2026,10,31,15,tzinfo=timezone.utc).timestamp())
     with_extra=sorted(times+[saturday])
     status,kind=q._funded_xnys_session_diagnosis(with_extra,2)
     assert status=="MISSING_FUNDED_XNYS_SESSIONS_HOLD"
@@ -163,7 +167,7 @@ def test_missing_and_nonNYSE_extra_are_distinguished_without_source_dates():
     from datetime import datetime, timezone
     d=data()
     dates=d["three_month_history"]["timestamp"]
-    saturday=int(datetime(2026,10,31,tzinfo=timezone.utc).timestamp())
+    saturday=int(datetime(2026,10,31,15,tzinfo=timezone.utc).timestamp())
     observed=sorted([t for i,t in enumerate(dates) if i!=4]+[saturday])
     status,kind=q._funded_xnys_session_diagnosis(observed,2)
     assert status=="MISSING_FUNDED_XNYS_SESSIONS_HOLD"
@@ -180,18 +184,19 @@ def test_two_missing_weekday_closes_never_promote_to_clean():
 
 
 
-def test_next_utc_midnight_matches_original_ny_session_but_stays_hold():
+def test_next_utc_midnight_matches_original_ny_session_research_only():
     d=data()
     # Synthetic left-labelled midnight UTC one day after each true
     # NYSE close: UTC dates include Saturday and omit an expected Monday.
     for history in (d["three_month_history"],d["month_history"]):
-        history["timestamp"]=[t+86400 for t in history["timestamp"]]
+        # Convert 15Z economic NY session label to 00Z next UTC day.
+        history["timestamp"]=[t+9*3600 for t in history["timestamp"]]
     status,kind=q._funded_xnys_session_diagnosis(
         d["three_month_history"]["timestamp"],2)
     label,clock=q._funded_xnys_timestamp_label_hypotheses(
         d["three_month_history"]["timestamp"],2)
-    assert status=="MISSING_FUNDED_XNYS_SESSIONS_HOLD"
-    assert kind=="MISSING_AND_UNEXPECTED_NYSE_DATE_MARKS_HOLD"
+    assert status=="COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY"
+    assert kind=="NO_NYSE_SESSION_DISAGREEMENT_RESEARCH_ONLY"
     assert label=="NY_LOCAL_AND_PRIOR_UTC_DAY_COMPLETE_RESEARCH_ONLY"
     assert clock=="ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
     d["observed_at_utc"]="2026-11-07T17:30:00Z"
@@ -201,12 +206,38 @@ def test_next_utc_midnight_matches_original_ny_session_but_stays_hold():
     assert_stopped(r)
 
 
+def test_old_utc_day_label_false_positive_is_rejected_by_active_ny_calendar():
+    d=data()
+    # Left-labeling every bar at UTC midnight on its apparent session date
+    # produces correct UTC weekdays but New York *previous-day* labels.
+    # Some Monday observations become Sunday: never certify as complete.
+    original=d["three_month_history"]["timestamp"]
+    midnight=[t-15*3600 for t in original]
+    status,kind=q._funded_xnys_session_diagnosis(midnight,2)
+    label,clock=q._funded_xnys_timestamp_label_hypotheses(midnight,2)
+    assert status=="MISSING_FUNDED_XNYS_SESSIONS_HOLD"
+    assert kind in ("MISSING_AND_UNEXPECTED_NYSE_DATE_MARKS_HOLD",
+                    "UNEXPECTED_NONNYSE_DATE_MARKS_ONLY_HOLD")
+    assert label=="UTC_LABEL_COMPLETE_RESEARCH_ONLY"
+    assert clock=="ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
+
+
+def test_shifted_ny_session_with_actual_close_missing_remains_hold():
+    d=data()
+    dates=d["three_month_history"]["timestamp"]
+    # Genuine missing funded close remains missing despite timezone conversion.
+    missing=[t+9*3600 for i,t in enumerate(dates) if i!=4]
+    status,kind=q._funded_xnys_session_diagnosis(missing,2)
+    assert status=="MISSING_FUNDED_XNYS_SESSIONS_HOLD"
+    assert kind=="ONE_EXPECTED_NYSE_CLOSE_ABSENT_HOLD"
+
+
 def test_prior_utc_day_requires_unreleased_next_day_hypothesis():
     d=data()
     shifted=[t-86400 for t in d["three_month_history"]["timestamp"]]
     label,clock=q._funded_xnys_timestamp_label_hypotheses(shifted,2)
     assert label=="NEXT_UTC_DAY_COMPLETE_RESEARCH_ONLY"
-    assert clock=="ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
+    assert clock=="NO_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
 
 
 def test_missing_source_close_still_missing_after_all_considered_date_labels():
@@ -215,16 +246,18 @@ def test_missing_source_close_still_missing_after_all_considered_date_labels():
     shifted=[t+86400 for i,t in enumerate(original) if i!=4]
     label,clock=q._funded_xnys_timestamp_label_hypotheses(shifted,2)
     assert label=="ALL_REVIEWED_DAY_LABELS_INCOMPLETE_HOLD"
-    assert clock=="ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
+    assert clock=="NO_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY"
 
 
 def test_mixed_utc_clock_shape_is_diagnostic_never_authorization():
     d=data()
     times=d["three_month_history"]["timestamp"][:]
-    times[6]+=3600
+    times[6]+=9*3600
     label,clock=q._funded_xnys_timestamp_label_hypotheses(times,2)
-    assert label=="UTC_LABEL_COMPLETE_RESEARCH_ONLY"
+    assert label=="NY_LOCAL_COMPLETE_RESEARCH_ONLY"
     assert clock=="MIXED_MARK_CLOCKS_HOLD"
+    assert q._funded_xnys_session_coverage(times,2)==(
+        "COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY")
 
 
 
@@ -378,7 +411,7 @@ def test_extended_source_prints_only_fixed_research_category(capsys,monkeypatch)
     assert "funded_XNYS_session_coverage: COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY" in printed
     assert "funded_XNYS_gap_kind: NO_NYSE_SESSION_DISAGREEMENT_RESEARCH_ONLY" in printed
     assert "funded_XNYS_timestamp_label_hypothesis: UTC_LABEL_COMPLETE_RESEARCH_ONLY" in printed
-    assert "funded_XNYS_utc_clock_shape: ALL_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY" in printed
+    assert "funded_XNYS_utc_clock_shape: NO_MARKS_AT_UTC_MIDNIGHT_RESEARCH_ONLY" in printed
     assert "active_first_sell_pure_evaluator_replay: NOT_EVALUATED_HOLD" in printed
     for bad in ("PRIVATE-SYNTHETIC","2026-10-26","2026-11-05","100."):
         assert bad not in printed
