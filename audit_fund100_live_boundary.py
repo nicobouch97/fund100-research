@@ -236,7 +236,7 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
     (
         ".github/workflows/fund100-v6-s1-three-month-prefunding-source.yml",
         "fund100_v6_s1_three_month_prefunding_probe_v1_0.py",
-    ): "be3d4b3be87a4d9d1063360718b35fe05906f476",
+    ): "9149e6a881657e2c01a7a9174f502a7b75aeb9f7",
     # Single-job S1 readiness: exact already-pinned seven-GET reader only,
     # zero Git writes or live broker orders; mutation coordinator HARD LOCKED.
     (

@@ -51,6 +51,16 @@ def assert_stopped(r):
         "POSTFUNDED_POSSIBLE_HIGH_RISK_BREACH_HOLD",
         "POSTFUNDED_AMBIGUOUS_FLOW_OR_MARKS_HOLD")
     assert r["extended_history_independent_risk_source_qualified"] is False
+    assert r["funded_XNYS_gap_kind"] in (
+        "NOT_CLASSIFIED_HOLD",
+        "NO_NYSE_SESSION_DISAGREEMENT_RESEARCH_ONLY",
+        "ONE_EXPECTED_NYSE_CLOSE_ABSENT_HOLD",
+        "MULTIPLE_EXPECTED_NYSE_CLOSES_ABSENT_HOLD",
+        "MISSING_AND_UNEXPECTED_NYSE_DATE_MARKS_HOLD",
+        "UNEXPECTED_NONNYSE_DATE_MARKS_ONLY_HOLD",
+        "REPEATED_OR_UNSORTED_DAILY_MARKS_HOLD",
+        "TOO_FEW_FUNDED_MARKS_HOLD",
+        "UNUSABLE_NYSE_CALENDAR_COMPARISON_HOLD")
     assert r["funded_XNYS_session_coverage"] in (
         "UNVERIFIED_FUNDED_XNYS_SESSIONS_HOLD",
         "COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY",
@@ -85,6 +95,7 @@ def test_funded_nyse_closes_complete_are_research_only():
     r=run()
     assert r["postfunded_account_risk_research_status"]=="POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY"
     assert r["funded_XNYS_session_coverage"]=="COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY"
+    assert r["funded_XNYS_gap_kind"]=="NO_NYSE_SESSION_DISAGREEMENT_RESEARCH_ONLY"
     assert_stopped(r)
 
 
@@ -99,13 +110,48 @@ def test_missing_middle_funded_nyse_session_does_not_qualify_calendar():
     r=q.inspect(**d)
     assert r["status"]=="PREFUNDING_NULL_ZERO_PREFIX_SEEN_REVIEW_ONLY"
     assert r["funded_XNYS_session_coverage"]=="MISSING_FUNDED_XNYS_SESSIONS_HOLD"
+    assert r["funded_XNYS_gap_kind"]=="ONE_EXPECTED_NYSE_CLOSE_ABSENT_HOLD"
     assert_stopped(r)
 
 
 def test_bad_historical_marks_cannot_validate_complete_funded_calendar():
     r=run(lambda d:d["three_month_history"]["equity"].__setitem__(4,None))
     assert r["funded_XNYS_session_coverage"]=="UNVERIFIED_FUNDED_XNYS_SESSIONS_HOLD"
+    assert r["funded_XNYS_gap_kind"]=="NOT_CLASSIFIED_HOLD"
     assert_stopped(r)
+
+
+
+def test_nonNYSE_extra_mark_is_not_misreported_as_missing_closes():
+    from datetime import datetime, timezone
+    d=data()
+    times=d["three_month_history"]["timestamp"]
+    # Extra Saturday with no missing official NYSE weekday.
+    saturday=int(datetime(2026,10,31,tzinfo=timezone.utc).timestamp())
+    with_extra=sorted(times+[saturday])
+    status,kind=q._funded_xnys_session_diagnosis(with_extra,2)
+    assert status=="MISSING_FUNDED_XNYS_SESSIONS_HOLD"
+    assert kind=="UNEXPECTED_NONNYSE_DATE_MARKS_ONLY_HOLD"
+
+
+def test_missing_and_nonNYSE_extra_are_distinguished_without_source_dates():
+    from datetime import datetime, timezone
+    d=data()
+    dates=d["three_month_history"]["timestamp"]
+    saturday=int(datetime(2026,10,31,tzinfo=timezone.utc).timestamp())
+    observed=sorted([t for i,t in enumerate(dates) if i!=4]+[saturday])
+    status,kind=q._funded_xnys_session_diagnosis(observed,2)
+    assert status=="MISSING_FUNDED_XNYS_SESSIONS_HOLD"
+    assert kind=="MISSING_AND_UNEXPECTED_NYSE_DATE_MARKS_HOLD"
+
+
+def test_two_missing_weekday_closes_never_promote_to_clean():
+    d=data()
+    dates=d["three_month_history"]["timestamp"]
+    observed=[t for i,t in enumerate(dates) if i not in (3,4)]
+    status,kind=q._funded_xnys_session_diagnosis(observed,2)
+    assert status=="MISSING_FUNDED_XNYS_SESSIONS_HOLD"
+    assert kind=="MULTIPLE_EXPECTED_NYSE_CLOSES_ABSENT_HOLD"
 
 
 def test_real_funded_mark_breach_cannot_be_described_as_clean():
@@ -160,6 +206,7 @@ def test_extended_source_prints_only_fixed_research_category(capsys,monkeypatch)
     printed = capsys.readouterr().out
     assert "postfunded_account_risk_research_status: POSTFUNDED_CLEAN_6_20_35_RESEARCH_ONLY" in printed
     assert "funded_XNYS_session_coverage: COMPLETE_FUNDED_XNYS_SESSIONS_RESEARCH_ONLY" in printed
+    assert "funded_XNYS_gap_kind: NO_NYSE_SESSION_DISAGREEMENT_RESEARCH_ONLY" in printed
     for bad in ("PRIVATE-SYNTHETIC","2026-10-26","2026-11-05","100."):
         assert bad not in printed
 
