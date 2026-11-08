@@ -79,7 +79,7 @@ def _sessions(now):
     if not open_at<=now<=close_at-timedelta(minutes=5):
         raise OpportunityStop("First BUY attempted outside regular session")
     prior=c.previous_session(today)
-    dates=c.sessions_window(prior,-LOOKBACK).tz_localize(None).normalize()
+    dates=c.sessions_window(prior,-MIN_SESSIONS).tz_localize(None).normalize()
     if len(dates)!=MIN_SESSIONS:
         raise OpportunityStop("Insufficient completed XNYS sessions")
     return tuple(x.strftime("%Y-%m-%d") for x in dates)
@@ -186,7 +186,7 @@ def _get(*,symbol,first,last,key,secret,transport=None):
     url=(DATA_HOST+"/v2/stocks/"+symbol+"/bars?"+urlencode({
         "timeframe":"1Day",
         "start":first,
-        "end":last,
+        # An API date-only end at midnight may exclude the LAST daily bar.\n        # Exclusive next-calendar-day endpoint retains exactly the qualified\n        # previous completed session; the parser rejects any future bar.\n        "end":(datetime.fromisoformat(last)+timedelta(days=1)).strftime("%Y-%m-%d"),
         "limit":MIN_SESSIONS+8,
         "adjustment":"all",
         "feed":FEED,
