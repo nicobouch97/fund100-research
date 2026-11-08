@@ -128,16 +128,18 @@ def _report(status, *, original_verified=True):
 def _funded_xnys_session_diagnosis(times: list[int], prefix: int) -> tuple[str, str]:
     """Categorise genuine funded XNYS mismatch without disclosing source dates.
 
-    Compare the exact current first-seller UTC-date convention, not a
-    reconstructed cashflow or zero-return backfill. Every mismatch HOLDS.
-    Only fixed strings leave the private broker process.
+    Compare the exact current first-seller America/New_York economic
+    session convention (not UTC day labels). Preserve every real timestamp
+    and equity observation; never backfill gaps or infer a cashflow return.
+    Every mismatch HOLDS. Only fixed strings leave the private process.
     """
     unverified = "UNVERIFIED_FUNDED_XNYS_SESSIONS_HOLD"
     try:
         import pandas as pd
         import exchange_calendars as xcals
+        ny = ZoneInfo("America/New_York")
         funded = pd.DatetimeIndex([
-            datetime.fromtimestamp(t, timezone.utc).date()
+            datetime.fromtimestamp(t, timezone.utc).astimezone(ny).date()
             for t in times[prefix:]
         ])
         if len(funded) < 6:
