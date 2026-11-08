@@ -126,7 +126,9 @@ def test_same_calendar_versions_as_future_first_sale_with_no_broker_creds_at_ins
 def test_only_main_readonly_job_receives_credentials():
     y = yml()
     assert "  workflow_dispatch:" in y and "  push:" in y
-    assert "  schedule:" not in y and "  pull_request:" not in y
+    assert '  schedule:\n    - cron: "07 15 * * 1"\n  push:\n' in y
+    assert y.count("  schedule:") == 1 and y.count("    - cron:") == 1
+    assert "  pull_request:" not in y
     assert "branches: [main]" in y
     assert "cancel-in-progress: false" in y
     assert "permissions:\n  contents: read" in y
@@ -139,6 +141,20 @@ def test_only_main_readonly_job_receives_credentials():
     assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in y
     assert "python fund100_v6_s1_three_month_prefunding_probe_v1_0.py" in y
     assert audit.approved_scoped_live_script(WORKFLOW, SOURCE, y)
+
+
+@pytest.mark.parametrize("altered", [
+    lambda s: s.replace('07 15 * * 1', '00 * * * *'),
+    lambda s: s.replace('07 15 * * 1', '07 15 * * 2'),
+    lambda s: s.replace('  schedule:\n    - cron: "07 15 * * 1"\n', ''),
+    lambda s: s.replace('    - cron: "07 15 * * 1"\n',
+                        '    - cron: "07 15 * * 1"\n    - cron: "00 * * * *"\n'),
+])
+def test_weekly_only_readonly_schedule_is_exact_or_scope_revoked(altered):
+    current = yml()
+    changed = altered(current)
+    assert changed != current
+    assert not audit.approved_scoped_live_script(WORKFLOW, SOURCE, changed)
 
 
 def test_source_always_reports_no_orders_or_pretrade_risk_clearance():
