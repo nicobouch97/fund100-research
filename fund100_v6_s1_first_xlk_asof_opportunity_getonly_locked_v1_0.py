@@ -186,7 +186,9 @@ def _get(*,symbol,first,last,key,secret,transport=None):
     url=(DATA_HOST+"/v2/stocks/"+symbol+"/bars?"+urlencode({
         "timeframe":"1Day",
         "start":first,
-        # An API date-only end at midnight may exclude the LAST daily bar.\n        # Exclusive next-calendar-day endpoint retains exactly the qualified\n        # previous completed session; the parser rejects any future bar.\n        "end":(datetime.fromisoformat(last)+timedelta(days=1)).strftime("%Y-%m-%d"),
+        # API midnight-end may exclude the last complete daily bar.
+        # Query the next calendar date and reject any unexpected future bar.
+        "end":(datetime.fromisoformat(last)+timedelta(days=1)).strftime("%Y-%m-%d"),
         "limit":MIN_SESSIONS+8,
         "adjustment":"all",
         "feed":FEED,
