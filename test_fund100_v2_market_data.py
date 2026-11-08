@@ -10,7 +10,7 @@ from fund100_v2.market_data import (
     observations_from_history,
     read_bars_csv,
 )
-from fund100_v2.universe import UniversePolicy, select_universe
+from fund100_v2.universe import AssetObservation, UniversePolicy, select_universe
 
 
 AS_OF = date(2026, 10, 9)
@@ -188,16 +188,37 @@ def test_sparse_history_cannot_forge_20d_liquidity():
         observations_from_history([catalog()], bars, as_of=AS_OF)
 
 
-def test_last_market_bar_drives_snapshot_freshness():
+def test_combined_availability_does_not_backdate_catalog():
     rows = observations_from_history(
         [catalog()], history()[:-5], as_of=AS_OF
     )
-    assert rows[0].observed_on < AS_OF
+    assert rows[0].observed_on == AS_OF
+    # The independent ten-day bar-age gate enforces market freshness.
+    # observed_on represents combined availability, not the last bar date.
+
+
+def test_catalog_freshness_cannot_mask_stale_market_session():
+    # 3 October bar / 9 October catalog: ten-day ingestion permits it,
+    # but a one-day downstream market freshness policy must reject it.
+    bars = tuple(b for b in history() if b.session <= date(2026, 10, 3))
+    rows = observations_from_history([catalog(observed_on=AS_OF)], bars, as_of=AS_OF)
+    assert rows[0].observed_on == AS_OF
+    assert rows[0].market_session_on == date(2026, 10, 2)
     result = select_universe(
         rows, UniversePolicy(as_of=AS_OF, max_observation_age_days=1)
     )
     assert result.symbols == ()
-    assert "market_snapshot_missing_stale_or_future" in result.rejected[0].reasons
+    assert "market_price_bar_missing_stale_or_future" in result.rejected[0].reasons
+
+
+def test_recent_market_session_passes_independent_freshness():
+    bars = tuple(b for b in history() if b.session <= date(2026, 10, 8))
+    rows = observations_from_history([catalog()], bars, as_of=AS_OF)
+    assert rows[0].market_session_on == date(2026, 10, 8)
+    result = select_universe(
+        rows, UniversePolicy(as_of=AS_OF, max_observation_age_days=1)
+    )
+    assert result.symbols == ("SPY",)
 
 
 def test_module_never_returns_executable_order_payload():
@@ -205,3 +226,94 @@ def test_module_never_returns_executable_order_payload():
     assert not hasattr(rows[0], "orders")
     assert not hasattr(rows[0], "target_weights")
     assert not hasattr(rows[0], "broker_write_mode")
+
+
+def test_old_but_contiguous_20_bar_window_is_rejected():
+    # A complete historical window must not masquerade as current liquidity.
+    old_bars = tuple(
+        DailyBar(b.symbol, b.session - timedelta(days=30), b.close_usd,
+                 b.volume_shares, b.quoted_spread_bps)
+        for b in history()
+    )
+    with pytest.raises(ValueError, match="stale"):
+        observations_from_history([catalog()], old_bars, as_of=AS_OF)
+
+
+def test_recent_weekend_lag_is_accepted():
+    bars = tuple(b for b in history() if b.session <= AS_OF - timedelta(days=3))
+    rows = observations_from_history([catalog()], bars, as_of=AS_OF)
+    assert rows[0].price_usd == 100.0
+
+
+def test_catalog_observed_after_market_bar_cannot_be_backdated():
+    bars = tuple(b for b in history() if b.session <= date(2026, 10, 6))
+    rows = observations_from_history(
+        [catalog(observed_on=date(2026, 10, 9))], bars, as_of=AS_OF
+    )
+    assert rows[0].observed_on == date(2026, 10, 9)
+    result = select_universe(rows, UniversePolicy(as_of=date(2026, 10, 7)))
+    assert result.symbols == ()
+    assert "market_snapshot_missing_stale_or_future" in result.rejected[0].reasons
+
+
+def test_strict_pit_rejects_missing_market_session_without_broker_access():
+    row = observations_from_history([catalog()], history(), as_of=AS_OF)[0]
+    legacy = AssetObservation(**{
+        **row.__dict__, "market_session_on": None,
+    })
+    strict = UniversePolicy(as_of=AS_OF, require_market_session=True)
+    result = select_universe([legacy], strict)
+    assert result.symbols == ()
+    assert "market_price_bar_missing_stale_or_future" in result.rejected[0].reasons
+    # Explicit legacy mode remains available but is not PIT certified.
+    assert select_universe([legacy], UniversePolicy(as_of=AS_OF)).symbols == ("SPY",)
+
+
+def test_strict_pit_accepts_real_recent_bar_and_rejects_stale_bar():
+    row = observations_from_history([catalog()], history(), as_of=AS_OF)[0]
+    strict = UniversePolicy(as_of=AS_OF, max_observation_age_days=1,
+                            require_market_session=True)
+    assert select_universe([row], strict).symbols == ("SPY",)
+    stale = AssetObservation(**{
+        **row.__dict__, "market_session_on": AS_OF - timedelta(days=3),
+    })
+    result = select_universe([stale], strict)
+    assert result.symbols == ()
+    assert "market_price_bar_missing_stale_or_future" in result.rejected[0].reasons
+
+
+def test_pit_policy_validation_and_fingerprint_binding():
+    with pytest.raises(ValueError, match="boolean"):
+        UniversePolicy(as_of=AS_OF, require_market_session="true")
+    row = observations_from_history([catalog()], history(), as_of=AS_OF)[0]
+    legacy = select_universe([row], UniversePolicy(as_of=AS_OF))
+    strict = select_universe([row], UniversePolicy(as_of=AS_OF,
+                                                 require_market_session=True))
+    assert legacy.symbols == strict.symbols
+    assert legacy.selection_sha256 != strict.selection_sha256
+
+
+def test_strict_pit_rejects_market_bar_before_listing_date():
+    row = observations_from_history([catalog()], history(), as_of=AS_OF)[0]
+    impossible = AssetObservation(**{
+        **row.__dict__, "listed_on": AS_OF - timedelta(days=1),
+        "market_session_on": AS_OF - timedelta(days=2),
+    })
+    result = select_universe([impossible], UniversePolicy(
+        as_of=AS_OF, require_market_session=True,
+    ))
+    assert result.symbols == ()
+    assert "market_price_bar_missing_stale_or_future" in result.rejected[0].reasons
+
+
+def test_strict_pit_rejects_future_market_session_even_with_current_catalog():
+    # A manually assembled observation cannot use tomorrow's closing price.
+    row = observations_from_history([catalog()], history(), as_of=AS_OF)[0]
+    future = AssetObservation(**{
+        **row.__dict__, "market_session_on": AS_OF + timedelta(days=1),
+    })
+    result = select_universe([future], UniversePolicy(
+        as_of=AS_OF, require_market_session=True,
+    ))
+    assert result.symbols == ()
+    assert "market_price_bar_missing_stale_or_future" in result.rejected[0].reasons

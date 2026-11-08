@@ -35,6 +35,8 @@ class AssetObservation:
     quoted_spread_bps: float
     history_sessions: int
     fractionable: bool = False
+    # Independent market-price timestamp; never substitute catalog freshness.
+    market_session_on: date | None = None
 
 
 @dataclass(frozen=True)
@@ -48,9 +50,13 @@ class UniversePolicy:
     max_quoted_spread_bps: float = 40.0
     max_observation_age_days: int = 5
     max_symbols: int = 250
+    # Opt-in certification: legacy catalog-only observations are not PIT verified.
+    require_market_session: bool = False
     allowed_asset_classes: tuple[str, ...] = ("equity", "etf")
 
     def __post_init__(self) -> None:
+        if not isinstance(self.require_market_session, bool):
+            raise ValueError("require_market_session must be boolean")
         if not isinstance(self.as_of, date):
             raise ValueError("as_of must be a calendar date")
         if (
@@ -119,6 +125,13 @@ def _reasons(row: AssetObservation, policy: UniversePolicy) -> tuple[str, ...]:
         or (policy.as_of - row.observed_on).days > policy.max_observation_age_days
     ):
         reasons.append("market_snapshot_missing_stale_or_future")
+    if (policy.require_market_session or row.market_session_on is not None) and (
+        not isinstance(row.market_session_on, date)
+        or row.market_session_on > policy.as_of
+        or (isinstance(row.listed_on, date) and row.market_session_on < row.listed_on)
+        or (policy.as_of - row.market_session_on).days > policy.max_observation_age_days
+    ):
+        reasons.append("market_price_bar_missing_stale_or_future")
 
     if not _finite_positive(row.price_usd) or (
         float(row.price_usd) < policy.min_price_usd
@@ -194,6 +207,7 @@ def select_universe(
             "max_quoted_spread_bps": policy.max_quoted_spread_bps,
             "max_observation_age_days": policy.max_observation_age_days,
             "max_symbols": policy.max_symbols,
+            "require_market_session": policy.require_market_session,
         },
         "selected": selected,
         "rejected": [
