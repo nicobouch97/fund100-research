@@ -12,7 +12,7 @@ import fund100_v6_s1_three_month_prefunding_probe_v1_0 as probe
 ROOT = Path(__file__).resolve().parent
 WORKFLOW = ".github/workflows/fund100-v6-s1-three-month-prefunding-source.yml"
 SOURCE = "fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
-PIN = "e4977d6cb1a0046790ec5185f4d2b0c4bffed84b"
+PIN = "7eca47d79e783c46a31262db5a7ce6db0dc645bf"
 
 
 def yml():
