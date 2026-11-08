@@ -122,7 +122,9 @@ def execute_first_xlk_original_once() -> dict:
         if (type(decision) is not dict
             or decision.get("schema")!=opportunity.SCHEMA
             or decision.get("model")!=opportunity.MODEL
-            or decision.get("decision")!="BUY_XLK_ASOF_AFTER_COST_HEURISTIC"
+            or decision.get("decision") not in (
+                "BUY_XLK_ASOF_AFTER_COST_HEURISTIC",
+                "NO_BUY_UNQUALIFIED_COSTED_RELATIVE_STRENGTH")
             or decision.get("source_is_market_api_authenticated") is not True
             or decision.get("first_xlk_exact_amount_usd")!=FIXED_FIRST_BUY_NOTIONAL_USD
             or decision.get("first_xlk_exact_cost_usd")!=FIXED_FIRST_BUY_WORST_CASE_COST_USD
@@ -135,7 +137,22 @@ def execute_first_xlk_original_once() -> dict:
             or decision.get("live_buy_sell_authorized") is not False
             or decision.get("private_git_writes")!=0
             or decision.get("broker_orders_submitted")!=0):
-            raise FirstBuyEntryStop("First XLK strategy NO_BUY / unqualified as-of costed opportunity")
+            raise FirstBuyEntryStop("First XLK strategy unqualified as-of costed opportunity")
+        if decision["decision"]=="NO_BUY_UNQUALIFIED_COSTED_RELATIVE_STRENGTH":
+            # A valid absence of opportunity is an ordinary autonomous
+            # decision. Never initialise first-buy private genesis/seq1,
+            # attempt the broker POST, retry, or convert NO_BUY into a
+            # failing GitHub Action alert.
+            return {
+                "schema":SCHEMA,
+                "status":"FIRST_ORIGINAL_XLK_BUY_SKIPPED_VALID_NO_BUY",
+                "first_buy_order_send_attempts":0,
+                "fully_filled":False,
+                "eligible_to_repeat":False,
+                "further_trading_authorized":False,
+                "private_state":None,
+                "broker_account_or_credentials":None,
+            }
         reservation=reserve.autoreserve(**args)
         if (type(reservation) is not dict
             or reservation.get("schema") != reserve.SCHEMA
@@ -171,7 +188,10 @@ def execute_first_xlk_original_once() -> dict:
 def main() -> None:
     result=execute_first_xlk_original_once()
     print(result["status"])
-    print("First XLK BUY is an irreversible one-shot attempt; reconcile fill separately.")
+    if result["first_buy_order_send_attempts"]==1:
+        print("First XLK BUY is an irreversible one-shot attempt; reconcile fill separately.")
+    else:
+        print("Qualified NO_BUY: zero private BUY state writes and zero broker orders.")
 
 if __name__=="__main__":
     main()
