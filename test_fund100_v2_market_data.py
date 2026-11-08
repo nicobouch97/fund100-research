@@ -197,6 +197,30 @@ def test_combined_availability_does_not_backdate_catalog():
     # observed_on represents combined availability, not the last bar date.
 
 
+def test_catalog_freshness_cannot_mask_stale_market_session():
+    # 3 October bar / 9 October catalog: ten-day ingestion permits it,
+    # but a one-day downstream market freshness policy must reject it.
+    bars = tuple(b for b in history() if b.session <= date(2026, 10, 3))
+    rows = observations_from_history([catalog(observed_on=AS_OF)], bars, as_of=AS_OF)
+    assert rows[0].observed_on == AS_OF
+    assert rows[0].market_session_on == date(2026, 10, 2)
+    result = select_universe(
+        rows, UniversePolicy(as_of=AS_OF, max_observation_age_days=1)
+    )
+    assert result.symbols == ()
+    assert "market_price_bar_missing_stale_or_future" in result.rejected[0].reasons
+
+
+def test_recent_market_session_passes_independent_freshness():
+    bars = tuple(b for b in history() if b.session <= date(2026, 10, 8))
+    rows = observations_from_history([catalog()], bars, as_of=AS_OF)
+    assert rows[0].market_session_on == date(2026, 10, 8)
+    result = select_universe(
+        rows, UniversePolicy(as_of=AS_OF, max_observation_age_days=1)
+    )
+    assert result.symbols == ("SPY",)
+
+
 def test_module_never_returns_executable_order_payload():
     rows = observations_from_history([catalog()], history(), as_of=AS_OF)
     assert not hasattr(rows[0], "orders")
