@@ -47,18 +47,12 @@ jobs:
           grep -Eq '"first_original_acwi_sell_enabled": false' fund100_v6_s1_operator_control.json
 
   protected-disposable-scratch-write:
-    # SINGLE USE non-trading credential proof specifically requested by owner.
-    # The only allowed push is the reviewed squash merge of this workflow
-    # with the exact unique commit subject below. A routine subsequent push,
-    # PR, schedule, rerun or manual dispatch MUST SKIP this job.
-    # No live Alpaca secrets, signed first-sale owner, ledger or asset tag.
-    # Revert to explicit if:false after observing success or terminal HOLD.
+    # PERMANENTLY DORMANT again after the single-use protected diagnostic
+    # run 42474231119. Private disposable SHA-CAS worked, but public draft
+    # Release CREATE failed. NEVER automatically retry any credential WRITE.
+    # An explicit newly reviewed change is needed for another diagnostic.
     needs: credentialless-fake-write-protocol
-    if: >-
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main' &&
-      github.run_attempt == 1 &&
-      startsWith(github.event.head_commit.message, 'FUND100-ONE-TIME-STOPPED-DISPOSABLE-WRITE-PROOF-20261108-560')
+    if: ${{ false }}
     runs-on: ubuntu-latest
     environment: fund100-live-broker
     timeout-minutes: 8
@@ -81,7 +75,6 @@ jobs:
           test "$GITHUB_EVENT_NAME" = 'push'
           test "$GITHUB_REF" = 'refs/heads/main'
           test "$GITHUB_RUN_ATTEMPT" = '1'
-          test "$(git log -1 --format=%s HEAD)" = 'FUND100-ONE-TIME-STOPPED-DISPOSABLE-WRITE-PROOF-20261108-560'
           test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-first-execution-write-permission-scratch.yml@refs/heads/main'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
