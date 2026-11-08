@@ -35,6 +35,8 @@ class AssetObservation:
     quoted_spread_bps: float
     history_sessions: int
     fractionable: bool = False
+    # Independent market-price timestamp; never substitute catalog freshness.
+    market_session_on: date | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +121,12 @@ def _reasons(row: AssetObservation, policy: UniversePolicy) -> tuple[str, ...]:
         or (policy.as_of - row.observed_on).days > policy.max_observation_age_days
     ):
         reasons.append("market_snapshot_missing_stale_or_future")
+    if row.market_session_on is not None and (
+        not isinstance(row.market_session_on, date)
+        or row.market_session_on > policy.as_of
+        or (policy.as_of - row.market_session_on).days > policy.max_observation_age_days
+    ):
+        reasons.append("market_price_bar_missing_stale_or_future")
 
     if not _finite_positive(row.price_usd) or (
         float(row.price_usd) < policy.min_price_usd
