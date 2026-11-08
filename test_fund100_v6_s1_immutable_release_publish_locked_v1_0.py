@@ -85,6 +85,7 @@ class Scenario:
             assert self.drafts==1
             body=json.loads(req.data)
             assert body["draft"] is True and body["tag_name"]==anchor.TAG
+            assert body["make_latest"]=="false"  # Documented REST string, not boolean
             assert body["target_commitish"]==self.owner["current_main_sha"]
             if self.mode=="draft_lost_ack":
                 raise URLError("draft accepted but reply lost")
