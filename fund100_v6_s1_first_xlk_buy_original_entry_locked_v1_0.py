@@ -5,8 +5,8 @@ ACWI post-sale 8-GET HIGH-risk source, the first-BUY signed private
 genesis/seq1 CAS provisioner, and the independently hard-locked first
 XLK seq2 CAS -> ONE Alpaca POST writer.
 
-A protected funded BUY schedule is NOT yet installed. This module does
-not release any of those three components or authorise trading. No dynamic
+A protected funded BUY schedule is installed but DORMANT. This module does
+not release any of its source/strategy/broker components or authorise trading. No dynamic
 user/environment size input is accepted: the provisional first-entry
 amount and worst-case cost are fixed and must be approved in code,
 then requalified from current broker liquidity and 6/20/35 risk.
