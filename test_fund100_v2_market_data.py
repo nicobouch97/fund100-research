@@ -10,7 +10,7 @@ from fund100_v2.market_data import (
     observations_from_history,
     read_bars_csv,
 )
-from fund100_v2.universe import UniversePolicy, select_universe
+from fund100_v2.universe import AssetObservation, UniversePolicy, select_universe
 
 
 AS_OF = date(2026, 10, 9)
@@ -254,3 +254,40 @@ def test_catalog_observed_after_market_bar_cannot_be_backdated():
     result = select_universe(rows, UniversePolicy(as_of=date(2026, 10, 7)))
     assert result.symbols == ()
     assert "market_snapshot_missing_stale_or_future" in result.rejected[0].reasons
+
+
+def test_strict_pit_rejects_missing_market_session_without_broker_access():
+    row = observations_from_history([catalog()], history(), as_of=AS_OF)[0]
+    legacy = AssetObservation(**{
+        **row.__dict__, "market_session_on": None,
+    })
+    strict = UniversePolicy(as_of=AS_OF, require_market_session=True)
+    result = select_universe([legacy], strict)
+    assert result.symbols == ()
+    assert "market_price_bar_missing_stale_or_future" in result.rejected[0].reasons
+    # Explicit legacy mode remains available but is not PIT certified.
+    assert select_universe([legacy], UniversePolicy(as_of=AS_OF)).symbols == ("SPY",)
+
+
+def test_strict_pit_accepts_real_recent_bar_and_rejects_stale_bar():
+    row = observations_from_history([catalog()], history(), as_of=AS_OF)[0]
+    strict = UniversePolicy(as_of=AS_OF, max_observation_age_days=1,
+                            require_market_session=True)
+    assert select_universe([row], strict).symbols == ("SPY",)
+    stale = AssetObservation(**{
+        **row.__dict__, "market_session_on": AS_OF - timedelta(days=3),
+    })
+    result = select_universe([stale], strict)
+    assert result.symbols == ()
+    assert "market_price_bar_missing_stale_or_future" in result.rejected[0].reasons
+
+
+def test_pit_policy_validation_and_fingerprint_binding():
+    with pytest.raises(ValueError, match="boolean"):
+        UniversePolicy(as_of=AS_OF, require_market_session="true")
+    row = observations_from_history([catalog()], history(), as_of=AS_OF)[0]
+    legacy = select_universe([row], UniversePolicy(as_of=AS_OF))
+    strict = select_universe([row], UniversePolicy(as_of=AS_OF,
+                                                 require_market_session=True))
+    assert legacy.symbols == strict.symbols
+    assert legacy.selection_sha256 != strict.selection_sha256
