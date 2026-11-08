@@ -84,6 +84,7 @@ class FakeGitHub:
                 return Reply(200,{"commit":{"sha":MAIN_SHA}})
         if url==probe.PUBLIC_RELEASES and method=="POST":
             assert token==RELEASE and request["draft"] is True
+            assert request["make_latest"]=="false"  # Documented REST string, not boolean
             assert request["tag_name"]==tag and self.release is None
             assert request["target_commitish"]==MAIN_SHA
             self.release={
