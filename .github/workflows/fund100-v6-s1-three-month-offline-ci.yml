@@ -29,8 +29,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install offline test runner
-        run: python -m pip install 'pytest>=8,<9'
+      - name: Install offline test runner and reviewed NYSE calendar
+        # No broker secrets are provided to this offline CI job.
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input --only-binary=:all: 'pytest>=8,<9' 'pandas==2.3.3' 'exchange-calendars==4.13.2'
       - name: Validate only synthetic extended-history evidence
         run: |
           set -euo pipefail
