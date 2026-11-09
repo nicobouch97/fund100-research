@@ -124,7 +124,9 @@ def inspect_injected(*, request, source_mode, account_inception_date,
         raise ActivityStop("Only bounded injected offline source allowed")
     oldest = _date(account_inception_date)
     current = _date(latest_date)
-    if oldest < _date(FILTER_AFTER) or current < oldest:
+    # `after` is an exclusive activity creation-date filter. A query
+    # starting on inception could silently exclude opening-day funding.
+    if oldest <= _date(FILTER_AFTER) or current < oldest:
         return _report("HOLD_ACTIVITY_WINDOW_NOT_INCEPTION_QUALIFIED")
     seen, page_tokens = set(), set()
     count, deposits, withdrawals, total = 0, 0, 0, Decimal(0)
