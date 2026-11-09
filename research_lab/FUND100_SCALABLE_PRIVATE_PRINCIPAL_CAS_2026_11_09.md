@@ -87,3 +87,43 @@ principal ledger. The pilot $130.30 ceiling, $65 ticket and STOP remain.
 
 Authoritative Alpaca account activity types:
 https://docs.alpaca.markets/us/reference/getaccountactivities
+
+## 9 November 2026: require separate bank-transfer receipts before principal signing
+
+The actual LIVE Alpaca nontrade history contains CSD and CSW activity
+codes but those codes do **NOT** establish owner-contributed principal.
+Alpaca specifically documents that CSD can mean a returned withdrawal
+and CSW a returned deposit. See:
+https://docs.alpaca.markets/us/reference/getaccountactivitiesbytype
+
+This offline source protocol now refuses to sign principal from raw
+CSD/CSW codes alone. In the *synthetic-only* fixture, a second explicit
+bank evidence source is required for every CSD/CSW activity:
+an exact one-to-one matching activity ID, unique bank settlement
+reference SHA256, account binding, signed USD amount, direction,
+settlement date, status SETTLED and returned=false. Orphaned bank
+receipts, returned transfers, wrong currency/binding, unsupported
+cash codes, duplicate bank refs, ambiguous sign/direction and a
+historically modified receipt all fail closed. Both the cash activity
+and the matching receipt fixture are now committed in the private
+HMAC row chain, so signed history preserves the provenance link,
+not only the broker's cash activity.
+
+The fixture source mode explicitly says SYNTHETIC; users or public CI
+can construct fixture receipts and they must **NOT** be treated as
+real independently authenticated bank transfer records. A matching
+fake bank receipt is not real settlement, is not verified owner
+identity and does not establish account provenance. Production must
+fetch corroborating confirmed transfers from genuinely independent
+bank/broker transport with separate authentication, correct account
+ownership, return/reversal linkage, USD FX source and business-time
+settlement, within a protected credentialed process before treating
+owner principal as real. The existing broker Trading API CSD/CSW
+endpoint alone cannot establish this. The separate Alpaca Broker API
+requires its own capability/access verification and cannot be
+silently assumed available.
+
+A passing new offline test cannot initialise the private capital
+ledger or authorise a larger capital envelope. The original pilot
+limit, STOP, first ACWI sale HOLD, order cap and no-retry guarantees
+remain unchanged.
