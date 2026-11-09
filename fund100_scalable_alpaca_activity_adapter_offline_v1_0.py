@@ -5,6 +5,7 @@ opens HTTP, writes state, signs documents or grants orders. The V2 activity
 'date' can be activity OR settlement date; it is NOT proof of cash settlement.
 See Alpaca docs /us/docs/account-activities and /us/reference/getaccountactivities-2.
 
+CSD can include returned withdrawals; CSW can include returned deposits.
 The adapter returns public categorical diagnostics only, not source balances,
 IDs, amounts or event details. It cannot certify authentic broker evidence.
 """
@@ -54,6 +55,9 @@ def _report(reason, *, page_count=0, row_count=0):
         "full_live_account_history_proven": False,
         "inception_date_authenticated": False,
         "settled_cash_authenticated": False,
+        "csd_may_be_returned_withdrawal": True,
+        "csw_may_be_returned_deposit": True,
+        "owner_contributed_principal_authenticated": False,
         "private_signed_funding_ledger_verified": False,
         "standing_mandate_owner_authorized": False,
         "live_orders_authorized": False,
@@ -100,9 +104,9 @@ def _row(row, *, seen, earliest, latest, prior_date):
         raise ActivityStop("Out-of-order or uncovered activity day")
     value = _amount(row.get("net_amount"))
     if kind == "CSD" and value <= 0:
-        raise ActivityStop("Nonpositive broker cash deposit")
+        raise ActivityStop("Nonpositive CSD cash credit")
     if kind == "CSW" and value >= 0:
-        raise ActivityStop("Nonnegative broker cash withdrawal")
+        raise ActivityStop("Nonnegative CSW cash debit")
     # Optional currency metadata is not always present in legacy Alpaca
     # nontrade source. Absence is ambiguity, not a presumed USD receipt.
     currency = row.get("currency")
@@ -129,7 +133,7 @@ def inspect_injected(*, request, source_mode, account_inception_date,
     if oldest <= _date(FILTER_AFTER) or current < oldest:
         return _report("HOLD_ACTIVITY_WINDOW_NOT_INCEPTION_QUALIFIED")
     seen, page_tokens = set(), set()
-    count, deposits, withdrawals, total = 0, 0, 0, Decimal(0)
+    count, csd_credits, csw_debits, net_codes = 0, 0, 0, Decimal(0)
     prior_date = None
     token = None
     for index in range(max_pages):
@@ -163,21 +167,21 @@ def inspect_injected(*, request, source_mode, account_inception_date,
                 return _report("HOLD_UNQUALIFIED_ACTIVITY_ROWS",
                                page_count=index+1, row_count=count)
             if kind == "CSD":
-                deposits += 1
-                total += value
+                csd_credits += 1
+                net_codes += value
             elif kind == "CSW":
-                withdrawals += 1
-                total += value
-                if total < 0:
-                    return _report("HOLD_NEGATIVE_CONTRIBUTED_PRINCIPAL",
+                csw_debits += 1
+                net_codes += value
+                if net_codes < 0:
+                    return _report("HOLD_CSW_DEBIT_EXCEEDS_CSD_CREDIT",
                                    page_count=index+1, row_count=count)
         if len(returned) < PAGE_SIZE:
-            if not deposits:
-                return _report("HOLD_NO_QUALIFIED_CASH_DEPOSIT",
+            if not csd_credits:
+                return _report("HOLD_NO_CSD_CASH_CREDIT",
                                page_count=index+1, row_count=count)
             # Even a complete observed source is NOT authenticated,
             # signed, reconciled to account inception or cash settlement.
-            return _report("REVIEW_ONLY_DATE_NOT_SETTLEMENT",
+            return _report("REVIEW_ONLY_CASH_CODES_NOT_OWNER_PRINCIPAL",
                            page_count=index+1, row_count=count)
         tail = returned[-1]
         next_token = tail.get("id")
