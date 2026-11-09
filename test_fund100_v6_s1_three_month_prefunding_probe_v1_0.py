@@ -261,6 +261,31 @@ def test_mixed_utc_clock_shape_is_diagnostic_never_authorization():
 
 
 
+@pytest.mark.parametrize("broker_clock", [
+    None, {}, [], {"is_open": None}, {"is_open": False},
+    {"is_open": 0}, {"is_open": 1}, {"is_open": "true"},
+    {"is_open": "True"}, {"is_open": []},
+])
+def test_only_literal_broker_open_boolean_allows_source_risk_evaluation(
+        monkeypatch, broker_clock):
+    """A missed/delayed open-market source must never infer an open clock.
+
+    These are only synthetic STOP regression fixtures. No broker calls,
+    live credential, one-shot owner mutation or order is available here.
+    """
+    import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+    calls = []
+    monkeypatch.setattr(
+        active, "evaluate_original_sell_only",
+        lambda **kw: calls.append("unexpected_active_seller") or None)
+    status = q._active_sell_pure_replay(
+        account={}, positions=[], orders=[], clock=broker_clock,
+        history={}, activities=[], none_history={}, extended_history={},
+        bootstrap={}, policy={}, observed_at_utc="2026-11-09T14:49:00Z")
+    assert status == "MARKET_NOT_OPEN_ACTIVE_REPLAY_HOLD"
+    assert calls == []
+
+
 def test_active_pure_replay_market_closed_no_evaluator_or_network(monkeypatch):
     import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
     calls=[]
