@@ -92,7 +92,8 @@ jobs:
           import fund100_v7_u4_100issuer_original_sec_baseline_v1_0 as original
           frozen, roster=original.original_issuer_roster(Path('/tmp/fund100-v8-sec100-u3'))
           assert len(roster)==100
-          assert frozen['original_issuer_attributed_mirror_not_raw_issuer_verified'] if 'original_issuer_attributed_mirror_not_raw_issuer_verified' in frozen else True
+          assert frozen['source_is_direct_official_ishares_file'] is False
+          assert frozen['issuer_identity_not_share_class_or_broker_eligibility'] is True
           assert frozen['trading_authorized'] is False
           print('Exactly 100 original SEC-mapped CIK identities replayed; no trade authority.')
           PY
