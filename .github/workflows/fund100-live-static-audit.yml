@@ -49,6 +49,11 @@ on:
       # Source-pinned actual Alpaca funding GET-only job, never a LIVE capital mandate.
       # Original ETF inventory against pilot cost, excess cash NEVER spendable.
       # Synthetic, private-only funding ledger CAS; no Git transport or LIVE mandate.
+      # Strict synthetic independent HEAD for principal CAS, never production authority.
+      - "fund100_scalable_principal_head_anchor_offline_v1_0.py"
+      - "test_fund100_scalable_principal_head_anchor_offline_v1_0.py"
+      - "research_lab/FUND100_SCALABLE_INDEPENDENT_HEAD_2026_11_09.md"
+      - ".github/workflows/fund100-scalable-head-anchor-offline.yml"
       # Main-only two-principal PRIVATE funding genesis preflight; strict GET-only, STOP.
       - "fund100_scalable_capital_private_genesis_readiness_getonly_v1_0.py"
       - "test_fund100_scalable_capital_private_genesis_readiness_getonly_v1_0.py"
@@ -416,6 +421,11 @@ on:
       # Source-pinned actual Alpaca funding GET-only job, never a LIVE capital mandate.
       # Original ETF inventory against pilot cost, excess cash NEVER spendable.
       # Synthetic, private-only funding ledger CAS; no Git transport or LIVE mandate.
+      # Strict synthetic independent HEAD for principal CAS, never production authority.
+      - "fund100_scalable_principal_head_anchor_offline_v1_0.py"
+      - "test_fund100_scalable_principal_head_anchor_offline_v1_0.py"
+      - "research_lab/FUND100_SCALABLE_INDEPENDENT_HEAD_2026_11_09.md"
+      - ".github/workflows/fund100-scalable-head-anchor-offline.yml"
       # Main-only two-principal PRIVATE funding genesis preflight; strict GET-only, STOP.
       - "fund100_scalable_capital_private_genesis_readiness_getonly_v1_0.py"
       - "test_fund100_scalable_capital_private_genesis_readiness_getonly_v1_0.py"
