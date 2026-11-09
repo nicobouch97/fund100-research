@@ -12,7 +12,8 @@ POLICY = {"account_binding_sha256": ACCOUNT_SHA}
 
 def account(cash="1.00"):
     return {"id": ACCOUNT_ID, "status": "ACTIVE", "account_blocked": False,
-            "trading_blocked": False, "equity": "151.00", "cash": cash}
+            "trading_blocked": False, "equity": "151.00", "cash": cash,
+            "currency": "USD", "created_at": "2026-08-10T12:00:00Z"}
 
 
 def row(n, *, typ="DIV", amount="1.00", date="2026-11-09", currency="USD"):
@@ -20,7 +21,8 @@ def row(n, *, typ="DIV", amount="1.00", date="2026-11-09", currency="USD"):
             "date": date, "net_amount": amount, "currency": currency}
 
 
-def run(items=None, before=None, after=None, policy=None):
+def run(items=None, before=None, after=None, policy=None,
+        requested_after=None):
     if items is None:
         items = [[row(1, typ="CSD", amount="130.30")]]
     tabs = []
@@ -28,9 +30,13 @@ def run(items=None, before=None, after=None, policy=None):
     for batch in items:
         tabs.append({"cursor": cursor, "rows": batch})
         if batch: cursor = batch[-1]["id"]
-    return m.review(account_before=account() if before is None else before,
+    first = account() if before is None else before
+    return m.review(account_before=first,
                     account_after=account() if after is None else after,
-                    policy=POLICY if policy is None else policy, pages=tabs)
+                    policy=POLICY if policy is None else policy, pages=tabs,
+                    requested_after=(m._query_after_account_creation(
+                        m._created_at(first)) if requested_after is None
+                        else requested_after))
 
 
 def never_order(x):
@@ -48,12 +54,14 @@ def never_order(x):
 def test_historical_initial_funding_below_original_cap_still_only_review():
     x = run()
     assert x["status"] == "OBSERVED_FUNDING_WITHIN_ORIGINAL_CAP_REVIEW_ONLY"
+    assert x["account_creation_query_window_covered"] is True
     never_order(x)
 
 
 def test_historical_extra_funding_does_not_migrate_pilot_to_new_mandate():
     x = run([[row(1, typ="CSD", amount="10000.00")]])
     assert x["status"] == "OBSERVED_GROSS_FUNDING_ABOVE_ORIGINAL_PILOT_HOLD"
+    assert x["account_creation_query_window_covered"] is True
     assert x["original_pilot_capital_enlarged"] is False
     never_order(x)
 
@@ -78,6 +86,7 @@ def test_valid_full_page_requires_continuation_and_still_no_settlement():
     x = run([top, []])
     assert x["observed_account_activity_pages"] == 2
     assert x["status"] == "OBSERVED_FUNDING_WITHIN_ORIGINAL_CAP_REVIEW_ONLY"
+    assert x["account_creation_query_window_covered"] is True
     never_order(x)
 
 
@@ -234,3 +243,50 @@ def test_added_credential_or_write_operation_revokes_scope(insert):
     script="fund100_scalable_live_funding_history_getonly_v1_0.py"
     assert not audit.approved_scoped_live_script(
         wf,script,Path(wf).read_text()+insert)
+
+
+def test_dynamic_query_uses_account_creation_not_fixed_2026_date():
+    old = account()
+    old["created_at"] = "2024-03-07T14:20:11.123Z"
+    result = run(
+        before=old, after=old,
+        requested_after="2024-03-06",
+        items=[[row(1,typ="CSD",amount="130.30",date="2024-03-07")]])
+    assert result["status"]=="OBSERVED_FUNDING_WITHIN_ORIGINAL_CAP_REVIEW_ONLY"
+    assert result["account_creation_query_window_covered"] is True
+    never_order(result)
+
+
+def test_fixed_after_cutoff_cannot_masquerade_as_from_inception():
+    old=account()
+    old["created_at"]="2024-03-07T14:20:11Z"
+    result=run(before=old,after=old,requested_after="2026-08-01")
+    assert result["status"]=="HOLD_ACCOUNT_CHANGED_DURING_SOURCE_READ"
+    assert result["account_creation_query_window_covered"] is False
+    never_order(result)
+
+
+@pytest.mark.parametrize("created_at", [
+    None, "invalid", "2026-08-10", "2035-01-01T00:00:00Z",
+    "1999-12-31T23:59:59Z", "2026-08-10T12:00:00+01:00",
+])
+def test_missing_future_or_non_utc_account_creation_rejected(created_at):
+    old=account()
+    old["created_at"]=created_at
+    with pytest.raises(m.FundingSourceStop):
+        run(before=old)
+
+
+def test_account_creation_changed_during_read_holds():
+    after=account()
+    after["created_at"]="2026-08-11T12:00:00Z"
+    result=run(after=after)
+    assert result["status"]=="HOLD_ACCOUNT_CHANGED_DURING_SOURCE_READ"
+    never_order(result)
+
+
+def test_non_usd_account_cannot_be_used_as_usd_principal():
+    old=account()
+    old["currency"]="GBP"
+    with pytest.raises(m.FundingSourceStop):
+        run(before=old)
