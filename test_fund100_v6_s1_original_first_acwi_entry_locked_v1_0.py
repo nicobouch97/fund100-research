@@ -140,6 +140,9 @@ def activated_offline(monkeypatch):
         return {
             "status":"ORIGINAL_ACWI_SINGLE_ATTEMPT_COMPLETED_NO_RETRY",
             "reviewed_broker_order_attempts":1,
+            "broker_receipt_validation_proven":True,
+            "broker_receipt_stage":"POST_ACCEPTED_ACTIVE_OR_PARTIAL_HOLD_NO_RETRY",
+            "independent_order_fill_and_settlement_verified":False,
             "allow_restart_or_second_order":False,
         }
     monkeypatch.setattr(chain,"prepare_original_acwi_context_getonly",prepare)
@@ -167,6 +170,9 @@ def test_one_run_wires_real_coordinator_argument_contract_offline_only(activated
     assert events==["signed_read","coordinator_one_attempt"]
     assert observed["status"]=="FIRST_ORIGINAL_ACWI_ORDER_ATTEMPTED_NO_RETRY"
     assert observed["broker_send_attempts"]==1
+    assert observed["broker_receipt_stage"]==(
+        "POST_ACCEPTED_ACTIVE_OR_PARTIAL_HOLD_NO_RETRY")
+    assert observed["broker_receipt_validation_proven"] is True
     assert observed["resubmission_permitted"] is False
     assert observed["independent_fill_and_settlement_verified"] is False
     assert observed["secret_or_private_source_in_report"] is None
@@ -202,12 +208,33 @@ def test_ephemeral_public_entry_rejects_legacy_pat_and_uses_only_job_token(
         assert kwargs["public_release_write_token"]==keys["GITHUB_TOKEN"]
         return {"status":"ORIGINAL_ACWI_SINGLE_ATTEMPT_COMPLETED_NO_RETRY",
                 "reviewed_broker_order_attempts":1,
+                "broker_receipt_validation_proven":True,
+                "broker_receipt_stage":"POST_ACCEPTED_ACTIVE_OR_PARTIAL_HOLD_NO_RETRY",
+                "independent_order_fill_and_settlement_verified":False,
                 "allow_restart_or_second_order":False}
     monkeypatch.setattr(chain,"run_exact_first_acwi_attempt",captured)
     got=entry.run_protected_first_acwi_once()
     assert got["status"]=="FIRST_ORIGINAL_ACWI_ORDER_ATTEMPTED_NO_RETRY"
     assert events==["signed_read","ephemeral_once"]
     assert got["independent_fill_and_settlement_verified"] is False
+
+@pytest.mark.parametrize("field,value",[
+    ("broker_receipt_validation_proven",False),
+    ("broker_receipt_stage","SYNTHETIC_UNVERIFIED"),
+    ("independent_order_fill_and_settlement_verified",True),
+    ("reviewed_broker_order_attempts",0),
+])
+def test_entry_holds_unqualified_one_shot_receipt_even_after_chain_return(
+        activated_offline,monkeypatch,field,value):
+    _keys,events,_context=activated_offline
+    original=chain.run_exact_first_acwi_attempt
+    def altered(**kwargs):
+        return dict(original(**kwargs),**{field:value})
+    monkeypatch.setattr(chain,"run_exact_first_acwi_attempt",altered)
+    with pytest.raises(entry.EntryStop,match="NEVER RETRY"):
+        entry.run_protected_first_acwi_once()
+    assert events==["signed_read","coordinator_one_attempt"]
+
 
 @pytest.mark.parametrize("name,bad",[
     ("GITHUB_ACTIONS","false"),
