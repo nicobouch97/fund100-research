@@ -118,7 +118,7 @@ def test_cash_reserve_and_settlement_bound_synthetic_ticket():
     never_live(r)
     r = call(a=account("10000.00", "1000.00", "1000.00",
                        {"XLK": "9000.00"}))
-    assert r["status"] == "HOLD_NO_SYNTHETIC_BUY_CAPACITY"
+    assert r["status"] == "HOLD_EXISTING_NAME_CONCENTRATION"
     never_live(r)
 
 
