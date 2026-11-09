@@ -3,6 +3,7 @@
 NO broker, GitHub REST, real secret, deposit approval or order transport.
 """
 import base64
+from hashlib import sha256
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -22,10 +23,29 @@ def row(idx, typ="CSD", amount="130.30", day="2026-10-01"):
             "amount_usd":amount,"currency":"USD","date":day}
 
 
+def receipt(broker_row):
+    direction = "INCOMING" if broker_row["kind"] == "CSD" else "OUTGOING"
+    return {
+        "activity_id": broker_row["id"],
+        "bank_transfer_ref_sha256":
+            sha256(("TEST-BANK-SETTLEMENT-REFERENCE|" + broker_row["id"]).encode()).hexdigest(),
+        "account_binding_sha256": ACCOUNT, "direction": direction,
+        "amount_usd": broker_row["amount_usd"],
+        "settled_date": broker_row["date"], "status": "SETTLED",
+        "returned": False, "currency": "USD",
+    }
+
+
 def source(rows=None, **changes):
+    rows = [row(1)] if rows is None else rows
+    receipt_rows = [receipt(item) for item in rows
+                    if item["kind"] in ("CSD", "CSW")]
     data={"mode":m.SOURCE_MODE,"account_binding_sha256":ACCOUNT,
           "currency":"USD","complete":True,"observed_utc":CLOCK,
-          "rows":[row(1)] if rows is None else rows}
+          "rows":rows,
+          "owner_receipt_source":{
+              "mode":m.BANK_SOURCE_MODE, "complete":True,
+              "rows":receipt_rows}}
     data.update(changes)
     return data
 
@@ -61,6 +81,7 @@ def public_stopped(result):
     assert status["private_ledger_created_or_written"] is False
     assert status["owner_standing_capital_mandate_released"] is False
     assert status["settled_usd_cash_verified"] is False
+    assert status["real_independent_owner_bank_transfer_source_verified"] is False
     assert status["signed_immutable_head_verified"] is False
     assert status["broker_GETs"] == status["broker_POSTs"] == 0
     assert str(ACCOUNT) not in str(status)
@@ -255,3 +276,78 @@ def test_implementation_has_no_transport_or_broker_writer():
     assert m.LIVE_SIGNING_AUTHORITY is False
     assert m.LIVE_TRADING_AUTHORITY is False
     assert m.ACTUAL_GITHUB_WRITES==m.ACTUAL_BROKER_GETS==m.ACTUAL_BROKER_POSTS==0
+
+
+
+def test_csd_without_separate_owner_transfer_cannot_sign_principal():
+    src=source()
+    src.pop("owner_receipt_source")
+    with pytest.raises(m.PrincipalStop):
+        propose(flow=src)
+
+
+def test_cash_activity_receipt_is_not_optional_even_if_marked_complete():
+    src=source([row(1),row(2,amount="50.00",day="2026-10-02")])
+    src["owner_receipt_source"]["rows"].pop()
+    with pytest.raises(m.PrincipalStop):
+        propose(flow=src)
+
+
+@pytest.mark.parametrize("mutate",[
+    lambda src:src["owner_receipt_source"].update(mode="VERIFIED_REAL_BANK"),
+    lambda src:src["owner_receipt_source"].update(complete=False),
+    lambda src:src["owner_receipt_source"]["rows"][0].update(status="PENDING"),
+    lambda src:src["owner_receipt_source"]["rows"][0].update(status="RETURNED"),
+    lambda src:src["owner_receipt_source"]["rows"][0].update(returned=True),
+    lambda src:src["owner_receipt_source"]["rows"][0].update(currency="GBP"),
+    lambda src:src["owner_receipt_source"]["rows"][0].update(direction="OUTGOING"),
+    lambda src:src["owner_receipt_source"]["rows"][0].update(amount_usd="130.31"),
+    lambda src:src["owner_receipt_source"]["rows"][0].update(activity_id="another-id"),
+    lambda src:src["owner_receipt_source"]["rows"][0].update(account_binding_sha256="f"*64),
+    lambda src:src["owner_receipt_source"]["rows"][0].update(settled_date="2030-01-01"),
+    lambda src:src["owner_receipt_source"]["rows"][0].update(bank_transfer_ref_sha256="short"),
+    lambda src:src["owner_receipt_source"]["rows"].append(receipt(row(2))),
+])
+def test_unqualified_missing_reversed_or_foreign_external_transfer_never_signs(mutate):
+    src=source()
+    mutate(src)
+    with pytest.raises(m.PrincipalStop):
+        propose(flow=src)
+
+
+def test_reusing_one_bank_receipt_for_two_broker_credits_is_rejected():
+    src=source([row(1),row(2,amount="50.00",day="2026-10-02")])
+    src["owner_receipt_source"]["rows"][1]["bank_transfer_ref_sha256"]=(
+        src["owner_receipt_source"]["rows"][0]["bank_transfer_ref_sha256"])
+    with pytest.raises(m.PrincipalStop):
+        propose(flow=src)
+
+
+def test_cash_code_changed_without_changing_bank_receipt_is_rejected():
+    src=source()
+    src["rows"][0]["amount_usd"]="20000.00"
+    with pytest.raises(m.PrincipalStop):
+        propose(flow=src)
+
+
+def test_bank_receipt_rewrite_after_initial_cas_cannot_preserve_history_prefix():
+    original=source()
+    signed=committed(propose(flow=original))
+    revised=source()
+    revised["owner_receipt_source"]["rows"][0]["bank_transfer_ref_sha256"]="f"*64
+    with pytest.raises(m.PrincipalStop):
+        propose(private_source=signed,seq=1,flow=revised)
+
+
+def test_non_csd_economic_row_cannot_be_falsely_matched_to_bank_receipt():
+    src=source([row(1),row(2,typ="DIV",amount="2.00",day="2026-10-02")])
+    src["owner_receipt_source"]["rows"].append(receipt(row(2)))
+    with pytest.raises(m.PrincipalStop):
+        propose(flow=src)
+
+
+def test_ambiguous_real_cash_code_without_real_bank_transfer_never_accepted():
+    src=source()
+    src["mode"]="REAL_ALPACA_ACTIVITY_CODES"
+    with pytest.raises(m.PrincipalStop):
+        propose(flow=src)

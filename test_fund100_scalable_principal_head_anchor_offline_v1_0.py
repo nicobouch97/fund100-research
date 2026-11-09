@@ -28,6 +28,19 @@ def source(with_extra=False):
         "mode":p.SOURCE_MODE,"account_binding_sha256":ACCOUNT,
         "currency":"USD","complete":True,
         "observed_utc":"2026-11-09T19:05:00Z","rows":rows,
+        "owner_receipt_source": {
+            "mode":p.BANK_SOURCE_MODE, "complete":True,
+            "rows":[{
+                "activity_id":row["id"],
+                "bank_transfer_ref_sha256":
+                    sha256(("TEST-INDEPENDENT-RECEIPT|" + row["id"]).encode()).hexdigest(),
+                "account_binding_sha256":ACCOUNT,
+                "direction":"INCOMING",
+                "amount_usd":row["amount_usd"],
+                "settled_date":row["date"], "status":"SETTLED",
+                "returned":False, "currency":"USD",
+            } for row in rows],
+        },
     }
 
 
@@ -249,3 +262,18 @@ def test_no_real_private_repository_or_broker_access():
     assert "urlopen" not in src and "requests." not in src
     assert "secrets." not in src
     assert "submit_order" not in src
+
+
+
+def test_anchored_private_principal_cannot_sign_unmatched_owner_transfer():
+    bad=source()
+    bad["owner_receipt_source"]["rows"].clear()
+    with pytest.raises(p.PrincipalStop):
+        gated(source_rows=bad)
+
+
+def test_anchored_principal_cannot_promote_returned_transfer_into_capital():
+    bad=source()
+    bad["owner_receipt_source"]["rows"][0]["returned"]=True
+    with pytest.raises(p.PrincipalStop):
+        gated(source_rows=bad)
