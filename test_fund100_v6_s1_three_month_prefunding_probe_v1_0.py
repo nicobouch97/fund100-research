@@ -336,7 +336,7 @@ def test_active_pure_replay_original_evaluator_only_no_broker_or_post(monkeypatc
     assert "broker_order_authorized" not in status
     monkeypatch.setattr(active,"evaluate_original_sell_only",
                         lambda **kw:(_ for _ in ()).throw(ValueError("raw secret")))
-    assert q._active_sell_pure_replay(**args)=="ACTIVE_PURE_SOURCE_REJECTED_HOLD"
+    assert q._active_sell_pure_replay(**args)=="ACTIVE_UNEXPECTED_PURE_EVALUATOR_EXCEPTION_HOLD"
 
 
 
@@ -378,8 +378,54 @@ def test_active_pure_replay_unknown_exception_never_leaks_private_error(monkeypa
         none_history=d["month_history"],
         extended_history=d["three_month_history"],
         bootstrap={},policy={},observed_at_utc=d["observed_at_utc"])
-    assert result=="ACTIVE_PURE_SOURCE_REJECTED_HOLD"
+    assert result=="ACTIVE_UNKNOWN_VALIDATION_REASON_HOLD"
     assert "PRIVATE" not in result
+
+
+def test_original_pinned_quantity_unavailable_is_fixed_provenance_hold(monkeypatch):
+    import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+    import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent
+    monkeypatch.setattr(active,"ACTIVE_HIGH_SELL_SOURCE_RELEASED",False)
+    calls=[]
+    monkeypatch.setattr(intent,"original_acwi_qty",
+                        lambda:(_ for _ in ()).throw(
+                            ValueError("PRIVATE account/bootstrap source")))
+    monkeypatch.setattr(active,"evaluate_original_sell_only",
+                        lambda **kw:calls.append("UNEXPECTED_EVALUATION"))
+    d=data()
+    r=q._active_sell_pure_replay(
+        account=d["account"],positions=[],orders=[],clock={"is_open":True},
+        history=d["month_history"],activities=d["activities"],
+        none_history=d["month_history"],
+        extended_history=d["three_month_history"],
+        bootstrap={},policy={},observed_at_utc=d["observed_at_utc"])
+    assert r=="ACTIVE_ORIGINAL_INTENT_PROVENANCE_HOLD"
+    assert "PRIVATE" not in r
+    assert calls==[]
+
+
+@pytest.mark.parametrize("fake,expected", [
+    (None,"ACTIVE_PURE_EVALUATOR_RESULT_SHAPE_HOLD"),
+    ({},"ACTIVE_PURE_EVALUATOR_RESULT_NOT_QUALIFIED_HOLD"),
+    ({"status":"ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2",
+      "same_process_real_broker_gets":8,"broker_post_attempts":1},
+     "ACTIVE_PURE_EVALUATOR_RESULT_NOT_QUALIFIED_HOLD"),
+])
+def test_unqualified_pure_evaluator_result_never_releases_original_order(
+        monkeypatch,fake,expected):
+    import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+    import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent
+    monkeypatch.setattr(active,"ACTIVE_HIGH_SELL_SOURCE_RELEASED",False)
+    monkeypatch.setattr(intent,"original_acwi_qty",lambda:"0.25")
+    monkeypatch.setattr(active,"evaluate_original_sell_only",lambda **kw:fake)
+    d=data()
+    status=q._active_sell_pure_replay(
+        account=d["account"],positions=[],orders=[],clock={"is_open":True},
+        history=d["month_history"],activities=d["activities"],
+        none_history=d["month_history"],
+        extended_history=d["three_month_history"],
+        bootstrap={},policy={},observed_at_utc=d["observed_at_utc"])
+    assert status==expected and status.endswith("_HOLD")
 
 
 def test_real_funded_mark_breach_cannot_be_described_as_clean():
