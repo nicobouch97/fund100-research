@@ -21,6 +21,7 @@ import re
 
 import fund100_v6_s1_staged_controller_core_v1_0 as migration
 import fund100_v6_s1_reconciled_high_live_policy_candidate_v1_0 as policy
+import fund100_v6_opportunity_rebalance_economics_v1_0 as opportunity
 
 SCHEMA="FUND100_V6_S1_RECURRING_MONTHLY_REBALANCE_OFFLINE_V1"
 MODE="UNAUTHENTICATED_IN_MEMORY_PORTFOLIO_SCENARIO_ONLY"
@@ -395,3 +396,96 @@ def assess(*,snapshot:dict,now_utc:str)->dict:
         return _report("HOLD_BUY_REQUIRES_SETTLED_CASH_OR_RISK_HEADROOM",
                        period=period)
     return _report("HOLD_WITHIN_MONTHLY_10PP_BAND_NO_FORCED_CHURN",period=period)
+
+
+OPPORTUNITY_REVIEW_SCHEMA = (
+    "FUND100_V6_S1_RISK_FIRST_COSTED_ROTATION_RESEARCH_ONLY_V1"
+)
+OPPORTUNITY_REVIEW_ALLOWED_MAINTENANCE_STAGE = (
+    "HOLD_WITHIN_MONTHLY_10PP_BAND_NO_FORCED_CHURN"
+)
+
+
+def compare_month_end_opportunities(*, snapshot: dict, now_utc: str,
+        candidate_targets: dict, expected_returns: dict,
+        forecast_horizon_sessions: int, round_trip_side_cost_bps: str,
+        forecast_uncertainty_bps: str,
+        minimum_net_advantage_usd: str) -> dict:
+    """Risk-first bridge between EXISTING recurring and costed-rotation cores.
+
+    Existing maintenance (loss/drawdown/vol, signed-history placeholders,
+    monthly timing, settled cash, 95% gross/50% name, and fee guards)
+    ALWAYS runs first. Costed portfolio alternatives may be compared ONLY
+    when the monthly book otherwise qualifies for HOLD. A required repair,
+    an unreconciled broker event, an emergency STOP or any risk limit
+    takes priority: no investment opportunity can override that HOLD.
+
+    Every input is still hypothetical. Nothing here authenticates forecasts,
+    point-in-time prices, broker balances, signing or per-head immutable
+    journal sequence. Even a positive model choice is NONEXECUTABLE.
+    """
+    existing = assess(snapshot=snapshot, now_utc=now_utc)
+    base = {
+        "schema": OPPORTUNITY_REVIEW_SCHEMA,
+        "original_recurring_risk_stage": existing["status"],
+        "review_period": existing["period"],
+        "costed_preferred_research_candidate": None,
+        "costed_comparison": None,
+        "existing_S1_risk_and_maintenance_always_screened_first": True,
+        "candidate_forecasts_independently_authenticated": False,
+        "market_and_broker_data_independently_authenticated": False,
+        "standing_mandate_or_signed_event_authenticated": False,
+        "production_strategy_released": False,
+        "live_order_submission_authorized": False,
+        "manual_per_trade_approval_required": False,
+        "real_broker_gets": 0,
+        "real_broker_posts": 0,
+        "private_git_writes": 0,
+    }
+    if existing["status"] != OPPORTUNITY_REVIEW_ALLOWED_MAINTENANCE_STAGE:
+        return {
+            **base,
+            "status": "HOLD_MONTHLY_RISK_OR_MAINTENANCE_HAS_PRIORITY",
+        }
+    if (type(forecast_horizon_sessions) is not int
+        or forecast_horizon_sessions not in (5, 21, 63)):
+        raise RecurringStop("Unsupported research forecast horizon")
+    # Never accept a caller's second portfolio state: use the exact
+    # already-screened recurring snapshot for every cost and settlement
+    # calculation. This eliminates conflicting position/cash versions.
+    research = {
+        "mode": opportunity.MODE,
+        "signal_status": "UNQUALIFIED_RESEARCH_HYPOTHESIS",
+        "forecast_horizon_sessions": forecast_horizon_sessions,
+        "open_order_count": 0,
+        "equity_usd": snapshot["equity_usd"],
+        "cash_usd": snapshot["cash_usd"],
+        "settled_cash_usd": snapshot["settled_cash_usd"],
+        "positions_usd": dict(snapshot["position_values_usd"]),
+    }
+    try:
+        comparison = opportunity.select_research_alternative(
+            snapshot=research, candidate_targets=candidate_targets,
+            expected_returns=expected_returns,
+            round_trip_side_cost_bps=round_trip_side_cost_bps,
+            forecast_uncertainty_bps=forecast_uncertainty_bps,
+            minimum_net_advantage_usd=minimum_net_advantage_usd)
+    except opportunity.OpportunityStop:
+        raise RecurringStop("Unqualified research rotation hypotheses") from None
+    if (comparison.get("schema")!=opportunity.COMPARISON_SCHEMA
+        or comparison.get("all_portfolio_forecasts_unqualified_and_unauthenticated") is not True
+        or comparison.get("current_broker_holdings_and_settled_cash_authenticated") is not False
+        or comparison.get("standing_mandate_authenticated") is not False
+        or comparison.get("live_order_submission_authorized") is not False
+        or comparison.get("real_broker_gets")!=0
+        or comparison.get("real_broker_posts")!=0):
+        raise RecurringStop("Research comparison unexpectedly claims live authority")
+    selected = comparison.get("research_preferred_candidate_id")
+    return {
+        **base,
+        "status": ("RESEARCH_COSTED_ROTATION_PREFERRED_NOT_AUTHORIZED"
+                   if selected is not None else
+                   "HOLD_NO_COSTED_RISK_ELIGIBLE_ROTATION"),
+        "costed_preferred_research_candidate": selected,
+        "costed_comparison": comparison,
+    }
