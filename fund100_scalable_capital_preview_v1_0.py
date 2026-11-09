@@ -137,6 +137,12 @@ def preview(*, mandate, funding, account, symbol, tier):
     if abs(gross + cash - equity) > CENT:
         return result("HOLD_NAV_UNRECONCILED", principal=net, tier=tier)
     max_gross, name_limit, ticket_fraction = TIER_SCENARIOS[tier]
+    # A new BUY cannot be proposed while *another* held name already
+    # violates the selected synthetic tier. A risk-reducing SELL would
+    # require an independent, separately authorized path.
+    if any(value > equity * name_limit for value in holdings.values()):
+        return result("HOLD_EXISTING_NAME_CONCENTRATION",
+                      principal=net, tier=tier)
     reserve = equity * max(CASH_FLOOR, Decimal(1) - max_gross)
     ticket = min(
         settled - reserve, cash - reserve,
