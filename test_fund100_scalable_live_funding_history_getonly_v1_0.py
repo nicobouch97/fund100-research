@@ -178,3 +178,59 @@ def test_no_direct_broker_write_access_and_no_private_details():
     x=run()
     assert ACCOUNT_ID not in str(x)
     assert "130.30" not in str(x)
+
+
+# Independent source-pinned credential/job-scope regression. A source change
+# must revoke the exact live credential job until independently repinned.
+def test_exact_new_live_funding_reader_is_pinned_and_main_only():
+    from pathlib import Path
+    import audit_fund100_live_boundary as audit
+    wf=".github/workflows/fund100-scalable-live-funding-readonly.yml"
+    source="fund100_scalable_live_funding_history_getonly_v1_0.py"
+    content=Path(wf).read_text()
+    expected="ac1d59dbba3cd274d1f4bb64f0561add836d1c0f"
+    assert audit.PINNED_LIVE_CREDENTIAL_JOBS[(wf,source)] == expected
+    assert audit.git_blob_digest(Path(source)) == expected
+    assert audit.approved_scoped_live_script(wf, source, content)
+    assert "environment: fund100-live-broker" in content
+    assert "if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'" in content
+    assert "FUND100_LIVE_WRITE_MODE: DISABLED" in content
+    assert "contents: write" not in content
+    assert "schedule:" not in content
+
+
+@pytest.mark.parametrize("old,new", [
+    ("environment: fund100-live-broker", "environment: unreviewed"),
+    ("github.ref == 'refs/heads/main'", "github.ref == 'refs/heads/dev'"),
+    ("FUND100_LIVE_WRITE_MODE: DISABLED", "FUND100_LIVE_WRITE_MODE: ENABLED"),
+    ("FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE",
+     "FUND100_ENABLE_LIVE_READONLY: NO"),
+    ("persist-credentials: false", "persist-credentials: true"),
+    ("python fund100_scalable_live_funding_history_getonly_v1_0.py",
+     "python fund100_live_production_controller_v1_0.py"),
+])
+def test_scope_mutation_revokes_credentials(old,new):
+    from pathlib import Path
+    import audit_fund100_live_boundary as audit
+    wf=".github/workflows/fund100-scalable-live-funding-readonly.yml"
+    script="fund100_scalable_live_funding_history_getonly_v1_0.py"
+    actual=Path(wf).read_text()
+    assert old in actual
+    assert not audit.approved_scoped_live_script(
+        wf,script,actual.replace(old,new))
+
+
+@pytest.mark.parametrize("insert", [
+    "\n  schedule:\n    - cron: '*/5 * * * *'\n",
+    "\n  contents: write\n",
+    "\n  FUND100_PRIVATE_STATE_WRITE_TOKEN: SECRET\n",
+    "\n  FUND100_LIVE_WRITE_MODE: ENABLED\n",
+    '\n  method="POST"\n',
+])
+def test_added_credential_or_write_operation_revokes_scope(insert):
+    from pathlib import Path
+    import audit_fund100_live_boundary as audit
+    wf=".github/workflows/fund100-scalable-live-funding-readonly.yml"
+    script="fund100_scalable_live_funding_history_getonly_v1_0.py"
+    assert not audit.approved_scoped_live_script(
+        wf,script,Path(wf).read_text()+insert)
