@@ -275,7 +275,10 @@ def test_old_schema_cannot_resume_after_new_epoch():
     p,m=fixture()
     a=new(p.iloc[:900],m,[])
     b=new(p.iloc[:902],m,[a])
-    legacy=deepcopy(a)
+    legacy={k:v for k,v in a.items() if k not in (
+        "record_sha256", "research_epoch", "epoch_reset_due_to_observation_gap",
+        "skipped_vendor_sessions", "epoch_reset_reason")}
+    legacy["schema"]=f.LEGACY_SCHEMA
     legacy["asof_session"]=p.index[903].date().isoformat()
     legacy["previous_record_sha256"]=b["record_sha256"]
     legacy["record_sha256"]=f.sha256({k:v for k,v in legacy.items()
