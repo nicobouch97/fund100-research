@@ -90,3 +90,27 @@ principal ledger. The pilot $130.30 ceiling, $65 ticket and STOP remain.
 
 Authoritative Alpaca account activity types:
 https://docs.alpaca.markets/us/reference/getaccountactivities
+
+## 9 November 2026: actual Trading API cash metadata presence diagnosis
+
+The current Trading API supports an activity response that may contain
+`activity_sub_type`, `group_id`, `status` and `created_at`. We must not
+mistake those optional brokerage-internal metadata fields for original
+bank owner evidence or independently verified settled funds.
+
+The protected main-only source will now inspect **only whether all four
+fields are nonempty for every CSD/CSW code in memory**. The public status
+can be either ALL_CASH_ACTIVITY_METADATA_FIELDS_PRESENT_NOT_OWNER_PROOF
+or CASH_ACTIVITY_METADATA_FIELDS_INCOMPLETE_NOT_OWNER_PROOF. No field
+values, subtypes, group references, account IDs, amounts, dates or bank
+information are emitted. Even if all four fields exist, the three
+remaining hard NOs are unchanged: external bank identity not verified,
+return/reversal linkage not verified and settled owner transfer not
+verified. No additional Alpaca requests are made; 7 GET maximum,
+HIGH STOP and original capital limits remain as before.
+
+Alpaca maintains separate Trading and Broker API credentials. Its
+Broker API funding/transfer endpoints must not be probed with the
+current retail Trading API keys:
+https://docs.alpaca.markets/us/docs/authentication
+https://docs.alpaca.markets/us/docs/broker-api-faq
