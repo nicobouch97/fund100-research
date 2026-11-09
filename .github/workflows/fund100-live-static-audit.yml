@@ -15,6 +15,11 @@ on:
       - "test_fund100.py"
       # Public FRED macro inputs feed the prospective commodity research ledger.
       # Audit source retry and integrity logic alongside LIVE boundaries.
+      # Gap-only forward epoch rollover must not fabricate missed commodity returns.
+      - "fund100_commodity_forward_observer_v1_0.py"
+      - "test_fund100_commodity_forward_observer_v1_0.py"
+      - ".github/workflows/fund100-commodity-forward-epoch-offline.yml"
+      - "research_lab/FUND100_COMMODITY_FORWARD_GAP_RECOVERY_2026_11_09.md"
       - "fund100_commodity_macro_c2_source_v1_0.py"
       - "test_fund100_commodity_macro_c2_v1_0.py"
       # Frozen prospective ledger changes must pass the full LIVE static audit.
@@ -387,6 +392,11 @@ on:
       - "test_fund100.py"
       # Public FRED macro inputs feed the prospective commodity research ledger.
       # Audit source retry and integrity logic alongside LIVE boundaries.
+      # Gap-only forward epoch rollover must not fabricate missed commodity returns.
+      - "fund100_commodity_forward_observer_v1_0.py"
+      - "test_fund100_commodity_forward_observer_v1_0.py"
+      - ".github/workflows/fund100-commodity-forward-epoch-offline.yml"
+      - "research_lab/FUND100_COMMODITY_FORWARD_GAP_RECOVERY_2026_11_09.md"
       - "fund100_commodity_macro_c2_source_v1_0.py"
       - "test_fund100_commodity_macro_c2_v1_0.py"
       # Frozen prospective ledger changes must pass the full LIVE static audit.
