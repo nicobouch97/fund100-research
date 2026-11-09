@@ -14,6 +14,7 @@ import pytest
 
 import fund100_v8_sec100_original_annual_quality_source_v1_0 as mod
 import fund100_stock_sec_source_p4b_v1_0 as sec
+import fund100_stock_sec_quality_p4a_v1_0 as quality
 from test_fund100_stock_sec_quality_p4a_v1_0 import sample
 from test_fund100_v7_u4_100issuer_original_sec_baseline_v1_0 import u3_files
 
@@ -30,7 +31,7 @@ def make_u3(tmp_path):
 def sample_loader(*, bad_cik=False, missing=False, conflict=False):
     facts, submissions = sample()
     if missing:
-        del facts["facts"]["us-gaap"]["Revenues"]
+        del facts["facts"]["us-gaap"][quality.ANNUAL_TAGS["revenue"]]
     if conflict:
         # Quarantine same-year structural fact contradictions, not all issuers.
         concept = next(iter(facts["facts"]["us-gaap"].values()))
@@ -130,7 +131,7 @@ def test_incomplete_wrong_issuer_or_corrupt_official_source_fails_atomic(
         if fault == "invalid_json":
             good(url, agent)
             return b"this is not SEC json"
-        if fault == "missing_one" and url.endswith("submissions/CIK0000000001.json"):
+        if fault == "missing_one" and "submissions" in url:
             raise mod.OfficialQualityStop("Unavailable original official issuer")
         if fault == "extra_path" and "companyfacts" in url:
             doc = json.loads(good(url, agent))
