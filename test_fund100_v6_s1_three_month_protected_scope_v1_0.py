@@ -126,7 +126,8 @@ def test_same_calendar_versions_as_future_first_sale_with_no_broker_creds_at_ins
 def test_only_main_readonly_job_receives_credentials():
     y = yml()
     assert "  workflow_dispatch:" in y and "  push:" in y
-    assert '  schedule:\n    - cron: "07 15 * * 1"\n  push:\n' in y
+    assert ('  schedule:\n    - cron: "39 9 * * 1"\n'
+            '      timezone: "America/New_York"\n  push:\n') in y
     assert y.count("  schedule:") == 1 and y.count("    - cron:") == 1
     assert "  pull_request:" not in y
     assert "branches: [main]" in y
@@ -144,11 +145,17 @@ def test_only_main_readonly_job_receives_credentials():
 
 
 @pytest.mark.parametrize("altered", [
-    lambda s: s.replace('07 15 * * 1', '00 * * * *'),
-    lambda s: s.replace('07 15 * * 1', '07 15 * * 2'),
-    lambda s: s.replace('  schedule:\n    - cron: "07 15 * * 1"\n', ''),
-    lambda s: s.replace('    - cron: "07 15 * * 1"\n',
-                        '    - cron: "07 15 * * 1"\n    - cron: "00 * * * *"\n'),
+    lambda s: s.replace('39 9 * * 1', '00 * * * *'),
+    lambda s: s.replace('39 9 * * 1', '39 9 * * 2'),
+    lambda s: s.replace(
+        '  schedule:\n    - cron: "39 9 * * 1"\n'
+        '      timezone: "America/New_York"\n', ''),
+    lambda s: s.replace('    - cron: "39 9 * * 1"\n',
+                        '    - cron: "39 9 * * 1"\n    - cron: "00 * * * *"\n'),
+    lambda s: s.replace('39 9 * * 1', '29 9 * * 1'),
+    lambda s: s.replace('timezone: "America/New_York"', 'timezone: "Europe/London"'),
+    lambda s: s.replace('      timezone: "America/New_York"\n', ''),
+    lambda s: s.replace('timezone: "America/New_York"', 'timezone: "UTC"'),
 ])
 def test_weekly_only_readonly_schedule_is_exact_or_scope_revoked(altered):
     current = yml()
