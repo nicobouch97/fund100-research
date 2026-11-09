@@ -223,7 +223,7 @@ def collect(*, u3_dir: Path, agent: str, loader=None, clock=None):
 
 
 def _unzip_bound(path):
-    if type(path) is not Path:
+    if not isinstance(path, Path):
         raise OfficialQualityStop("Original archival path invalid")
     try:
         compressed = path.read_bytes()
