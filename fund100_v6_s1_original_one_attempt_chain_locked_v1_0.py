@@ -30,6 +30,15 @@ RESTART_RECOVERY_CAN_RESEND=False
 MAX_REAL_ORDER_SENDS=1
 NO_ENTRYPOINT_OR_WORKFLOW=True
 
+# The sole legitimate real writer returns one of these fixed, privacy-safe
+# response categories after validating Alpaca's original quantity, order ID,
+# client ID, order side and acknowledgement. Even a "filled" receipt is NOT
+# independent position/activity or settled proceeds verification.
+BROKER_RECEIPT_STAGES=frozenset((
+    "POST_ACCEPTED_FILLED_RECEIPT_NEEDS_POSITION_AND_ACTIVITY_PROOF",
+    "POST_ACCEPTED_ACTIVE_OR_PARTIAL_HOLD_NO_RETRY",
+))
+
 class ChainStop(RuntimeError):
     pass
 
@@ -462,8 +471,26 @@ def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
             key=broker_key,secret=broker_secret,
             transport=t["broker_post"],
             release_transport=t["immutable_read"])
-        if (type(result) is not dict or result.get("resubmission_permitted") is not False):
-            raise ChainStop("Broker order uncertain; permanent HOLD")
+        # A bare no-retry field cannot prove any actual broker ACK. Accept
+        # only the exact, redacted result of the reviewed Alpaca receipt
+        # validator; never confuse a filled-looking POST receipt with the
+        # independent account/position/activity/settlement reconciliation.
+        import fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0 as pure_receipt
+        if (type(result) is not dict
+            or result.get("schema")!=pure_receipt.SCHEMA
+            or result.get("stage") not in BROKER_RECEIPT_STAGES
+            or result.get("broker_receipt_shape_checked_in_memory") is not True
+            or result.get("broker_position_flat_independently_verified") is not False
+            or result.get("broker_fill_activities_independently_verified") is not False
+            or result.get("sale_proceeds_settled_and_spendable") is not False
+            or result.get("resubmission_permitted") is not False
+            or result.get("live_release_claimed") is not False
+            or result.get("account_id") is not None
+            or result.get("broker_order_id") is not None
+            or result.get("order_quantity") is not None
+            or result.get("order_payload") is not None):
+            raise ChainStop("Original broker ACK not independently receipt-validated; HOLD")
+        receipt_stage=result["stage"]
     except Exception:
         raise ChainStop("Original one-time state/order attempt uncertain; NEVER RETRY") from None
     return {
@@ -472,6 +499,8 @@ def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
         "original_signed_possible_POST_attempts":1,
         "immutable_release_publication_attempts":1,
         "reviewed_broker_order_attempts":1,
+        "broker_receipt_validation_proven":True,
+        "broker_receipt_stage":receipt_stage,
         "allow_restart_or_second_order":False,
         "independent_order_fill_and_settlement_verified":False,
         "account":None,"original_qty":None,"client_order_id":None,
