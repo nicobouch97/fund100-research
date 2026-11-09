@@ -140,9 +140,9 @@ def _receipts(source, *, account_binding_sha256, observed):
             or type(receipt["activity_id"]) is not str
             or not 1 <= len(receipt["activity_id"]) <= 256
             or receipt["activity_id"] in matched
-            or receipt["bank_transfer_ref_sha256"] in bank_refs
             or type(receipt["bank_transfer_ref_sha256"]) is not str
             or HEX64.fullmatch(receipt["bank_transfer_ref_sha256"]) is None
+            or receipt["bank_transfer_ref_sha256"] in bank_refs
             or receipt["account_binding_sha256"] != account_binding_sha256
             or receipt["currency"] != "USD"
             or receipt["status"] != "SETTLED"
