@@ -207,7 +207,7 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
     (
         ".github/workflows/fund100-scalable-live-funding-readonly.yml",
         "fund100_scalable_live_funding_history_getonly_v1_0.py",
-    ): "589c0ce3ae26e9d7d2018546392c3b87da10123c",
+    ): "f7605a8c61bdf7c3b69f62fccfb24f0daca1ef01",
     # V7-X3 BTC/USD + GLD feasibility: SIX bounded GET only,
     # mandatory original four holdings/account reconciliation, HIGH STOP.
     # Source and transport dependencies pinned; NO account order authority.
