@@ -122,6 +122,14 @@ def test_cash_reserve_and_settlement_bound_synthetic_ticket():
     never_live(r)
 
 
+def test_preexisting_name_concentration_blocks_new_buy_preview():
+    r = call(a=account("10000.00", "3000.00", "3000.00",
+                       {"XLE": "7000.00"}))
+    assert r["status"] == "HOLD_EXISTING_NAME_CONCENTRATION"
+    assert r["synthetic_max_new_buy_usd"] is None
+    never_live(r)
+
+
 def test_nav_appreciation_is_not_a_new_deposit():
     r = call(a=account("12000.00", "7000.00", "7000.00",
                        {"XLE": "5000.00"}))
