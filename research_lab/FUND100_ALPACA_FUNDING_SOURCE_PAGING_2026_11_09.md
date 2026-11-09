@@ -6,7 +6,8 @@ order release.
 
 Alpaca V2 documentation describes /v2/account/activities with
 category=non_trade_activity, direction=asc, page_size<=100, and page_token
-equal to the final activity ID of the previous page. A full page is not
+equal to the final activity ID of the previous page. The after date is an exclusive activity-creation lower bound; query origin
+must strictly precede independently authenticated account inception. A full page is not
 evidence of completeness. Nontrade activity date is an activity/settlement
 date and must not be treated as timestamped credited buying power.
 
