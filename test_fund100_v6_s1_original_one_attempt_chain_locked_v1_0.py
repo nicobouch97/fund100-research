@@ -168,7 +168,14 @@ def setup(monkeypatch):
         assert kwargs["signed_sources"]["prepost_comment"]==comment
         log("writer")
         state["write_calls"]+=1
-        return {"resubmission_permitted":False}
+        # Exercise the *actual* production receipt validator, not a fake
+        # dict that merely says resubmission_permitted=False.
+        import fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0 as pure
+        payload=pure.seller.inspect_sell_shape(
+            symbol="ACWI",original_qty=c["original_qty"])
+        receipt=dict(payload,id="00000000-0000-0000-0000-000000000001",
+                     status="new",filled_qty="0")
+        return pure._validate_receipt(receipt,original_qty=c["original_qty"])
     monkeypatch.setattr(
         chain.writer,"submit_v6_s1_original_acwi_fractional_sell",writer)
     args=dict(
@@ -186,11 +193,81 @@ def test_exact_one_attempt_all_valid_original_signed_heads_same_run(setup):
     assert state["write_calls"]==4
     assert report["status"]=="ORIGINAL_ACWI_SINGLE_ATTEMPT_COMPLETED_NO_RETRY"
     assert report["reviewed_broker_order_attempts"]==1
+    assert report["broker_receipt_validation_proven"] is True
+    assert report["broker_receipt_stage"]==(
+        "POST_ACCEPTED_ACTIVE_OR_PARTIAL_HOLD_NO_RETRY")
     assert report["allow_restart_or_second_order"] is False
     assert report["independent_order_fill_and_settlement_verified"] is False
     for secret in (KEY,SECRET,READ,WRITE,ISSUE,ADMIN,PUBLISH):
         assert secret not in str(report)
     assert report["original_qty"] is None
+
+@pytest.mark.parametrize("field,altered", [
+    ("schema","WRONG_SCHEMA"),
+    ("stage","NOT_AN_ACCEPTED_BROKER_ACK"),
+    ("broker_receipt_shape_checked_in_memory",False),
+    ("broker_position_flat_independently_verified",True),
+    ("broker_fill_activities_independently_verified",True),
+    ("sale_proceeds_settled_and_spendable",True),
+    ("resubmission_permitted",True),
+    ("live_release_claimed",True),
+    ("broker_order_id","PRIVATE-ACCOUNT-ORDER"),
+    ("order_quantity","PRIVATE-ORIGINAL-ACWI-QUANTITY"),
+])
+def test_original_coordinator_cannot_claim_broker_ack_without_reviewed_receipt(
+        setup,monkeypatch,field,altered):
+    state,args=setup
+    validated=chain.writer.submit_v6_s1_original_acwi_fractional_sell
+    def corrupted(**kwargs):
+        accepted=validated(**kwargs)
+        return dict(accepted,**{field:altered})
+    monkeypatch.setattr(chain.writer,
+        "submit_v6_s1_original_acwi_fractional_sell",corrupted)
+    with pytest.raises(chain.ChainStop,match="NEVER RETRY") as exc:
+        chain.run_exact_first_acwi_attempt(**args)
+    assert "PRIVATE" not in str(exc.value)
+    assert state["events"]==[
+        "setting","absent","broker_preflight","claim","seq2","publish","writer"]
+    assert state["write_calls"]==4
+
+
+def test_original_bare_no_retry_boolean_is_not_an_order_ack(setup,monkeypatch):
+    state,args=setup
+    def bare(**kwargs):
+        state["events"].append("writer")
+        state["write_calls"]+=1
+        return {"resubmission_permitted":False}
+    monkeypatch.setattr(chain.writer,
+        "submit_v6_s1_original_acwi_fractional_sell",bare)
+    with pytest.raises(chain.ChainStop,match="NEVER RETRY"):
+        chain.run_exact_first_acwi_attempt(**args)
+    assert state["events"][-1]=="writer"
+    assert state["write_calls"]==4
+
+
+def test_already_filled_broker_ack_still_requires_independent_reconciliation(
+        setup,monkeypatch):
+    state,args=setup
+    validated=chain.writer.submit_v6_s1_original_acwi_fractional_sell
+    def filled(**kwargs):
+        _=validated(**kwargs)
+        import fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0 as pure
+        original_qty=kwargs["original_qty"]
+        payload=pure.seller.inspect_sell_shape(
+            symbol="ACWI",original_qty=original_qty)
+        receipt=dict(payload,id="00000000-0000-0000-0000-000000000001",
+                     status="filled",filled_qty=original_qty,
+                     filled_at="2026-11-09T15:00:00Z")
+        return pure._validate_receipt(receipt,original_qty=original_qty)
+    monkeypatch.setattr(chain.writer,
+        "submit_v6_s1_original_acwi_fractional_sell",filled)
+    result=chain.run_exact_first_acwi_attempt(**args)
+    assert result["broker_receipt_stage"]==(
+        "POST_ACCEPTED_FILLED_RECEIPT_NEEDS_POSITION_AND_ACTIVITY_PROOF")
+    assert result["broker_receipt_validation_proven"] is True
+    assert result["independent_order_fill_and_settlement_verified"] is False
+    assert result["allow_restart_or_second_order"] is False
+
 
 @pytest.mark.parametrize("changed",["signed_ledger_seq2","signed_owner_fence"])
 def test_original_last_mile_private_head_changed_after_immutable_release_blocks_broker(

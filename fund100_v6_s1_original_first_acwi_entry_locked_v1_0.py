@@ -133,12 +133,19 @@ def run_protected_first_acwi_once()->dict:
         if (type(result) is not dict
             or result.get("status")!="ORIGINAL_ACWI_SINGLE_ATTEMPT_COMPLETED_NO_RETRY"
             or result.get("allow_restart_or_second_order") is not False
-            or result.get("reviewed_broker_order_attempts")!=1):
+            or result.get("reviewed_broker_order_attempts")!=1
+            or result.get("broker_receipt_validation_proven") is not True
+            or result.get("broker_receipt_stage") not in chain.BROKER_RECEIPT_STAGES
+            or result.get("independent_order_fill_and_settlement_verified") is not False):
             raise EntryStop("Original first order acknowledgement ambiguous; NEVER RETRY")
         return {
             "schema":SCHEMA,
             "status":"FIRST_ORIGINAL_ACWI_ORDER_ATTEMPTED_NO_RETRY",
             "broker_send_attempts":1,
+            # A fixed post-ACK status is reportable, never private order data.
+            # It is not independent fill/position/settlement verification.
+            "broker_receipt_stage":result["broker_receipt_stage"],
+            "broker_receipt_validation_proven":True,
             "independent_fill_and_settlement_verified":False,
             "resubmission_permitted":False,
             "first_order_execution_source_released":True,
@@ -154,6 +161,7 @@ def main()->None:
     outcome=run_protected_first_acwi_once()
     print(outcome["status"])
     print("Broker send attempts:",outcome["broker_send_attempts"])
+    print("Broker ACK category:",outcome["broker_receipt_stage"])
     print("No restart or resubmit; fills/settlement need independent review.")
 
 
