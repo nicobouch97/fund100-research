@@ -630,9 +630,13 @@ def approved_scoped_live_script(
         ):
             if evidence not in source:
                 return False
-        # Exactly one weekly source-only, regular-session STOP replay.
-        # Arbitrary cron frequency or added triggers never inherit LIVE keys.
-        schedule_contract = '  schedule:\n    - cron: "07 15 * * 1"\n  push:\n'
+        # Exactly one weekly source-only STOP replay at 09:39 NY local:
+        # nine minutes after 09:30 exchange open under BOTH EST and EDT.
+        # Arbitrary UTC cron, shifted timezone or extra triggers never
+        # inherit protected LIVE read-only keys.
+        schedule_contract = (
+            '  schedule:\n    - cron: "39 9 * * 1"\n'
+            '      timezone: "America/New_York"\n  push:\n')
         if (schedule_contract not in source
             or source.count("  schedule:") != 1
             or source.count("    - cron:") != 1):
