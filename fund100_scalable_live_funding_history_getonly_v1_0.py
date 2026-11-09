@@ -1,4 +1,4 @@
-"""Protected main-only Alpaca LIVE READ-ONLY funding history source diagnosis.
+"""Protected main-only Alpaca LIVE READ-ONLY cash-activity code diagnosis.
 
 At most 7 broker GETs: account, <=5 CSD/CSW/activity pages, account.
 All raw inputs handled in process; prints/returns fixed review statuses only.
@@ -110,7 +110,9 @@ def _day(raw):
 
 def _report(stage, count, pages, *, currency_absent=False,
             inception_query_covered=False):
-    # No account IDs, activity IDs, balances, deposit totals or dates.
+    # CSD includes returned withdrawals; CSW includes returned deposits.
+    # Codes cannot alone attribute OWNER CONTRIBUTIONS or settled capital.
+    # No account IDs, activity IDs, balances, owner totals or dates.
     return {
         "schema": SCHEMA,
         "status": stage,
@@ -118,6 +120,10 @@ def _report(stage, count, pages, *, currency_absent=False,
         "observed_account_activity_pages": pages,
         "observed_activity_count": count,
         "source_currency_metadata_missing": currency_absent,
+        "csd_credits_can_include_returned_withdrawals": True,
+        "csw_debits_can_include_returned_deposits": True,
+        "owner_contributed_principal_authenticated": False,
+        "gross_csd_credit_is_owner_deposit": False,
         "fixed_after_filter_inception_coverage_proved": False,
         "account_creation_query_window_covered": inception_query_covered,
         "all_account_lifetime_transfers_proved": False,
@@ -150,9 +156,9 @@ def review(*, account_before, account_after, policy, pages,
         raise FundingSourceStop("Unbounded funding source pages")
     seen = set()
     count = 0
-    deposits = 0
-    gross = Decimal(0)
-    net = Decimal(0)
+    csd_credits = 0
+    gross_csd_credits = Decimal(0)
+    net_cash_codes = Decimal(0)
     last_day = None
     any_currency_missing = False
     prior_page_tail = None
@@ -193,15 +199,15 @@ def review(*, account_before, account_after, policy, pages,
                 if kind == "CSD":
                     if amount <= 0:
                         return _report("HOLD_INVALID_CASHFLOW_SIGN", count, index+1)
-                    deposits += 1
-                    gross += amount
-                    net += amount
+                    csd_credits += 1
+                    gross_csd_credits += amount
+                    net_cash_codes += amount
                 elif kind == "CSW":
                     if amount >= 0:
                         return _report("HOLD_INVALID_CASHFLOW_SIGN", count, index+1)
-                    net += amount
-                    if net < 0:
-                        return _report("HOLD_WITHDRAWALS_EXCEED_OBSERVED_PRINCIPAL", count, index+1)
+                    net_cash_codes += amount
+                    if net_cash_codes < 0:
+                        return _report("HOLD_CSW_DEBITS_EXCEED_OBSERVED_CSD_CREDITS", count, index+1)
         if index < len(pages)-1 and len(records) != PAGE_SIZE:
             return _report("HOLD_PREMATURE_PAGINATION_END", count, index+1)
         prior_page_tail = records[-1]["id"] if records else None
@@ -209,14 +215,17 @@ def review(*, account_before, account_after, policy, pages,
             return _report("HOLD_EMPTY_NONTERMINAL_PAGE", count, index+1)
     if len(pages[-1]["rows"]) == PAGE_SIZE:
         return _report("HOLD_FULL_LAST_PAGE_NOT_COMPLETE", count, len(pages))
-    if not deposits:
-        return _report("HOLD_NO_OBSERVED_CASH_DEPOSIT", count, len(pages))
-    if gross > CAP or net > CAP:
-        status = "OBSERVED_GROSS_FUNDING_ABOVE_ORIGINAL_PILOT_HOLD"
-    elif any_currency_missing:
+    if not csd_credits:
+        return _report("HOLD_NO_OBSERVED_CSD_CASH_CREDIT", count, len(pages))
+    # The brokerage may report a RETURNED WITHDRAWAL as CSD and a
+    # RETURNED DEPOSIT as CSW. Even a complete code history and USD
+    # metadata cannot prove owner-contributed principal by themselves.
+    if any_currency_missing:
         status = "HOLD_CURRENCY_UNSPECIFIED_ON_CASHFLOW"
+    elif gross_csd_credits > CAP or net_cash_codes > CAP:
+        status = "CSD_CREDITS_ABOVE_PILOT_OWNER_ATTRIBUTION_HOLD"
     else:
-        status = "OBSERVED_FUNDING_WITHIN_ORIGINAL_CAP_REVIEW_ONLY"
+        status = "CSD_CREDITS_WITHIN_PILOT_OWNER_ATTRIBUTION_HOLD"
     return _report(status, count, len(pages), currency_absent=any_currency_missing,
                    inception_query_covered=True)
 
@@ -302,6 +311,9 @@ def main():
     for field in (
         "schema", "status", "observed_account_activity_pages",
         "observed_activity_count", "source_currency_metadata_missing",
+        "csd_credits_can_include_returned_withdrawals",
+        "csw_debits_can_include_returned_deposits",
+        "owner_contributed_principal_authenticated",
         "fixed_after_filter_inception_coverage_proved",
         "account_creation_query_window_covered",
         "broker_settled_cash_authenticated", "signed_durable_principal_ledger_verified",
