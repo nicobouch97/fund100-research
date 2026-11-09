@@ -25,10 +25,10 @@ def _sources(tmp_path, *, mode="both", observed_at=TIME):
             return raw
         row=json.loads(raw)
         cik=url.split("CIK",1)[1].split(".json")[0]
-        accn=f"{cik}-26-000002"
+        accn=NEW_ACCN
         # Source matches EXACT original 10-K from synthetic original
         # 2-year quality fixture, not an invented separate share filing.
-        assert accn in row["facts"]["us-gaap"][
+        assert accn == row["facts"]["us-gaap"][
             "RevenueFromContractWithCustomerExcludingAssessedTax"][
                 "units"]["USD"][-1]["accn"]
         if mode in ("both","dei","conflict","future","stale","wrongaccession"):
