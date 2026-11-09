@@ -43,6 +43,11 @@ on:
       - "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       - "test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       # New 3M original funding source/permission boundary needs full audit.
+      # Future large deposits: strictly offline, no broker/no LIVE release.
+      - "fund100_scalable_capital_preview_v1_0.py"
+      - "test_fund100_scalable_capital_preview_v1_0.py"
+      - "research_lab/FUND100_SCALABLE_CAPITAL_DESIGN_2026_11_09.md"
+      - ".github/workflows/fund100-scalable-capital-offline.yml"
       - "fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
       - "test_fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
       - "test_fund100_v6_s1_three_month_protected_scope_v1_0.py"
@@ -374,6 +379,11 @@ on:
       - "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       - "test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       # New 3M original funding source/permission boundary needs full audit.
+      # Future large deposits: strictly offline, no broker/no LIVE release.
+      - "fund100_scalable_capital_preview_v1_0.py"
+      - "test_fund100_scalable_capital_preview_v1_0.py"
+      - "research_lab/FUND100_SCALABLE_CAPITAL_DESIGN_2026_11_09.md"
+      - ".github/workflows/fund100-scalable-capital-offline.yml"
       - "fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
       - "test_fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
       - "test_fund100_v6_s1_three_month_protected_scope_v1_0.py"
