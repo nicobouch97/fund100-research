@@ -408,6 +408,8 @@ _ACTIVE_REPLAY_SAFE_HOLD_REASONS = {
         "ACTIVE_HIGH_6_20_35_RISK_HOLD",
     "Second original portfolio-history source not comparable":
         "ACTIVE_NATIVE_NONE_COMPARISON_HOLD",
+    "Actual original broker HIGH sell source inadmissible":
+        "ACTIVE_INTERNAL_SOURCE_VALIDATION_HOLD",
 }
 
 def _active_sell_pure_replay(*, account, positions, orders, clock,
@@ -426,38 +428,48 @@ def _active_sell_pure_replay(*, account, positions, orders, clock,
     '''
     if type(clock) is not dict or clock.get('is_open') is not True:
         return 'MARKET_NOT_OPEN_ACTIVE_REPLAY_HOLD'
+    # All stages return code-owned fixed strings, NEVER raw broker messages.
+    # Splitting import, pinned original intent and evaluator stages prevents
+    # an unrelated environment or source error being reported as a risk PASS.
     try:
         import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
         import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent
-        # The source release and every broker writer/owner/entry/chain
-        # activation are explicitly OUT OF SCOPE; a false release here
-        # ensures no future accidentally activated risk process is reused.
-        if active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is not False:
-            return 'ACTIVE_SOURCE_ALREADY_RELEASED_UNEXPECTED_HOLD'
-        qty=intent.original_acwi_qty()  # original pinned 4-ETF fill, no API
-        try:
-            report=active.evaluate_original_sell_only(
-                account=account,positions=positions,orders=orders,clock=clock,
-                history=history,activities=activities,
-                native_none_history=none_history,extended_history=extended_history,
-                bootstrap=bootstrap,original_policy=policy,original_qty=qty,
-                observed_at_utc=observed_at_utc)
-        except active.ActiveSellStop as exc:
-            # Exact static allowlist only. Unknown or dynamic error remains
-            # opaque; no private error content is ever logged or returned.
-            return _ACTIVE_REPLAY_SAFE_HOLD_REASONS.get(
-                str(exc), 'ACTIVE_PURE_SOURCE_REJECTED_HOLD')
-        if (report.get('status')==
-                'ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2'
-            and report.get('same_process_real_broker_gets')==8
-            and report.get('original_strict_postfunding_6_20_35_risk_pass') is True
-            and report.get('sell_only_original_legacy_ACWI') is True
-            and report.get('buy_authorized') is False
-            and report.get('broker_post_attempts')==0):
-            return 'ACTIVE_PURE_SOURCE_MATCH_RESEARCH_ONLY'
     except Exception:
-        return 'ACTIVE_PURE_SOURCE_REJECTED_HOLD'
-    return 'ACTIVE_PURE_SOURCE_REJECTED_HOLD'
+        return 'ACTIVE_PINNED_DEPENDENCY_UNAVAILABLE_HOLD'
+    # This pure replay must NEVER activate the released live trading path.
+    if active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is not False:
+        return 'ACTIVE_SOURCE_ALREADY_RELEASED_UNEXPECTED_HOLD'
+    try:
+        qty=intent.original_acwi_qty()  # original pinned 4-ETF fill, no API
+    except Exception:
+        return 'ACTIVE_ORIGINAL_INTENT_PROVENANCE_HOLD'
+    try:
+        report=active.evaluate_original_sell_only(
+            account=account,positions=positions,orders=orders,clock=clock,
+            history=history,activities=activities,
+            native_none_history=none_history,extended_history=extended_history,
+            bootstrap=bootstrap,original_policy=policy,original_qty=qty,
+            observed_at_utc=observed_at_utc)
+    except active.ActiveSellStop as exc:
+        # Only exact code-owned static phrases map to fixed safe categories.
+        # Never interpolate, print, log or preserve the original exception.
+        return _ACTIVE_REPLAY_SAFE_HOLD_REASONS.get(
+            str(exc), 'ACTIVE_UNKNOWN_VALIDATION_REASON_HOLD')
+    except Exception:
+        return 'ACTIVE_UNEXPECTED_PURE_EVALUATOR_EXCEPTION_HOLD'
+    if type(report) is not dict:
+        return 'ACTIVE_PURE_EVALUATOR_RESULT_SHAPE_HOLD'
+    # A source-only full MATCH cannot release a single real order.
+    if (report.get('status')==
+            'ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2'
+        and report.get('same_process_real_broker_gets')==8
+        and report.get('original_strict_postfunding_6_20_35_risk_pass') is True
+        and report.get('sell_only_original_legacy_ACWI') is True
+        and report.get('buy_authorized') is False
+        and report.get('broker_post_attempts')==0):
+        return 'ACTIVE_PURE_SOURCE_MATCH_RESEARCH_ONLY'
+    return 'ACTIVE_PURE_EVALUATOR_RESULT_NOT_QUALIFIED_HOLD'
+
 
 def runtime():
     # Imports are here to keep the offline inspector importable without
