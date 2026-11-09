@@ -49,7 +49,7 @@ jobs:
           import audit_fund100_live_boundary as audit
           w=".github/workflows/fund100-scalable-live-funding-readonly.yml"
           s="fund100_scalable_live_funding_history_getonly_v1_0.py"
-          assert audit.git_blob_digest(Path(s)) == "589c0ce3ae26e9d7d2018546392c3b87da10123c"
+          assert audit.git_blob_digest(Path(s)) == "f7605a8c61bdf7c3b69f62fccfb24f0daca1ef01"
           assert audit.approved_scoped_live_script(w,s,Path(w).read_text())
           print("Exact bounded GET-only account/funding source pinned. No orders.")
           PY
@@ -84,7 +84,7 @@ jobs:
           import audit_fund100_live_boundary as audit
           w=".github/workflows/fund100-scalable-live-funding-readonly.yml"
           s="fund100_scalable_live_funding_history_getonly_v1_0.py"
-          assert audit.git_blob_digest(Path(s)) == "589c0ce3ae26e9d7d2018546392c3b87da10123c"
+          assert audit.git_blob_digest(Path(s)) == "f7605a8c61bdf7c3b69f62fccfb24f0daca1ef01"
           assert audit.approved_scoped_live_script(w,s,Path(w).read_text())
           PY
       - name: Inspect LIVE original funding source with bounded GET-only calls
