@@ -1,0 +1,100 @@
+name: Fund-100 Scalable Capital REAL Private Genesis Readiness GET Only (STOP)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_scalable_capital_private_genesis_readiness_getonly_v1_0.py"
+      - "test_fund100_scalable_capital_private_genesis_readiness_getonly_v1_0.py"
+      - ".github/workflows/fund100-scalable-private-genesis-readiness-getonly.yml"
+      - "research_lab/FUND100_SCALABLE_PRIVATE_GENESIS_REAL_PREFLIGHT_2026_11_09.md"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_scalable_capital_private_genesis_readiness_getonly_v1_0.py"
+      - "test_fund100_scalable_capital_private_genesis_readiness_getonly_v1_0.py"
+      - ".github/workflows/fund100-scalable-private-genesis-readiness-getonly.yml"
+      - "research_lab/FUND100_SCALABLE_PRIVATE_GENESIS_REAL_PREFLIGHT_2026_11_09.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-scalable-private-genesis-credentialed-readonly
+  cancel-in-progress: false
+
+jobs:
+  credentialless-preflight-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check pinned no-network private state contract and all STOP controls
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input 'pytest>=8,<9'
+          python -m pytest -q test_fund100_scalable_capital_private_genesis_readiness_getonly_v1_0.py
+          python - <<'PY'
+          from pathlib import Path
+          import audit_fund100_live_boundary as audit
+          import fund100_scalable_capital_private_genesis_readiness_getonly_v1_0 as m
+          assert audit.git_blob_digest(Path(m.__file__)) == "f432fbfdfaeb57aaf018653841f344a32dd2cdae"
+          assert m.NO_MUTATIONS and m.NO_RETRIES and not m.ALLOW_GENESIS_CREATE
+          assert m.PRIVATE_GETS == 4 and m.PUBLIC_GETS == 1
+          assert not m.TRADING_AUTHORIZED
+          print('Source pinned; four private plus one immutable public GET at most.')
+          PY
+
+  protected-actual-private-capital-genesis-readiness:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: credentialless-preflight-tests
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 8
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Independently pin source; reject trading and non-main scope
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "push"
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          test "$FUND100_RISK_LEVEL" = "HIGH"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          grep -Eq '"first_original_acwi_sell_enabled": false' fund100_v6_s1_operator_control.json
+          python - <<'PY'
+          from pathlib import Path
+          import audit_fund100_live_boundary as audit
+          import fund100_scalable_capital_private_genesis_readiness_getonly_v1_0 as m
+          assert audit.git_blob_digest(Path(m.__file__)) == "f432fbfdfaeb57aaf018653841f344a32dd2cdae"
+          assert m.NO_MUTATIONS and m.NO_RETRIES
+          assert not m.TRADING_AUTHORIZED and not m.ALLOW_GENESIS_CREATE
+          print('Original HIGH STOP verified; READ ONLY before credentials.')
+          PY
+      - name: Compare two PRIVATE principals and immutable other-namespace release (GET ONLY)
+        env:
+          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
+          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
+        run: |
+          set -euo pipefail
+          python -B fund100_scalable_capital_private_genesis_readiness_getonly_v1_0.py
+      - name: Enforce original stop after credentialed diagnostic
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          echo 'Only two-principal PRIVATE and public immutable GETs; NO LEDGER WRITE, NO BROKER ORDER.'
