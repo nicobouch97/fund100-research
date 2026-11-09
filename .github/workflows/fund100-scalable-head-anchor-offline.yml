@@ -1,0 +1,46 @@
+name: Fund-100 Scalable Principal Anchor Offline CI (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_scalable_principal_head_anchor_offline_v1_0.py"
+      - "test_fund100_scalable_principal_head_anchor_offline_v1_0.py"
+      - "research_lab/FUND100_SCALABLE_INDEPENDENT_HEAD_2026_11_09.md"
+      - ".github/workflows/fund100-scalable-head-anchor-offline.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_scalable_principal_head_anchor_offline_v1_0.py"
+      - "test_fund100_scalable_principal_head_anchor_offline_v1_0.py"
+      - "research_lab/FUND100_SCALABLE_INDEPENDENT_HEAD_2026_11_09.md"
+      - ".github/workflows/fund100-scalable-head-anchor-offline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  only-synthetic-current-head:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install credentialless test runner
+        run: python -m pip install --disable-pip-version-check --no-input 'pytest>=8,<9'
+      - name: Prove an old signed private principal state cannot outrank latest anchor
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_scalable_principal_head_anchor_offline_v1_0.py
+          python - <<'PY'
+          import fund100_scalable_principal_head_anchor_offline_v1_0 as m
+          assert m.LIVE_HEAD_RELEASED is False
+          assert m.OWNER_AUTHORITY_RELEASED is False
+          assert m.ACTUAL_EXTERNAL_HEAD_QUERIES == 0
+          assert m.ACTUAL_GITHUB_WRITES == m.BROKER_POSTS == 0
+          print('Offline latest-head gate only; production head is NOT authenticated.')
+          PY
