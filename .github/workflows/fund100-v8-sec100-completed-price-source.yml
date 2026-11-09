@@ -1,0 +1,120 @@
+name: Fund-100 V8 Frozen SEC100 Completed Public Price Source (NO BROKER)
+
+# Reuses the EXACT original 100 issuer/200 official SEC data source archive.
+# Captures separately labelled public vendor prices only for completed earlier
+# NYSE sessions, no share-class authentication or live execution permission.
+on:
+  pull_request:
+    paths:
+      - "fund100_v8_sec100_completed_vendor_price_coverage_v1_0.py"
+      - "test_fund100_v8_sec100_completed_vendor_price_coverage_v1_0.py"
+      - ".github/workflows/fund100-v8-sec100-completed-price-source.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v8_sec100_completed_vendor_price_coverage_v1_0.py"
+      - "test_fund100_v8_sec100_completed_vendor_price_coverage_v1_0.py"
+      - ".github/workflows/fund100-v8-sec100-completed-price-source.yml"
+  schedule:
+    - cron: "15 12 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: fund100-v8-sec100-original-frozen-yahoo-research-price-only
+  cancel-in-progress: false
+
+jobs:
+  frozen-100-prior-nys-session-price-source-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing pinned research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Test 100 issuer date/identity completeness and no market/trade lookahead
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v8_sec100_completed_vendor_price_coverage_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+
+  actual-frozen-100-prior-completed-market-vendor-capture:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: frozen-100-prior-nys-session-price-source-offline
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned research source dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify original 2026 frozen cohort and authentic complete main SEC100 financial source
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          gh api repos/$GITHUB_REPOSITORY/actions/runs/40545345749 > /tmp/f100-first-u3-run.json
+          gh api repos/$GITHUB_REPOSITORY/actions/runs/42620947546 > /tmp/f100-first-official100-run.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          original=(
+            ('/tmp/f100-first-u3-run.json',40545345749,
+             'fund100-v7-u3-dated-issuer-mirror-sec100.yml',None),
+            ('/tmp/f100-first-official100-run.json',42620947546,
+             'fund100-v8-sec100-official-annual-quality-source.yml',
+             '8b0356cfaf406127a1b418bbe29d87c27457c0dd'))
+          for path,ident,workflow,commit in original:
+              d=json.loads(Path(path).read_text())
+              assert d['id']==ident and d['status']=='completed' and d['conclusion']=='success'
+              assert d['head_branch']=='main'
+              assert d['path'].endswith('/'+workflow)
+              if commit: assert d['head_sha']==commit
+          print('Both original U3 and original official SEC100 run sources authenticated.')
+          PY
+          mkdir -p /tmp/f100-original-u3 /tmp/f100-first-sec100
+          gh run download 40545345749 --repo "$GITHUB_REPOSITORY" \
+            --name fund100-v7-u3-first-dated-mirror-sec100-40545345749 \
+            --dir /tmp/f100-original-u3
+          gh run download 42620947546 --repo "$GITHUB_REPOSITORY" \
+            --name fund100-v8-original-sec100-quality-42620947546 \
+            --dir /tmp/f100-first-sec100
+      - name: Original 100 public vendor prices after last completed NYSE session only
+        run: |
+          set -euo pipefail
+          python -B fund100_v8_sec100_completed_vendor_price_coverage_v1_0.py \
+            --original-u3 /tmp/f100-original-u3 \
+            --original-sec100 /tmp/f100-first-sec100 \
+            --output "/tmp/f100-sec100-prior-market-price-$GITHUB_RUN_ID"
+      - name: Archive exact normalized vendor source bytes and coverage, not trading instructions
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v8-sec100-public-prior-price-${{ github.run_id }}
+          path: /tmp/f100-sec100-prior-market-price-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 90
+      - name: STOP and zero broker, private journaling, or issuer approval
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'Public vendor past-price descriptive coverage only, no exchange quotes, alpha, or brokerage.'
