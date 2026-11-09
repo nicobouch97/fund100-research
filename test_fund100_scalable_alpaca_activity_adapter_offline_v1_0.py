@@ -23,7 +23,7 @@ def pages(count=1):
     return [rows[i:i+m.PAGE_SIZE] for i in range(0, count, m.PAGE_SIZE)] or [[]]
 
 
-def simulate(batch, *, fail_at=None, inception="2026-09-01", maximum=20):
+def simulate(batch, *, fail_at=None, inception="2026-09-02", maximum=20):
     calls = []
     def request(*, path, params):
         assert path == "/v2/account/activities"
@@ -94,6 +94,13 @@ def test_original_account_inception_before_query_bound_holds():
     assert calls == []
     assert result["stage"] == "HOLD_ACTIVITY_WINDOW_NOT_INCEPTION_QUALIFIED"
     stopped(result)
+
+
+def test_exclusive_after_filter_must_predate_opening_day():
+    r, calls = simulate(pages(1), inception="2026-09-01")
+    assert calls == []
+    assert r["stage"] == "HOLD_ACTIVITY_WINDOW_NOT_INCEPTION_QUALIFIED"
+    stopped(r)
 
 
 def test_empty_activity_history_holds():
@@ -167,7 +174,7 @@ def test_no_live_source_or_transport_release_possible():
     with pytest.raises(m.ActivityStop):
         m.inspect_injected(
             request=lambda **kw: [], source_mode="ALPACA_LIVE",
-            account_inception_date="2026-09-01", latest_date="2026-11-09")
+            account_inception_date="2026-09-02", latest_date="2026-11-09")
     assert m.LIVE_BROKER_READS_RELEASED is False
     assert m.LIVE_TRADING_RELEASED is False
     assert m.BROKER_GETS == m.BROKER_POSTS == 0
