@@ -45,6 +45,11 @@ on:
       # New 3M original funding source/permission boundary needs full audit.
       # Future large deposits: strictly offline, no broker/no LIVE release.
       # HMAC draft mandates and paginated synthetic funding have no LIVE releases.
+      # Alpaca-shaped CSD/CSW page token research is offline and never spendable.
+      - "fund100_scalable_alpaca_activity_adapter_offline_v1_0.py"
+      - "test_fund100_scalable_alpaca_activity_adapter_offline_v1_0.py"
+      - "research_lab/FUND100_ALPACA_FUNDING_SOURCE_PAGING_2026_11_09.md"
+      - ".github/workflows/fund100-alpaca-funding-pagination-offline.yml"
       - "fund100_scalable_signed_mandate_offline_v1_0.py"
       - "fund100_scalable_funding_ledger_offline_v1_0.py"
       - "test_fund100_scalable_funding_mandate_offline_v1_0.py"
@@ -387,6 +392,11 @@ on:
       # New 3M original funding source/permission boundary needs full audit.
       # Future large deposits: strictly offline, no broker/no LIVE release.
       # HMAC draft mandates and paginated synthetic funding have no LIVE releases.
+      # Alpaca-shaped CSD/CSW page token research is offline and never spendable.
+      - "fund100_scalable_alpaca_activity_adapter_offline_v1_0.py"
+      - "test_fund100_scalable_alpaca_activity_adapter_offline_v1_0.py"
+      - "research_lab/FUND100_ALPACA_FUNDING_SOURCE_PAGING_2026_11_09.md"
+      - ".github/workflows/fund100-alpaca-funding-pagination-offline.yml"
       - "fund100_scalable_signed_mandate_offline_v1_0.py"
       - "fund100_scalable_funding_ledger_offline_v1_0.py"
       - "test_fund100_scalable_funding_mandate_offline_v1_0.py"
