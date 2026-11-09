@@ -197,7 +197,7 @@ def test_exact_new_live_funding_reader_is_pinned_and_main_only():
     wf=".github/workflows/fund100-scalable-live-funding-readonly.yml"
     source="fund100_scalable_live_funding_history_getonly_v1_0.py"
     content=Path(wf).read_text()
-    expected="ac1d59dbba3cd274d1f4bb64f0561add836d1c0f"
+    expected="d10d51c1391f87acfa24b877b6f67f15433f9cca"
     assert audit.PINNED_LIVE_CREDENTIAL_JOBS[(wf,source)] == expected
     assert audit.git_blob_digest(Path(source)) == expected
     assert audit.approved_scoped_live_script(wf, source, content)
