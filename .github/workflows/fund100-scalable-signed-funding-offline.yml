@@ -1,0 +1,53 @@
+name: Fund-100 Scalable Signed Mandate and Funding Offline CI (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_scalable_signed_mandate_offline_v1_0.py"
+      - "fund100_scalable_funding_ledger_offline_v1_0.py"
+      - "test_fund100_scalable_funding_mandate_offline_v1_0.py"
+      - "research_lab/FUND100_SCALABLE_MANDATE_FUNDING_EVIDENCE_2026_11_09.md"
+      - ".github/workflows/fund100-scalable-signed-funding-offline.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_scalable_signed_mandate_offline_v1_0.py"
+      - "fund100_scalable_funding_ledger_offline_v1_0.py"
+      - "test_fund100_scalable_funding_mandate_offline_v1_0.py"
+      - "research_lab/FUND100_SCALABLE_MANDATE_FUNDING_EVIDENCE_2026_11_09.md"
+      - ".github/workflows/fund100-scalable-signed-funding-offline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  independent-signed-draft-and-funding-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install offline test runner
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input 'pytest>=8,<9'
+      - name: Prove no owner-authority or live funding release
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_scalable_funding_mandate_offline_v1_0.py
+          python - <<'PY'
+          import fund100_scalable_signed_mandate_offline_v1_0 as m
+          import fund100_scalable_funding_ledger_offline_v1_0 as f
+          from decimal import Decimal
+          assert m.ORIGINAL_CAP == Decimal('130.30')
+          assert m.LIVE_MANDATE_RELEASED is False
+          assert m.NO_PRIVATE_STATE_WRITES and m.NO_BROKER_TRANSPORT
+          assert f.NO_LIVE_LEDGER_WRITES and not f.LIVE_FUNDS_DEPLOYABLE
+          assert f.NO_BROKER_GETS == f.NO_BROKER_POSTS == 0
+          print('All synthetic only; original LIVE cap and STOP preserved.')
+          PY
