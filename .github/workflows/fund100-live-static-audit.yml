@@ -44,6 +44,12 @@ on:
       - "test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       # New 3M original funding source/permission boundary needs full audit.
       # Future large deposits: strictly offline, no broker/no LIVE release.
+      # HMAC draft mandates and paginated synthetic funding have no LIVE releases.
+      - "fund100_scalable_signed_mandate_offline_v1_0.py"
+      - "fund100_scalable_funding_ledger_offline_v1_0.py"
+      - "test_fund100_scalable_funding_mandate_offline_v1_0.py"
+      - "research_lab/FUND100_SCALABLE_MANDATE_FUNDING_EVIDENCE_2026_11_09.md"
+      - ".github/workflows/fund100-scalable-signed-funding-offline.yml"
       - "fund100_scalable_capital_preview_v1_0.py"
       - "test_fund100_scalable_capital_preview_v1_0.py"
       - "research_lab/FUND100_SCALABLE_CAPITAL_DESIGN_2026_11_09.md"
@@ -380,6 +386,12 @@ on:
       - "test_fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py"
       # New 3M original funding source/permission boundary needs full audit.
       # Future large deposits: strictly offline, no broker/no LIVE release.
+      # HMAC draft mandates and paginated synthetic funding have no LIVE releases.
+      - "fund100_scalable_signed_mandate_offline_v1_0.py"
+      - "fund100_scalable_funding_ledger_offline_v1_0.py"
+      - "test_fund100_scalable_funding_mandate_offline_v1_0.py"
+      - "research_lab/FUND100_SCALABLE_MANDATE_FUNDING_EVIDENCE_2026_11_09.md"
+      - ".github/workflows/fund100-scalable-signed-funding-offline.yml"
       - "fund100_scalable_capital_preview_v1_0.py"
       - "test_fund100_scalable_capital_preview_v1_0.py"
       - "research_lab/FUND100_SCALABLE_CAPITAL_DESIGN_2026_11_09.md"
