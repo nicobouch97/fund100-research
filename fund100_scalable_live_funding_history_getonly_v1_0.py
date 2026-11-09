@@ -33,6 +33,8 @@ FLOW_TYPES = frozenset({"CSD", "CSW"})
 LIVE_ORDERS_AUTHORIZED = False
 BROKER_NON_GETS = 0
 PRIVATE_STATE_WRITES = 0
+# Field names only; no subtype/group/status/clock VALUES escape protected memory.
+CASH_METADATA_FIELDS = ("activity_sub_type", "group_id", "status", "created_at")
 
 
 class FundingSourceStop(RuntimeError):
@@ -109,7 +111,7 @@ def _day(raw):
 
 
 def _report(stage, count, pages, *, currency_absent=False,
-            inception_query_covered=False):
+            inception_query_covered=False, metadata_shape="NOT_CHECKED_HOLD"):
     # CSD includes returned withdrawals; CSW includes returned deposits.
     # Codes cannot alone attribute OWNER CONTRIBUTIONS or settled capital.
     # No account IDs, activity IDs, balances, owner totals or dates.
@@ -123,6 +125,10 @@ def _report(stage, count, pages, *, currency_absent=False,
         "csd_credits_can_include_returned_withdrawals": True,
         "csw_debits_can_include_returned_deposits": True,
         "owner_contributed_principal_authenticated": False,
+        "cash_activity_metadata_shape": metadata_shape,
+        "external_bank_transfer_identity_verified": False,
+        "returned_cash_transfer_linkage_verified": False,
+        "bank_settled_owner_transfer_verified": False,
         "gross_csd_credit_is_owner_deposit": False,
         "fixed_after_filter_inception_coverage_proved": False,
         "account_creation_query_window_covered": inception_query_covered,
@@ -161,6 +167,7 @@ def review(*, account_before, account_after, policy, pages,
     net_cash_codes = Decimal(0)
     last_day = None
     any_currency_missing = False
+    cash_metadata_all_present = True
     prior_page_tail = None
     for index, page in enumerate(pages):
         if (type(page) is not dict or set(page) != {"cursor", "rows"}
@@ -194,6 +201,13 @@ def review(*, account_before, account_after, policy, pages,
             if c is not None and c != "USD":
                 return _report("HOLD_NON_USD_ACTIVITY_CURRENCY", count, index+1)
             if kind in FLOW_TYPES:
+                # Shape ONLY. Availability of broker activity subtype,
+                # group, status or created_at is not independent bank proof.
+                # NEVER log raw values, counts for individual fields or IDs.
+                if not all(type(row.get(field)) is str
+                           and 0 < len(row[field].strip()) <= 256
+                           for field in CASH_METADATA_FIELDS):
+                    cash_metadata_all_present = False
                 if c is None:
                     any_currency_missing = True
                 if kind == "CSD":
@@ -226,8 +240,11 @@ def review(*, account_before, account_after, policy, pages,
         status = "CSD_CREDITS_ABOVE_PILOT_OWNER_ATTRIBUTION_HOLD"
     else:
         status = "CSD_CREDITS_WITHIN_PILOT_OWNER_ATTRIBUTION_HOLD"
+    metadata_shape = ("ALL_CASH_ACTIVITY_METADATA_FIELDS_PRESENT_NOT_OWNER_PROOF"
+                      if cash_metadata_all_present else
+                      "CASH_ACTIVITY_METADATA_FIELDS_INCOMPLETE_NOT_OWNER_PROOF")
     return _report(status, count, len(pages), currency_absent=any_currency_missing,
-                   inception_query_covered=True)
+                   inception_query_covered=True, metadata_shape=metadata_shape)
 
 
 def _scope():
@@ -314,6 +331,10 @@ def main():
         "csd_credits_can_include_returned_withdrawals",
         "csw_debits_can_include_returned_deposits",
         "owner_contributed_principal_authenticated",
+        "cash_activity_metadata_shape",
+        "external_bank_transfer_identity_verified",
+        "returned_cash_transfer_linkage_verified",
+        "bank_settled_owner_transfer_verified",
         "fixed_after_filter_inception_coverage_proved",
         "account_creation_query_window_covered",
         "broker_settled_cash_authenticated", "signed_durable_principal_ledger_verified",
