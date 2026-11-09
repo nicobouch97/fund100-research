@@ -1,0 +1,101 @@
+name: Fund-100 LIVE Scalable Funding Pages GET Only (NO ORDERS)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_scalable_live_funding_history_getonly_v1_0.py"
+      - "test_fund100_scalable_live_funding_history_getonly_v1_0.py"
+      - ".github/workflows/fund100-scalable-live-funding-readonly.yml"
+      - "audit_fund100_live_boundary.py"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_scalable_live_funding_history_getonly_v1_0.py"
+      - "test_fund100_scalable_live_funding_history_getonly_v1_0.py"
+      - ".github/workflows/fund100-scalable-live-funding-readonly.yml"
+      - "audit_fund100_live_boundary.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-scalable-funding-stopped-readonly
+  cancel-in-progress: false
+
+jobs:
+  source-integrity-and-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Offline tests (no broker credentials)
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input 'pytest>=8,<9'
+          python -m pytest -q test_fund100_scalable_live_funding_history_getonly_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"first_original_acwi_sell_enabled": false' fund100_v6_s1_operator_control.json
+      - name: Independently pin scoped only-GET script and STOP
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import audit_fund100_live_boundary as audit
+          w=".github/workflows/fund100-scalable-live-funding-readonly.yml"
+          s="fund100_scalable_live_funding_history_getonly_v1_0.py"
+          assert audit.git_blob_digest(Path(s)) == "ac1d59dbba3cd274d1f4bb64f0561add836d1c0f"
+          assert audit.approved_scoped_live_script(w,s,Path(w).read_text())
+          print("Exact bounded GET-only account/funding source pinned. No orders.")
+          PY
+
+  protected-stopped-live-funding:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: source-integrity-and-tests
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 7
+    env:
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Confirm exact source and STOP before live credentials
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          test "$FUND100_RISK_LEVEL" = 'HIGH'
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"first_original_acwi_sell_enabled": false' fund100_v6_s1_operator_control.json
+          python - <<'PY'
+          from pathlib import Path
+          import audit_fund100_live_boundary as audit
+          w=".github/workflows/fund100-scalable-live-funding-readonly.yml"
+          s="fund100_scalable_live_funding_history_getonly_v1_0.py"
+          assert audit.git_blob_digest(Path(s)) == "ac1d59dbba3cd274d1f4bb64f0561add836d1c0f"
+          assert audit.approved_scoped_live_script(w,s,Path(w).read_text())
+          PY
+      - name: Inspect LIVE original funding source with bounded GET-only calls
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          python fund100_scalable_live_funding_history_getonly_v1_0.py
+      - name: Keep pilot STOP and no new capital authority
+        run: |
+          set -euo pipefail
+          test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
+          echo 'Read-only funding diagnosis; NO trade, NO standing mandate expansion.'
