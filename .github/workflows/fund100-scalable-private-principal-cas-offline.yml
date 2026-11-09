@@ -1,0 +1,47 @@
+name: Fund-100 Scalable Private Principal CAS Offline CI (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_scalable_private_principal_cas_offline_v1_0.py"
+      - "test_fund100_scalable_private_principal_cas_offline_v1_0.py"
+      - "research_lab/FUND100_SCALABLE_PRIVATE_PRINCIPAL_CAS_2026_11_09.md"
+      - ".github/workflows/fund100-scalable-private-principal-cas-offline.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_scalable_private_principal_cas_offline_v1_0.py"
+      - "test_fund100_scalable_private_principal_cas_offline_v1_0.py"
+      - "research_lab/FUND100_SCALABLE_PRIVATE_PRINCIPAL_CAS_2026_11_09.md"
+      - ".github/workflows/fund100-scalable-private-principal-cas-offline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  no-credentials-private-principal-protocol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install offline test runner
+        run: python -m pip install --disable-pip-version-check --no-input 'pytest>=8,<9'
+      - name: Test private synthetic HMAC/CAS, history anti-rollback and no trading
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_scalable_private_principal_cas_offline_v1_0.py
+          python - <<'PY'
+          import fund100_scalable_private_principal_cas_offline_v1_0 as m
+          from decimal import Decimal
+          assert m.PILOT_CAP == Decimal('130.30')
+          assert not m.LIVE_SIGNING_AUTHORITY and not m.LIVE_TRADING_AUTHORITY
+          assert m.ACTUAL_GITHUB_WRITES == 0
+          assert m.ACTUAL_BROKER_GETS == m.ACTUAL_BROKER_POSTS == 0
+          print('Synthetic private CAS proposal only. No actual private Git or broker activity.')
+          PY
