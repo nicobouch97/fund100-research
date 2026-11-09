@@ -24,7 +24,8 @@ PATH = "state/scalable_contributed_principal.json"
 PILOT_CAP = Decimal("130.30")
 MAX_FLOWS = 1500
 MAX_BODY_BYTES = 150000
-SOURCE_MODE = "COMPLETE_SYNTHETIC_USD_FUNDING_FIXTURE"
+SOURCE_MODE = "SYNTHETIC_BANK_MATCHED_CASHFLOW_FIXTURE_NOT_REAL_EVIDENCE"
+BANK_SOURCE_MODE = "SYNTHETIC_SEPARATE_SETTLED_OWNER_BANK_RECEIPTS_NOT_REAL_EVIDENCE"
 LIVE_SIGNING_AUTHORITY = LIVE_TRADING_AUTHORITY = False
 ACTUAL_GITHUB_WRITES = ACTUAL_BROKER_GETS = ACTUAL_BROKER_POSTS = 0
 HEX40 = re.compile(r"[0-9a-f]{40}")
@@ -32,6 +33,10 @@ HEX64 = re.compile(r"[0-9a-f]{64}")
 MONEY = re.compile(r"(?:0|[1-9][0-9]*)(?:\.[0-9]{2})")
 NEGATIVE_MONEY = re.compile(r"-(?:0|[1-9][0-9]*)(?:\.[0-9]{2})")
 EVENT_FIELDS = {"id", "kind", "date", "amount_usd", "currency"}
+RECEIPT_FIELDS = {
+    "activity_id", "bank_transfer_ref_sha256", "account_binding_sha256",
+    "direction", "amount_usd", "settled_date", "status", "returned", "currency",
+}
 LEDGER_FIELDS = {
     "schema", "mode", "genesis_sha256", "account_binding_sha256",
     "sequence", "previous_blob_sha", "source_row_commitments",
@@ -113,12 +118,62 @@ def _instant(raw):
     return instant
 
 
+def _receipts(source, *, account_binding_sha256, observed):
+    """Separate SYNTHETIC bank records matched 1:1 to broker cash codes.
+
+    This structural evidence is not real bank authentication: production
+    must independently authenticate transfer owner, provenance, immutable
+    bank settlement, and reliable linkage to Alpaca activity IDs.
+    """
+    evidence = source.get("owner_receipt_source")
+    if (type(evidence) is not dict
+        or set(evidence) != {"mode", "complete", "rows"}
+        or evidence["mode"] != BANK_SOURCE_MODE
+        or evidence["complete"] is not True
+        or type(evidence["rows"]) is not list
+        or len(evidence["rows"]) > MAX_FLOWS):
+        raise PrincipalStop("No complete separate bank receipt fixture")
+    matched = {}
+    bank_refs = set()
+    for receipt in evidence["rows"]:
+        if (type(receipt) is not dict or set(receipt) != RECEIPT_FIELDS
+            or type(receipt["activity_id"]) is not str
+            or not 1 <= len(receipt["activity_id"]) <= 256
+            or receipt["activity_id"] in matched
+            or receipt["bank_transfer_ref_sha256"] in bank_refs
+            or type(receipt["bank_transfer_ref_sha256"]) is not str
+            or HEX64.fullmatch(receipt["bank_transfer_ref_sha256"]) is None
+            or receipt["account_binding_sha256"] != account_binding_sha256
+            or receipt["currency"] != "USD"
+            or receipt["status"] != "SETTLED"
+            or receipt["returned"] is not False
+            or receipt["direction"] not in ("INCOMING", "OUTGOING")):
+            raise PrincipalStop("Incomplete, returned or duplicate bank receipt fixture")
+        raw_date = receipt["settled_date"]
+        if type(raw_date) is not str or re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}", raw_date) is None:
+            raise PrincipalStop("Noncanonical bank receipt settlement date")
+        try:
+            day = date.fromisoformat(raw_date)
+        except ValueError:
+            raise PrincipalStop("Invalid bank settlement date") from None
+        if (day.isoformat() != raw_date
+            or day < date(2000, 1, 1)
+            or day > observed.date()):
+            raise PrincipalStop("Unsettled or future bank receipt")
+        _usd(receipt["amount_usd"],
+             negative=(receipt["direction"] == "OUTGOING"))
+        matched[receipt["activity_id"]] = receipt
+        bank_refs.add(receipt["bank_transfer_ref_sha256"])
+    return matched
+
+
 def _flow(source, *, account_binding_sha256, key):
     """Commit the ENTIRE synthetic nontrade source; never silently skip type."""
     if (type(source) is not dict
         or set(source) != {
             "mode", "account_binding_sha256", "currency", "complete",
-            "observed_utc", "rows"}
+            "observed_utc", "rows", "owner_receipt_source"}
         or source["mode"] != SOURCE_MODE
         or source["account_binding_sha256"] != account_binding_sha256
         or source["currency"] != "USD" or source["complete"] is not True
@@ -128,6 +183,9 @@ def _flow(source, *, account_binding_sha256, key):
     observed = _instant(source["observed_utc"])
     if observed > datetime.now(timezone.utc):
         raise PrincipalStop("Future observation")
+    receipt_by_id = _receipts(source, account_binding_sha256=account_binding_sha256,
+                              observed=observed)
+    consumed_receipts = set()
     previous_day = None
     seen = set()
     signed = []
@@ -154,6 +212,16 @@ def _flow(source, *, account_binding_sha256, key):
             or (previous_day is not None and when < previous_day)):
             raise PrincipalStop("Incomplete/out-of-order source day")
         previous_day = when
+        receipt = receipt_by_id.get(row["id"])
+        if row["kind"] in ("CSD", "CSW"):
+            if (receipt is None
+                or receipt["amount_usd"] != row["amount_usd"]
+                or receipt["direction"] !=
+                    ("INCOMING" if row["kind"] == "CSD" else "OUTGOING")):
+                raise PrincipalStop("Alpaca cash code has no independently matched owner bank receipt")
+            consumed_receipts.add(row["id"])
+        elif receipt is not None:
+            raise PrincipalStop("Non-cash event must not be bank transfer")
         if row["kind"] == "CSD":
             value = _usd(row["amount_usd"])
             gross += value
@@ -171,9 +239,13 @@ def _flow(source, *, account_binding_sha256, key):
             if (type(amount) is not str or re.fullmatch(
                 r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]{2})", amount) is None):
                 raise PrincipalStop("Bad economic activity cash amount")
-        signed.append(_digest(row, key, FLOW_DOMAIN))
+        signed.append(_digest({"broker_activity": row,
+                               "independent_bank_receipt_fixture": receipt},
+                              key, FLOW_DOMAIN))
+    if set(receipt_by_id) != consumed_receipts:
+        raise PrincipalStop("Unmatched or reused external bank transfer receipt")
     if deposits == 0:
-        raise PrincipalStop("No qualifying original deposit")
+        raise PrincipalStop("No matched synthetic owner deposit")
     return signed, gross, net, source["observed_utc"]
 
 
@@ -260,7 +332,8 @@ def proposed_full_reconciliation(*, private_source, expected_current_sha,
 
     The expected current SHA/sequence must originate in an independent
     immutable provider head in future production. Here they are fixtures.
-    A HMAC signed payload is not evidence of broker authenticity.
+    A HMAC signed payload is not evidence of broker/bank authenticity.
+    Standalone CSD/CSW codes are NOT principal, including returned transfers.
     """
     old_sha, body = _read(
         private_source, expected_sha=expected_current_sha,
@@ -336,6 +409,7 @@ def public_status(plan):
         "schema": SCHEMA, "status": plan["status"],
         "original_capital_ceiling_usd": "130.30",
         "private_cash_amounts_or_ids_present": False,
+        "real_independent_owner_bank_transfer_source_verified": False,
         "source_authenticated_as_real_broker": False,
         "signed_immutable_head_verified": False,
         "private_ledger_created_or_written": False,
