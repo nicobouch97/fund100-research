@@ -113,7 +113,8 @@ def test_draft_scenarios_remain_unreleased_even_if_signed(newcap):
 
 
 def test_first_pilot_cap_and_production_flags_unchanged():
-    assert m.ORIGINAL_CAP == 130.30
+    from decimal import Decimal
+    assert m.ORIGINAL_CAP == Decimal("130.30")
     assert m.LIVE_MANDATE_RELEASED is False
     assert m.NO_BROKER_TRANSPORT is True
     assert m.NO_PRIVATE_STATE_WRITES is True
