@@ -48,6 +48,11 @@ on:
       # Alpaca-shaped CSD/CSW page token research is offline and never spendable.
       # Source-pinned actual Alpaca funding GET-only job, never a LIVE capital mandate.
       # Original ETF inventory against pilot cost, excess cash NEVER spendable.
+      # Synthetic, private-only funding ledger CAS; no Git transport or LIVE mandate.
+      - "fund100_scalable_private_principal_cas_offline_v1_0.py"
+      - "test_fund100_scalable_private_principal_cas_offline_v1_0.py"
+      - "research_lab/FUND100_SCALABLE_PRIVATE_PRINCIPAL_CAS_2026_11_09.md"
+      - ".github/workflows/fund100-scalable-private-principal-cas-offline.yml"
       - "fund100_original_pilot_inventory_attribution_offline_v1_0.py"
       - "test_fund100_original_pilot_inventory_attribution_offline_v1_0.py"
       - "research_lab/FUND100_ORIGINAL_PILOT_ATTRIBUTION_2026_11_09.md"
@@ -405,6 +410,11 @@ on:
       # Alpaca-shaped CSD/CSW page token research is offline and never spendable.
       # Source-pinned actual Alpaca funding GET-only job, never a LIVE capital mandate.
       # Original ETF inventory against pilot cost, excess cash NEVER spendable.
+      # Synthetic, private-only funding ledger CAS; no Git transport or LIVE mandate.
+      - "fund100_scalable_private_principal_cas_offline_v1_0.py"
+      - "test_fund100_scalable_private_principal_cas_offline_v1_0.py"
+      - "research_lab/FUND100_SCALABLE_PRIVATE_PRINCIPAL_CAS_2026_11_09.md"
+      - ".github/workflows/fund100-scalable-private-principal-cas-offline.yml"
       - "fund100_original_pilot_inventory_attribution_offline_v1_0.py"
       - "test_fund100_original_pilot_inventory_attribution_offline_v1_0.py"
       - "research_lab/FUND100_ORIGINAL_PILOT_ATTRIBUTION_2026_11_09.md"
