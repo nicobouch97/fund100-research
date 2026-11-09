@@ -39,7 +39,9 @@ jobs:
           python - <<'PY'
           import fund100_scalable_capital_preview_v1_0 as m
           assert m.LIVE_TRADING_RELEASED is False
-          assert m.PILOT_CAP == 130.30 and m.PILOT_MAX_NEW_TICKET == 65
+          from decimal import Decimal
+          assert m.PILOT_CAP == Decimal('130.30')
+          assert m.PILOT_MAX_NEW_TICKET == Decimal('65.00')
           assert m.BROKER_GETS == m.BROKER_POSTS == 0
           print("Offline preview only; LIVE STOP and original mandate unchanged.")
           PY
