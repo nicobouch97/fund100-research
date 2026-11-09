@@ -54,6 +54,11 @@ on:
       - "test_fund100_scalable_principal_head_anchor_offline_v1_0.py"
       - "research_lab/FUND100_SCALABLE_INDEPENDENT_HEAD_2026_11_09.md"
       - ".github/workflows/fund100-scalable-head-anchor-offline.yml"
+      # Main-only two-principal PRIVATE funding genesis preflight; strict GET-only, STOP.
+      - "fund100_scalable_capital_private_genesis_readiness_getonly_v1_0.py"
+      - "test_fund100_scalable_capital_private_genesis_readiness_getonly_v1_0.py"
+      - ".github/workflows/fund100-scalable-private-genesis-readiness-getonly.yml"
+      - "research_lab/FUND100_SCALABLE_PRIVATE_GENESIS_REAL_PREFLIGHT_2026_11_09.md"
       - "fund100_scalable_private_principal_cas_offline_v1_0.py"
       - "test_fund100_scalable_private_principal_cas_offline_v1_0.py"
       - "research_lab/FUND100_SCALABLE_PRIVATE_PRINCIPAL_CAS_2026_11_09.md"
@@ -421,6 +426,11 @@ on:
       - "test_fund100_scalable_principal_head_anchor_offline_v1_0.py"
       - "research_lab/FUND100_SCALABLE_INDEPENDENT_HEAD_2026_11_09.md"
       - ".github/workflows/fund100-scalable-head-anchor-offline.yml"
+      # Main-only two-principal PRIVATE funding genesis preflight; strict GET-only, STOP.
+      - "fund100_scalable_capital_private_genesis_readiness_getonly_v1_0.py"
+      - "test_fund100_scalable_capital_private_genesis_readiness_getonly_v1_0.py"
+      - ".github/workflows/fund100-scalable-private-genesis-readiness-getonly.yml"
+      - "research_lab/FUND100_SCALABLE_PRIVATE_GENESIS_REAL_PREFLIGHT_2026_11_09.md"
       - "fund100_scalable_private_principal_cas_offline_v1_0.py"
       - "test_fund100_scalable_private_principal_cas_offline_v1_0.py"
       - "research_lab/FUND100_SCALABLE_PRIVATE_PRINCIPAL_CAS_2026_11_09.md"
