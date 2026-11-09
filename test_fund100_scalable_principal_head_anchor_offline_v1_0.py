@@ -57,7 +57,7 @@ def verify(raw=None, **changes):
     raw=anchor() if raw is None else raw
     opts=dict(raw=raw,key=ANCHOR_KEY,
               expected_anchor_sha256=sha256(raw).hexdigest(),
-              expected_anchor_revision=1,
+              expected_revision=1,
               expected_parent=a.ZERO_PREV,
               genesis_sha256=GENESIS,
               account_binding_sha256=ACCOUNT,
@@ -149,7 +149,7 @@ def test_bad_external_expected_latest_head_never_accepted():
 @pytest.mark.parametrize("field,wrong", [
     ("account_binding_sha256","f"*64),
     ("genesis_sha256","f"*64),
-    ("expected_anchor_revision",2),
+    ("expected_revision",2),
     ("expected_parent","f"*64),
     ("checked_at_utc","2026-11-10T21:00:00Z"),
     ("checked_at_utc","2026-11-08T19:00:00Z"),
@@ -227,12 +227,12 @@ def test_signed_earlier_revision_is_rejected_against_later_trusted_head():
     older=anchor()
     parent=sha256(older).hexdigest()
     newer=anchor(revision=2,parent=parent)
-    head=verify(newer,expected_anchor_revision=2,
+    head=verify(newer,expected_revision=2,
                 expected_parent=parent)
     assert head["stage"]=="SIGNED_SYNTHETIC_ANCHOR_INTEGRITY_ONLY"
     with pytest.raises(a.AnchorStop):
         verify(older,expected_anchor_sha256=sha256(newer).hexdigest(),
-               expected_anchor_revision=2,expected_parent=parent)
+               expected_revision=2,expected_parent=parent)
 
 
 def test_long_lived_or_unbounded_anchor_expiry_rejected():
