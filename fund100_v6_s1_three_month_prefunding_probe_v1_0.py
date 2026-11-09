@@ -393,9 +393,9 @@ _ACTIVE_REPLAY_SAFE_HOLD_REASONS = {
     "Original ACWI liquidation exceeds current broker equity":
         "ACTIVE_BROKER_EQUITY_CASH_HOLD",
     "Original account funding source not singly qualified":
-        "ACTIVE_CAPITAL_OR_FUNDING_HOLD",
+        "ACTIVE_FUNDING_SOURCE_SHAPE_HOLD",
     "Original authorized $130.30 funded capital breached":
-        "ACTIVE_CAPITAL_OR_FUNDING_HOLD",
+        "ACTIVE_PILOT_CAPITAL_CEILING_HOLD",
     "Unqualified original 3M portfolio history":
         "ACTIVE_HISTORY_1M_3M_HOLD",
     "Original 1M and 3M historical source disagreement":
