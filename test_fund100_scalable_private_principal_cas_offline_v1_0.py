@@ -81,7 +81,7 @@ def test_in_memory_genesis_is_signed_but_cannot_autocreate_private_repo():
     assert origin["sha"]==m.git_blob_sha(base64.b64decode(origin["content"]))
     assert m.ACTUAL_GITHUB_WRITES == m.ACTUAL_BROKER_GETS == m.ACTUAL_BROKER_POSTS == 0
     with pytest.raises(m.PrincipalStop):
-        propose(private_source={})
+        propose(private_source={},sha=fixture()["sha"])
 
 
 def test_initial_original_pilot_source_is_still_not_trade_authority():
