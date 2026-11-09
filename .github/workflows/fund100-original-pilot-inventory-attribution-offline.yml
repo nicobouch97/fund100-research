@@ -1,0 +1,46 @@
+name: Fund-100 Original Pilot Inventory Attribution Offline CI (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_original_pilot_inventory_attribution_offline_v1_0.py"
+      - "test_fund100_original_pilot_inventory_attribution_offline_v1_0.py"
+      - "research_lab/FUND100_ORIGINAL_PILOT_ATTRIBUTION_2026_11_09.md"
+      - ".github/workflows/fund100-original-pilot-inventory-attribution-offline.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_original_pilot_inventory_attribution_offline_v1_0.py"
+      - "test_fund100_original_pilot_inventory_attribution_offline_v1_0.py"
+      - "research_lab/FUND100_ORIGINAL_PILOT_ATTRIBUTION_2026_11_09.md"
+      - ".github/workflows/fund100-original-pilot-inventory-attribution-offline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proof-original-fills-versus-excess-funding:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install no-credential fixture runner
+        run: python -m pip install --disable-pip-version-check --no-input 'pytest>=8,<9'
+      - name: Verify original pilot-only inventory and no autonomous trading authority
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_original_pilot_inventory_attribution_offline_v1_0.py
+          python - <<'PY'
+          import fund100_original_pilot_inventory_attribution_offline_v1_0 as m
+          from decimal import Decimal
+          assert m.CAP == Decimal('130.30')
+          assert m.LIVE_ORDER_AUTHORIZED is False
+          assert m.BROKER_GETS == m.BROKER_POSTS == m.PRIVATE_LEDGER_WRITES == 0
+          print('Only original inventory source research; no real account authority.')
+          PY
