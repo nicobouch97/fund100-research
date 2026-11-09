@@ -1,0 +1,119 @@
+name: Fund-100 V8 Original SEC100 Alternative GAAP Coverage (OFFLINE, NO BROKER)
+
+# Read the EXISTING original archived 200 official SEC responses. This only
+# diagnoses source reporting synonyms; it NEVER recaptures SEC, trades,
+# publishes forecasts to a live journal, changes risk or interprets alphas.
+on:
+  pull_request:
+    paths:
+      - "fund100_v8_sec100_gaap_alternate_coverage_v1_0.py"
+      - "test_fund100_v8_sec100_gaap_alternate_coverage_v1_0.py"
+      - ".github/workflows/fund100-v8-sec100-gaap-alternate-coverage.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v8_sec100_gaap_alternate_coverage_v1_0.py"
+      - "test_fund100_v8_sec100_gaap_alternate_coverage_v1_0.py"
+      - ".github/workflows/fund100-v8-sec100-gaap-alternate-coverage.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: fund100-v8-frozen-original-sec100-gaap-coverage
+  cancel-in-progress: false
+
+jobs:
+  focused-synthetic-alternative-coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing research dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Regress original 100 SEC identities, 200 raw sources, annual tag substitutions, STOP
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v8_sec100_gaap_alternate_coverage_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+
+  replay-actual-frozen-sec100-original-vintage:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: focused-synthetic-alternative-coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 26
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install exact existing research requirements
+        run: python -m pip install -r requirements.txt
+      - name: Verify actual main source capture and original issuer population before reading frozen bytes
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          gh api repos/$GITHUB_REPOSITORY/actions/runs/40545345749 > /tmp/u3-first-run.json
+          gh api repos/$GITHUB_REPOSITORY/actions/runs/42620947546 > /tmp/original-sec100-run.json
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          expected=(
+            ('/tmp/u3-first-run.json',40545345749,
+              'fund100-v7-u3-dated-issuer-mirror-sec100.yml',None),
+            ('/tmp/original-sec100-run.json',42620947546,
+              'fund100-v8-sec100-official-annual-quality-source.yml',
+              '8b0356cfaf406127a1b418bbe29d87c27457c0dd'))
+          for path,number,workflow,sha in expected:
+              run=json.loads(Path(path).read_text())
+              assert run['id']==number
+              assert run['status']=='completed' and run['conclusion']=='success'
+              assert run['head_branch']=='main'
+              assert run['path'].endswith('/'+workflow)
+              if sha: assert run['head_sha']==sha
+          print('Two completed original source workflows verified, never re-fitted.')
+          PY
+          mkdir -p /tmp/fund100-source-first-u3 /tmp/fund100-source-original-100
+          gh run download 40545345749 --repo "$GITHUB_REPOSITORY" \
+            --name fund100-v7-u3-first-dated-mirror-sec100-40545345749 \
+            --dir /tmp/fund100-source-first-u3
+          gh run download 42620947546 --repo "$GITHUB_REPOSITORY" \
+            --name fund100-v8-original-sec100-quality-42620947546 \
+            --dir /tmp/fund100-source-original-100
+      - name: Recompute alternative covered GAAP cases from all ORIGINAL 200 bytes
+        run: |
+          set -euo pipefail
+          python -B fund100_v8_sec100_gaap_alternate_coverage_v1_0.py \
+            --original-u3 /tmp/fund100-source-first-u3 \
+            --original-sec100 /tmp/fund100-source-original-100 \
+            --output /tmp/fund100-original-sec100-GAAP-alternate-research-only.json
+      - name: Preserve nontrading original-GAAP coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-sec100-gaap-alternative-study-${{ github.run_id }}
+          path: /tmp/fund100-original-sec100-GAAP-alternate-research-only.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Original operator STOP and zero broker access
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'No SEC refetch, no market-price lookups, no brokerage, no live orders.'
