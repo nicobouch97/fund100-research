@@ -1,0 +1,117 @@
+name: Fund-100 V8 Original SEC100 Official Annual Quality Source (NO BROKER)
+
+# One genuine original official SEC financial vintage for U3's frozen 100
+# issuer-attributed 2026 IVV cohort. Does not fetch shares/prices, make a
+# value signal, change signed state or communicate with a broker.
+on:
+  pull_request:
+    paths:
+      - "fund100_v8_sec100_original_annual_quality_source_v1_0.py"
+      - "test_fund100_v8_sec100_original_annual_quality_source_v1_0.py"
+      - ".github/workflows/fund100-v8-sec100-official-annual-quality-source.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v8_sec100_original_annual_quality_source_v1_0.py"
+      - "test_fund100_v8_sec100_original_annual_quality_source_v1_0.py"
+      - ".github/workflows/fund100-v8-sec100-official-annual-quality-source.yml"
+  schedule:
+    - cron: "15 22 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: fund100-original-frozen-sec100-official-annual-quality-source
+  cancel-in-progress: false
+
+jobs:
+  original-100-financial-source-offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing pinned research environment
+        run: python -m pip install -r requirements.txt
+      - name: Test complete SEC100 source replay, gaps, CIK, original issuer binding and STOP
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v8_sec100_original_annual_quality_source_v1_0.py
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+
+  original-100-official-SEC-fundamentals-capture:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: original-100-financial-source-offline-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing bounded SEC dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Independently verify original immutable U3 first-source main workflow and archive
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          test -n "$SEC_USER_AGENT" || { echo 'SEC identifying User-Agent missing; no capture'; exit 1; }
+          gh api repos/$GITHUB_REPOSITORY/actions/runs/40545345749 > /tmp/fund100-original-u3-run.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('/tmp/fund100-original-u3-run.json').read_text())
+          assert r['id']==40545345749
+          assert r['status']=='completed' and r['conclusion']=='success'
+          assert r['head_branch']=='main'
+          assert r['path'].endswith('/fund100-v7-u3-dated-issuer-mirror-sec100.yml')
+          print('Original U3 first frozen cohort run independently verified.')
+          PY
+          mkdir -p /tmp/fund100-v8-sec100-u3
+          gh run download 40545345749 --repo "$GITHUB_REPOSITORY" \
+            --name fund100-v7-u3-first-dated-mirror-sec100-40545345749 \
+            --dir /tmp/fund100-v8-sec100-u3
+          python - <<'PY'
+          from pathlib import Path
+          import fund100_v7_u4_100issuer_original_sec_baseline_v1_0 as original
+          frozen, roster=original.original_issuer_roster(Path('/tmp/fund100-v8-sec100-u3'))
+          assert len(roster)==100
+          assert frozen['original_issuer_attributed_mirror_not_raw_issuer_verified'] if 'original_issuer_attributed_mirror_not_raw_issuer_verified' in frozen else True
+          assert frozen['trading_authorized'] is False
+          print('Exactly 100 original SEC-mapped CIK identities replayed; no trade authority.')
+          PY
+      - name: Acquire all 200 official SEC source JSONs and immediately replay original raw bytes
+        run: |
+          set -euo pipefail
+          python -B fund100_v8_sec100_original_annual_quality_source_v1_0.py \
+            --u3-source-dir /tmp/fund100-v8-sec100-u3 \
+            --output-dir "/tmp/fund100-v8-sec100-financials-$GITHUB_RUN_ID"
+      - name: Preserve authentic original SEC companyfacts and submissions (research only)
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund100-v8-original-sec100-quality-${{ github.run_id }}
+          path: /tmp/fund100-v8-sec100-financials-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 90
+      - name: Confirm original LIVE trading and private state still stopped
+        run: |
+          set -euo pipefail
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          echo 'Original 100-issuer SEC financial source only. No prices, no signals, no orders.'
