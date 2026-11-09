@@ -1,0 +1,45 @@
+name: Fund-100 Alpaca Nontrade Pagination Offline CI (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_scalable_alpaca_activity_adapter_offline_v1_0.py"
+      - "test_fund100_scalable_alpaca_activity_adapter_offline_v1_0.py"
+      - "research_lab/FUND100_ALPACA_FUNDING_SOURCE_PAGING_2026_11_09.md"
+      - ".github/workflows/fund100-alpaca-funding-pagination-offline.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_scalable_alpaca_activity_adapter_offline_v1_0.py"
+      - "test_fund100_scalable_alpaca_activity_adapter_offline_v1_0.py"
+      - "research_lab/FUND100_ALPACA_FUNDING_SOURCE_PAGING_2026_11_09.md"
+      - ".github/workflows/fund100-alpaca-funding-pagination-offline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stopped-alpaca-shaped-pages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install credentialless tests
+        run: python -m pip install --disable-pip-version-check --no-input 'pytest>=8,<9'
+      - name: Verify Alpaca page ID continuity never becomes settled cash
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_scalable_alpaca_activity_adapter_offline_v1_0.py
+          python - <<'PY'
+          import fund100_scalable_alpaca_activity_adapter_offline_v1_0 as m
+          assert m.LIVE_BROKER_READS_RELEASED is False
+          assert m.LIVE_TRADING_RELEASED is False
+          assert m.BROKER_GETS == m.BROKER_POSTS == 0
+          print('Offline Alpaca-shaped activity pages; no broker requests/orders.')
+          PY
