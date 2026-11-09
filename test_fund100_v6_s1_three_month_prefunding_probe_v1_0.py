@@ -362,6 +362,17 @@ def test_active_pure_replay_rejects_without_sensitive_details(
     assert status.endswith("_HOLD")
 
 
+def test_original_funding_shape_and_fixed_pilot_ceiling_are_distinct_holds():
+    # Both are code-owned STOP-only categories, never a broker order permit.
+    reasons=q._ACTIVE_REPLAY_SAFE_HOLD_REASONS
+    funding=reasons["Original account funding source not singly qualified"]
+    ceiling=reasons["Original authorized $130.30 funded capital breached"]
+    assert funding=="ACTIVE_FUNDING_SOURCE_SHAPE_HOLD"
+    assert ceiling=="ACTIVE_PILOT_CAPITAL_CEILING_HOLD"
+    assert funding!=ceiling and funding.endswith("_HOLD") and ceiling.endswith("_HOLD")
+    assert all("PRIVATE" not in x and "$" not in x for x in (funding,ceiling))
+
+
 def test_active_pure_replay_unknown_exception_never_leaks_private_error(monkeypatch):
     import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
     import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent
