@@ -6,7 +6,7 @@ No settlement proof, no signed owner capital permission, no broker writes.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import os
@@ -19,7 +19,6 @@ import fund100_live_operator_control_v1_0 as operator
 
 SCHEMA = "FUND100_LIVE_SCALABLE_FUNDING_HISTORY_READONLY_V1"
 PATH = "/v2/account/activities"
-START_AFTER = "2026-08-01"
 PAGE_SIZE = 100
 MAX_PAGES = 5
 MAX_BROKER_GETS = 7
@@ -52,6 +51,31 @@ def _money(raw):
     return value
 
 
+def _created_at(account):
+    raw = account.get("created_at")
+    if type(raw) is not str or not raw.endswith("Z"):
+        raise FundingSourceStop("Missing UTC account creation provenance")
+    try:
+        opened = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        raise FundingSourceStop("Unusable account creation provenance") from None
+    if (opened.tzinfo is None or opened.utcoffset() != timedelta(0)
+        or opened.date() < date(2000, 1, 1)
+        or opened > datetime.now(timezone.utc)):
+        raise FundingSourceStop("Unusable account creation provenance")
+    return opened
+
+
+def _query_after_account_creation(opened):
+    # Alpaca 'after' filters creation date, NOT settlement/activity date.
+    # A conservative preceding calendar day covers every original-day
+    # activity even when account created at UTC midnight or with fractions.
+    try:
+        return (opened.date() - timedelta(days=1)).isoformat()
+    except (OverflowError, ValueError):
+        raise FundingSourceStop("Unusable inception date for activity query") from None
+
+
 def _account_guard(account, policy):
     if type(account) is not dict or type(policy) is not dict:
         raise FundingSourceStop("Invalid account source")
@@ -65,9 +89,11 @@ def _account_guard(account, policy):
         or account.get("account_blocked") is not False
         or account.get("trading_blocked") is not False):
         raise FundingSourceStop("Broker account status uncertain")
+    if account.get("currency") != "USD":
+        raise FundingSourceStop("Account USD currency not established")
     if _money(account.get("equity")) <= 0 or _money(account.get("cash")) < 0:
         raise FundingSourceStop("Untrusted account equity/cash")
-    return ident
+    return ident, _created_at(account)
 
 
 def _day(raw):
@@ -82,7 +108,8 @@ def _day(raw):
     return day
 
 
-def _report(stage, count, pages, *, currency_absent=False):
+def _report(stage, count, pages, *, currency_absent=False,
+            inception_query_covered=False):
     # No account IDs, activity IDs, balances, deposit totals or dates.
     return {
         "schema": SCHEMA,
@@ -92,6 +119,7 @@ def _report(stage, count, pages, *, currency_absent=False):
         "observed_activity_count": count,
         "source_currency_metadata_missing": currency_absent,
         "fixed_after_filter_inception_coverage_proved": False,
+        "account_creation_query_window_covered": inception_query_covered,
         "all_account_lifetime_transfers_proved": False,
         "broker_settled_cash_authenticated": False,
         "signed_durable_principal_ledger_verified": False,
@@ -109,11 +137,14 @@ def _report(stage, count, pages, *, currency_absent=False):
     }
 
 
-def review(*, account_before, account_after, policy, pages):
+def review(*, account_before, account_after, policy, pages,
+           requested_after):
     """Categorical result for injected in-memory broker data, never GO."""
     first = _account_guard(account_before, policy)
     second = _account_guard(account_after, policy)
-    if first != second or _money(account_before["cash"]) != _money(account_after["cash"]):
+    if (first != second
+        or requested_after != _query_after_account_creation(first[1])
+        or _money(account_before["cash"]) != _money(account_after["cash"])):
         return _report("HOLD_ACCOUNT_CHANGED_DURING_SOURCE_READ", 0, 0)
     if (type(pages) is not list or not 1 <= len(pages) <= MAX_PAGES):
         raise FundingSourceStop("Unbounded funding source pages")
@@ -148,7 +179,7 @@ def review(*, account_before, account_after, policy, pages):
                 amount = _money(row.get("net_amount"))
             except FundingSourceStop:
                 return _report("HOLD_ACTIVITY_MONEY_OR_DAY_INCOMPLETE", count, index+1)
-            if (day <= _day(START_AFTER)
+            if (day < first[1].date()
                 or day > datetime.now(timezone.utc).date()
                 or last_day is not None and day < last_day):
                 return _report("HOLD_ACTIVITY_DATE_OUTSIDE_COVERAGE", count, index+1)
@@ -186,7 +217,8 @@ def review(*, account_before, account_after, policy, pages):
         status = "HOLD_CURRENCY_UNSPECIFIED_ON_CASHFLOW"
     else:
         status = "OBSERVED_FUNDING_WITHIN_ORIGINAL_CAP_REVIEW_ONLY"
-    return _report(status, count, len(pages), currency_absent=any_currency_missing)
+    return _report(status, count, len(pages), currency_absent=any_currency_missing,
+                   inception_query_covered=True)
 
 
 def _scope():
@@ -229,11 +261,12 @@ def runtime():
             raise FundingSourceStop("Broker GET failed: private details suppressed") from None
 
     before = get("/v2/account")
-    _account_guard(before, policy)
+    _, account_created_at = _account_guard(before, policy)
+    query_after = _query_after_account_creation(account_created_at)
     pages = []
     token = None
     for _ in range(MAX_PAGES):
-        params = {"category": "non_trade_activity", "after": START_AFTER,
+        params = {"category": "non_trade_activity", "after": query_after,
                   "direction": "asc", "page_size": PAGE_SIZE}
         if token is not None:
             params["page_token"] = token
@@ -250,7 +283,8 @@ def runtime():
     after = get("/v2/account")
     _scope()
     result = review(account_before=before, account_after=after,
-                    policy=policy, pages=pages)
+                    policy=policy, pages=pages,
+                    requested_after=query_after)
     if calls > MAX_BROKER_GETS or result["live_buy_sell_authorized"] is not False:
         raise FundingSourceStop("Read-only source scope exceeded")
     result["broker_get_requests_bound"] = calls
@@ -269,6 +303,7 @@ def main():
         "schema", "status", "observed_account_activity_pages",
         "observed_activity_count", "source_currency_metadata_missing",
         "fixed_after_filter_inception_coverage_proved",
+        "account_creation_query_window_covered",
         "broker_settled_cash_authenticated", "signed_durable_principal_ledger_verified",
         "standing_mandate_owner_authorized", "live_buy_sell_authorized",
         "broker_get_requests_bound", "broker_non_get_requests", "broker_orders"):
