@@ -1,7 +1,8 @@
 """Original ETF inventory versus excess-account funding: OFFLINE ONLY.
 
 Historical original four ETF fills can be inside the $130.30 original cap
-even when the fungible broker account has since received >$130.30 in CSD.
+even when the fungible broker account has recorded >$130.30 of CSD credits.
+CSD may be RETURNED WITHDRAWALS and must not be treated as new deposits.
 This proves ONLY a potential inventory-based *risk-reducing sale research*
 path. It cannot isolate cash, approve an actual sale or finance a replacement
 buy. The active protected ACWI evaluator and broker write locks are untouched.
@@ -69,7 +70,10 @@ def evaluate(*, bootstrap, policy, control, funding_observation,
     if (type(funding_observation) is not dict
         or funding_observation.get("schema") != funding.SCHEMA
         or funding_observation.get("status")
-           != "OBSERVED_GROSS_FUNDING_ABOVE_ORIGINAL_PILOT_HOLD"
+           != "CSD_CREDITS_ABOVE_PILOT_OWNER_ATTRIBUTION_HOLD"
+        or funding_observation.get("owner_contributed_principal_authenticated") is not False
+        or funding_observation.get("csd_credits_can_include_returned_withdrawals") is not True
+        or funding_observation.get("csw_debits_can_include_returned_deposits") is not True
         or funding_observation.get("source_currency_metadata_missing") is not False
         or funding_observation.get("original_account_identity_source_matched") is not True
         or funding_observation.get("fixed_after_filter_inception_coverage_proved") is not False

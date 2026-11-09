@@ -21,8 +21,11 @@ def fixtures():
 def report():
     return {
         "schema":funding.SCHEMA,
-        "status":"OBSERVED_GROSS_FUNDING_ABOVE_ORIGINAL_PILOT_HOLD",
+        "status":"CSD_CREDITS_ABOVE_PILOT_OWNER_ATTRIBUTION_HOLD",
         "source_currency_metadata_missing":False,
+        "owner_contributed_principal_authenticated":False,
+        "csd_credits_can_include_returned_withdrawals":True,
+        "csw_debits_can_include_returned_deposits":True,
         "original_account_identity_source_matched":True,
         "fixed_after_filter_inception_coverage_proved":False,
         "live_buy_sell_authorized":False,
@@ -148,6 +151,10 @@ def test_changed_original_mandate_cannot_authorize_more_cash():
 @pytest.mark.parametrize("changed", [
     {"status":"OBSERVED_FUNDING_WITHIN_ORIGINAL_CAP_REVIEW_ONLY"},
     {"status":"RESEARCH_ONLY_NEW_CAP_RELEASABLE"},
+    {"status":"OBSERVED_GROSS_FUNDING_ABOVE_ORIGINAL_PILOT_HOLD"},
+    {"owner_contributed_principal_authenticated":True},
+    {"csd_credits_can_include_returned_withdrawals":False},
+    {"csw_debits_can_include_returned_deposits":False},
     {"source_currency_metadata_missing":True},
     {"original_account_identity_source_matched":False},
     {"fixed_after_filter_inception_coverage_proved":True},

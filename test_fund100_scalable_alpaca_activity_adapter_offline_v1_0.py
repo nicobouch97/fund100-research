@@ -52,6 +52,9 @@ def stopped(result):
     assert result["standing_mandate_owner_authorized"] is False
     assert result["private_signed_funding_ledger_verified"] is False
     assert result["settled_cash_authenticated"] is False
+    assert result["csd_may_be_returned_withdrawal"] is True
+    assert result["csw_may_be_returned_deposit"] is True
+    assert result["owner_contributed_principal_authenticated"] is False
     assert result["full_live_account_history_proven"] is False
     assert result["inception_date_authenticated"] is False
     assert result["private_account_activity_data_persisted"] is False
@@ -62,7 +65,7 @@ def stopped(result):
 def test_one_short_page_never_implies_settlement_or_live_authority():
     out, calls = simulate(pages(3))
     assert len(calls) == 1
-    assert out["stage"] == "REVIEW_ONLY_DATE_NOT_SETTLEMENT"
+    assert out["stage"] == "REVIEW_ONLY_CASH_CODES_NOT_OWNER_PRINCIPAL"
     stopped(out)
 
 
@@ -71,7 +74,7 @@ def test_101_activity_rows_follow_tail_token_exactly():
     assert len(calls) == 2
     assert result["simulated_pages_read"] == 2
     assert result["simulated_rows_examined"] == 101
-    assert result["stage"] == "REVIEW_ONLY_DATE_NOT_SETTLEMENT"
+    assert result["stage"] == "REVIEW_ONLY_CASH_CODES_NOT_OWNER_PRINCIPAL"
     stopped(result)
 
 
@@ -111,7 +114,7 @@ def test_empty_activity_history_holds():
 
 def test_no_csd_only_income_holds():
     result, _ = simulate([[event(0, kind="DIV")]])
-    assert result["stage"] == "HOLD_NO_QUALIFIED_CASH_DEPOSIT"
+    assert result["stage"] == "HOLD_NO_CSD_CASH_CREDIT"
     stopped(result)
 
 
@@ -158,7 +161,7 @@ def test_negative_principal_from_withdrawal_holds():
     b = [[event(0, kind="CSD", amount="10.00"),
           event(1, kind="CSW", amount="-11.00")]]
     r, _ = simulate(b)
-    assert r["stage"] == "HOLD_NEGATIVE_CONTRIBUTED_PRINCIPAL"
+    assert r["stage"] == "HOLD_CSW_DEBIT_EXCEEDS_CSD_CREDIT"
     stopped(r)
 
 
@@ -184,3 +187,21 @@ def test_no_live_source_or_transport_release_possible():
     assert "get_json" not in source
     assert "submit_order" not in source
     assert "load_credentials" not in source
+
+
+def test_csd_returned_withdrawal_not_owner_deposit_even_usd():
+    result, _ = simulate([[
+        dict(event(1, kind="CSD", amount="10000.00"),
+             activity_sub_type="returned_withdrawal")]])
+    assert result["stage"]=="REVIEW_ONLY_CASH_CODES_NOT_OWNER_PRINCIPAL"
+    assert result["owner_contributed_principal_authenticated"] is False
+    stopped(result)
+
+
+def test_csw_returned_deposit_not_owner_withdrawal_even_usd():
+    result, _ = simulate([[
+        event(1, kind="CSD", amount="200.00"),
+        dict(event(2, kind="CSW", amount="-100.00"),
+             activity_sub_type="returned_deposit")]])
+    assert result["stage"]=="REVIEW_ONLY_CASH_CODES_NOT_OWNER_PRINCIPAL"
+    stopped(result)

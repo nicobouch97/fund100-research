@@ -44,6 +44,10 @@ def never_order(x):
     assert x["standing_mandate_owner_authorized"] is False
     assert x["signed_durable_principal_ledger_verified"] is False
     assert x["broker_settled_cash_authenticated"] is False
+    assert x["csd_credits_can_include_returned_withdrawals"] is True
+    assert x["csw_debits_can_include_returned_deposits"] is True
+    assert x["owner_contributed_principal_authenticated"] is False
+    assert x["gross_csd_credit_is_owner_deposit"] is False
     assert x["all_account_lifetime_transfers_proved"] is False
     assert x["fixed_after_filter_inception_coverage_proved"] is False
     assert x["private_state_writes"] == x["broker_non_get_requests"] == x["broker_orders"] == 0
@@ -53,14 +57,14 @@ def never_order(x):
 
 def test_historical_initial_funding_below_original_cap_still_only_review():
     x = run()
-    assert x["status"] == "OBSERVED_FUNDING_WITHIN_ORIGINAL_CAP_REVIEW_ONLY"
+    assert x["status"] == "CSD_CREDITS_WITHIN_PILOT_OWNER_ATTRIBUTION_HOLD"
     assert x["account_creation_query_window_covered"] is True
     never_order(x)
 
 
 def test_historical_extra_funding_does_not_migrate_pilot_to_new_mandate():
     x = run([[row(1, typ="CSD", amount="10000.00")]])
-    assert x["status"] == "OBSERVED_GROSS_FUNDING_ABOVE_ORIGINAL_PILOT_HOLD"
+    assert x["status"] == "CSD_CREDITS_ABOVE_PILOT_OWNER_ATTRIBUTION_HOLD"
     assert x["account_creation_query_window_covered"] is True
     assert x["original_pilot_capital_enlarged"] is False
     never_order(x)
@@ -85,7 +89,7 @@ def test_valid_full_page_requires_continuation_and_still_no_settlement():
     top = [row(n, typ="CSD" if n == 1 else "DIV") for n in range(1,101)]
     x = run([top, []])
     assert x["observed_account_activity_pages"] == 2
-    assert x["status"] == "OBSERVED_FUNDING_WITHIN_ORIGINAL_CAP_REVIEW_ONLY"
+    assert x["status"] == "CSD_CREDITS_WITHIN_PILOT_OWNER_ATTRIBUTION_HOLD"
     assert x["account_creation_query_window_covered"] is True
     never_order(x)
 
@@ -138,7 +142,7 @@ def test_bad_activity_or_amount_is_categorical_hold(change,expected):
 def test_signed_withdrawal_exceeding_deposits_holds():
     x=run([[row(1,typ="CSD",amount="100.00"),
              row(2,typ="CSW",amount="-100.01")]])
-    assert x["status"]=="HOLD_WITHDRAWALS_EXCEED_OBSERVED_PRINCIPAL"
+    assert x["status"]=="HOLD_CSW_DEBITS_EXCEED_OBSERVED_CSD_CREDITS"
     never_order(x)
 
 
@@ -146,7 +150,7 @@ def test_withdrawals_do_not_recycle_gross_lifetime_pilot_cap():
     x=run([[row(1,typ="CSD",amount="130.30"),
              row(2,typ="CSW",amount="-100.00"),
              row(3,typ="CSD",amount="100.00")]])
-    assert x["status"]=="OBSERVED_GROSS_FUNDING_ABOVE_ORIGINAL_PILOT_HOLD"
+    assert x["status"]=="CSD_CREDITS_ABOVE_PILOT_OWNER_ATTRIBUTION_HOLD"
     never_order(x)
 
 
@@ -197,7 +201,7 @@ def test_exact_new_live_funding_reader_is_pinned_and_main_only():
     wf=".github/workflows/fund100-scalable-live-funding-readonly.yml"
     source="fund100_scalable_live_funding_history_getonly_v1_0.py"
     content=Path(wf).read_text()
-    expected="d10d51c1391f87acfa24b877b6f67f15433f9cca"
+    expected="589c0ce3ae26e9d7d2018546392c3b87da10123c"
     assert audit.PINNED_LIVE_CREDENTIAL_JOBS[(wf,source)] == expected
     assert audit.git_blob_digest(Path(source)) == expected
     assert audit.approved_scoped_live_script(wf, source, content)
@@ -252,7 +256,7 @@ def test_dynamic_query_uses_account_creation_not_fixed_2026_date():
         before=old, after=old,
         requested_after="2024-03-06",
         items=[[row(1,typ="CSD",amount="130.30",date="2024-03-07")]])
-    assert result["status"]=="OBSERVED_FUNDING_WITHIN_ORIGINAL_CAP_REVIEW_ONLY"
+    assert result["status"]=="CSD_CREDITS_WITHIN_PILOT_OWNER_ATTRIBUTION_HOLD"
     assert result["account_creation_query_window_covered"] is True
     never_order(result)
 
@@ -290,3 +294,37 @@ def test_non_usd_account_cannot_be_used_as_usd_principal():
     old["currency"]="GBP"
     with pytest.raises(m.FundingSourceStop):
         run(before=old)
+
+
+def test_returned_withdrawal_csd_is_not_authenticated_owner_contribution():
+    # Alpaca explicitly says CSD includes returned withdrawals. A perfectly
+    # shaped, USD-coded row with a very large credit remains HOLD.
+    x=run([[dict(row(1,typ="CSD",amount="30000.00"),
+                 activity_sub_type="returned_withdrawal")]])
+    assert x["status"]=="CSD_CREDITS_ABOVE_PILOT_OWNER_ATTRIBUTION_HOLD"
+    assert x["owner_contributed_principal_authenticated"] is False
+    never_order(x)
+
+
+def test_returned_deposit_csw_cannot_reduce_qualified_owner_principal():
+    # Alpaca says CSW includes returned deposits. Its sign is NOT proof
+    # of an owner withdrawal; neither cash code gives a principal mandate.
+    x=run([[row(1,typ="CSD",amount="250.00"),
+            dict(row(2,typ="CSW",amount="-100.00"),
+                 activity_sub_type="returned_deposit")]])
+    assert x["status"]=="CSD_CREDITS_ABOVE_PILOT_OWNER_ATTRIBUTION_HOLD"
+    assert x["owner_contributed_principal_authenticated"] is False
+    never_order(x)
+
+
+def test_above_cap_but_missing_cash_credit_currency_never_implies_usd():
+    x=run([[row(1,typ="CSD",amount="10000.00",currency=None)]])
+    assert x["status"]=="HOLD_CURRENCY_UNSPECIFIED_ON_CASHFLOW"
+    never_order(x)
+
+
+def test_no_cash_code_proves_any_owner_deposit_even_when_within_cap():
+    x=run([[row(1,typ="CSD",amount="0.01")]])
+    assert x["status"]=="CSD_CREDITS_WITHIN_PILOT_OWNER_ATTRIBUTION_HOLD"
+    assert x["owner_contributed_principal_authenticated"] is False
+    never_order(x)

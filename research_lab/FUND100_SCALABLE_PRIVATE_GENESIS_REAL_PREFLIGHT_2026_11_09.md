@@ -63,3 +63,26 @@ or a present BUT UNANCHORED private capital file.
 
 Original $130.30 pilot, $65 ticket cap, ENGAGED broker kill, both STOPs,
 blocked ACWI first sale and all LIVE order writers are unchanged.
+
+## 9 November 2026: cash code attribution correction
+
+Alpaca's current Account Activities API documents that **CSD also includes
+returned withdrawals** and **CSW also includes returned deposits**. Therefore
+a brokerage-observed CSD credit is **NOT independently proven owner-
+contributed capital**, and a CSW debit is not necessarily an owner
+withdrawal. Earlier statuses claiming *gross deposits/funding above $130.30*
+were overinterpreted: the verified narrower fact is that the observed
+**gross CSD cash credits exceed $130.30**, subject to the historical
+read-only source coverage and currency checks. No settled cash or owner
+capital mandate was ever approved by that status.
+
+The corrected protected diagnostic now returns
+CSD_CREDITS_ABOVE_PILOT_OWNER_ATTRIBUTION_HOLD or
+CSD_CREDITS_WITHIN_PILOT_OWNER_ATTRIBUTION_HOLD, and always sets
+owner_contributed_principal_authenticated=false. It requires independent
+bank/transfer provenance (and return linkage, corporate actions, FX and
+settlement) before any owner contribution can enter a production
+principal ledger. The pilot $130.30 ceiling, $65 ticket and STOP remain.
+
+Authoritative Alpaca account activity types:
+https://docs.alpaca.markets/us/reference/getaccountactivities
