@@ -202,6 +202,12 @@ ALLOWED_LIVE_CREDENTIAL_SCRIPTS = {
 # Git-blob digest pins each reviewed implementation; any code change
 # removes credential eligibility until independently re-reviewed.
 PINNED_LIVE_CREDENTIAL_JOBS = {
+    # Bounded funding provenance observer: account + five pages + account.
+    # Main-only STOP, no production spending permission.
+    (
+        ".github/workflows/fund100-scalable-live-funding-readonly.yml",
+        "fund100_scalable_live_funding_history_getonly_v1_0.py",
+    ): "ac1d59dbba3cd274d1f4bb64f0561add836d1c0f",
     # V7-X3 BTC/USD + GLD feasibility: SIX bounded GET only,
     # mandatory original four holdings/account reconciliation, HIGH STOP.
     # Source and transport dependencies pinned; NO account order authority.
@@ -604,6 +610,57 @@ def approved_scoped_live_script(
             candidate_path = ROOT / dependency
             if (not candidate_path.is_file()
                 or git_blob_digest(candidate_path) != expected_digest):
+                return False
+
+    if script == "fund100_scalable_live_funding_history_getonly_v1_0.py":
+        # Only this exact stopped/main LIVE GET source may handle original
+        # broker funding-history provenance. Success is still never trade GO.
+        if workflow != ".github/workflows/fund100-scalable-live-funding-readonly.yml":
+            return False
+        for required in (
+            "name: Fund-100 LIVE Scalable Funding Pages GET Only (NO ORDERS)",
+            "permissions:\n  contents: read",
+            "if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'",
+            "environment: fund100-live-broker",
+            "FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}",
+            "FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}",
+            "FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE",
+            "FUND100_LIVE_WRITE_MODE: DISABLED",
+            "ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}",
+            "ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}",
+            "persist-credentials: false",
+            "python fund100_scalable_live_funding_history_getonly_v1_0.py",
+            "test \"$FUND100_BROKER_KILL_SWITCH\" = 'ENGAGED'",
+            "grep -Eq '\"trading_enabled\": false' fund100_live_operator_control.json",
+            "grep -Eq '\"first_original_acwi_sell_enabled\": false' fund100_v6_s1_operator_control.json",
+            "assert audit.approved_scoped_live_script(w,s,Path(w).read_text())",
+        ):
+            if required not in source:
+                return False
+        for forbidden in (
+            "  schedule:", "contents: write", "actions: write",
+            "FUND100_LIVE_WRITE_MODE: ENABLED", "method=\"POST\"",
+            "method=\"DELETE\"", "method=\"PUT\"", "method=\"PATCH\"",
+            "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN",
+            "FUND100_PRIVATE_STATE_WRITE_TOKEN",
+            "FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN",
+            "python fund100_alpaca_live_writer_",
+        ):
+            if forbidden in source:
+                return False
+        dependencies = {
+            "fund100_alpaca_live_readonly_smoke.py":
+                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+            "fund100_v6_brokerless_transition_preview_v1_0.py":
+                "a0b4efc660f30395b6cdda104f0eddf63b8a6dd9",
+            "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
+                "cebb99bf22ea175a23cf2c0802d1822ae740534f",
+            "fund100_live_operator_control_v1_0.py":
+                PINNED_PRODUCTION_OPERATOR_MODULE,
+        }
+        for filename, expected in dependencies.items():
+            dep = ROOT / filename
+            if not dep.is_file() or git_blob_digest(dep) != expected:
                 return False
 
     if script == "fund100_v6_s1_three_month_prefunding_probe_v1_0.py":
