@@ -80,11 +80,32 @@ def test_replay_is_idempotent_and_not_mutating_prior_state():
     assert a == prior
 
 
-def test_missing_trading_session_fails_no_retroactive_filling():
+def test_missing_trading_session_starts_new_hash_chained_forward_epoch_without_backfill():
     p, m = fixture()
     a = new(p.iloc[:900], m, [])
-    with pytest.raises(f.ForwardObservationStop, match="Missing intervening"):
-        new(p.iloc[:902], m, [a])
+    b = new(p.iloc[:902], m, [a])
+    assert b["schema"] == f.SCHEMA
+    assert b["previous_record_sha256"] == a["record_sha256"]
+    assert b["research_epoch"] == 2
+    assert b["skipped_vendor_sessions"] == 1
+    assert b["epoch_reset_due_to_observation_gap"] is True
+    assert b["epoch_reset_reason"] == f.RESET_REASON
+    assert b["period_return_observed"] is False
+    assert b["model_start_session"] == b["asof_session"]
+    assert b["shy_nav"] == b["spy_nav"] == 100.0
+    for model in f.MODELS:
+        assert b["models"][model]["nav"] == 100.0
+        assert b["models"][model]["weights"] == {
+            "GLD": 0.0, "DBC": 0.0, "SHY": 1.0
+        }
+    assert f.validate_ledger([a, b]) == [a, b]
+    # Following real observed session is continuous again within epoch 2.
+    c = new(p.iloc[:903], m, [a, b])
+    assert c["period_return_observed"] is True
+    assert c["research_epoch"] == 2
+    assert c["skipped_vendor_sessions"] == 0
+    assert c["previous_record_sha256"] == b["record_sha256"]
+    assert f.validate_ledger([a, b, c]) == [a, b, c]
 
 
 def test_new_month_rebalances_static_and_not_intra_month():
@@ -167,3 +188,97 @@ def test_research_does_not_modify_source_dataframe():
     new(p.iloc[:901], m, [a])
     pd.testing.assert_frame_equal(p, prices_original)
     pd.testing.assert_frame_equal(m, macro_original)
+
+
+
+def test_gap_is_never_implicitly_backfilled_or_counted_as_return():
+    p,m=fixture()
+    a=new(p.iloc[:900],m,[])
+    b=new(p.iloc[:905],m,[a])
+    assert b["asof_session"] == p.index[904].date().isoformat()
+    assert b["skipped_vendor_sessions"] == 4
+    assert b["period_return_observed"] is False
+    assert b["model_start_session"] == b["asof_session"]
+    assert b["models"]["C2_regime"]["nav"] == 100.0
+    assert len(f.validate_ledger([a,b])) == 2
+
+
+def test_legacy_v1_prefix_remains_unchanged_and_hash_authentic():
+    p,m=fixture()
+    first=new(p.iloc[:900],m,[])
+    legacy={k:v for k,v in first.items() if k not in (
+        "record_sha256", "research_epoch",
+        "epoch_reset_due_to_observation_gap",
+        "skipped_vendor_sessions", "epoch_reset_reason")}
+    legacy["schema"]=f.LEGACY_SCHEMA
+    legacy["record_sha256"]=f.sha256(legacy)
+    assert f.validate_ledger([legacy]) == [legacy]
+    nxt=new(p.iloc[:902],m,[legacy])
+    assert nxt["previous_record_sha256"]==legacy["record_sha256"]
+    assert nxt["schema"]==f.SCHEMA and nxt["research_epoch"]==2
+    assert nxt["period_return_observed"] is False
+    assert f.validate_ledger([legacy,nxt]) == [legacy,nxt]
+
+
+@pytest.mark.parametrize("changed",[
+    {"skipped_vendor_sessions":0},
+    {"skipped_vendor_sessions":-1},
+    {"skipped_vendor_sessions":9999},
+    {"epoch_reset_due_to_observation_gap":False},
+    {"epoch_reset_reason":None},
+    {"research_epoch":1},
+    {"period_return_observed":True},
+    {"model_start_session":"2017-01-01"},
+    {"shy_nav":110.00},
+    {"spy_nav":110.00},
+])
+def test_reset_cannot_be_hidden_or_falsely_claim_a_complete_return(changed):
+    p,m=fixture()
+    a=new(p.iloc[:900],m,[])
+    b=new(p.iloc[:903],m,[a])
+    tampered=deepcopy(b)
+    tampered.update(changed)
+    tampered["record_sha256"]=f.sha256({
+        k:v for k,v in tampered.items() if k!="record_sha256"})
+    with pytest.raises(f.ForwardObservationStop):
+        f.validate_ledger([a,tampered])
+
+
+def test_reset_cannot_carry_prior_model_nav_or_position():
+    p,m=fixture()
+    a=new(p.iloc[:900],m,[])
+    b=new(p.iloc[:902],m,[a])
+    modified=deepcopy(b)
+    modified["models"]["static"]["nav"]=115.0
+    modified["record_sha256"]=f.sha256({
+        k:v for k,v in modified.items() if k!="record_sha256"})
+    with pytest.raises(f.ForwardObservationStop):
+        f.validate_ledger([a,modified])
+
+
+def test_missing_old_vendor_close_cannot_be_silently_discarded():
+    p,m=fixture()
+    a=new(p.iloc[:900],m,[])
+    chopped=p.iloc[:904].drop(p.index[899])
+    with pytest.raises(f.ForwardObservationStop, match="committed vendor session missing"):
+        new(chopped,m,[a])
+
+
+def test_gap_greater_than_bound_is_not_silently_restarted():
+    p,m=fixture(n=1400)
+    a=new(p.iloc[:900],m,[])
+    with pytest.raises(f.ForwardObservationStop, match="finite forward gap"):
+        new(p.iloc[:1200],m,[a])
+
+
+def test_old_schema_cannot_resume_after_new_epoch():
+    p,m=fixture()
+    a=new(p.iloc[:900],m,[])
+    b=new(p.iloc[:902],m,[a])
+    legacy=deepcopy(a)
+    legacy["asof_session"]=p.index[903].date().isoformat()
+    legacy["previous_record_sha256"]=b["record_sha256"]
+    legacy["record_sha256"]=f.sha256({k:v for k,v in legacy.items()
+                                     if k!="record_sha256"})
+    with pytest.raises(f.ForwardObservationStop):
+        f.validate_ledger([a,b,legacy])
