@@ -42,7 +42,9 @@ jobs:
           assert m.SCHEMA == "FUND100_COMMODITY_FORWARD_SHADOW_V2"
           assert m.RESET_REASON == "MISSED_COMPLETED_VENDOR_SESSIONS_NO_BACKFILL"
           original=m.read_ledger(Path("research_lab/commodities/prospective/observations.jsonl"))
-          assert original and original[-1]["asof_session"] == "2026-10-29"
+          assert original
+          assert any(row["asof_session"] == "2026-10-29"
+                     and row["schema"] == m.LEGACY_SCHEMA for row in original)
           assert all(row["trading_authorized"] is False
                      and row["broker_order_count"] == 0 for row in original)
           print("Original frozen forward ledger intact; no vendor backfill or broker order.")
