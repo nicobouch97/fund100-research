@@ -49,6 +49,14 @@ def never_order(x):
     assert x["owner_contributed_principal_authenticated"] is False
     assert x["gross_csd_credit_is_owner_deposit"] is False
     assert x["all_account_lifetime_transfers_proved"] is False
+    assert x["cash_activity_metadata_shape"] in {
+        "NOT_CHECKED_HOLD",
+        "ALL_CASH_ACTIVITY_METADATA_FIELDS_PRESENT_NOT_OWNER_PROOF",
+        "CASH_ACTIVITY_METADATA_FIELDS_INCOMPLETE_NOT_OWNER_PROOF",
+    }
+    assert x["external_bank_transfer_identity_verified"] is False
+    assert x["returned_cash_transfer_linkage_verified"] is False
+    assert x["bank_settled_owner_transfer_verified"] is False
     assert x["fixed_after_filter_inception_coverage_proved"] is False
     assert x["private_state_writes"] == x["broker_non_get_requests"] == x["broker_orders"] == 0
     assert x["account_id"] is None and x["deposit_amounts"] is None
@@ -201,7 +209,7 @@ def test_exact_new_live_funding_reader_is_pinned_and_main_only():
     wf=".github/workflows/fund100-scalable-live-funding-readonly.yml"
     source="fund100_scalable_live_funding_history_getonly_v1_0.py"
     content=Path(wf).read_text()
-    expected="589c0ce3ae26e9d7d2018546392c3b87da10123c"
+    expected="f7605a8c61bdf7c3b69f62fccfb24f0daca1ef01"
     assert audit.PINNED_LIVE_CREDENTIAL_JOBS[(wf,source)] == expected
     assert audit.git_blob_digest(Path(source)) == expected
     assert audit.approved_scoped_live_script(wf, source, content)
@@ -326,5 +334,69 @@ def test_above_cap_but_missing_cash_credit_currency_never_implies_usd():
 def test_no_cash_code_proves_any_owner_deposit_even_when_within_cap():
     x=run([[row(1,typ="CSD",amount="0.01")]])
     assert x["status"]=="CSD_CREDITS_WITHIN_PILOT_OWNER_ATTRIBUTION_HOLD"
+    assert x["owner_contributed_principal_authenticated"] is False
+    never_order(x)
+
+
+
+def test_cash_metadata_present_does_not_authenticate_bank_owner_or_returns():
+    token="SECRET_VALUE_MUST_NEVER_LEAVE_IN_MEMORY"
+    item=dict(row(1, typ="CSD", amount="10000.00"),
+              activity_sub_type=token, group_id=token,
+              status=token, created_at="2026-11-09T14:30:00Z")
+    x=run([[item]])
+    assert x["status"]=="CSD_CREDITS_ABOVE_PILOT_OWNER_ATTRIBUTION_HOLD"
+    assert x["cash_activity_metadata_shape"]==(
+        "ALL_CASH_ACTIVITY_METADATA_FIELDS_PRESENT_NOT_OWNER_PROOF")
+    assert token not in str(x)
+    assert x["external_bank_transfer_identity_verified"] is False
+    never_order(x)
+
+
+def test_missing_one_metadata_field_cannot_be_qualified_as_complete():
+    item=dict(row(1, typ="CSD", amount="100.00"),
+              activity_sub_type="RETURNED_WITHDRAWAL",
+              group_id="internal-group", status="settled")
+    x=run([[item]])
+    assert x["cash_activity_metadata_shape"]==(
+        "CASH_ACTIVITY_METADATA_FIELDS_INCOMPLETE_NOT_OWNER_PROOF")
+    never_order(x)
+
+
+@pytest.mark.parametrize("value",[None, "", " ", {}, 0, ["value"]])
+def test_malformed_metadata_is_only_presence_shape_not_owner_authentication(value):
+    item=dict(row(1, typ="CSD", amount="130.30"),
+              activity_sub_type="test", group_id="group",
+              status="posted", created_at="2026-11-09T10:00:00Z")
+    item["group_id"]=value
+    x=run([[item]])
+    assert x["cash_activity_metadata_shape"]==(
+        "CASH_ACTIVITY_METADATA_FIELDS_INCOMPLETE_NOT_OWNER_PROOF")
+    never_order(x)
+
+
+def test_all_cash_rows_must_have_metadata_to_report_all_present():
+    rows=[
+        dict(row(1, typ="CSD", amount="130.30"),
+             activity_sub_type="deposit", group_id="g1",
+             status="posted", created_at="2026-11-09T10:00:00Z"),
+        dict(row(2, typ="CSW", amount="-1.00"),
+             activity_sub_type="returned_deposit", group_id="g2",
+             status="posted"),
+    ]
+    x=run([rows])
+    assert x["cash_activity_metadata_shape"]==(
+        "CASH_ACTIVITY_METADATA_FIELDS_INCOMPLETE_NOT_OWNER_PROOF")
+    never_order(x)
+
+
+def test_source_never_sends_raw_bank_credential_or_metadata_in_report():
+    x=run([[dict(row(1,typ="CSD",amount="300.00"),
+                 activity_sub_type="CONFIDENTIAL_RETURN_FLAG",
+                 group_id="CONFIDENTIAL_BANK_RELATIONSHIP",
+                 status="CONFIDENTIAL_BANK_STATUS",
+                 created_at="2026-11-09T20:01:00Z")]])
+    assert "CONFIDENTIAL" not in str(x)
+    assert "300.00" not in str(x)
     assert x["owner_contributed_principal_authenticated"] is False
     never_order(x)
