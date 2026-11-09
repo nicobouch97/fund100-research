@@ -470,3 +470,130 @@ def test_monthly_buy_can_use_lower_fee_alternative_without_issuer_cap_breach():
         nav_after*m.migration.CASH_FLOOR)
     assert c["executable"] is False
     assert result["broker_POSTs"]==result["private_Git_writes"]==0
+
+
+def costed_kwargs():
+    """Two non-live 21-session hypotheses, both using the same book."""
+    return {
+        "candidate_targets": {
+            "RESEARCH_VALUE_ROTATION": {
+                "ACWI": "0.19", "XLK": "0.35",
+                "XLE": "0.25", "IWM": "0.15",
+            },
+            "RESEARCH_ALMOST_HOLD": {
+                "XLK": "0.46", "XLE": "0.27", "IWM": "0.21",
+            },
+        },
+        "expected_returns": {
+            "ACWI": "0.50", "XLK": "0.00",
+            "XLE": "0.00", "IWM": "0.00",
+        },
+        "forecast_horizon_sessions": 21,
+        "round_trip_side_cost_bps": "15",
+        "forecast_uncertainty_bps": "50",
+        "minimum_net_advantage_usd": "0.50",
+    }
+
+
+def compare(d=None, **overrides):
+    args=costed_kwargs()
+    args.update(overrides)
+    return m.compare_month_end_opportunities(
+        snapshot=fixture() if d is None else d,
+        now_utc=NOW, **args)
+
+
+def test_month_end_risk_first_can_rank_costed_opportunity_without_authorizing_it():
+    result=compare()
+    assert result["original_recurring_risk_stage"]==(
+        "HOLD_WITHIN_MONTHLY_10PP_BAND_NO_FORCED_CHURN")
+    assert result["status"]=="RESEARCH_COSTED_ROTATION_PREFERRED_NOT_AUTHORIZED"
+    assert result["costed_preferred_research_candidate"]=="RESEARCH_VALUE_ROTATION"
+    comparison=result["costed_comparison"]
+    assert comparison["candidate_count"]==2
+    assert comparison["preferred_hypothetical_economics"]["state"]==(
+        "HYPOTHETICAL_SWITCH_SELL_SETTLEMENT_REQUIRED")
+    assert comparison["preferred_hypothetical_economics"][
+        "future_sell_proceeds_assumed_spendable"] is False
+    assert result["existing_S1_risk_and_maintenance_always_screened_first"] is True
+    assert result["candidate_forecasts_independently_authenticated"] is False
+    assert result["market_and_broker_data_independently_authenticated"] is False
+    assert result["standing_mandate_or_signed_event_authenticated"] is False
+    assert result["production_strategy_released"] is False
+    assert result["live_order_submission_authorized"] is False
+    assert result["manual_per_trade_approval_required"] is False
+    assert result["real_broker_gets"]==result["real_broker_posts"]==0
+    assert result["private_git_writes"]==0
+
+
+@pytest.mark.parametrize("cause", [
+    "daily_loss", "monthly_drawdown", "volatility", "unreconciled_order",
+    "monthly_repair", "not_due", "stale", "unreconciled_prior_event",
+])
+def test_risk_and_pending_monthly_maintenance_preempt_all_unverified_alpha(cause):
+    d=fixture(portfolio="sell" if cause=="monthly_repair" else "hold")
+    now=NOW
+    if cause=="daily_loss":d["risk_metrics"]["daily_return"]="-0.07"
+    if cause=="monthly_drawdown":d["risk_metrics"]["rolling_drawdown"]="-0.21"
+    if cause=="volatility":d["risk_metrics"]["annualized_volatility"]="0.40"
+    if cause=="unreconciled_order":d["unresolved_broker_orders"]=1
+    if cause=="not_due":d["review_due"]=False
+    if cause=="stale":now="2026-10-30T16:22:00Z"
+    if cause=="unreconciled_prior_event":
+        d["monthly_seen_client_ids"]=[m._id("2026-10","XLK","sell")]
+    # Invalid targets prove no opportunity comparison is even attempted
+    # during a blocked risk, stale-source or maintenance scenario.
+    result=m.compare_month_end_opportunities(
+        snapshot=d,now_utc=now,candidate_targets={"attacker": object()},
+        expected_returns={},forecast_horizon_sessions=21,
+        round_trip_side_cost_bps="15",
+        forecast_uncertainty_bps="50",
+        minimum_net_advantage_usd="0.50")
+    assert result["status"]=="HOLD_MONTHLY_RISK_OR_MAINTENANCE_HAS_PRIORITY"
+    assert result["costed_comparison"] is None
+    assert result["costed_preferred_research_candidate"] is None
+    assert result["live_order_submission_authorized"] is False
+
+
+def test_unqualified_opportunity_set_holds_instead_of_fake_authenticated_research():
+    with pytest.raises(m.RecurringStop,match="Unqualified research"):
+        compare(candidate_targets={
+            "RESEARCH_BAD": {"ACWI": "1.00"},
+        })
+    with pytest.raises(m.RecurringStop,match="forecast horizon"):
+        compare(forecast_horizon_sessions=True)
+
+
+def test_no_costed_edge_does_not_produce_a_candidate_or_fake_trade():
+    forecasts={sym:"0.00" for sym in
+               ("ACWI","XLK","XLE","IWM")}
+    outcome=compare(expected_returns=forecasts)
+    assert outcome["status"]=="HOLD_NO_COSTED_RISK_ELIGIBLE_ROTATION"
+    assert outcome["costed_preferred_research_candidate"] is None
+    assert outcome["live_order_submission_authorized"] is False
+
+
+def test_corrupted_recurring_broker_state_never_enters_costed_selector():
+    for name, value in (
+        ("source_authenticated_live", True),
+        ("operator_stopped", False),
+        ("broker_kill_switch", "DISENGAGED"),
+        ("initial_migration_all_three_sells_reconciled", False),
+        ("risk_level", "MEDIUM"),
+    ):
+        snapshot=fixture()
+        snapshot[name]=value
+        with pytest.raises(m.RecurringStop):
+            compare(snapshot)
+
+
+def test_costed_bridge_is_pure_and_does_not_extend_executable_universe():
+    from pathlib import Path
+    code=Path(m.__file__).read_text()
+    assert "LIVE_RECURRING_EXECUTION_RELEASED=False" in code
+    assert "NO_BROKER_NETWORK=True" in code
+    assert "NO_BROKER_ORDER=True" in code
+    assert "NO_PRIVATE_STATE_WRITE=True" in code
+    for unsafe in ("requests.post(", "method=\"POST\"",
+                   "urlopen(", "secrets.ALPACA", "GITHUB_TOKEN"):
+        assert unsafe not in code
