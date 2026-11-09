@@ -30,17 +30,26 @@ or broker write method is used.
   review, not a settlement or approved capital release.
 - Missing pages, duplicate IDs, unsupported transfers, wrong signs,
   wrong account or changed cash across snapshots all HOLD.
-- fixed_after_filter_inception_coverage_proved is ALWAYS false: the
-  query starts at 2026-08-01, and full account inception and all earlier
-  cashflows have not been independently authenticated.
+- The revised query obtains account created_at directly from the same
+  authenticated original Alpaca account. Its after date is the calendar
+  day BEFORE creation, rather than a fixed 2026-08-01 start. That is a
+  conservative account-inception-relative lower bound for activity
+  creation time, as described in the API docs. A complete bounded
+  nontrade page chain can set account_creation_query_window_covered=true.
+  It does NOT independently certify provider history completeness across
+  other categories, cash settlement, transfers, or the private ledger.
+  The older fixed_after_filter_inception_coverage_proved flag stays false
+  because a fixed after-date is no longer the source of coverage.
 - A nontrade activity date is NOT proof of order-time settled cash.
   Even a green run is NOT a real trade permission.
 
 Alpaca V2 documentation:
 https://docs.alpaca.markets/us/reference/getaccountactivities-2
 
-page_token uses last activity ID, and after filters creation time;
-the activity date may refer to a different booking/settlement day.
+page_token uses last activity ID, and after filters activity
+creation time; the activity date may refer to a different booking
+or settlement day. The Alpaca account.created_at field comes from
+the existing original account GET, not an additional endpoint.
 
 ## Remaining critical path
 
