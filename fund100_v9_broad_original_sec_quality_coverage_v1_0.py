@@ -158,10 +158,11 @@ def _alternative_original_10k_pair_status(*, companyfacts: dict,
         if (type(value) not in (int, float) or
             not math.isfinite(float(value)) or abs(value) > 1e15):
             raise SourceHold("Invalid original alternative SEC annual USD amount")
+        original_period_value = (start, value)
         existing = by_end[end].get(accn)
-        if existing is not None and existing != value:
+        if existing is not None and existing != original_period_value:
             return "CONFLICTING_OR_MULTIPLE_10K_SOURCE_VINTAGES"
-        by_end[end][accn] = value
+        by_end[end][accn] = original_period_value
     # Never select an arbitrarily favourable original 10-K amendment or
     # recast and then pretend it was unique first-vintage history.
     if any(len(v) != 1 for v in by_end.values()):
