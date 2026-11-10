@@ -69,6 +69,50 @@ def test_later_excess_deposit_holds_at_future_cap_too():
     never_live(r)
 
 
+
+@pytest.mark.parametrize("p,f,a", [
+    (
+        mandate(),
+        {"source_mode": m.MODE, "currency": "USD", "complete": True,
+         "events": [
+             {"id": "first", "type": "CSD", "amount_usd": "10000.00", "settled": True},
+             {"id": "withdraw", "type": "CSW", "amount_usd": "8000.00", "settled": True},
+             {"id": "redeposit", "type": "CSD", "amount_usd": "8000.00", "settled": True},
+         ]},
+        account(),
+    ),
+    (
+        mandate("130.30", "ORIGINAL_PILOT"),
+        {"source_mode": m.MODE, "currency": "USD", "complete": True,
+         "events": [
+             {"id": "first", "type": "CSD", "amount_usd": "130.30", "settled": True},
+             {"id": "withdraw", "type": "CSW", "amount_usd": "100.00", "settled": True},
+             {"id": "redeposit", "type": "CSD", "amount_usd": "100.00", "settled": True},
+         ]},
+        account("130.30", "130.30"),
+    ),
+])
+def test_redeposit_cannot_recycle_cumulative_cap(p, f, a):
+    r = call(p=p, f=f, a=a)
+    assert r["status"] == "HOLD_LIFETIME_CREDITS_EXCEED_STANDING_CAP"
+    assert r["synthetic_max_new_buy_usd"] is None
+    never_live(r)
+
+
+def test_gross_equal_cap_and_net_below_cap_stays_synthetic_preview_only():
+    f = funding("6000.00")
+    f["events"] += [
+        {"id": "withdraw", "type": "CSW",
+         "amount_usd": "2000.00", "settled": True},
+        {"id": "second", "type": "CSD",
+         "amount_usd": "4000.00", "settled": True},
+    ]
+    r = call(f=f, a=account("8000.00", "8000.00"))
+    assert r["status"] == "PREVIEW_ONLY_NO_BROKER_ORDER"
+    assert r["synthetic_net_funded_principal_usd"] == "8000.00"
+    never_live(r)
+
+
 def test_multiple_funded_deposits_inside_hypothetical_cap():
     f = funding("8000.00")
     f["events"].append({"id": "dep2", "type": "CSD",
