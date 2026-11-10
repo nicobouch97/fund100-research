@@ -429,3 +429,43 @@ The existing original $130.30 principal ceiling, $65 new-order limit,
 HIGH risk selection, ACWI sale HOLD, operator STOP and ENGAGED broker kill
 remain unchanged. This weekly nontrading source job uses only existing SEC
 requester identity, no Alpaca keys and GitHub read-only contents permission.
+
+
+## 10 November — source-only bank/credit original two-10-K optional concepts
+
+Main original SEC32 capture on [run 42869594479](https://github.com/nicobouch97/fund100-research/actions/runs/42869594479)
+preserved 9/32 generic P4A coverage. Its independent **8** finance
+SIC 6000-6799 labels were **5 bank/lending/credit/finance**, **1 insurance**,
+**1 REIT 6798**, **1 blank-check 6770** (not an investable-stock approval).
+Across ALL 8, **6** have core original own-10-K assets/equity/net-income
+source availability, one lacks two original 10-Ks, one has core facts not
+aligned to the same two original accessions. These are separate marginal
+counts: they do NOT locate which subtype is in which core status.
+
+Next bank/credit data contract is a **separate optional source test only**
+for those current SIC 6000-6199 issuer descriptors, without an assumed
+deposit-taking bank identity. Precommit exact currently published FASB
+US-GAAP USD *instant* source concepts **DepositsDomestic**
+(domestic deposit liabilities only),
+**LoansAndLeasesReceivableNetReportedAmount** (reported net loans/leases),
+and **FinancingReceivableAllowanceForCreditLosses** (credit loss allowance).
+Report marginal missing-tag issuer counts and a SEPARATE joint original
+two-eligible-own-10-K source-alignment state, only for the finance-core
+ready subset. Require exact original accession, filed day, FY end,
+no flow-style start for instant facts, finite original dollar amounts,
+non-conflicting rows, and the existing conservative filing lag, unique
+FY pair and staleness limits. Core-ineligible stays explicit; never
+backfill with later filing comparative rows or alternative tags.
+
+All bank/credit-category status counts must reconcile to the five
+original current-SIC subtype cases in each run. Do NOT cross-tab source
+coverage by specific SIC or reveal names, symbols, CIKs, original amounts
+or group-level stock picks. No assumptions of loans/deposits across
+nonbank credit firms and no adverse quality verdict from a missing tag.
+This is NOT a bank capitalization, NPL, reserve adequacy, deposit cost,
+liquidity, solvency, valuation, ETF suitability, return prediction,
+historical security eligibility or trade model. A later distinct
+banking model needs actual regulatory credit/capital input definitions
+and professionally reviewed economics. No additional SEC GETs,
+broker calls or private state writes. Existing HIGH, STOP, kill switch,
+USD 130.30 cumulative pilot cap and USD 65 ticket cap are untouched.
