@@ -39,6 +39,26 @@ USD buying power before actual conversion, booking and reconciliation.
 - Explicitly HOLDs funds over the cap: a *virtual sleeve label* cannot
   segregate extra dollars in one fungible Alpaca account.
 
+## 10 November 2026 — cumulative cap anti-recycling correction
+
+The original standalone synthetic NAV/ticket preview checked only *net*
+cash-code contributions against the hypothetical capital ceiling. In an
+invented withdraw/redeposit sequence, net principal could be at or below
+the ceiling even as lifetime gross CSD credits exceeded it. The preview
+now separately accumulates *gross lifetime modeled CSD credits*, and
+HOLDs with `HOLD_LIFETIME_CREDITS_EXCEED_STANDING_CAP` whenever the
+gross total exceeds the proposed cap, even if current net principal fits.
+Regression cases cover both the original $130.30 pilot and a $10,000
+hypothetical mandate, plus the allowed gross-equals-cap boundary.
+
+This is strictly a **synthetic modeling correction**. Actual Alpaca CSD
+and CSW activity codes can include returned transfers, so neither the
+gross model count nor the fixture's `settled=True` authenticates an
+owner-funded deposit, settlement or bank transaction. The independent
+bank/source evidence, separate signed principal ledger, immutable
+head and one-time new capital mandate remain absent. No live release,
+broker connection, orders, changes to original caps, or owner actions.
+
 ## Remaining production-critical work
 
 1. Versioned, separately signed standing USD capital mandate and revocation,
