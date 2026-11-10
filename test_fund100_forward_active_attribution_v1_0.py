@@ -79,9 +79,11 @@ def test_signed_synthetic_cost_drag_algebra_and_same_weight_difference():
         assert row["recovered_cost_drag_log_relative_wealth_pp"] < 0
         assert row["gross_selection_minus_acwi_total_return_pp"] > row[
             "net_strategy_minus_acwi_total_return_pp"]
+    # Two independent strict-forward observations are too few for a
+    # statistically useful model-correlation estimate. Never report 1.0.
     assert d["strict_forward_gross_active_return_correlations"]=={
-        "V3__V4":1.0, "V3__RM25":1.0, "V4__RM25":1.0}
-    assert d["all_original_models_highly_similar_on_strict_forward_observations"] is True
+        "V3__V4":None, "V3__RM25":None, "V4__RM25":None}
+    assert d["all_original_models_highly_similar_on_strict_forward_observations"] is False
 
 
 def test_genuine_scorecard_chain_or_original_manifest_mutation_fails():
