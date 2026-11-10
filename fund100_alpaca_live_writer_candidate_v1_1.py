@@ -1115,6 +1115,10 @@ def submit_v6_s1_original_acwi_fractional_sell(*,
         or order_time.get("sell_only_original_legacy_ACWI") is not True
         or order_time.get("buy_authorized") is not False
         or order_time.get("capital_ceiling_usd")!="130.30"
+        # Independent last-mile defense: SELL original shares only.
+        # Unattributed gross CSD credits never unlock BUY principal.
+        or order_time.get("unattributed_credit_or_new_principal_spend_authorized") is not False
+        or order_time.get("original_acwi_sell_only_no_additional_principal_deployment") is not True
         or order_time.get("full_original_acwi_exit_bounded_by_authenticated_inventory") is not True
         or order_time.get("maximum_new_order_notional_usd")!="65.00"
         or order_time.get("orders_submitted_here")!=0
