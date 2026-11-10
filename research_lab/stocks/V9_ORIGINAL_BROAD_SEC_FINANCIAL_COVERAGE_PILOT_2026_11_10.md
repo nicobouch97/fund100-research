@@ -120,6 +120,55 @@ source acquisition, NEVER asserted to be a vintage of the original
 historical filing day. No cross-sector financial grade, value factor
 or stock-picking signal is promoted by this diagnostic.
 
+## 10 November — actual missing-data root causes and next original-tag test
+
+The first [PR #615 original-root-cause main run #42844685650](https://github.com/nicobouch97/fund100-research/actions/runs/42844685650)
+completed with the **same original sample roster SHA256** as the first
+32-CIK capture (unchanged: 9 scored, 23 unscored), and 83,250,629
+original SEC-document bytes observed. All reasons now reconcile:
+- **11** unscored original issuers lack one or more of the four exact
+  generic P4A US-GAAP USD accounting concepts in the current original
+  companyfacts source. This is the dominant **observable** source gap;
+  it does not mean the issuer has no economics or files no 10-K.
+- **4** have 2+ 10-K forms and all four generic tags somewhere in the
+  retrieved current companyfacts JSON, but no qualified, own-accession
+  consecutive fiscal-year 10-K pair under P4A. Presence of the tag is
+  not proof of an eligible original fiscal annual fact.
+- **2** have one, and **2** have zero, 10-K forms in
+  `filings.recent`; not proof there were never older 10-Ks.
+- **3** strict original source/sector contract rejections and **1**
+  explicitly stale annual report.
+- **8** among the 20 with ordinary missing/stale P4A states include
+  older `filings.files` metadata, NOT downloaded earlier SEC filings.
+
+These results direct the next research question to **exact missing
+generic accounting concepts** instead of blindly fetching older filing
+indexes. Before substituting any field or changing the scoring
+model, count separately for each original unscored missing-tag issuer:
+which P4A concept (revenue, operating income, operating cash flow,
+capital expenditure) lacks original `us-gaap.<tag>.units.USD`
+rows. In the **same original downloaded companyfacts already in
+memory**, count possible alternate *source-tag presence only* for:
+- revenue: `Revenues` and `SalesRevenueNet`;
+- capital expenditure: `PaymentsToAcquireProductiveAssets`.
+
+These are historic US-GAAP concept names used in other SEC/issuer
+contexts, NOT equivalent financial accounts, and may differ in
+definition, fiscal year, USD unit, financial sector and period or
+original 10-K accession. All aggregate counts use the same 32
+denominator and compare against the previously admitted 11 missing
+tag cases; missing-field tags can overlap, so sum of per-tag gaps may
+exceed eleven. Every potential alternative is a separately labelled
+REVIEW count, not a 10-K availability, validated revenue/capex fact,
+quality score, value factor, backtest, market signal or authorization.
+
+**No additional SEC GETs**, issuer roster or raw response publication
+are introduced by this next diagnostic. Historic issuer source bytes
+are STILL not permanently archived. Only independently matching
+original accession/period, audited concept meaning and business-sector
+appropriate economics should ever lead to a new scored model version;
+do not silently change frozen P4A or older 24/100 SEC cohorts.
+
 ## Explicit limitations and safety
 
 Only a 32-issuer diagnostic sample; the 5,027-issuer source-wording

@@ -54,6 +54,9 @@ def test_source_linked_eligible_apple_and_independent_ibm_404_are_counted():
         "ANNUAL_REPORTED_QUALITY_AVAILABLE_NOT_TRADE_READY":1,
     }
     assert out["unscored_original_source_reason_counts"]=={}
+    assert out["missing_exact_generic_usgaap_USD_tag_issuer_counts"]=={}
+    assert out["possible_alternative_usgaap_tag_presence_NOT_a_substitute"]=={}
+    assert out["no_alternative_tag_applied_to_quality_score"] is True
     assert out["generic_unavailable_issuers_with_undownloaded_older_SEC_file_descriptors_only"]==0
     assert out["filings_files_metadata_does_not_prove_archived_10K_or_authorize_backfill"] is True
     assert out["unscored_source_reasons_are_not_company_valuation_judgments"] is True
@@ -90,6 +93,11 @@ def test_industrial_quality_model_missing_is_not_zero_imputed():
     assert out["unscored_original_source_reason_counts"]=={
         "TWO_PLUS_10K_MISSING_GENERIC_CONCEPT_OR_USD_ROWS":1
     }
+    assert out["missing_exact_generic_usgaap_USD_tag_issuer_counts"]=={
+        "revenue":1, "operating_income":1, "operating_cash_flow":1,
+        "capital_expenditure":1,
+    }
+    assert out["possible_alternative_usgaap_tag_presence_NOT_a_substitute"]=={}
     assert out["generic_unavailable_issuers_with_undownloaded_older_SEC_file_descriptors_only"]==0
 
 
@@ -181,6 +189,73 @@ def test_optional_SEC_older_descriptor_malformed_type_is_hard_hold():
         m._unscored_source_reason(
             companyfacts=facts,submissions=sub,
             model_state="MISSING_ELIGIBLE_FULL_YEAR_FILINGS")
+
+
+def test_alternative_revenue_and_capex_tag_presence_is_no_annual_score():
+    """Even tags with matching USD rows do not stand in for own-10-K accounts."""
+    def load(cik, kind):
+        if cik==320193:
+            return _apple_source(cik,kind)
+        facts,sub=fqa.sample()
+        if kind=="companyfacts":
+            facts["cik"]=51143
+            gaap=facts["facts"]["us-gaap"]
+            revenue=gaap.pop(m.quality.ANNUAL_TAGS["revenue"])
+            capex=gaap.pop(m.quality.ANNUAL_TAGS["capital_expenditure"])
+            gaap["Revenues"]=revenue
+            gaap["SalesRevenueNet"]=revenue
+            gaap["PaymentsToAcquireProductiveAssets"]=capex
+            return json.dumps(facts).encode()
+        sub["cik"]=51143
+        return json.dumps(sub).encode()
+    out=run(fetcher=load)
+    assert out["sample_outcome_counts"][
+        "generic_two_fiscal_year_filing_lagged_score_available"]==1
+    assert out["sample_outcome_counts"]["generic_filing_lagged_score_unavailable"]==1
+    assert out["unscored_original_source_reason_counts"]=={
+        "TWO_PLUS_10K_MISSING_GENERIC_CONCEPT_OR_USD_ROWS":1,
+    }
+    assert out["missing_exact_generic_usgaap_USD_tag_issuer_counts"]=={
+        "revenue":1, "capital_expenditure":1
+    }
+    assert out["possible_alternative_usgaap_tag_presence_NOT_a_substitute"]=={
+        "revenue:Revenues":1,
+        "revenue:SalesRevenueNet":1,
+        "capital_expenditure:PaymentsToAcquireProductiveAssets":1,
+    }
+    assert out["alternative_tag_exists_in_any_current_companyfacts_not_same_10K_proof"] is True
+    assert out["no_alternative_tag_applied_to_quality_score"] is True
+    assert "Apple Inc." not in json.dumps(out)
+    assert out["broker_orders"]==out["broker_reads"]==0
+
+
+def test_alternate_tag_without_USD_rows_is_not_evidence():
+    def loader(cik,kind):
+        if cik==320193:
+            return _apple_source(cik,kind)
+        facts,sub=fqa.sample()
+        if kind=="companyfacts":
+            facts["cik"]=51143
+            gaap=facts["facts"]["us-gaap"]
+            del gaap[m.quality.ANNUAL_TAGS["revenue"]]
+            gaap["Revenues"]={"units":{"shares":[{"val":10}]}}
+            return json.dumps(facts).encode()
+        sub["cik"]=51143
+        return json.dumps(sub).encode()
+    out=run(fetcher=loader)
+    assert out["missing_exact_generic_usgaap_USD_tag_issuer_counts"]=={"revenue":1}
+    assert out["possible_alternative_usgaap_tag_presence_NOT_a_substitute"]=={}
+
+
+def test_genuine_usd_tag_presence_does_not_override_filing_packet_eligibility():
+    fact,sub=fqa.sample()
+    names=m._missing_generic_concepts(fact)
+    assert names==()
+    sub["filings"]["recent"]["form"]=["8-K","8-K"]
+    reason, _=m._unscored_source_reason(
+        companyfacts=fact,submissions=sub,
+        model_state="MISSING_ELIGIBLE_FULL_YEAR_FILINGS")
+    assert reason=="ZERO_10K_IN_RECENT_SUBMISSIONS_LEDGER"
 
 
 def test_source_identity_mismatch_is_hard_hold_not_missing():
