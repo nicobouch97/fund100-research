@@ -56,6 +56,70 @@ To test this concrete data dependency using authentic original sources:
    source counts. Make all source/count arithmetic reconcile. A later real
    run must be examined independently before claiming any coverage ratio.
 
+## 10 November original SEC32 receipt and next root-cause research
+
+The first deployed main-only 32-issuer original SEC availability probe
+[run #42833812358](https://github.com/nicobouch97/fund100-research/actions/runs/42833812358)
+succeeded with **32/32 issuer-matched original SEC submissions+companyfacts**,
+**9/32** qualifying for the existing strict generic two-10-K P4A score,
+**19/32** reporting `MISSING_ELIGIBLE_FULL_YEAR_FILINGS`,
+**1/32** reporting stale annual filings, and **3/32** rejected by
+the generic P4A original-source structure/fact contract. All 32 stayed
+in the predeclared sample. Missing P4A scores are not poor investments.
+
+The existing P4A contract requires its **four exact generic US-GAAP
+dollar concept tags** within own original 10-K accessions, full-year
+dates, two eligible consecutive FY reports, two-weekday filing delays
+and nonstale current FY. It examines ONLY the SEC
+`submissions.filings.recent` ledger already in the original API
+response, not the extra `submissions.filings.files` older filing
+archives. Missing coverage is therefore not proof that a company has
+no valid original 10-K, or that its economic value is zero.
+
+### No-extra-fetch diagnostic on the SAME 32 original GETs
+
+Use the already downloaded SEC companyfacts and submissions **in memory**
+and publish only counts for every unscored original issuer. The precedence
+is declared in advance:
+
+1. **P4A original strict validation rejected**: original facts conflict,
+   malformed or issuer-specific model assumptions incompatible. Does not
+   reclassify the issuer as low-score.
+2. **Latest annual report too stale**: P4A reported its existing
+   `LAST_ANNUAL_REPORT_TOO_STALE` state.
+3. For P4A `MISSING_ELIGIBLE_FULL_YEAR_FILINGS`, count 0, 1 or
+   2+ actual 10-K **forms in the authenticated current
+   `filings.recent` ledger**. Zero/one means P4A lacks enough
+   originally linked accessions in its **view**, not that the issuer
+   never filed earlier forms.
+4. For 2+ 10-K forms, independently count whether any of the
+   four exact **generic** P4A US-GAAP tags lacks USD source rows;
+   otherwise label them as **concepts present but no qualified
+   pair**, where own-accession, filing period, FY comparison, lag or
+   economics may still be unsupported. Do NOT impute missing facts.
+5. For the cases in steps 2–4, separately count whether the current
+   original submissions JSON advertises **older
+   `filings.files` descriptors**. This metadata indicates additional
+   files could be obtained under future explicit source contracts;
+   it is NOT downloaded archive content and is not proof that any
+   earlier 10-K is available or admissible.
+
+All diagnostic category counts MUST reconcile to the existing strict
+unscored total (including rejected original source cases); old-file
+descriptor subset is separately bounded by the number of P4A
+result-state unscored issuers. No CIK, ticker, issuer name,
+document table, individual path, source raw bytes or financial value
+is stored in the redacted public report.
+
+This cannot distinguish every source/sector issue. It first establishes
+whether the dominant gap is missing **recent** 10-K ledger coverage
+versus exact generic tag coverage versus fully populated but
+unqualified original annual packets. Any later access to SEC older
+submissions must be a separate bounded, identity-verified prospective
+source acquisition, NEVER asserted to be a vintage of the original
+historical filing day. No cross-sector financial grade, value factor
+or stock-picking signal is promoted by this diagnostic.
+
 ## Explicit limitations and safety
 
 Only a 32-issuer diagnostic sample; the 5,027-issuer source-wording

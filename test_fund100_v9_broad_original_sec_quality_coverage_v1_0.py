@@ -53,6 +53,10 @@ def test_source_linked_eligible_apple_and_independent_ibm_404_are_counted():
     assert out["generic_original_filing_contract_states"]=={
         "ANNUAL_REPORTED_QUALITY_AVAILABLE_NOT_TRADE_READY":1,
     }
+    assert out["unscored_original_source_reason_counts"]=={}
+    assert out["generic_unavailable_issuers_with_undownloaded_older_SEC_file_descriptors_only"]==0
+    assert out["filings_files_metadata_does_not_prove_archived_10K_or_authorize_backfill"] is True
+    assert out["unscored_source_reasons_are_not_company_valuation_judgments"] is True
     assert out["official_SEC_document_bytes_observed"]>100
     assert len(out["official_SEC_documents_observed_sha256_aggregate"])==64
     assert out["selection_method"]=="PREDECLARED_SHA256_CIK_SORT_NO_RETURN_OR_FINANCIAL_SELECTION"
@@ -83,6 +87,100 @@ def test_industrial_quality_model_missing_is_not_zero_imputed():
     }
     assert out["generic_original_filing_contract_states"][
         "MISSING_ELIGIBLE_FULL_YEAR_FILINGS"]==1
+    assert out["unscored_original_source_reason_counts"]=={
+        "TWO_PLUS_10K_MISSING_GENERIC_CONCEPT_OR_USD_ROWS":1
+    }
+    assert out["generic_unavailable_issuers_with_undownloaded_older_SEC_file_descriptors_only"]==0
+
+
+@pytest.mark.parametrize("form_count,reason", [
+    (0, "ZERO_10K_IN_RECENT_SUBMISSIONS_LEDGER"),
+    (1, "ONE_10K_IN_RECENT_SUBMISSIONS_LEDGER"),
+    (2, "TWO_PLUS_10K_CONCEPTS_PRESENT_BUT_NO_QUALIFIED_PAIR"),
+])
+def test_no_fake_historical_10k_from_metadata_only(form_count, reason):
+    facts,sub=fqa.sample()
+    sub["filings"]["recent"]["form"]=[
+        "10-K" if i<form_count else "8-K" for i in range(2)]
+    sub["filings"]["files"]=[{
+        "name":"CIK0000320193-submissions-001.json",
+        "filingFrom":"2022-01-01",
+        "filingTo":"2024-12-31",
+        "filingCount":500,
+    }]
+    observed=m._unscored_source_reason(
+        companyfacts=facts,submissions=sub,
+        model_state="MISSING_ELIGIBLE_FULL_YEAR_FILINGS")
+    assert observed==(reason,True)
+    assert m._unscored_source_reason(
+        companyfacts=facts,submissions=sub,
+        model_state="LAST_ANNUAL_REPORT_TOO_STALE")==(
+        "LATEST_ANNUAL_TOO_STALE",True)
+
+
+def test_two_recent_10k_but_a_generic_revenue_tag_missing_is_not_extrapolated():
+    facts,sub=fqa.sample()
+    del facts["facts"]["us-gaap"][m.quality.ANNUAL_TAGS["revenue"]]
+    category,old_files=m._unscored_source_reason(
+        companyfacts=facts,submissions=sub,
+        model_state="MISSING_ELIGIBLE_FULL_YEAR_FILINGS")
+    assert category=="TWO_PLUS_10K_MISSING_GENERIC_CONCEPT_OR_USD_ROWS"
+    assert old_files is False
+
+
+def test_full_live_sample_counts_missing_10k_separately_from_invalid_facts():
+    def loader(cik,kind):
+        if cik==320193:
+            return _apple_source(cik,kind)
+        facts,sub=fqa.sample()
+        if kind=="companyfacts":
+            facts["cik"]=51143
+            return json.dumps(facts).encode()
+        sub["cik"]=51143
+        sub["filings"]["recent"]["form"]=["8-K","8-K"]
+        sub["filings"]["files"]=[{"name":"not-downloaded-older-source.json"}]
+        return json.dumps(sub).encode()
+    out=run(fetcher=loader)
+    assert out["sample_outcome_counts"][
+        "generic_filing_lagged_score_unavailable"]==1
+    assert out["unscored_original_source_reason_counts"]=={
+        "ZERO_10K_IN_RECENT_SUBMISSIONS_LEDGER":1
+    }
+    assert out["generic_unavailable_issuers_with_undownloaded_older_SEC_file_descriptors_only"]==1
+    assert "not-downloaded-older-source" not in json.dumps(out)
+
+
+def test_strict_P4A_fact_conflict_quarantined_not_inferred_as_bad_issuer():
+    def loader(cik,kind):
+        if cik!=320193:
+            return None
+        facts, sub=fqa.sample()
+        if kind=="companyfacts":
+            d=facts["facts"]["us-gaap"]
+            tag=m.quality.ANNUAL_TAGS["revenue"]
+            invalid=dict(d[tag]["units"]["USD"][0])
+            invalid["val"] += 1
+            d[tag]["units"]["USD"].append(invalid)
+        return json.dumps(facts if kind=="companyfacts" else sub).encode()
+    out=run(fetcher=loader)
+    assert out["sample_outcome_counts"]=={
+        "at_least_one_SEC_document_HTTP_404":1,
+        "both_SEC_documents_received_and_CIK_matched":1,
+        "SEC_facts_incompatible_with_generic_industrial_quality_contract":1,
+    }
+    assert out["unscored_original_source_reason_counts"]=={
+        "P4A_ORIGINAL_SOURCE_STRICT_VALIDATION_REJECTED":1
+    }
+    assert out["generic_unavailable_issuers_with_undownloaded_older_SEC_file_descriptors_only"]==0
+
+
+def test_optional_SEC_older_descriptor_malformed_type_is_hard_hold():
+    facts,sub=fqa.sample()
+    sub["filings"]["files"]={"name":"fake"}
+    with pytest.raises(m.SourceHold,match="descriptors"):
+        m._unscored_source_reason(
+            companyfacts=facts,submissions=sub,
+            model_state="MISSING_ELIGIBLE_FULL_YEAR_FILINGS")
 
 
 def test_source_identity_mismatch_is_hard_hold_not_missing():
