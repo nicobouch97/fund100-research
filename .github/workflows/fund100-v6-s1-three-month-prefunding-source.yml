@@ -1,12 +1,12 @@
 name: Fund-100 V6-S1 Protected Three-Month Prefunding Eight GET (NO ORDERS)
 
 on:
-  # One unattended weekly replay nine minutes after NYSE core open.
+  # One unattended WEEKDAY eight-GET source check near NYSE core open.
   # 09:39 America/New_York automatically tracks EST/EDT; no UTC drift.
-  # This is a STOP-only eight-GET observation, NOT a trade release.
-  # GitHub schedule delivery is best effort; a missed slot never authorises an order.
+  # This is STOP-only historical source observation, NOT a trade release.
+  # GitHub schedule delivery is best effort; late/holiday/closed runs HOLD.
   schedule:
-    - cron: "39 9 * * 1"
+    - cron: "39 9 * * 1-5"
       timezone: "America/New_York"
   push:
     branches: [main]
