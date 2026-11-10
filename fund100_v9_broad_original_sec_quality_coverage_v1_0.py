@@ -271,6 +271,57 @@ def _joint_four_inputs_same_original_10k_years(*, companyfacts: dict,
     return "FOUR_SOURCE_INPUTS_SHARE_TWO_ORIGINAL_10KS_REVIEW_ONLY"
 
 
+def _issuer_original_source_accounting_context(*, companyfacts: dict,
+                                               submissions: dict) -> tuple[str, str]:
+    """Coarse ORIGINAL CURRENT SEC metadata only, never an issuer sector proof.
+
+    SIC describes the issuer's current SEC categorisation; it cannot
+    determine a listed share class or economic business-line exposure.
+    XBRL taxonomy namespace availability does not imply complete facts,
+    adequate annual sources or suitable industrial FCF accounting.
+    """
+    facts = companyfacts.get("facts")
+    if type(facts) is not dict:
+        raise SourceHold("Original SEC companyfacts namespace structure invalid")
+    us = facts.get("us-gaap")
+    ifrs = facts.get("ifrs-full")
+    if us is not None and type(us) is not dict:
+        raise SourceHold("Malformed original SEC US-GAAP namespace")
+    if ifrs is not None and type(ifrs) is not dict:
+        raise SourceHold("Malformed original SEC IFRS namespace")
+    if us is not None and ifrs is not None:
+        taxonomy = "CURRENT_SEC_BOTH_US_GAAP_AND_IFRS_NAMESPACES_SOURCE_ONLY"
+    elif us is not None:
+        taxonomy = "CURRENT_SEC_US_GAAP_NAMESPACE_SOURCE_ONLY"
+    elif ifrs is not None:
+        taxonomy = "CURRENT_SEC_IFRS_NAMESPACE_SOURCE_ONLY"
+    else:
+        taxonomy = "CURRENT_SEC_NO_US_GAAP_OR_IFRS_NAMESPACE"
+
+    source_sic = submissions.get("sic")
+    if source_sic is None or source_sic == "":
+        sic_band = "CURRENT_SEC_SIC_UNAVAILABLE_NO_SECTOR_INFERENCE"
+    else:
+        if type(source_sic) is int:
+            sic = source_sic
+        elif (type(source_sic) is str and len(source_sic) == 4
+              and source_sic.isascii() and source_sic.isdecimal()):
+            sic = int(source_sic)
+        else:
+            raise SourceHold("Unrecognised original SEC issuer SIC metadata type")
+        if not 100 <= sic <= 9999:
+            sic_band = "CURRENT_SEC_SIC_UNCLASSIFIED_NO_SECTOR_INFERENCE"
+        elif 6000 <= sic <= 6799:
+            sic_band = "CURRENT_SIC_FINANCE_INSURANCE_REAL_ESTATE_REVIEW"
+        elif 4900 <= sic <= 4999:
+            sic_band = "CURRENT_SIC_UTILITIES_REVIEW"
+        elif 1000 <= sic <= 1499:
+            sic_band = "CURRENT_SIC_MINING_EXTRACTION_REVIEW"
+        else:
+            sic_band = "CURRENT_SIC_OTHER_CANNOT_ESTABLISH_BUSINESS_MODEL"
+    return taxonomy, sic_band
+
+
 def _missing_generic_concepts(companyfacts: dict) -> tuple[str, ...]:
     """Only exact source field presence, independent of historical filing."""
     concepts = companyfacts["facts"]["us-gaap"]
@@ -323,6 +374,8 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
     potential_alternative_tag_presence_only = Counter()
     alternative_tag_own_accession_10k_pair_states = Counter()
     joint_four_inputs_same_10k_source_review_states = Counter()
+    original_current_accounting_taxonomy_by_P4A_outcome = defaultdict(Counter)
+    original_current_SIC_source_band_by_P4A_outcome = defaultdict(Counter)
     unscored_with_older_descriptors = 0
     total_bytes = 0
     source_digest = sha256(b"FUND100_V9_ORIGINAL_SEC_DOCUMENT_SOURCE_DIGEST_V1\n")
@@ -351,6 +404,9 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
             outcomes["at_least_one_SEC_document_HTTP_404"] += 1
             continue
         outcomes["both_SEC_documents_received_and_CIK_matched"] += 1
+        current_taxonomy, current_sic_band = _issuer_original_source_accounting_context(
+            companyfacts=original["companyfacts"],
+            submissions=original["submissions"])
         try:
             observed_quality = quality.asof_quality(
                 original["companyfacts"], original["submissions"],
@@ -360,6 +416,10 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
             # Differentiate strict P4A rejection from a low quality score.
             # Preserve unknown details; never reinterpret as poor economics.
             unscored_source_reasons["P4A_ORIGINAL_SOURCE_STRICT_VALIDATION_REJECTED"] += 1
+            original_current_accounting_taxonomy_by_P4A_outcome[
+                "STRICT_ORIGINAL_SOURCE_REJECTED"][current_taxonomy] += 1
+            original_current_SIC_source_band_by_P4A_outcome[
+                "STRICT_ORIGINAL_SOURCE_REJECTED"][current_sic_band] += 1
             continue
         model_states[observed_quality["state"]] += 1
         if observed_quality.get("score") is not None:
@@ -369,8 +429,16 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
                 or observed_quality["broker_order_count"] != 0):
                 raise SourceHold("Original financial model claimed trading authority")
             outcomes["generic_two_fiscal_year_filing_lagged_score_available"] += 1
+            original_current_accounting_taxonomy_by_P4A_outcome[
+                "ORIGINAL_GENERIC_SCORE_AVAILABLE"][current_taxonomy] += 1
+            original_current_SIC_source_band_by_P4A_outcome[
+                "ORIGINAL_GENERIC_SCORE_AVAILABLE"][current_sic_band] += 1
         else:
             outcomes["generic_filing_lagged_score_unavailable"] += 1
+            original_current_accounting_taxonomy_by_P4A_outcome[
+                "ORIGINAL_GENERIC_SCORE_UNAVAILABLE"][current_taxonomy] += 1
+            original_current_SIC_source_band_by_P4A_outcome[
+                "ORIGINAL_GENERIC_SCORE_UNAVAILABLE"][current_sic_band] += 1
             reason, archived_descriptor_only = _unscored_source_reason(
                 companyfacts=original["companyfacts"],
                 submissions=original["submissions"],
@@ -423,6 +491,27 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
         or any(count >
                missing_generic_concept_usd_counts.get(key.split(":")[0], 0)
                for key, count in potential_alternative_tag_presence_only.items())
+        or sum(
+            sum(counts.values())
+            for counts in original_current_accounting_taxonomy_by_P4A_outcome.values()
+        ) != outcomes["both_SEC_documents_received_and_CIK_matched"]
+        or sum(
+            sum(counts.values())
+            for counts in original_current_SIC_source_band_by_P4A_outcome.values()
+        ) != outcomes["both_SEC_documents_received_and_CIK_matched"]
+        or any(
+            sum(counts.values()) != (
+                outcomes["generic_two_fiscal_year_filing_lagged_score_available"]
+                if status == "ORIGINAL_GENERIC_SCORE_AVAILABLE" else
+                outcomes["generic_filing_lagged_score_unavailable"]
+                if status == "ORIGINAL_GENERIC_SCORE_UNAVAILABLE" else
+                outcomes["SEC_facts_incompatible_with_generic_industrial_quality_contract"]
+            )
+            for group in (
+                original_current_accounting_taxonomy_by_P4A_outcome,
+                original_current_SIC_source_band_by_P4A_outcome)
+            for status, counts in group.items()
+        )
         or sum(joint_four_inputs_same_10k_source_review_states.values()) !=
         unscored_source_reasons.get(
             "TWO_PLUS_10K_MISSING_GENERIC_CONCEPT_OR_USD_ROWS", 0)
@@ -462,6 +551,14 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
             dict(sorted(joint_four_inputs_same_10k_source_review_states.items())),
         "joint_four_input_source_alignment_not_accounting_semantics_verified": True,
         "joint_four_input_source_alignment_never_promotes_original_P4A_score": True,
+        "original_current_SEC_taxonomy_namespace_by_P4A_outcome_NOT_an_accounting_model": {
+            k: dict(sorted(v.items())) for k, v in sorted(
+                original_current_accounting_taxonomy_by_P4A_outcome.items())},
+        "original_current_SEC_SIC_coarse_band_by_P4A_outcome_NOT_an_industry_exposure": {
+            k: dict(sorted(v.items())) for k, v in sorted(
+                original_current_SIC_source_band_by_P4A_outcome.items())},
+        "SEC_current_SIC_does_not_verify_US_common_security_or_sector_accounting": True,
+        "current_taxonomy_namespace_is_not_verified_historical_filing_coverage": True,
         "alternative_10K_pair_diagnostic_does_not_make_revenue_capex_interchangeable": True,
         "alternative_tag_exists_in_any_current_companyfacts_not_same_10K_proof": True,
         "no_alternative_tag_applied_to_quality_score": True,

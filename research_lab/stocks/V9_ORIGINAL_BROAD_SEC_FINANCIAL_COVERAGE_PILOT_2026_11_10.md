@@ -279,6 +279,64 @@ A subsequent financial-accounting specialist review would be
 required before constructing a distinct, sector-aware quality
 contract. No new SEC GETs or broker calls are authorised.
 
+## 10 November — authentic joint-four-field source audit and next sector question
+
+The merged main-only original 32-issuer audit
+[run #42857616871](https://github.com/nicobouch97/fund100-research/actions/runs/42857616871)
+completed successfully. The original 32-CIK digest and 9 strictly
+generic-quality-score cases did not change. Among the 11 original
+missing-generic-concept cases:
+
+- **2** have all four source input fields aligned to exactly the
+  SAME two eligible own-accession annual 10-Ks: source REVIEW ONLY.
+- **1** has sources but not all four from the same two original
+  annual 10-K accessions.
+- **8** cannot provide at least one required original US-GAAP USD
+  field even using the THREE preregistered alternate source tags.
+
+No accounting synonyms have been approved; no scores improved from
+9/32. The next useful question is not another arbitrary tag scan:
+are the cases with missing industrial accounting concepts actually
+present-day SEC issuers in bank/insurance/REIT, utility, mining or
+other industries, or does the current original SEC companyfacts
+contain IFRS rather than US-GAAP namespaces?
+
+### Original current SEC issuer context only — NO extra fetches
+
+For each of the existing 32 original SEC current issuer original
+document pairs already downloaded, obtain only **source-metadata
+presence and coarse issuer categorisation**, never identifiers:
+
+- The source SEC submissions issuer SIC code, **coarsely** grouped as
+  finance/insurance/real-estate (6000–6799), utilities (4900–4999),
+  extraction/mining (1000–1499), other, missing or unclassified.
+  The SIC is issuer-level CURRENT metadata; it does not establish
+  the individual listed security's business exposure, taxonomy,
+  legal ordinary-share status, true sector or historic classification.
+- Whether current original SEC companyfacts has a US-GAAP,
+  IFRS-full, both or neither XBRL namespace. **Namespace presence
+  is not proof of annual audited financial facts or cross-sector
+  comparison**. Some SEC filings may be foreign/private/financial
+  and still not have a usable industrial cash-flow model.
+- Count only coarse SIC/source taxonomy groups separately for
+  **original strict generic P4A score available**, **generic score
+  unavailable**, and **original strict source rejected** outcomes.
+  All group totals reconcile with original 32 issuer document
+  receipt and 9/20/3 original P4A outcomes. Never publish individual
+  CIK, symbol, name, exact source SIC, financial values or a
+  cross-tab identifying a company by intersecting rare categories.
+
+This is a PRELIMINARY sector/source-coverage diagnostic, not a
+sector-specific score, industry classification service, issuer
+identity master, quality improvement, valuation model, historical
+point-in-time representation or new trading authority. If original
+SIC/IFRS context points to separate accounting regimes, the next
+economic development is to identify distinct bank/REIT/foreign
+financial concepts from independently defensible source definitions
+rather than force the US-industrial P4A ratio onto those entities.
+No new SEC GETs, share eligibility claims, original raw bytes
+archive, broker calls, added pilot capital or changes to STOP/kills.
+
 ## Explicit limitations and safety
 
 Only a 32-issuer diagnostic sample; the 5,027-issuer source-wording
