@@ -1,0 +1,46 @@
+name: Fund-100 V9 Official US Listing Discovery Offline CI (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v9_official_current_listing_discovery_v1_0.py"
+      - "test_fund100_v9_official_current_listing_discovery_v1_0.py"
+      - "research_lab/stocks/V9_OFFICIAL_CURRENT_LISTINGS_PROSPECTIVE_SOURCE_2026_11_10.md"
+      - ".github/workflows/fund100-v9-official-listings-offline.yml"
+      - ".github/workflows/fund100-v9-official-listings-capture.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v9_official_current_listing_discovery_v1_0.py"
+      - "test_fund100_v9_official_current_listing_discovery_v1_0.py"
+      - "research_lab/stocks/V9_OFFICIAL_CURRENT_LISTINGS_PROSPECTIVE_SOURCE_2026_11_10.md"
+      - ".github/workflows/fund100-v9-official-listings-offline.yml"
+      - ".github/workflows/fund100-v9-official-listings-capture.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  official-listing-source-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install offline tests only
+        run: python -m pip install --disable-pip-version-check --no-input 'pytest>=8,<9'
+      - name: Test actual source parser with malformed, stale, duplicate and redacted fixtures
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_v9_official_current_listing_discovery_v1_0.py
+          python - <<'PY'
+          import fund100_v9_official_current_listing_discovery_v1_0 as m
+          assert m.LIVE_ORDER_AUTHORIZED is False
+          assert m.NO_BROKER_READS == m.NO_BROKER_ORDERS == m.NO_PRIVATE_STATE_WRITES == 0
+          assert m.FILES == ('nasdaqlisted.txt','otherlisted.txt')
+          print('Research parser tested offline; zero broker, no investment permission.')
+          PY
