@@ -8,8 +8,9 @@ source hashes and a roster commitment, NOT a roster, CIKs or rankings.
 Existing filing-lagged P4A annual metrics are COVERAGE diagnostics only.
 """
 from __future__ import annotations
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
+import math
 from hashlib import sha256
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -117,6 +118,64 @@ def _has_usd_concept(concepts: dict, tag: str) -> bool:
     return type(usd_rows) is list and bool(usd_rows)
 
 
+def _alternative_original_10k_pair_status(*, companyfacts: dict,
+                                         submissions: dict, tag: str,
+                                         asof: str) -> str:
+    """Check original SEC 10-K provenance, NEVER accounting interchangeability.
+
+    A candidate alternative tag existing ANYWHERE in modern SEC companyfacts
+    is not equivalent to the generic revenue/capex field. Even a matched
+    pair only authorizes REVIEW of the concept's meaning, not an actual
+    financial score or past-as-of data vintage. No value leaves memory.
+    """
+    if not _has_usd_concept(companyfacts["facts"]["us-gaap"], tag):
+        return "NO_USD_SOURCE_ROWS"
+    day = quality.iso_date(asof, "SEC observation as-of date")
+    filings = quality.submissions_index(submissions)
+    rows = companyfacts["facts"]["us-gaap"][tag]["units"]["USD"]
+    by_end = defaultdict(dict)
+    for row in rows:
+        if type(row) is not dict:
+            raise SourceHold("Invalid alternative SEC concept source row")
+        accn = row.get("accn")
+        filing = filings.get(accn)
+        if (filing is None or filing["form"] != "10-K"
+            or row.get("form") != "10-K"
+            or row.get("filed") != filing["filed"]
+            or row.get("end") != filing["end"]):
+            continue
+        try:
+            end = quality.iso_date(row.get("end"), "alternative fact end")
+            start = quality.iso_date(row.get("start"), "alternative fact start")
+        except quality.StockSourceStop:
+            continue
+        if (not quality.MIN_FY_DAYS <= (end-start).days <= quality.MAX_FY_DAYS
+            or quality.iso_date(
+                quality.availability_day(filing["filed"]), "filing availability") > day
+            or end > day):
+            continue
+        value = row.get("val")
+        if (type(value) not in (int, float) or
+            not math.isfinite(float(value)) or abs(value) > 1e15):
+            raise SourceHold("Invalid original alternative SEC annual USD amount")
+        existing = by_end[end].get(accn)
+        if existing is not None and existing != value:
+            return "CONFLICTING_OR_MULTIPLE_10K_SOURCE_VINTAGES"
+        by_end[end][accn] = value
+    # Never select an arbitrarily favourable original 10-K amendment or
+    # recast and then pretend it was unique first-vintage history.
+    if any(len(v) != 1 for v in by_end.values()):
+        return "CONFLICTING_OR_MULTIPLE_10K_SOURCE_VINTAGES"
+    years = sorted(by_end)
+    if len(years) < 2:
+        return "FEWER_THAN_TWO_ELIGIBLE_OWN_10K_FISCAL_YEARS"
+    prior, latest = years[-2:]
+    if (not 330 <= (latest-prior).days <= 400 or
+        (day-latest).days > quality.MAX_STALENESS_DAYS):
+        return "LATEST_TWO_10K_FY_NOT_CONSECUTIVE_AND_FRESH"
+    return "TWO_OWN_ACCESSION_10K_FY_FACTS_REVIEW_ONLY_NOT_EQUIVALENT"
+
+
 def _missing_generic_concepts(companyfacts: dict) -> tuple[str, ...]:
     """Only exact source field presence, independent of historical filing."""
     concepts = companyfacts["facts"]["us-gaap"]
@@ -167,6 +226,7 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
     unscored_source_reasons = Counter()
     missing_generic_concept_usd_counts = Counter()
     potential_alternative_tag_presence_only = Counter()
+    alternative_tag_own_accession_10k_pair_states = Counter()
     unscored_with_older_descriptors = 0
     total_bytes = 0
     source_digest = sha256(b"FUND100_V9_ORIGINAL_SEC_DOCUMENT_SOURCE_DIGEST_V1\n")
@@ -234,7 +294,14 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
                     missing_generic_concept_usd_counts[label] += 1
                     for alias in RESEARCH_ONLY_ALTERNATIVE_CONCEPTS.get(label, ()):
                         if _has_usd_concept(concepts, alias):
-                            potential_alternative_tag_presence_only[label + ":" + alias] += 1
+                            tag_key = label + ":" + alias
+                            potential_alternative_tag_presence_only[tag_key] += 1
+                            status = _alternative_original_10k_pair_status(
+                                companyfacts=original["companyfacts"],
+                                submissions=original["submissions"],
+                                tag=alias, asof=observed.date().isoformat())
+                            alternative_tag_own_accession_10k_pair_states[
+                                tag_key + ":" + status] += 1
     if (outcomes["at_least_one_SEC_document_HTTP_404"] +
         outcomes["both_SEC_documents_received_and_CIK_matched"] != len(sample)
         or outcomes["both_SEC_documents_received_and_CIK_matched"] !=
@@ -254,7 +321,16 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
                 "TWO_PLUS_10K_MISSING_GENERIC_CONCEPT_OR_USD_ROWS", 0))
         or any(count >
                missing_generic_concept_usd_counts.get(key.split(":")[0], 0)
-               for key, count in potential_alternative_tag_presence_only.items())):
+               for key, count in potential_alternative_tag_presence_only.items())
+        or sum(alternative_tag_own_accession_10k_pair_states.values()) !=
+        sum(potential_alternative_tag_presence_only.values())
+        or any(key.split(":")[-1] not in {
+             "NO_USD_SOURCE_ROWS",
+             "CONFLICTING_OR_MULTIPLE_10K_SOURCE_VINTAGES",
+             "FEWER_THAN_TWO_ELIGIBLE_OWN_10K_FISCAL_YEARS",
+             "LATEST_TWO_10K_FY_NOT_CONSECUTIVE_AND_FRESH",
+             "TWO_OWN_ACCESSION_10K_FY_FACTS_REVIEW_ONLY_NOT_EQUIVALENT"}
+             for key in alternative_tag_own_accession_10k_pair_states)):
         raise SourceHold("Sample source coverage and gap categories did not reconcile")
     return {
         "schema": SCHEMA,
@@ -276,6 +352,9 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
             dict(sorted(missing_generic_concept_usd_counts.items())),
         "possible_alternative_usgaap_tag_presence_NOT_a_substitute":
             dict(sorted(potential_alternative_tag_presence_only.items())),
+        "alternative_tag_original_10K_own_accession_pair_diagnostics_NOT_equivalence":
+            dict(sorted(alternative_tag_own_accession_10k_pair_states.items())),
+        "alternative_10K_pair_diagnostic_does_not_make_revenue_capex_interchangeable": True,
         "alternative_tag_exists_in_any_current_companyfacts_not_same_10K_proof": True,
         "no_alternative_tag_applied_to_quality_score": True,
         "generic_unavailable_issuers_with_undownloaded_older_SEC_file_descriptors_only":
