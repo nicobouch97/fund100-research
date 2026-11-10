@@ -128,7 +128,7 @@ def test_same_calendar_versions_as_future_first_sale_with_no_broker_creds_at_ins
 def test_only_main_readonly_job_receives_credentials():
     y = yml()
     assert "  workflow_dispatch:" in y and "  push:" in y
-    assert ('  schedule:\n    - cron: "39 9 * * 1"\n'
+    assert ('  schedule:\n    - cron: "39 9 * * 1-5"\n'
             '      timezone: "America/New_York"\n  push:\n') in y
     assert y.count("  schedule:") == 1 and y.count("    - cron:") == 1
     assert "  pull_request:" not in y
@@ -147,19 +147,20 @@ def test_only_main_readonly_job_receives_credentials():
 
 
 @pytest.mark.parametrize("altered", [
-    lambda s: s.replace('39 9 * * 1', '00 * * * *'),
-    lambda s: s.replace('39 9 * * 1', '39 9 * * 2'),
+    lambda s: s.replace('39 9 * * 1-5', '00 * * * *'),
+    lambda s: s.replace('39 9 * * 1-5', '39 9 * * 1'),
+    lambda s: s.replace('39 9 * * 1-5', '39 9 * * 2-5'),
     lambda s: s.replace(
-        '  schedule:\n    - cron: "39 9 * * 1"\n'
+        '  schedule:\n    - cron: "39 9 * * 1-5"\n'
         '      timezone: "America/New_York"\n', ''),
-    lambda s: s.replace('    - cron: "39 9 * * 1"\n',
-                        '    - cron: "39 9 * * 1"\n    - cron: "00 * * * *"\n'),
-    lambda s: s.replace('39 9 * * 1', '29 9 * * 1'),
+    lambda s: s.replace('    - cron: "39 9 * * 1-5"\n',
+                        '    - cron: "39 9 * * 1-5"\n    - cron: "00 * * * *"\n'),
+    lambda s: s.replace('39 9 * * 1-5', '29 9 * * 1-5'),
     lambda s: s.replace('timezone: "America/New_York"', 'timezone: "Europe/London"'),
     lambda s: s.replace('      timezone: "America/New_York"\n', ''),
     lambda s: s.replace('timezone: "America/New_York"', 'timezone: "UTC"'),
 ])
-def test_weekly_only_readonly_schedule_is_exact_or_scope_revoked(altered):
+def test_weekday_only_readonly_schedule_is_exact_or_scope_revoked(altered):
     current = yml()
     changed = altered(current)
     assert changed != current
@@ -181,5 +182,6 @@ def test_original_replay_dependency_changes_refresh_getonly_not_orders():
     assert y.count("ALPACA_LIVE_KEY: "+chr(36)+"{{ secrets.ALPACA_LIVE_KEY }}") == 1
     assert y.count("ALPACA_LIVE_SECRET: "+chr(36)+"{{ secrets.ALPACA_LIVE_SECRET }}") == 1
     assert y.count("    - cron:") == 1
+    assert '    - cron: "39 9 * * 1-5"' in y
     assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in y
     assert audit.approved_scoped_live_script(WORKFLOW, SOURCE, y)
