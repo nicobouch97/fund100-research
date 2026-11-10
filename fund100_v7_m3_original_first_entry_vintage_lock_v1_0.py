@@ -657,6 +657,8 @@ def main():
     p.add_argument("--latest-dir",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)
     p.add_argument("--dividend-evidence-file",type=Path)
+    p.add_argument("--audited-source-revision-hold",action="store_true",
+                   help="Only classify exact frozen-entry vendor revision as a blocked source result, never as an accepted return")
     a=p.parse_args()
     initial_prices=_csv(a.first_entry_dir/"new-price-manifest.csv")
     subsequent_prices=_csv(a.latest_dir/"new-price-manifest.csv")
@@ -698,6 +700,21 @@ def main():
             a.output.write_text(json.dumps(
                 diagnostic,sort_keys=True,indent=2)+"\n")
             print("Blocked revised entry price vintage; forensic artifact written.")
+            # Only the EXACT known vendor-revision integrity HOLD can be
+            # reported as a classified outcome. This is NOT return acceptance.
+            # Unknown failures, missing receipts and all other source errors
+            # remain failures even with the opt-in classification flag.
+            if a.audited_source_revision_hold:
+                if (diagnostic.get("status") !=
+                    "BLOCKED_REVISED_ENTRY_VENDOR_VINTAGE_RESEARCH_ONLY"
+                    or diagnostic.get("not_a_return_or_alpha_estimate") is not True
+                    or diagnostic.get("do_not_replace_original_entry_anchor") is not True
+                    or diagnostic.get("no_trading_authority") is not True
+                    or diagnostic.get("broker_orders") != 0):
+                    raise EntryAnchorStop("Blocked vendor diagnostic not auditable")
+                print("RESEARCH_SOURCE_STATUS: BLOCKED_ENTRY_VENDOR_REVISION_NO_RETURNS")
+                print("Trading: ZERO. Original entry remains pinned.")
+                return
         raise
     a.output.write_text(json.dumps(result,sort_keys=True,indent=2)+"\n")
     print(result["status"],"source price symbols:",result["entry_date_price_symbols_compared"])
