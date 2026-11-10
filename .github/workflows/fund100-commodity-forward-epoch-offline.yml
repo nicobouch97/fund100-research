@@ -1,0 +1,51 @@
+name: Fund-100 Commodity Prospective Gap Epoch Offline CI (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_commodity_forward_observer_v1_0.py"
+      - "test_fund100_commodity_forward_observer_v1_0.py"
+      - "research_lab/FUND100_COMMODITY_FORWARD_GAP_RECOVERY_2026_11_09.md"
+      - ".github/workflows/fund100-commodity-forward-epoch-offline.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_commodity_forward_observer_v1_0.py"
+      - "test_fund100_commodity_forward_observer_v1_0.py"
+      - "research_lab/FUND100_COMMODITY_FORWARD_GAP_RECOVERY_2026_11_09.md"
+      - ".github/workflows/fund100-commodity-forward-epoch-offline.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-no-backfill-commodity-restart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install only commodity shadow verification dependencies
+        run: python -m pip install --disable-pip-version-check --no-input -r requirements.txt
+      - name: Prove legacy immutable chain, explicit gap restart and zero orders
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_commodity_forward_observer_v1_0.py
+          python - <<'PY'
+          from pathlib import Path
+          import fund100_commodity_forward_observer_v1_0 as m
+          assert m.LEGACY_SCHEMA == "FUND100_COMMODITY_FORWARD_SHADOW_V1"
+          assert m.SCHEMA == "FUND100_COMMODITY_FORWARD_SHADOW_V2"
+          assert m.RESET_REASON == "MISSED_COMPLETED_VENDOR_SESSIONS_NO_BACKFILL"
+          original=m.read_ledger(Path("research_lab/commodities/prospective/observations.jsonl"))
+          assert original
+          assert any(row["asof_session"] == "2026-10-29"
+                     and row["schema"] == m.LEGACY_SCHEMA for row in original)
+          assert all(row["trading_authorized"] is False
+                     and row["broker_order_count"] == 0 for row in original)
+          print("Original frozen forward ledger intact; no vendor backfill or broker order.")
+          PY

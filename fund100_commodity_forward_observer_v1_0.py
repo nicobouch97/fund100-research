@@ -9,8 +9,9 @@ NAV and source digests. Three separate hypotheses are compared:
 - C1 lagged GLD/DBC trend
 - C2 separate gold real-yield/credit and DBC inflation regime
 
-A missed observation blocks further updates: NEVER manufacture a prospective
-result retrospectively. Public adjusted closes may revise between runs,
+A missed observation starts a NEW, visibly labelled forward-only epoch
+with reference NAV reset to 100 rather than inventing missed performance.
+The old hash chain remains unchanged. Never backfill prospective returns. Public adjusted closes may revise between runs,
 so returns use only the previously COMMITTED close and the newly observed
 close, rather than overwriting past prices. Signals can still be affected
 by vendor revisions in the historically downloaded lookback series; hashes
@@ -33,7 +34,10 @@ import fund100_commodity_etp_research_v1_0 as c1
 import fund100_commodity_macro_c2_v1_0 as c2
 
 LEDGER_PATH = Path("research_lab/commodities/prospective/observations.jsonl")
-SCHEMA = "FUND100_COMMODITY_FORWARD_SHADOW_V1"
+SCHEMA = "FUND100_COMMODITY_FORWARD_SHADOW_V2"
+LEGACY_SCHEMA = "FUND100_COMMODITY_FORWARD_SHADOW_V1"
+MAX_GAP_SESSIONS = 260
+RESET_REASON = "MISSED_COMPLETED_VENDOR_SESSIONS_NO_BACKFILL"
 COST_BPS_PER_SIDE = 15
 MODELS = ("static", "C1_trend", "C2_regime")
 INITIAL_NAV = 100.0
@@ -59,6 +63,8 @@ def validate_ledger(records: object) -> list[dict]:
         raise ForwardObservationStop("Prospective records must be a list.")
     prior_hash = None
     prior_date = None
+    prior_epoch = 1
+    prior_schema = None
     for row in records:
         if not isinstance(row, dict):
             raise ForwardObservationStop("Malformed prospective entry.")
@@ -66,8 +72,11 @@ def validate_ledger(records: object) -> list[dict]:
         fields = {k: v for k, v in row.items() if k != "record_sha256"}
         if not isinstance(digest, str) or digest != sha256(fields):
             raise ForwardObservationStop("Prospective history entry has changed.")
-        if row.get("schema") != SCHEMA:
+        version = row.get("schema")
+        if version not in (LEGACY_SCHEMA, SCHEMA):
             raise ForwardObservationStop("Unknown prospective record format.")
+        if prior_schema == SCHEMA and version == LEGACY_SCHEMA:
+            raise ForwardObservationStop("Prospective schema may not roll backward.")
         if row.get("previous_record_sha256") != prior_hash:
             raise ForwardObservationStop("Prospective hash chain broken.")
         try:
@@ -78,6 +87,36 @@ def validate_ledger(records: object) -> list[dict]:
             raise ForwardObservationStop("Prospective dates not strictly increasing.")
         if row.get("trading_authorized") is not False or row.get("broker_order_count") != 0:
             raise ForwardObservationStop("Prospective records cannot authorize trading.")
+        if version == SCHEMA:
+            epoch = row.get("research_epoch")
+            gap = row.get("epoch_reset_due_to_observation_gap")
+            skipped = row.get("skipped_vendor_sessions")
+            reason = row.get("epoch_reset_reason")
+            if (type(epoch) is not int or epoch < 1
+                or type(gap) is not bool
+                or type(skipped) is not int or skipped < 0
+                or skipped > MAX_GAP_SESSIONS
+                or (gap and (
+                    prior_hash is None
+                    or skipped < 1
+                    or reason != RESET_REASON
+                    or epoch != prior_epoch + 1
+                    or row.get("model_start_session") != row["asof_session"]
+                    or row.get("period_return_observed") is not False))
+                or (not gap and (
+                    skipped != 0 or reason is not None
+                    or epoch != prior_epoch
+                    or row.get("period_return_observed") is not
+                       (prior_hash is not None)))):
+                raise ForwardObservationStop(
+                    "Prospective forward epoch continuity/explicit gap invalid.")
+        else:
+            if any(field in row for field in (
+                "research_epoch", "epoch_reset_due_to_observation_gap",
+                "skipped_vendor_sessions", "epoch_reset_reason")):
+                raise ForwardObservationStop("Legacy source fakes a new epoch.")
+            epoch = 1
+            gap = False
         if set(row.get("models", {})) != set(MODELS):
             raise ForwardObservationStop("Prospective model set changed.")
         if set(row.get("prices", {})) != set(c1.PRICES):
@@ -98,8 +137,20 @@ def validate_ledger(records: object) -> list[dict]:
             nav = item.get("nav")
             if type(nav) not in (int, float) or not 0 < nav < 1e9:
                 raise ForwardObservationStop("Malformed stored reference NAV.")
+            if gap and (
+                abs(nav - INITIAL_NAV) > 1e-9
+                or item["weights"] != {"GLD": 0.0, "DBC": 0.0, "SHY": 1.0}
+                or item.get("rebalance_one_way_turnover") != 0.0):
+                raise ForwardObservationStop(
+                    "Gap epoch must reset all model NAVs and risk weights.")
+        if gap and (
+            row.get("shy_nav") != INITIAL_NAV
+            or row.get("spy_nav") != INITIAL_NAV):
+            raise ForwardObservationStop("Gap epoch control NAVs were carried.")
         prior_date = date
         prior_hash = digest
+        prior_epoch = epoch
+        prior_schema = version
     return records
 
 
@@ -123,20 +174,35 @@ def make_record(*, prices: pd.DataFrame, macro: pd.DataFrame,
     previous = existing[-1] if existing else None
     if previous and current_date == previous["asof_session"]:
         return None  # idempotent replay, no retroactive NAV changes
-    if previous and (
-        len(data.index) < 2
-        or data.index[-2].date().isoformat() != previous["asof_session"]
-    ):
-        raise ForwardObservationStop(
-            "Missing intervening forward observation: manual review required."
-        )
+    skipped = 0
+    gap_restart = False
+    if previous:
+        last_date = previous["asof_session"]
+        # No vendor retraction of the original committed session.
+        old_matches = [
+            i for i, stamp in enumerate(data.index)
+            if stamp.date().isoformat() == last_date
+        ]
+        if len(old_matches) != 1:
+            raise ForwardObservationStop(
+                "Previously committed vendor session missing: HOLD.")
+        skipped = len(data.index) - old_matches[0] - 2
+        if not 0 <= skipped <= MAX_GAP_SESSIONS:
+            raise ForwardObservationStop(
+                "Cannot establish finite forward gap in source sessions.")
+        gap_restart = skipped > 0
+    new_epoch = (
+        (previous.get("research_epoch", 1) + 1)
+        if gap_restart else
+        (previous.get("research_epoch", 1) if previous else 1)
+    )
     observed_prices = {
         sym: float(data[sym].iloc[-1]) for sym in c1.PRICES
     }
     nav_models = {}
     next_shy = INITIAL_NAV
     next_spy = INITIAL_NAV
-    if previous:
+    if previous and not gap_restart:
         returns = {}
         for sym in c1.PRICES:
             old = float(previous["prices"][sym])
@@ -152,7 +218,7 @@ def make_record(*, prices: pd.DataFrame, macro: pd.DataFrame,
     else:
         returns = {}
 
-    new_month = previous is not None and (
+    new_month = previous is not None and not gap_restart and (
         current_date[:7] != previous["asof_session"][:7]
     )
     if new_month:
@@ -169,7 +235,7 @@ def make_record(*, prices: pd.DataFrame, macro: pd.DataFrame,
         goals = {}
 
     for model in MODELS:
-        if previous is None:
+        if previous is None or gap_restart:
             nav_models[model] = {
                 "nav": INITIAL_NAV,
                 "weights": {"GLD": 0.0, "DBC": 0.0, "SHY": 1.0},
@@ -210,7 +276,12 @@ def make_record(*, prices: pd.DataFrame, macro: pd.DataFrame,
         "previous_record_sha256":
             previous["record_sha256"] if previous else None,
         "model_start_session":
-            previous["model_start_session"] if previous else current_date,
+            previous["model_start_session"]
+            if previous is not None and not gap_restart else current_date,
+        "research_epoch": new_epoch,
+        "epoch_reset_due_to_observation_gap": gap_restart,
+        "skipped_vendor_sessions": skipped,
+        "epoch_reset_reason": RESET_REASON if gap_restart else None,
         "prices": observed_prices,
         "price_source_sha256": c1.data_hash(data),
         "macro_source_sha256": c2.macro_hash(series),
@@ -219,7 +290,7 @@ def make_record(*, prices: pd.DataFrame, macro: pd.DataFrame,
         "models": nav_models,
         "shy_nav": round(next_shy, 10),
         "spy_nav": round(next_spy, 10),
-        "period_return_observed": previous is not None,
+        "period_return_observed": previous is not None and not gap_restart,
         "trading_authorized": False,
         "broker_order_count": 0,
         "paper_promoted": False,
@@ -271,6 +342,9 @@ def main() -> None:
     print("Commodity public forward observation:", row["asof_session"])
     print("Prospective observations total:", len(existing)+1)
     print("Forward model session start:", row["model_start_session"])
+    print("Research epoch:", row["research_epoch"])
+    print("Missed source sessions (NOT backfilled):", row["skipped_vendor_sessions"])
+    print("Epoch reset due to gap:", row["epoch_reset_due_to_observation_gap"])
     print("Latest recorded static benchmark NAV:", row["models"]["static"]["nav"])
     print("Latest recorded C1 reference NAV:", row["models"]["C1_trend"]["nav"])
     print("Latest recorded C2 reference NAV:", row["models"]["C2_regime"]["nav"])
