@@ -231,7 +231,7 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
         "sample_outcome_counts": dict(sorted(outcomes.items())),
         "generic_original_filing_contract_states": dict(sorted(model_states.items())),
         "unscored_original_source_reason_counts": dict(sorted(unscored_source_reasons.items())),
-        "unscored_issuer_count_with_undownloaded_older_SEC_file_descriptors_only":
+        "generic_unavailable_issuers_with_undownloaded_older_SEC_file_descriptors_only":
             unscored_with_older_descriptors,
         "filings_files_metadata_does_not_prove_archived_10K_or_authorize_backfill": True,
         "generic_tag_presence_is_not_a_validated_own_accession_10K_fact": True,
