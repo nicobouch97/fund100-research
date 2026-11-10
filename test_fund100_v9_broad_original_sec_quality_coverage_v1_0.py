@@ -223,6 +223,12 @@ def test_alternative_revenue_and_capex_tag_presence_is_no_annual_score():
         "revenue:SalesRevenueNet":1,
         "capital_expenditure:PaymentsToAcquireProductiveAssets":1,
     }
+    assert out["alternative_tag_original_10K_own_accession_pair_diagnostics_NOT_equivalence"]=={
+        "revenue:Revenues:TWO_OWN_ACCESSION_10K_FY_FACTS_REVIEW_ONLY_NOT_EQUIVALENT":1,
+        "revenue:SalesRevenueNet:TWO_OWN_ACCESSION_10K_FY_FACTS_REVIEW_ONLY_NOT_EQUIVALENT":1,
+        "capital_expenditure:PaymentsToAcquireProductiveAssets:TWO_OWN_ACCESSION_10K_FY_FACTS_REVIEW_ONLY_NOT_EQUIVALENT":1,
+    }
+    assert out["alternative_10K_pair_diagnostic_does_not_make_revenue_capex_interchangeable"] is True
     assert out["alternative_tag_exists_in_any_current_companyfacts_not_same_10K_proof"] is True
     assert out["no_alternative_tag_applied_to_quality_score"] is True
     assert "Apple Inc." not in json.dumps(out)
@@ -245,6 +251,97 @@ def test_alternate_tag_without_USD_rows_is_not_evidence():
     out=run(fetcher=loader)
     assert out["missing_exact_generic_usgaap_USD_tag_issuer_counts"]=={"revenue":1}
     assert out["possible_alternative_usgaap_tag_presence_NOT_a_substitute"]=={}
+    assert out["alternative_tag_original_10K_own_accession_pair_diagnostics_NOT_equivalence"]=={}
+
+
+def test_alternative_10k_source_fact_only_one_own_fiscal_year_cannot_qualify():
+    facts,sub=fqa.sample()
+    gaap=facts["facts"]["us-gaap"]
+    gaap["Revenues"]={"units":{"USD":[
+        dict(gaap[m.quality.ANNUAL_TAGS["revenue"]]["units"]["USD"][-1])
+    ]}}
+    assert m._alternative_original_10k_pair_status(
+        companyfacts=facts,submissions=sub,tag="Revenues",
+        asof="2026-11-10")=="FEWER_THAN_TWO_ELIGIBLE_OWN_10K_FISCAL_YEARS"
+
+
+def test_alternative_comparative_disclosed_later_cannot_retroactively_pass():
+    facts,sub=fqa.sample()
+    rows=facts["facts"]["us-gaap"][m.quality.ANNUAL_TAGS["revenue"]]["units"]["USD"]
+    amended=[dict(x) for x in rows]
+    amended[0]["accn"]=fqa.ACCESSIONS[-1]
+    amended[0]["filed"]=fqa.FILINGS[-1]
+    facts["facts"]["us-gaap"]["Revenues"]={"units":{"USD":amended}}
+    assert m._alternative_original_10k_pair_status(
+        companyfacts=facts,submissions=sub,tag="Revenues",
+        asof="2026-11-10")=="FEWER_THAN_TWO_ELIGIBLE_OWN_10K_FISCAL_YEARS"
+
+
+def test_second_10k_not_eligible_until_two_weekday_filing_lag():
+    facts,sub=fqa.sample()
+    gaap=facts["facts"]["us-gaap"]
+    gaap["Revenues"]=gaap[m.quality.ANNUAL_TAGS["revenue"]]
+    sub["filings"]["recent"]["filingDate"][-1]="2026-11-09"
+    gaap["Revenues"]["units"]["USD"][-1]["filed"]="2026-11-09"
+    assert m._alternative_original_10k_pair_status(
+        companyfacts=facts,submissions=sub,tag="Revenues",
+        asof="2026-11-10")=="FEWER_THAN_TWO_ELIGIBLE_OWN_10K_FISCAL_YEARS"
+
+
+def test_amended_same_fy_original_10k_must_remain_ambiguous():
+    facts,sub=fqa.sample()
+    gaap=facts["facts"]["us-gaap"]
+    gaap["Revenues"]={"units":{"USD":[dict(x)
+        for x in gaap[m.quality.ANNUAL_TAGS["revenue"]]["units"]["USD"]]}}
+    amended="0000320193-26-000099"
+    for key, values in sub["filings"]["recent"].items():
+        values.append({
+            "accessionNumber":amended,
+            "form":"10-K",
+            "filingDate":"2026-11-04",
+            "reportDate":"2026-10-30",
+            "acceptanceDateTime":"2026-11-04T19:00:00.000Z",
+        }[key])
+    row=dict(gaap["Revenues"]["units"]["USD"][-1])
+    row["accn"]=amended
+    gaap["Revenues"]["units"]["USD"].append(row)
+    assert m._alternative_original_10k_pair_status(
+        companyfacts=facts,submissions=sub,tag="Revenues",
+        asof="2026-11-10")=="CONFLICTING_OR_MULTIPLE_10K_SOURCE_VINTAGES"
+
+
+def test_same_fy_source_fact_period_conflict_not_hidden_by_same_usd_amount():
+    facts,sub=fqa.sample()
+    gaap=facts["facts"]["us-gaap"]
+    gaap["Revenues"]={"units":{"USD":[dict(x)
+        for x in gaap[m.quality.ANNUAL_TAGS["revenue"]]["units"]["USD"]]}}
+    row=dict(gaap["Revenues"]["units"]["USD"][-1])
+    row["start"]="2025-11-02"  # still annual length, but distinct FY start
+    gaap["Revenues"]["units"]["USD"].append(row)
+    assert m._alternative_original_10k_pair_status(
+        companyfacts=facts,submissions=sub,tag="Revenues",
+        asof="2026-11-10")=="CONFLICTING_OR_MULTIPLE_10K_SOURCE_VINTAGES"
+
+
+def test_malformed_matching_original_10k_amount_is_rejected_not_imputed():
+    facts,sub=fqa.sample()
+    gaap=facts["facts"]["us-gaap"]
+    gaap["Revenues"]={"units":{"USD":[dict(x)
+        for x in gaap[m.quality.ANNUAL_TAGS["revenue"]]["units"]["USD"]]}}
+    gaap["Revenues"]["units"]["USD"][-1]["val"]=True
+    with pytest.raises(m.SourceHold,match="amount"):
+        m._alternative_original_10k_pair_status(
+            companyfacts=facts,submissions=sub,tag="Revenues",
+            asof="2026-11-10")
+
+
+def test_10k_pair_is_stale_at_later_asof_and_cannot_be_backfilled():
+    facts,sub=fqa.sample()
+    gaap=facts["facts"]["us-gaap"]
+    gaap["Revenues"]=gaap[m.quality.ANNUAL_TAGS["revenue"]]
+    assert m._alternative_original_10k_pair_status(
+        companyfacts=facts,submissions=sub,tag="Revenues",
+        asof="2028-11-10")=="LATEST_TWO_10K_FY_NOT_CONSECUTIVE_AND_FRESH"
 
 
 def test_genuine_usd_tag_presence_does_not_override_filing_packet_eligibility():
