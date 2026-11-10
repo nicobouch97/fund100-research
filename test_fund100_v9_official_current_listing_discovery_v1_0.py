@@ -60,10 +60,6 @@ def test_source_dated_nonetf_not_equated_to_common_stock():
     lambda s: s.update({"nasdaqlisted.txt": raw(footer="File Creation Time: 0801202610:00")}),
     lambda s: s.update({"nasdaqlisted.txt": raw(footer="File Creation Time: 1210202610:00")}),
     lambda s: s.update({"nasdaqlisted.txt": raw(rows=NROWS + (NROWS[0],))}),
-    lambda s: s.update({"nasdaqlisted.txt": raw(rows=NROWS[:-1] +
-        ("FOO|Malformed unknown flag|G|?|N|100|N|N",))}),
-    lambda s: s.update({"otherlisted.txt": raw("otherlisted.txt",
-        rows=OROWS + ("BAD|Bad exchange|?|BAD|N|100|N|BAD",))}),
     lambda s: s.update({"nasdaqlisted.txt": raw(header="Symbol|ETF|Test Issue")}),
     lambda s: s.update({"nasdaqlisted.txt": raw()[:-1]}),
     lambda s: s.update({"nasdaqlisted.txt": raw().replace(b"|Q|N|N|", b"|Q|N|N|EXTRA|")}),
@@ -71,6 +67,49 @@ def test_source_dated_nonetf_not_equated_to_common_stock():
 def test_fails_closed_on_missing_stale_mutated_or_repeated_source(bad):
     s = sources()
     bad(s)
+    with pytest.raises(m.ListingsStop):
+        m.report(s, observed=ASOF)
+
+
+@pytest.mark.parametrize("filename,bad_row", [
+    ("nasdaqlisted.txt", "FOO|Unknown test flag|G|?|N|100|N|N"),
+    ("nasdaqlisted.txt", "FOO|Unknown ETF flag|G|N|N|100|?|N"),
+    ("nasdaqlisted.txt", "FOO|Unknown market|?|N|N|100|N|N"),
+    ("otherlisted.txt", "FOO|Unknown ETF flag|N|FOO|?|100|N|FOO"),
+    ("otherlisted.txt", "FOO|Unknown exchange|?|FOO|N|100|N|FOO"),
+])
+def test_unexplained_real_source_codes_are_quarantined_not_stocks(filename, bad_row):
+    s = sources()
+    rows = NROWS if filename == "nasdaqlisted.txt" else OROWS
+    s[filename] = raw(filename, rows=rows + (bad_row,))
+    result = m.report(s, observed=ASOF)
+    assert result["status"] == "SOURCE_DATED_CURRENT_LISTINGS_WITH_UNKNOWN_CODE_QUARANTINE"
+    assert result["unknown_code_rows_quarantined_total"] == 1
+    assert result["all_directory_categories_explained"] is False
+    assert result["sources"][filename]["quarantined_unknown_market_or_flags"] == 1
+    assert result["sources"][filename]["known_market_and_flag_rows"] == len(rows)
+    assert result["current_non_etf_non_test_listing_rows_total_not_stock_count"] == 4
+    assert result["live_order_authorized"] is False
+    assert result["US_common_share_security_identity_verified"] is False
+    payload = json.dumps(result)
+    assert "Unknown exchange" not in payload and "Unknown ETF flag" not in payload
+    assert "FOO" not in payload
+
+
+def test_duplicate_unknown_code_row_still_holds_structurally():
+    s = sources()
+    bad_row = "FOO|Unexplained|?|N|N|100|N|N"
+    s["nasdaqlisted.txt"] = raw(rows=NROWS + (bad_row, bad_row))
+    with pytest.raises(m.ListingsStop):
+        m.report(s, observed=ASOF)
+
+
+def test_unknown_codes_cannot_create_an_eligible_candidate():
+    s = sources()
+    s["nasdaqlisted.txt"] = raw(rows=(
+        "FOO|Unexplained|?|N|N|100|N|N",))
+    s["otherlisted.txt"] = raw("otherlisted.txt", rows=(
+        "BAR|Unexplained|?|BAR|N|100|N|BAR",))
     with pytest.raises(m.ListingsStop):
         m.report(s, observed=ASOF)
 
