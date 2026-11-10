@@ -1,0 +1,54 @@
+{
+  "US_common_share_security_identity_verified": false,
+  "all_directory_categories_explained": false,
+  "broker_POSTs": 0,
+  "broker_READs": 0,
+  "broker_orders": 0,
+  "captured_utc": "2026-11-10T12:17:01Z",
+  "corporate_actions_and_cik_mapped": false,
+  "current_non_etf_non_test_listing_rows_total_not_stock_count": 7445,
+  "expected_alpha_estimated": false,
+  "historical_listed_and_delisted_universe_authenticated": false,
+  "issuer_fundamentals_and_valuation_available": false,
+  "live_order_authorized": false,
+  "price_liquidity_spread_eligible": false,
+  "schema": "FUND100_V9_OFFICIAL_CURRENT_LISTING_DISCOVERY_V1",
+  "sources": {
+    "nasdaqlisted.txt": {
+      "etf_flag_Y_rows": 1282,
+      "known_market_and_flag_rows": 5604,
+      "listed_rows": 5604,
+      "market_codes": {
+        "G": 2488,
+        "Q": 1444,
+        "S": 1672
+      },
+      "non_etf_non_test_listing_candidates_not_common_stock": 4314,
+      "quarantined_unknown_market_or_flags": 0,
+      "source_byte_count": 348069,
+      "source_creation_date_ny": "2026-11-10",
+      "source_sha256": "9e06ab2a57f9a895e23e419678a2baeb28bfe7393330ee4b0b0ae24db02ce71c",
+      "test_issue_Y_rows": 8
+    },
+    "otherlisted.txt": {
+      "etf_flag_Y_rows": 4492,
+      "known_market_and_flag_rows": 7647,
+      "listed_rows": 7674,
+      "market_codes": {
+        "A": 314,
+        "N": 2894,
+        "P": 2761,
+        "V": 3,
+        "Z": 1675
+      },
+      "non_etf_non_test_listing_candidates_not_common_stock": 3131,
+      "quarantined_unknown_market_or_flags": 27,
+      "source_byte_count": 543254,
+      "source_creation_date_ny": "2026-11-10",
+      "source_sha256": "b35b286914ecbadd4392bda340cf3c721d3217653140459b2852c4e2395093c0",
+      "test_issue_Y_rows": 24
+    }
+  },
+  "status": "SOURCE_DATED_CURRENT_LISTINGS_WITH_UNKNOWN_CODE_QUARANTINE",
+  "unknown_code_rows_quarantined_total": 27
+}
