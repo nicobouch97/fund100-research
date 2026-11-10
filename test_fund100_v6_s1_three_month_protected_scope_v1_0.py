@@ -83,6 +83,8 @@ def test_added_writes_or_schedule_are_never_credential_scoped(unsafe):
     "fund100_v6_s1_live_risk_history_getonly_v1_0.py",
     "fund100_v6_s1_live_private_xle_activity_getonly_v1_0.py",
     "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py",
+    "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py",
+    "fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py",
     "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py",
     "fund100_v6_s1_staged_controller_core_v1_0.py",
     "fund100_v6_s1_private_git_cas_protocol_v1_0.py",
@@ -171,3 +173,13 @@ def test_source_always_reports_no_orders_or_pretrade_risk_clearance():
         assert unsafe not in s
     assert '"actual_high_6_20_35_risk_cleared": False' in s
     assert '"live_buy_sell_authorized": False' in s
+
+def test_original_replay_dependency_changes_refresh_getonly_not_orders():
+    y = yml()
+    assert '      - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"' in y
+    assert '      - "fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py"' in y
+    assert y.count("ALPACA_LIVE_KEY: "+chr(36)+"{{ secrets.ALPACA_LIVE_KEY }}") == 1
+    assert y.count("ALPACA_LIVE_SECRET: "+chr(36)+"{{ secrets.ALPACA_LIVE_SECRET }}") == 1
+    assert y.count("    - cron:") == 1
+    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in y
+    assert audit.approved_scoped_live_script(WORKFLOW, SOURCE, y)
