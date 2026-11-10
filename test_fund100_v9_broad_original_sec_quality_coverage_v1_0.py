@@ -45,6 +45,13 @@ def run(fetcher=_apple_source, **kw):
 def test_source_linked_eligible_apple_and_independent_ibm_404_are_counted():
     out=run()
     assert out["sample_size"]==2
+    assert out["original_current_SEC_taxonomy_namespace_by_P4A_outcome_NOT_an_accounting_model"]=={
+        "ORIGINAL_GENERIC_SCORE_AVAILABLE":{
+            "CURRENT_SEC_US_GAAP_NAMESPACE_SOURCE_ONLY":1}}
+    assert out["original_current_SEC_SIC_coarse_band_by_P4A_outcome_NOT_an_industry_exposure"]=={
+        "ORIGINAL_GENERIC_SCORE_AVAILABLE":{
+            "CURRENT_SEC_SIC_UNAVAILABLE_NO_SECTOR_INFERENCE":1}}
+    assert out["SEC_current_SIC_does_not_verify_US_common_security_or_sector_accounting"] is True
     assert out["sample_outcome_counts"]=={
         "at_least_one_SEC_document_HTTP_404":1,
         "both_SEC_documents_received_and_CIK_matched":1,
@@ -501,6 +508,120 @@ def test_genuine_usd_tag_presence_does_not_override_filing_packet_eligibility():
         companyfacts=fact,submissions=sub,
         model_state="MISSING_ELIGIBLE_FULL_YEAR_FILINGS")
     assert reason=="ZERO_10K_IN_RECENT_SUBMISSIONS_LEDGER"
+
+
+@pytest.mark.parametrize("sic,expected", [
+    (None, "CURRENT_SEC_SIC_UNAVAILABLE_NO_SECTOR_INFERENCE"),
+    ("", "CURRENT_SEC_SIC_UNAVAILABLE_NO_SECTOR_INFERENCE"),
+    ("6021", "CURRENT_SIC_FINANCE_INSURANCE_REAL_ESTATE_REVIEW"),
+    (6021, "CURRENT_SIC_FINANCE_INSURANCE_REAL_ESTATE_REVIEW"),
+    ("6798", "CURRENT_SIC_FINANCE_INSURANCE_REAL_ESTATE_REVIEW"),
+    ("4911", "CURRENT_SIC_UTILITIES_REVIEW"),
+    ("1311", "CURRENT_SIC_MINING_EXTRACTION_REVIEW"),
+    ("3571", "CURRENT_SIC_OTHER_CANNOT_ESTABLISH_BUSINESS_MODEL"),
+    ("0000", "CURRENT_SEC_SIC_UNCLASSIFIED_NO_SECTOR_INFERENCE"),
+])
+def test_original_SEC_sic_is_coarse_current_issuer_metadata_only(sic,expected):
+    facts,sub=fqa.sample()
+    if sic is not None:
+        sub["sic"]=sic
+    taxonomy, band=m._issuer_original_source_accounting_context(
+        companyfacts=facts,submissions=sub)
+    assert taxonomy=="CURRENT_SEC_US_GAAP_NAMESPACE_SOURCE_ONLY"
+    assert band==expected
+
+
+@pytest.mark.parametrize("change,expected", [
+    (lambda facts: facts.update({"facts":{"ifrs-full":{}}}),
+     "CURRENT_SEC_IFRS_NAMESPACE_SOURCE_ONLY"),
+    (lambda facts: facts["facts"].update({"ifrs-full":{}}),
+     "CURRENT_SEC_BOTH_US_GAAP_AND_IFRS_NAMESPACES_SOURCE_ONLY"),
+    (lambda facts: facts.update({"facts":{"dei":{}}}),
+     "CURRENT_SEC_NO_US_GAAP_OR_IFRS_NAMESPACE"),
+])
+def test_original_companyfacts_US_GAAP_vs_IFRS_namespace_is_not_annual_eligibility(change,expected):
+    facts,sub=fqa.sample()
+    change(facts)
+    taxonomy,band=m._issuer_original_source_accounting_context(
+        companyfacts=facts,submissions=sub)
+    assert taxonomy==expected
+    assert band=="CURRENT_SEC_SIC_UNAVAILABLE_NO_SECTOR_INFERENCE"
+
+
+@pytest.mark.parametrize("sic", [True, 1.5, {}, ["6021"], "NOT_A_SIC", "-100", "٦٠٢١"])
+def test_malformed_SIC_metadata_never_guesses_business_sector(sic):
+    facts,sub=fqa.sample()
+    sub["sic"]=sic
+    with pytest.raises(m.SourceHold,match="SIC"):
+        m._issuer_original_source_accounting_context(
+            companyfacts=facts,submissions=sub)
+
+
+@pytest.mark.parametrize("bad_facts", [
+    [], {}, {"us-gaap":[]}, {"us-gaap":{},"ifrs-full":8}
+])
+def test_malformed_SEC_accounting_namespace_not_treated_as_valid_US_GAAP(bad_facts):
+    facts,sub=fqa.sample()
+    facts["facts"]=bad_facts
+    with pytest.raises(m.SourceHold,match="namespace"):
+        m._issuer_original_source_accounting_context(
+            companyfacts=facts,submissions=sub)
+
+
+def test_sample_source_coverage_strict_and_missing_stay_in_same_predeclared_denominator():
+    def loader(cik,kind):
+        facts,sub=fqa.sample()
+        if cik==51143:
+            facts["cik"]=51143
+            sub["cik"]=51143
+            sub["sic"]="6021"
+            # A bank can have a US-GAAP namespace yet lack generic
+            # industrial accounting concepts. Do not set score=0.
+            facts["facts"]={"us-gaap":{}}
+        else:
+            sub["sic"]="3571"
+        return json.dumps(facts if kind=="companyfacts" else sub).encode()
+    out=run(fetcher=loader)
+    assert out["sample_outcome_counts"][
+        "generic_two_fiscal_year_filing_lagged_score_available"]==1
+    assert out["sample_outcome_counts"][
+        "generic_filing_lagged_score_unavailable"]==1
+    assert out["original_current_SEC_taxonomy_namespace_by_P4A_outcome_NOT_an_accounting_model"]=={
+        "ORIGINAL_GENERIC_SCORE_AVAILABLE":{
+            "CURRENT_SEC_US_GAAP_NAMESPACE_SOURCE_ONLY":1},
+        "ORIGINAL_GENERIC_SCORE_UNAVAILABLE":{
+            "CURRENT_SEC_US_GAAP_NAMESPACE_SOURCE_ONLY":1}}
+    assert out["original_current_SEC_SIC_coarse_band_by_P4A_outcome_NOT_an_industry_exposure"]=={
+        "ORIGINAL_GENERIC_SCORE_AVAILABLE":{
+            "CURRENT_SIC_OTHER_CANNOT_ESTABLISH_BUSINESS_MODEL":1},
+        "ORIGINAL_GENERIC_SCORE_UNAVAILABLE":{
+            "CURRENT_SIC_FINANCE_INSURANCE_REAL_ESTATE_REVIEW":1}}
+    assert out["sample_size"]==2
+    assert out["broker_orders"]==0
+    assert "6021" not in json.dumps(out)
+
+
+def test_original_IFRS_only_case_stays_unscored_or_strict_not_US_GAAP_imputed():
+    def loader(cik,kind):
+        facts,sub=fqa.sample()
+        if cik==51143:
+            facts["cik"]=51143
+            sub["cik"]=51143
+            facts["facts"]={"ifrs-full":{"Revenue":{}}}
+            sub["sic"]="6798"
+        return json.dumps(facts if kind=="companyfacts" else sub).encode()
+    out=run(fetcher=loader)
+    assert out["sample_size"]==2
+    ctx=out["original_current_SEC_taxonomy_namespace_by_P4A_outcome_NOT_an_accounting_model"]
+    # P4A's strict US-GAAP contract cannot score IFRS-only issuers;
+    # the current source context flags them WITHOUT inferring domicile.
+    assert ctx["STRICT_ORIGINAL_SOURCE_REJECTED"]=={
+        "CURRENT_SEC_IFRS_NAMESPACE_SOURCE_ONLY":1}
+    assert out["sample_outcome_counts"]["generic_two_fiscal_year_filing_lagged_score_available"]==1
+    assert out["sample_outcome_counts"][
+        "SEC_facts_incompatible_with_generic_industrial_quality_contract"]==1
+    assert out["live_authorized"] is False
+    assert out["point_in_time_historical_universe_authenticated"] is False
 
 
 def test_source_identity_mismatch_is_hard_hold_not_missing():
