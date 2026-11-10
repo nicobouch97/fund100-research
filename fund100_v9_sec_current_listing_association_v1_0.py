@@ -59,8 +59,17 @@ def sec_records(raw:bytes, *, min_rows:int=1000):
         cik, name, ticker, exchange = row
         if (type(cik) is not int or not 0 < cik < 10_000_000_000
             or type(name) is not str or not name.strip()
-            or type(ticker) is not str or type(exchange) is not str):
+            or type(ticker) is not str):
             raise AssociationStop("Malformed SEC issuer identity")
+        # Genuine SEC association source contains JSON null for some
+        # exchange fields (e.g., unassigned / not exchange-covered tickers).
+        # Never infer Nasdaq/NYSE from a null or treat it as a valid match.
+        # Count only this source-documented missingness as unqualified.
+        if exchange is None:
+            excluded["null_exchange_unqualified"] += 1
+            continue
+        if type(exchange) is not str:
+            raise AssociationStop("Malformed nonnull SEC exchange")
         # Securities with unexpected SEC ticker syntax are NOT mapped by
         # guessing or silently stripping a suffix.
         if re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,18}", ticker) is None:
