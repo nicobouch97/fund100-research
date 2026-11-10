@@ -1,0 +1,53 @@
+name: Fund-100 ETF Forward Gross Selection vs Costs Offline CI (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_forward_active_attribution_v1_0.py"
+      - "test_fund100_forward_active_attribution_v1_0.py"
+      - "research_lab/FUND100_ETF_FORWARD_SELECTION_VERSUS_COSTS_2026_11_10.md"
+      - ".github/workflows/fund100-forward-active-attribution-offline.yml"
+      - ".github/workflows/fund100-forward.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_forward_active_attribution_v1_0.py"
+      - "test_fund100_forward_active_attribution_v1_0.py"
+      - "research_lab/FUND100_ETF_FORWARD_SELECTION_VERSUS_COSTS_2026_11_10.md"
+      - ".github/workflows/fund100-forward-active-attribution-offline.yml"
+      - ".github/workflows/fund100-forward.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  actual-source-gross-cost-attribution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install only no-broker prospective evidence dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input --only-binary=:all: 'pytest>=8,<9' 'numpy==2.3.4' 'pandas==2.3.3' 'exchange-calendars==4.13.2'
+      - name: Reconcile original hashed forward ledger and expense/selection diagnostics
+        run: |
+          set -euo pipefail
+          python -m pytest -q test_fund100_forward_evidence_scorecard_v1_0.py test_fund100_forward_active_attribution_v1_0.py
+          python fund100_forward_active_attribution_v1_0.py --output /tmp/fund100-forward-gross-cost-research.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          x=json.loads(Path('/tmp/fund100-forward-gross-cost-research.json').read_text())
+          assert x['live_order_authorized'] is False
+          assert x['model_selection_or_strategy_promotion_authorized'] is False
+          assert x['broker_GETs'] == x['broker_POSTs'] == x['broker_orders'] == 0
+          assert x['gross_path_is_same_realized_weights_not_recomputed_no_fee_strategy']
+          assert set(x['models']) == {'V3','V4','RM25'}
+          print('Actual hashed Forward Lab analyzed, unchanged models, no brokerage.')
+          PY
