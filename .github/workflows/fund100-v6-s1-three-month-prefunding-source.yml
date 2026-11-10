@@ -15,6 +15,10 @@ on:
       - "test_fund100_v6_s1_three_month_prefunding_probe_v1_0.py"
       - "audit_fund100_live_boundary.py"
       - "test_fund100_v6_s1_three_month_protected_scope_v1_0.py"
+      # Reviewed changes to imported active original SELL pure replay
+      # must refresh source-only evidence on current main, not bypass STOP.
+      - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
+      - "fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py"
       - ".github/workflows/fund100-v6-s1-three-month-prefunding-source.yml"
   workflow_dispatch:
 
