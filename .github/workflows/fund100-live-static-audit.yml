@@ -30,6 +30,13 @@ on:
       - ".github/workflows/fund100-forward-active-attribution-offline.yml"
       # Public-only V9 current stock-listing source: actual publisher schema
       # drift is a research integrity gate, never a broker trading release.
+      # Cross-source SEC current issuer associations use only public research
+      # sources and never release brokerage or share-class order eligibility.
+      - "fund100_v9_sec_current_listing_association_v1_0.py"
+      - "test_fund100_v9_sec_current_listing_association_v1_0.py"
+      - "research_lab/stocks/V9_CURRENT_NASDAQ_SEC_ASSOCIATION_AUDIT_2026_11_10.md"
+      - ".github/workflows/fund100-v9-sec-listing-link-offline.yml"
+      - ".github/workflows/fund100-v9-sec-listing-link-capture.yml"
       - "fund100_v9_official_current_listing_discovery_v1_0.py"
       - "test_fund100_v9_official_current_listing_discovery_v1_0.py"
       - "research_lab/stocks/V9_OFFICIAL_CURRENT_LISTINGS_PROSPECTIVE_SOURCE_2026_11_10.md"
@@ -422,6 +429,13 @@ on:
       - ".github/workflows/fund100-forward-active-attribution-offline.yml"
       # Public-only V9 current stock-listing source: actual publisher schema
       # drift is a research integrity gate, never a broker trading release.
+      # Cross-source SEC current issuer associations use only public research
+      # sources and never release brokerage or share-class order eligibility.
+      - "fund100_v9_sec_current_listing_association_v1_0.py"
+      - "test_fund100_v9_sec_current_listing_association_v1_0.py"
+      - "research_lab/stocks/V9_CURRENT_NASDAQ_SEC_ASSOCIATION_AUDIT_2026_11_10.md"
+      - ".github/workflows/fund100-v9-sec-listing-link-offline.yml"
+      - ".github/workflows/fund100-v9-sec-listing-link-capture.yml"
       - "fund100_v9_official_current_listing_discovery_v1_0.py"
       - "test_fund100_v9_official_current_listing_discovery_v1_0.py"
       - "research_lab/stocks/V9_OFFICIAL_CURRENT_LISTINGS_PROSPECTIVE_SOURCE_2026_11_10.md"
