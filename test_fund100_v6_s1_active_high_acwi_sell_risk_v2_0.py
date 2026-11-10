@@ -140,6 +140,9 @@ def test_active_high_exact_real_get_path_yields_only_sell_scope(monkeypatch):
     assert got["full_original_acwi_exit_bounded_by_authenticated_inventory"] is True
     assert got["maximum_new_order_notional_usd"]=="65.00"
     assert got["capital_ceiling_usd"]=="130.30"
+    assert got["original_credit_at_or_below_pilot_ceiling"] is True
+    assert got["unattributed_credit_or_new_principal_spend_authorized"] is False
+    assert got["original_acwi_sell_only_no_additional_principal_deployment"] is True
     assert got["broker_post_attempts"]==0
     assert s["reads"]==8 and s["operator_gets"]==2
     for private in (ACCOUNT,QTY,KEY,SECRET):
@@ -205,7 +208,9 @@ def test_original_v5_operator_must_remain_stop_even_if_v6_operator_enabled(monke
     lambda z:z[3].update(is_open=False),
     lambda z:z[3].update(timestamp="2020-01-01T00:00:00Z"),
     lambda z:z[3].update(next_close="2020-01-01T00:00:00Z"),
-    lambda z:z[5][0].update(net_amount="200.00"),
+    lambda z:z[5][0].update(net_amount="-1.00"),
+    lambda z:z[5][0].update(net_amount="0.00"),
+    lambda z:z[5][0].update(net_amount="NaN"),
     lambda z:z[5].append({"activity_type":"CSD","net_amount":"1","id":"extra"}),
 ])
 def test_active_broker_source_rejects_modified_account_holdings_clock_or_funding(
@@ -215,6 +220,28 @@ def test_active_broker_source_rejects_modified_account_holdings_clock_or_funding
         active.inspect_active_original_acwi_sell(
             original_qty=QTY,key=KEY,secret=SECRET)
     assert s["reads"]==8
+
+def test_over_pilot_gross_csd_cannot_authorize_extra_capital_but_may_reduce_original_acwi(monkeypatch):
+    """A returned cash credit or later unapproved funding cannot block a strictly
+    inventory-bounded sale, and cannot increase spending permissions.
+    This is a mock-only future ACTIVE source; all production locks remain OFF.
+    """
+    state,docs=mock_sources(monkeypatch,
+        mutations=lambda z:z[5][0].update(net_amount="200.00"))
+    source=active.inspect_active_original_acwi_sell(
+        original_qty=QTY,key=KEY,secret=SECRET)
+    assert state["reads"]==8
+    assert source["original_acwi_exact_fractional_holdings_verified"] is True
+    assert source["original_credit_at_or_below_pilot_ceiling"] is False
+    assert source["original_acwi_sell_only_no_additional_principal_deployment"] is True
+    assert source["unattributed_credit_or_new_principal_spend_authorized"] is False
+    assert source["capital_ceiling_usd"]=="130.30"
+    assert source["maximum_new_order_notional_usd"]=="65.00"
+    assert source["buy_authorized"] is False
+    assert source["broker_post_attempts"]==0
+    assert active.NO_BROKER_POST is True
+    assert active.ACTIVE_HIGH_SELL_SOURCE_RELEASED is True  # monkeypatched test only
+
 
 @pytest.mark.parametrize("risk",[
     {"strictly_postfunding_account_6_20_35_source_verified":False},
