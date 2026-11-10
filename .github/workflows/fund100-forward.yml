@@ -13,6 +13,8 @@ on:
       - 'fund100_forward.py'
       - 'fund100_forward_v1_1.py'
       - 'fund100_forward_evidence_scorecard_v1_0.py'
+      - 'fund100_forward_active_attribution_v1_0.py'
+      - 'test_fund100_forward_active_attribution_v1_0.py'
       - '.github/workflows/fund100-forward.yml'
 
   schedule:
@@ -85,6 +87,11 @@ jobs:
         run: |
           set -euo pipefail
           python fund100_forward_evidence_scorecard_v1_0.py
+
+      - name: Attribute gross selection versus transaction costs (no broker)
+        run: |
+          set -euo pipefail
+          python fund100_forward_active_attribution_v1_0.py
 
       - name: Check for Forward Lab changes
         id: forward_check
@@ -174,6 +181,7 @@ jobs:
             pytest -q
             python fund100_forward_v1_1.py
             python fund100_forward_evidence_scorecard_v1_0.py
+            python fund100_forward_active_attribution_v1_0.py
           done
 
           exit 1
