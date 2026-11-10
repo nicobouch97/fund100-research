@@ -775,6 +775,93 @@ def test_finance_source_coverage_counts_are_separate_from_original_P4A_score():
     assert "6021" not in json.dumps(out)
 
 
+def _bank_credit_source_sample():
+    facts, sub = _finance_sample()
+    for j, (label, tag) in enumerate(m.BANK_CREDIT_OPTIONAL_INSTANT_TAGS.items()):
+        facts["facts"]["us-gaap"][tag] = {"units": {"USD": [
+            {"accn": fqa.ACCESSIONS[i], "form": "10-K",
+             "filed": fqa.FILINGS[i], "end": fqa.DATES[i],
+             "val": 100_000_000 + i * 5_000_000 + j * 1000}
+            for i in range(2)]}}
+    return facts, sub
+
+
+def _bank_credit_status(facts=None, sub=None, asof="2026-11-10"):
+    if facts is None or sub is None:
+        facts, sub = _bank_credit_source_sample()
+    return m._bank_credit_original_two_10k_source_readiness(
+        companyfacts=facts, submissions=sub, asof=asof)
+
+
+def test_bank_credit_current_sic_is_source_coverage_only_not_capital_quality():
+    assert _bank_credit_status() == (
+        "BANK_CREDIT_THREE_INSTANT_TAGS_TWO_OWN_10KS_SOURCE_ONLY", ())
+
+
+def test_bank_credit_optional_absence_never_implies_nonbank_or_poor_bank():
+    facts, sub = _bank_credit_source_sample()
+    del facts["facts"]["us-gaap"]["DepositsDomestic"]
+    assert _bank_credit_status(facts, sub) == (
+        "MISSING_BANK_CREDIT_EXACT_OPTIONAL_USD_TAG", ("domestic_deposits",))
+
+
+def test_bank_credit_original_10k_mismatch_and_comparative_rows_are_not_backfilled():
+    facts, sub = _bank_credit_source_sample()
+    r = facts["facts"]["us-gaap"]["DepositsDomestic"]["units"]["USD"][0]
+    r["accn"] = fqa.ACCESSIONS[1]
+    r["filed"] = fqa.FILINGS[1]
+    assert _bank_credit_status(facts, sub) == (
+        "BANK_CREDIT_TAGS_NOT_IN_SAME_TWO_OWN_10KS", ())
+
+
+def test_bank_credit_annual_duration_is_not_valid_balance_sheet_instant():
+    facts, sub = _bank_credit_source_sample()
+    facts["facts"]["us-gaap"]["DepositsDomestic"]["units"]["USD"][0]["start"] = fqa.FY_START[0]
+    assert _bank_credit_status(facts, sub) == (
+        "BANK_CREDIT_TAGS_NOT_IN_SAME_TWO_OWN_10KS", ())
+
+
+def test_bank_credit_conflicting_original_instant_amount_does_not_choose_winner():
+    facts, sub = _bank_credit_source_sample()
+    rows = facts["facts"]["us-gaap"]["FinancingReceivableAllowanceForCreditLosses"]["units"]["USD"]
+    conflict = dict(rows[1])
+    conflict["val"] += 1
+    rows.append(conflict)
+    assert _bank_credit_status(facts, sub) == (
+        "CONFLICTING_BANK_CREDIT_ORIGINAL_FACT_VINTAGES", ())
+
+
+def test_bank_credit_future_or_stale_original_filings_are_not_evidence():
+    assert _bank_credit_status(asof="2026-11-05") == (
+        "BANK_CREDIT_FINANCE_CORE_SOURCE_NOT_READY", ())
+    assert _bank_credit_status(asof="2028-11-10") == (
+        "BANK_CREDIT_FINANCE_CORE_SOURCE_NOT_READY", ())
+
+
+def test_bank_credit_bad_numeric_fact_is_source_hold_not_grade():
+    facts, sub = _bank_credit_source_sample()
+    facts["facts"]["us-gaap"]["DepositsDomestic"]["units"]["USD"][0]["val"] = True
+    with pytest.raises(m.SourceHold, match="amount"):
+        _bank_credit_status(facts, sub)
+
+
+def test_bank_credit_marginal_counts_no_broker_or_issuer_disclosure():
+    def loader(cik, kind):
+        if cik == 320193:
+            return _apple_source(cik, kind)
+        facts, sub = _bank_credit_source_sample()
+        facts["cik"] = sub["cik"] = 51143
+        del facts["facts"]["us-gaap"][m.quality.ANNUAL_TAGS["revenue"]]
+        return json.dumps(facts if kind == "companyfacts" else sub).encode()
+    result = run(fetcher=loader)
+    assert result["current_SEC_bank_credit_exact_optional_instant_three_tag_two_own_10K_source_status_NOT_a_score"] == {
+        "BANK_CREDIT_THREE_INSTANT_TAGS_TWO_OWN_10KS_SOURCE_ONLY": 1}
+    assert result["current_SEC_bank_credit_missing_exact_optional_USD_tag_issuer_counts"] == {}
+    assert result["bank_credit_optional_source_not_deposit_taking_or_credit_quality_proof"] is True
+    assert result["broker_reads"] == result["broker_orders"] == result["private_state_writes"] == 0
+    assert "6021" not in json.dumps(result)
+
+
 def test_source_identity_mismatch_is_hard_hold_not_missing():
     def bad(cik, kind):
         f,s=fqa.sample()
