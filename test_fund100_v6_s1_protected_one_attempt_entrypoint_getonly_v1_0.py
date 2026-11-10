@@ -103,7 +103,10 @@ def test_source_success_cannot_be_mislabeled_as_authenticated_account_risk_go():
     report=w.split("      - name: Non-executable readiness only")[1]
     assert "if: steps.risk_source.conclusion == 'success'" in report
     assert "test \"${{ steps.risk_source.outcome }}\" = 'success'" in report
-    assert "Funding-adjusted LIVE 6/20/35 risk authorization: **NOT VERIFIED**" in report
+    assert "Funding-adjusted LIVE 6/20/35 risk source:" in report
+    assert 'RISK_PASS: ${{ steps.risk_source.outputs.risk_pass }}' in report
+    assert "false) RISK_CLASS='NOT VERIFIED - HOLD'" in report
+    assert "true)  RISK_CLASS='PASS - SOURCE ONLY, NOT A TRADE PERMIT'" in report
     assert "LIVE first original ACWI order transport: **HARD LOCKED**" in report
     assert "broker_order_authorized" not in report
     assert "run_protected_first_acwi_once()" not in w
