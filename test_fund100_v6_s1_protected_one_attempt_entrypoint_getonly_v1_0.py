@@ -49,7 +49,12 @@ def test_broker_key_only_to_existing_pinned_seven_get_step():
     assert "if: steps.risk_source.conclusion == 'success'" in w
     assert "test \"${{ steps.risk_source.outcome }}\" = 'success'" in w
     assert "test \"${{ steps.risk_source.outputs.risk_pass }}\" = 'true'" not in w
-    assert "Funding-adjusted LIVE 6/20/35 risk authorization: **NOT VERIFIED**" in w
+    assert 'RISK_PASS: ${{ steps.risk_source.outputs.risk_pass }}' in w
+    assert 'case "$RISK_PASS" in' in w
+    assert "true)  RISK_CLASS='PASS - SOURCE ONLY, NOT A TRADE PERMIT'" in w
+    assert "false) RISK_CLASS='NOT VERIFIED - HOLD'" in w
+    assert "*) echo 'Missing or ambiguous source-derived risk status: HOLD.'; exit 1" in w
+    assert "Funding-adjusted LIVE 6/20/35 risk source:" in w
     assert "NO LIVE risk permit or funded trade release" in w
     broker=w.split("      - name: Protected actual original seven GET source")[1]
     broker=broker.split("      - name: Confirm source-verified postfunding")[0]
@@ -86,8 +91,8 @@ def test_scope_or_lock_removal_cannot_keep_readonly_credential_approval(old,repl
 def test_source_success_cannot_be_mislabeled_as_authenticated_account_risk_go():
     w=workflow()
     assert w.count("id: risk_source")==1
-    # The source reader does not issue a GitHub output for the higher
-    # 6/20/35 gate; don't interpret successful source discovery as that GO.
+    # The original source emits a bounded risk_pass true/false; neither value
+    # permits an order, and risk HOLD is not a failed GET-only source read.
     risk_step=w.split("      - name: Protected actual original seven GET source")[1]
     risk_step=risk_step.split("      - name: Confirm source-verified postfunding")[0]
     assert "python "+SOURCE in risk_step
