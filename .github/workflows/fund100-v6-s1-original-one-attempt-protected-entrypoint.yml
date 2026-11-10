@@ -147,27 +147,34 @@ jobs:
           print('IMMUTABLE_RELEASE_SETTING_ENABLED_PROVIDER_VERIFIED; STILL STOP.')
           PY
       - name: Non-executable readiness only - no owner CAS, release, or Alpaca POST
-        # A successful seven-GET source read is NOT a 6/20/35 trade permit.
-        # The original reader has no risk_pass output: treating an absent
-        # output as 'false' and requiring 'true' made this job fail even
-        # though the independent original-account and private-source READs
-        # passed. Keep the stricter risk_pass qualification step above
-        # separately fail-closed; this last step reports SOURCE ONLY.
+        # Seven-GET source success is NOT a trade permit.
+        # The reader emits boolean risk_pass=true/false from authenticated
+        # source-only 6/20/35 checks. Both are reportable, neither permits
+        # a broker POST. Missing/invalid status MUST be a HARD HOLD.
         if: steps.risk_source.conclusion == 'success'
+        env:
+          RISK_PASS: ${{ steps.risk_source.outputs.risk_pass }}
         run: |
           set -euo pipefail
           test "$FUND100_BROKER_KILL_SWITCH" = 'ENGAGED'
           test "${{ steps.risk_source.outcome }}" = 'success'
           grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          case "$RISK_PASS" in
+            true)  RISK_CLASS='PASS - SOURCE ONLY, NOT A TRADE PERMIT' ;;
+            false) RISK_CLASS='NOT VERIFIED - HOLD' ;;
+            *) echo 'Missing or ambiguous source-derived risk status: HOLD.'; exit 1 ;;
+          esac
           echo 'ONE protected job checked real account and signed state GET only.'
           echo 'Original first ACWI one-attempt coordinator NOT CALLED; NO LIVE orders.'
-          # This runs on the main branch following relevant reviewed code
-          # changes or explicit dispatch; NO credentialed cron scheduling.
-          # GitHub's summary is non-sensitive and not an execution permit.
+          # Reviewed main-only push or dispatch; no credentialed cron.
+          # Only source-derived true/false category is displayed,
+          # never account financials or a trade permit.
           cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
           ### Fund-100 V6 first ACWI readiness (READ ONLY)
           - Authenticated original broker seven-GET source: **PASS (SOURCE ONLY)**
-          - Funding-adjusted LIVE 6/20/35 risk authorization: **NOT VERIFIED**
+          EOF
+          printf '%s\n' "- Funding-adjusted LIVE 6/20/35 risk source: **$RISK_CLASS**" >> "$GITHUB_STEP_SUMMARY"
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
           - Original signed ACWI seq1 and unclaimed owner HMAC GET: **PASS**
           - Provider immutable release administration GET: **PASS**
           - LIVE first original ACWI order transport: **HARD LOCKED**
