@@ -184,7 +184,30 @@ jobs:
              --first-entry-dir /tmp/fund100-v7-m3-earliest-first-entry \
              --latest-dir /tmp/fund100-v7-m1-observed \
              --dividend-evidence-file research_lab/V7_M3_COST_OCT30_DIVIDEND_FACTOR_EVIDENCE_2026_10_31.json \
-             --output /tmp/fund100-v7-m1-observed/source-first-entry-vintage-audit.json
+             --output /tmp/fund100-v7-m1-observed/source-first-entry-vintage-audit.json \
+             --audited-source-revision-hold
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          v=Path('/tmp/fund100-v7-m1-observed/source-first-entry-vintage-audit.json')
+          if not v.is_file():
+              raise SystemExit('MISSING_EVIDENCE: frozen-entry source diagnostic absent')
+          d=json.loads(v.read_text())
+          stage=d.get('status')
+          if stage == 'BLOCKED_REVISED_ENTRY_VENDOR_VINTAGE_RESEARCH_ONLY':
+              assert d['not_a_return_or_alpha_estimate'] is True
+              assert d['do_not_replace_original_entry_anchor'] is True
+              assert d['no_trading_authority'] is True
+              assert d['broker_gets']==d['broker_posts']==d['broker_orders']==0
+              assert d['frozen_forward_entry_exposure']['does_not_qualify_returns'] is True
+              print('RESEARCH_REPORTED_BLOCKED: archived entry revised; zero authenticated forward PnL')
+          elif stage == 'PINNED_2026_10_27_FIRST_ENTRY_SOURCE_STABLE_RESEARCH_ONLY':
+              assert d['trading_authorized'] is False
+              assert d['broker_orders']==0
+              print('RESEARCH_SOURCE_STABLE: only source-qualified research marks')
+          else:
+              raise SystemExit('UNAPPROVED_SOURCE_STATUS: hard-fail unknown momentum verdict')
+          PY
       # Preserve the read-only forensic report even when a revised vendor
       # entry price correctly blocks return qualification and fails this job.
       - uses: actions/upload-artifact@v4

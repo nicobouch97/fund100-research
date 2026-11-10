@@ -27,3 +27,35 @@ Artifact retention is 90 days, sufficient for this fixed 21-NYSE-session study; 
 ## Explicitly no LIVE work
 
 No new Alpaca client, no LIVE read/write, no private account balances, no fund contribution or operator-stop modifications. V5 holdings, HIGH loss/volatility limits, **USD130.30** existing pilot authorization, engaged original operator STOP and broker kill remain unchanged. No real orders.
+
+
+## 10 November 2026 — recurring vendor-revision HOLD, not forward alpha
+
+Both scheduled M1 24-company momentum jobs failed on 9/10 November:
+https://github.com/nicobouch97/fund100-research/actions/runs/42713588445
+https://github.com/nicobouch97/fund100-research/actions/runs/42758019138
+
+The archived 27 October first-entry adjusted closes were revised in the later
+Yahoo vendor history. The original immutable source and the 21-session
+predeclared comparison MUST NOT be silently restated; the frozen verifier
+properly refuses to qualify forward return numbers. Its archived forensic
+artifact captures a source-revision explanation and any conditional, still
+unauthenticated dividend sensitivity.
+
+The schedule now invokes an **explicit** opt-in
+--audited-source-revision-hold for that EXACT known entry-revision case.
+The unchanged M3 verifier still raises first and generates the forensic
+diagnostic. The wrapper changes only the job's classification to
+BLOCKED_ENTRY_VENDOR_REVISION_NO_RETURNS after verifying an intact public
+artifact with exact blocked source status, no return/alpha estimate, no
+anchor replacement and zero broker actions. All other source exceptions
+and unknown statuses still fail. The selected names, original entry,
+exit session, frozen price bytes and predeclared 95%-gross controls remain
+unchanged. The blocked status is NOT a valid model return, improvement,
+completion of an experiment, or permission to trade.
+
+The public scheduled job will not repeatedly appear as an unexpected
+network/infrastructure failure when it is a previously diagnosed
+source-vintage HOLD. It still uploads the diagnostic artifact. Separately
+authenticating raw dividends and corporate actions remains required before
+claiming a valid economic total-return comparison. No live orders.
