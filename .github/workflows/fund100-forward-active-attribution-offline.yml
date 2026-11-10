@@ -34,7 +34,7 @@ jobs:
       - name: Install only no-broker prospective evidence dependencies
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check --no-input --only-binary=:all: 'pytest>=8,<9' 'numpy==2.3.4' 'pandas==2.3.3' 'exchange-calendars==4.13.2'
+          python -m pip install --disable-pip-version-check --no-input --only-binary=:all: 'pytest>=8,<9' 'numpy==2.3.4' 'pandas==2.3.3' 'exchange-calendars==4.13.2' 'matplotlib>=3.9,<4' 'PyYAML>=6,<7' 'yfinance>=0.2.65'
       - name: Reconcile original hashed forward ledger and expense/selection diagnostics
         run: |
           set -euo pipefail
