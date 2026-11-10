@@ -1,5 +1,6 @@
 """Offline scalable USD capital envelope: no Alpaca connection or trade authority.
 
+Both cumulative gross synthetic cash credits and net principal are bounded.
 Net contributed principal is separate from account NAV. Funding cannot raise
 its own signed mandate. Excess cash in one brokerage account is NOT segregated
 by simply labelling a virtual sleeve. No broker GET/POST or ledger mutations.
@@ -88,7 +89,7 @@ def preview(*, mandate, funding, account, symbol, tier):
         return result("HOLD_INCOMPLETE_FUNDING", tier=tier)
     if not 1 <= len(funding["events"]) <= 1000:
         return result("HOLD_MISSING_OR_UNBOUNDED_FLOWS", tier=tier)
-    net, seen, deposits = Decimal(0), set(), 0
+    net, gross_credits, seen, deposits = Decimal(0), Decimal(0), set(), 0
     for event in funding["events"]:
         if (type(event) is not dict
             or set(event) != {"id", "type", "amount_usd", "settled"}
@@ -102,6 +103,7 @@ def preview(*, mandate, funding, account, symbol, tier):
         amount = money(event["amount_usd"], "flow", positive=True)
         if event["type"] == "CSD":
             deposits += 1
+            gross_credits += amount
             net += amount
         else:
             net -= amount
@@ -112,6 +114,12 @@ def preview(*, mandate, funding, account, symbol, tier):
     if net > cap:
         # Omnibus excess funds cannot be assumed isolated. Do not trade.
         return result("HOLD_PRINCIPAL_EXCEEDS_STANDING_CAP", principal=net, tier=tier)
+    # A withdrawal and fresh CSD credit cannot recycle a cumulative mandate.
+    # Both CSD/CSW are invented fixture labels, not real bank proof; real
+    # Alpaca cash codes can represent RETURNS and never confer authority.
+    if gross_credits > cap:
+        return result("HOLD_LIFETIME_CREDITS_EXCEED_STANDING_CAP",
+                      principal=net, tier=tier)
     if (type(account) is not dict or set(account) != {
             "source_mode", "currency", "equity_usd", "cash_usd",
             "settled_cash_usd", "positions_usd", "open_orders"}
