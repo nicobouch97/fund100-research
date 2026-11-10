@@ -43,6 +43,66 @@ association and invalid typed non-null values.
 A later real capture must still prove a valid SEC association index
 and original Nasdaq source. Passing fixtures is not that proof.
 
+## 10 November — actual source: 6,610 exact current issuer associations
+
+The first original Nasdaq/SEC association acquisition
+[run #42824385759](https://github.com/nicobouch97/fund100-research/actions/runs/42824385759)
+completed successfully, producing 6,610 exact ticker-and-exchange
+associations from 7,445 Nasdaq non-ETF/non-test listing rows. Those
+associations cover 5,618 distinct current SEC CIKs; 539 had no exact
+current SEC ticker association, 296 had exchange mismatches, and
+166 *SEC-source rows* had JSON null exchange (a separate SEC source
+denominator). This is **not** 6,610 US common stocks or an investable
+universe. Official SEC warns its search-association file is not
+complete or guaranteed.
+
+## Next prospective coverage dimension: security-name evidence only
+
+Nasdaq's official
+[Symbol Directory Definitions](https://www.nasdaqtrader.com/trader.aspx?id=symboldirdefs)
+specify a Security Name that can include the type/class, but do not
+provide a dedicated authoritative security-class code in the two
+public basic directories. Reusing those *same already validated original
+directories*, add a **three-way wording audit** inside the existing
+Nasdaq+SEC source process, without an extra HTTP request:
+
+1. "EXPLICIT_COMMON_OR_ORDINARY_WORDING_REVIEW_ONLY":
+   Security Name explicitly includes "Common Stock", "Common Share(s)"
+   or "Ordinary Share(s)" and has **no** conflicting excluded-instrument
+   cue. Foreign-domiciled ordinary shares and SPAC common stocks could
+   appear here; this is not independent legal identity or quality.
+2. "EXPLICIT_ALTERNATIVE_INSTRUMENT_WORDING_REVIEW_ONLY":
+   the name includes a word such as preferred, warrant, right, unit,
+   depositary, ADR/ADS, note, bond, certificate, convertible or ETN/ETF.
+   This **takes precedence** over any common-stock phrase (e.g.,
+   "warrants to purchase common stock"). It is a *review flag*,
+   **not** a legally validated assertion that the listed security is
+   non-common. A bank with "Preferred" in its corporate name could
+   be conservatively flagged even if its security is ordinary equity.
+3. "UNRESOLVED_SECURITY_NAME_NO_CLASS_INFERENCE":
+   no supported explicit cue. Class-A-only, trust/REIT labels, company
+   names lacking type details, unusual symbols or novel instrument
+   descriptions stay here; never assume they're common shares.
+
+Produce aggregate source-name cue counts for all original known-venue
+non-ETF/non-test Nasdaq directory candidates, **and separately only the
+subset with exact current SEC ticker/exchange associations**. Also
+count distinct SEC issuer CIKs in the explicit-common-wording subset
+but never publish identifiers, names, tickers or source bytes.
+Preserve original three-source SHA-256, timestamps, 27 unknown Nasdaq
+row quarantines, 166 null SEC exchange source rows, independent
+ticker/market ambiguity and nontrading locks.
+
+**Zero individuals become eligible for actual brokerage orders from
+these cues.** This is a source-qualified *triage measure*, not the
+security master, authentic as-reported filing coverage, current float,
+delisting history, share-class fundamentals or a five-pillar score.
+The next actual qualifying source would need explicit legal security
+class / identifier and point-in-time valid corporate action history;
+do not call textual cues "verified ordinary shares". Scheduled main
+capture records the new counts after merge, but offline fixtures alone
+must not be represented as observed market breadth.
+
 ## Critical limits
 
 Even a positive original SEC ticker+exchange association is only a **present-day filer link**, not a legal/common-share security master, point-in-time historical stock universe, proof of US domicile, current Alpaca order eligibility, liquidity, dated companyfacts, valuation, forward analyst expectations or demonstrated investment alpha. No backfill or hindsight-selected ranking.
