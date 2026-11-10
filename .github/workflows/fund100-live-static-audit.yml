@@ -27,6 +27,7 @@ on:
       - "fund100_forward_v1_1.py"
       - "test_fund100_forward_complete_nyse_sessions.py"
       # Original Forward Lab ETF selection/cost attribution; zero trade permissions.
+      - ".github/workflows/fund100-forward-active-attribution-offline.yml"
       - "fund100_forward_active_attribution_v1_0.py"
       - "test_fund100_forward_active_attribution_v1_0.py"
       - "research_lab/FUND100_ETF_FORWARD_SELECTION_VERSUS_COSTS_2026_11_10.md"
@@ -411,6 +412,7 @@ on:
       - "fund100_forward_v1_1.py"
       - "test_fund100_forward_complete_nyse_sessions.py"
       # Original Forward Lab ETF selection/cost attribution; zero trade permissions.
+      - ".github/workflows/fund100-forward-active-attribution-offline.yml"
       - "fund100_forward_active_attribution_v1_0.py"
       - "test_fund100_forward_active_attribution_v1_0.py"
       - "research_lab/FUND100_ETF_FORWARD_SELECTION_VERSUS_COSTS_2026_11_10.md"
