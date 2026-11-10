@@ -576,3 +576,62 @@ def test_unused_entry_revision_still_blocks_all_26_column_vintage():
         initial_prices=p,subsequent_prices=changed,initial_report=forged)
     assert untrusted["frozen_forward_entry_exposure"]["status"]==(
         "UNVERIFIABLE_FROZEN_PAYOFF_DEPENDENCIES")
+
+
+
+def test_explicit_audited_revision_hold_cli_succeeds_only_as_unqualified_status(
+        tmp_path, monkeypatch, capsys):
+    import json
+    import sys
+    a,p,b,q=samples()
+    revised=q.copy()
+    revised.loc["2026-10-27","AAPL"]*=1.00001
+    first=tmp_path/"first"
+    later=tmp_path/"later"
+    first.mkdir()
+    later.mkdir()
+    (first/"frozen-forward-stocks-versus-SPY.json").write_text(json.dumps(a))
+    (later/"frozen-forward-stocks-versus-SPY.json").write_text(json.dumps(b))
+    (first/"new-price-manifest.csv").write_text(m3.p4l.canonical_csv(p))
+    (later/"new-price-manifest.csv").write_text(m3.p4l.canonical_csv(revised))
+    out=tmp_path/"blocked-evidence.json"
+    monkeypatch.setattr(sys,"argv",[
+        "m3","--first-entry-dir",str(first),
+        "--latest-dir",str(later),"--output",str(out),
+        "--audited-source-revision-hold"])
+    m3.main()
+    diagnostic=json.loads(out.read_text())
+    assert diagnostic["status"]=="BLOCKED_REVISED_ENTRY_VENDOR_VINTAGE_RESEARCH_ONLY"
+    assert diagnostic["no_trading_authority"] is True
+    assert diagnostic["not_a_return_or_alpha_estimate"] is True
+    assert diagnostic["do_not_replace_original_entry_anchor"] is True
+    assert diagnostic["broker_gets"]==diagnostic["broker_posts"]==diagnostic["broker_orders"]==0
+    assert diagnostic["frozen_forward_entry_exposure"]["does_not_qualify_returns"] is True
+    assert "BLOCKED_ENTRY_VENDOR_REVISION_NO_RETURNS" in capsys.readouterr().out
+
+
+def test_cli_revision_hold_option_does_not_swallow_other_source_failures(
+        tmp_path, monkeypatch):
+    import json
+    import sys
+    a,p,b,q=samples()
+    revised=q.copy()
+    # Corrupt the anchored *later report* rather than the entry close.
+    # This must remain a hard failure even with the audited HOLD flag.
+    b["observed_holding_intervals"]=-1
+    first=tmp_path/"first"
+    later=tmp_path/"later"
+    first.mkdir()
+    later.mkdir()
+    (first/"frozen-forward-stocks-versus-SPY.json").write_text(json.dumps(a))
+    (later/"frozen-forward-stocks-versus-SPY.json").write_text(json.dumps(b))
+    (first/"new-price-manifest.csv").write_text(m3.p4l.canonical_csv(p))
+    (later/"new-price-manifest.csv").write_text(m3.p4l.canonical_csv(revised))
+    out=tmp_path/"unqualified.json"
+    monkeypatch.setattr(sys,"argv",[
+        "m3","--first-entry-dir",str(first),
+        "--latest-dir",str(later),"--output",str(out),
+        "--audited-source-revision-hold"])
+    with pytest.raises(m3.EntryAnchorStop):
+        m3.main()
+    assert not out.exists()
