@@ -84,6 +84,8 @@ def test_forward_source_repairs_get_authentic_main_branch_rerun_without_loop():
         "fund100_forward.py",
         "fund100_forward_v1_1.py",
         "fund100_forward_evidence_scorecard_v1_0.py",
+        "fund100_forward_active_attribution_v1_0.py",
+        "test_fund100_forward_active_attribution_v1_0.py",
         ".github/workflows/fund100-forward.yml",
     ]
     assert all("forward_outputs" not in path for path in push["paths"])
@@ -98,6 +100,7 @@ def test_forward_source_repairs_get_authentic_main_branch_rerun_without_loop():
         "pytest -q",
         "python fund100_forward_v1_1.py",
         "python fund100_forward_evidence_scorecard_v1_0.py",
+        "python fund100_forward_active_attribution_v1_0.py",
         "git push origin HEAD:main",
     ):
         assert command in commands
@@ -171,6 +174,7 @@ def test_forward_publish_race_recomputes_from_new_main(tmp_path):
         "case \"$1\" in\n"
         "  fund100_forward_v1_1.py) printf 'replayed\n' >> forward_outputs/ledger.txt ;;\n"
         "  fund100_forward_evidence_scorecard_v1_0.py) printf 'scorecard\n' > forward_outputs/scorecard.txt ;;\n"
+        "  fund100_forward_active_attribution_v1_0.py) printf 'attribution\n' > forward_outputs/attribution.txt ;;\n"
         "  *) exit 2 ;;\n"
         "esac\n"
     )
@@ -210,3 +214,4 @@ def test_forward_publish_race_recomputes_from_new_main(tmp_path):
     actual = git("show", "origin/main:forward_outputs/ledger.txt", cwd=worker)
     assert actual.splitlines() == ["baseline", "concurrent", "replayed"]
     assert git("show", "origin/main:forward_outputs/scorecard.txt", cwd=worker) == "scorecard"
+    assert git("show", "origin/main:forward_outputs/attribution.txt", cwd=worker) == "attribution"
