@@ -1,0 +1,48 @@
+name: Fund-100 V9 Broad Original SEC Annual Coverage Offline CI (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v9_broad_original_sec_quality_coverage_v1_0.py"
+      - "test_fund100_v9_broad_original_sec_quality_coverage_v1_0.py"
+      - ".github/workflows/fund100-v9-broad-sec-coverage-offline.yml"
+      - ".github/workflows/fund100-v9-broad-sec-coverage-capture.yml"
+      - "research_lab/stocks/V9_ORIGINAL_BROAD_SEC_FINANCIAL_COVERAGE_PILOT_2026_11_10.md"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v9_broad_original_sec_quality_coverage_v1_0.py"
+      - "test_fund100_v9_broad_original_sec_quality_coverage_v1_0.py"
+      - ".github/workflows/fund100-v9-broad-sec-coverage-offline.yml"
+      - ".github/workflows/fund100-v9-broad-sec-coverage-capture.yml"
+      - "research_lab/stocks/V9_ORIGINAL_BROAD_SEC_FINANCIAL_COVERAGE_PILOT_2026_11_10.md"
+
+permissions:
+  contents: read
+
+jobs:
+  bound-public-sec-source-sample-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install no-network test and existing SEC quality dependency
+        run: python -m pip install --disable-pip-version-check --no-input 'pytest>=8,<9' 'pandas==2.3.3'
+      - name: Run source sample, 404, quality provenance and no trading tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_v9_official_current_listing_discovery_v1_0.py \
+            test_fund100_v9_sec_current_listing_association_v1_0.py \
+            test_fund100_v9_broad_original_sec_quality_coverage_v1_0.py
+          python - <<'PY'
+          import fund100_v9_broad_original_sec_quality_coverage_v1_0 as x
+          assert x.LIVE_AUTHORIZED is False
+          assert x.NO_BROKER_ORDERS == x.NO_BROKER_READS == x.NO_PRIVATE_WRITES == 0
+          assert x.SAMPLE_N == 32
+          PY
