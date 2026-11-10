@@ -80,6 +80,29 @@ def test_sec_duplicate_ticker_cik_ambiguity_does_not_choose_convenient_issuer():
     assert r["distinct_SEC_filer_CIKs_with_exact_current_ticker_exchange_association"]==2
 
 
+def test_real_sec_null_exchange_is_unqualified_not_inferred_or_hard_fail():
+    source=SR+[[320193,"Apple Inc.","AAPL",None],
+               [2345678,"Unassigned US issuer","UNASSIGNED",None]]
+    r=inspect(sec_rows=source)
+    assert r["SEC_source_unqualified_rows"]=={"null_exchange_unqualified":2}
+    # Exact sourced AAPL/Nasdaq still qualifies on its own, but the null
+    # observation cannot supply additional CIKs or exchange eligibility.
+    assert r["association_reason_counts"]["exact_current_ticker_and_exchange_associations"]==3
+    assert r["distinct_SEC_filer_CIKs_with_exact_current_ticker_exchange_association"]==3
+    assert r["current_SEC_association_is_a_qualified_share_class"] is False
+    assert r["live_authorized"] is False
+    assert "Unassigned US issuer" not in json.dumps(r)
+
+
+def test_null_exchange_by_itself_never_qualifies_broker_eligible_identity():
+    source=[row for row in SR if row[2]!="AAPL"]+[
+        [320193,"Apple Inc.","AAPL",None]]
+    r=inspect(sec_rows=source)
+    assert r["association_reason_counts"]["no_exact_SEC_ticker_association"]==3
+    assert r["association_reason_counts"]["exact_current_ticker_and_exchange_associations"]==2
+    assert r["SEC_source_unqualified_rows"]=={"null_exchange_unqualified":1}
+
+
 def test_sec_duplicate_identical_association_not_extra_issuer():
     r=inspect(sec_rows=SR+[SR[0]])
     assert r["association_reason_counts"]["exact_current_ticker_and_exchange_associations"]==3
@@ -102,6 +125,8 @@ def test_cross_directory_duplicate_ticker_quarantined_in_both_sources():
     lambda x: x.update({"data":[[True,"False","AAPL","Nasdaq"]]}),
     lambda x: x.update({"data":[[320193,"","AAPL","Nasdaq"]]}),
     lambda x: x.update({"data":[[320193,"Apple Inc.",123,"Nasdaq"]]}),
+    lambda x: x.update({"data":[[320193,"Apple Inc.","AAPL",17]]}),
+    lambda x: x.update({"data":[[320193,"Apple Inc.","AAPL",False]]}),
 ])
 def test_malformed_sec_map_stops_entire_join(modifier):
     raw={"fields":["cik","name","ticker","exchange"],"data":SR[:]}
