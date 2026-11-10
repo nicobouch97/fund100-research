@@ -58,6 +58,19 @@ def test_exact_current_ticker_and_exchange_links_only():
         "exact_current_ticker_and_exchange_associations":3,
         "no_exact_SEC_ticker_association":2,
     }
+    assert r["all_current_non_etf_listings_source_name_cue_counts"]=={
+        "EXPLICIT_ALTERNATIVE_INSTRUMENT_WORDING_REVIEW_ONLY":1,
+        "EXPLICIT_COMMON_OR_ORDINARY_WORDING_REVIEW_ONLY":3,
+        "UNRESOLVED_SECURITY_NAME_NO_CLASS_INFERENCE":2,
+    }
+    assert r["exact_SEC_association_source_name_cue_counts"]=={
+        "EXPLICIT_COMMON_OR_ORDINARY_WORDING_REVIEW_ONLY":2,
+        "UNRESOLVED_SECURITY_NAME_NO_CLASS_INFERENCE":1,
+    }
+    assert r["distinct_current_SEC_CIKs_with_explicit_common_wording_only"]==2
+    assert r["source_name_cues_are_verified_security_classes"] is False
+    assert r["source_name_cues_are_approval_to_trade"] is False
+    assert r["issuer_name_cue_is_US_domicile_proof"] is False
     assert r["distinct_SEC_filer_CIKs_with_exact_current_ticker_exchange_association"]==3
     assert r["nasdaq_discovery_original_report"]["unknown_code_rows_quarantined_total"]==1
     assert r["current_SEC_association_is_a_qualified_share_class"] is False
@@ -71,6 +84,74 @@ def test_exact_current_ticker_and_exchange_links_only():
                  "Berkshire Hathaway", "BRK.B", "320193", "51143", "1067983"):
         assert name not in public
     assert len(r["SEC_original_bytes_sha256"])==64
+
+
+@pytest.mark.parametrize("label,expected", [
+    ("Example Inc. - Common Stock",
+     "EXPLICIT_COMMON_OR_ORDINARY_WORDING_REVIEW_ONLY"),
+    ("Example Holdings - Class A Ordinary Shares",
+     "EXPLICIT_COMMON_OR_ORDINARY_WORDING_REVIEW_ONLY"),
+    ("United Companies - COMMON SHARES",
+     "EXPLICIT_COMMON_OR_ORDINARY_WORDING_REVIEW_ONLY"),
+    ("Example plc", "UNRESOLVED_SECURITY_NAME_NO_CLASS_INFERENCE"),
+    ("Example Inc. Class A", "UNRESOLVED_SECURITY_NAME_NO_CLASS_INFERENCE"),
+    ("Example Trust", "UNRESOLVED_SECURITY_NAME_NO_CLASS_INFERENCE"),
+    ("Examples Preferred Series A",
+     "EXPLICIT_ALTERNATIVE_INSTRUMENT_WORDING_REVIEW_ONLY"),
+    ("Examples - Warrants to purchase Common Stock",
+     "EXPLICIT_ALTERNATIVE_INSTRUMENT_WORDING_REVIEW_ONLY"),
+    ("Example - Ordinary Shares and Warrants",
+     "EXPLICIT_ALTERNATIVE_INSTRUMENT_WORDING_REVIEW_ONLY"),
+    ("Examples - Common Stock Units",
+     "EXPLICIT_ALTERNATIVE_INSTRUMENT_WORDING_REVIEW_ONLY"),
+    ("Examples American Depositary Shares",
+     "EXPLICIT_ALTERNATIVE_INSTRUMENT_WORDING_REVIEW_ONLY"),
+    ("Examples Depository Receipt",
+     "EXPLICIT_ALTERNATIVE_INSTRUMENT_WORDING_REVIEW_ONLY"),
+    ("Examples Convertible Notes",
+     "EXPLICIT_ALTERNATIVE_INSTRUMENT_WORDING_REVIEW_ONLY"),
+    ("Examples ETF",
+     "EXPLICIT_ALTERNATIVE_INSTRUMENT_WORDING_REVIEW_ONLY"),
+])
+def test_name_review_cues_are_not_security_master(label,expected):
+    assert m.security_name_text_cue(label)==expected
+
+
+def test_conflicting_common_text_and_instrument_words_never_count_as_common():
+    # Classifier must never make "warrants to buy common" a common-share cue.
+    bad=directories(nasdaq_rows=(
+        "AAPL|Apple Common Stock Warrants|Q|N|N|100|N|N",
+        "MSFT|Microsoft Ordinary Shares|Q|N|N|100|N|N",
+        "ABC|Mismatch issuer example|G|N|N|100|N|N",
+        "SPY1|Index Fund ETF|Q|N|N|100|Y|N",
+    ))
+    result=inspect(dirs=bad)
+    assert result["exact_SEC_association_source_name_cue_counts"]=={
+        "EXPLICIT_ALTERNATIVE_INSTRUMENT_WORDING_REVIEW_ONLY":1,
+        "EXPLICIT_COMMON_OR_ORDINARY_WORDING_REVIEW_ONLY":2,
+    }
+    assert result["distinct_current_SEC_CIKs_with_explicit_common_wording_only"]==2
+    assert result["US_common_share_and_domicile_verified"] is False
+    assert result["live_authorized"] is False
+
+
+def test_name_cue_does_not_promote_unmatched_and_ambiguous_issuers():
+    source=SR+[[999999,"Different issuer","AAPL","Nasdaq"]]
+    result=inspect(sec_rows=source)
+    assert result["all_current_non_etf_listings_source_name_cue_counts"][
+        "EXPLICIT_COMMON_OR_ORDINARY_WORDING_REVIEW_ONLY"]==3
+    assert result["exact_SEC_association_source_name_cue_counts"]=={
+        "EXPLICIT_COMMON_OR_ORDINARY_WORDING_REVIEW_ONLY":1,
+        "UNRESOLVED_SECURITY_NAME_NO_CLASS_INFERENCE":1,
+    }
+    assert result["distinct_current_SEC_CIKs_with_explicit_common_wording_only"]==1
+
+
+def test_blank_name_does_not_gain_security_class():
+    with pytest.raises(m.AssociationStop):
+        m.security_name_text_cue("")
+    with pytest.raises(m.AssociationStop):
+        m.security_name_text_cue(None)
 
 
 def test_sec_duplicate_ticker_cik_ambiguity_does_not_choose_convenient_issuer():

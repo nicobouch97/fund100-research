@@ -38,6 +38,32 @@ class AssociationStop(ValueError):
     pass
 
 
+# Security Name is source TEXT, not an exchange-certified instrument type.
+# Nasdaq's published directory defines it as a name with possible type/class
+# detail; a word match is merely a conservative review-priority cue.
+# Adverse instrument cues ALWAYS supersede a "common stock" mention
+# (e.g. "warrants to purchase common stock").
+_NONCOMMON_CUES = re.compile(
+    r"\b(?:PREFERRED|PREFERENCE|WARRANTS?|RIGHTS?|"
+    r"UNITS?|DEPOSITARY|DEPOSITORY|ADR|ADS|ETN|ETF|ETP|"
+    r"NOTES?|BONDS?|DEBENTURES?|CERTIFICATES?|"
+    r"CONVERTIBLE|REDEEMABLE)\b", re.IGNORECASE)
+_COMMON_CUES = re.compile(
+    r"\b(?:COMMON\s+(?:STOCK|SHARES?)|ORDINARY\s+SHARES?)\b",
+    re.IGNORECASE)
+
+
+def security_name_text_cue(security_name: str) -> str:
+    """Review-only label hint; never a legal security-class determination."""
+    if type(security_name) is not str or not security_name.strip():
+        raise AssociationStop("Original listing missing security name")
+    if _NONCOMMON_CUES.search(security_name):
+        return "EXPLICIT_ALTERNATIVE_INSTRUMENT_WORDING_REVIEW_ONLY"
+    if _COMMON_CUES.search(security_name):
+        return "EXPLICIT_COMMON_OR_ORDINARY_WORDING_REVIEW_ONLY"
+    return "UNRESOLVED_SECURITY_NAME_NO_CLASS_INFERENCE"
+
+
 def sec_records(raw:bytes, *, min_rows:int=1000):
     if type(raw) is not bytes or not 50 <= len(raw) <= MAX_SEC_BYTES:
         raise AssociationStop("Missing or oversized SEC original issuer map")
@@ -95,7 +121,11 @@ def candidate_rows(raw_by_filename:dict, *, observed:datetime, min_rows:int=1):
             exchange = row[listing.MARKET_FIELD[name]]
             if (row["ETF"] == "N" and row["Test Issue"] == "N"
                 and exchange in listing.KNOWN_MARKETS[name]):
-                records.append((row[listing.SYMBOL_FIELD[name]],SEC_EXCHANGES[name][exchange]))
+                records.append((
+                    row[listing.SYMBOL_FIELD[name]],
+                    SEC_EXCHANGES[name][exchange],
+                    security_name_text_cue(row["Security Name"]),
+                ))
     if len(records) != first_report["current_non_etf_non_test_listing_rows_total_not_stock_count"]:
         raise AssociationStop("Source candidate enumeration differs from frozen discovery")
     return records, first_report
@@ -109,10 +139,13 @@ def inspect(*, nasdaq_raw:dict, sec_raw:bytes, observed:datetime,
     rows, original = candidate_rows(nasdaq_raw, observed=now, min_rows=min_directory_rows)
     index, excluded, total = sec_records(sec_raw, min_rows=min_sec_rows)
     # Cross-directory ticker reuse is ambiguous even if SEC maps one issuer.
-    directory_counts = Counter(ticker for ticker,_ in rows)
+    directory_counts = Counter(ticker for ticker, _, _ in rows)
     outcome = Counter()
+    all_name_evidence = Counter(name_cue for _, _, name_cue in rows)
+    matched_name_evidence = Counter()
+    explicit_common_text_ciks = set()
     linked_ciks = set()
-    for ticker, expected_exchange in rows:
+    for ticker, expected_exchange, name_cue in rows:
         if directory_counts[ticker] > 1:
             outcome["same_ticker_in_multiple_listing_records"] += 1
             continue
@@ -128,6 +161,9 @@ def inspect(*, nasdaq_raw:dict, sec_raw:bytes, observed:datetime,
             else:
                 outcome["exact_current_ticker_and_exchange_associations"] += 1
                 linked_ciks.add(cik)
+                matched_name_evidence[name_cue] += 1
+                if name_cue == "EXPLICIT_COMMON_OR_ORDINARY_WORDING_REVIEW_ONLY":
+                    explicit_common_text_ciks.add(cik)
     if sum(outcome.values()) != len(rows):
         raise AssociationStop("Coverage classification did not exhaust source population")
     return {
@@ -142,6 +178,15 @@ def inspect(*, nasdaq_raw:dict, sec_raw:bytes, observed:datetime,
         "SEC_source_unqualified_rows": dict(sorted(excluded.items())),
         "listing_candidates_reviewed": len(rows),
         "association_reason_counts": dict(sorted(outcome.items())),
+        "all_current_non_etf_listings_source_name_cue_counts":
+            dict(sorted(all_name_evidence.items())),
+        "exact_SEC_association_source_name_cue_counts":
+            dict(sorted(matched_name_evidence.items())),
+        "distinct_current_SEC_CIKs_with_explicit_common_wording_only":
+            len(explicit_common_text_ciks),
+        "source_name_cues_are_verified_security_classes": False,
+        "source_name_cues_are_approval_to_trade": False,
+        "issuer_name_cue_is_US_domicile_proof": False,
         "distinct_SEC_filer_CIKs_with_exact_current_ticker_exchange_association":
             len(linked_ciks),
         "current_SEC_association_is_a_qualified_share_class": False,
