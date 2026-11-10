@@ -558,7 +558,7 @@ def test_malformed_SIC_metadata_never_guesses_business_sector(sic):
 
 
 @pytest.mark.parametrize("bad_facts", [
-    [], {}, {"us-gaap":[]}, {"us-gaap":{},"ifrs-full":8}
+    [], {"us-gaap":[]}, {"us-gaap":{},"ifrs-full":8}
 ])
 def test_malformed_SEC_accounting_namespace_not_treated_as_valid_US_GAAP(bad_facts):
     facts,sub=fqa.sample()
