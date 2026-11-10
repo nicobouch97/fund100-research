@@ -100,6 +100,42 @@ def _get_sec(cik: int, kind: str, *, agent: str):
     return result
 
 
+def _unscored_source_reason(*, companyfacts: dict, submissions: dict,
+                            model_state: str) -> tuple[str, bool]:
+    """Qualify visible gaps, not their unknowable economic cause.
+
+    Only previously authenticated original documents are inspected. SEC
+    submissions 'filings.recent' can truncate older history, and the
+    'filings.files' metadata is NOT a downloaded filing archive. Presence
+    of generic US-GAAP USD concepts is not proof of 10-K eligible facts.
+    """
+    recent = submissions["filings"]["recent"]
+    # Prior P4A source admission validated the ledger and each accession.
+    tenk = sum(form == "10-K" for form in recent["form"])
+    old_descriptors = submissions["filings"].get("files", [])
+    if type(old_descriptors) is not list:
+        raise SourceHold("Untrusted optional original SEC old-file descriptors")
+    has_undownloaded_older_files = bool(old_descriptors)
+    if model_state == "LAST_ANNUAL_REPORT_TOO_STALE":
+        return "LATEST_ANNUAL_TOO_STALE", has_undownloaded_older_files
+    if model_state != "MISSING_ELIGIBLE_FULL_YEAR_FILINGS":
+        return "OTHER_P4A_UNSCORED_STATE_REVIEW_ONLY", has_undownloaded_older_files
+    if tenk == 0:
+        return "ZERO_10K_IN_RECENT_SUBMISSIONS_LEDGER", has_undownloaded_older_files
+    if tenk == 1:
+        return "ONE_10K_IN_RECENT_SUBMISSIONS_LEDGER", has_undownloaded_older_files
+    concepts = companyfacts["facts"]["us-gaap"]
+    tag_usd_presence = []
+    for tag in quality.ANNUAL_TAGS.values():
+        concept = concepts.get(tag)
+        units = concept.get("units") if type(concept) is dict else None
+        usd_rows = units.get("USD") if type(units) is dict else None
+        tag_usd_presence.append(type(usd_rows) is list and len(usd_rows)>0)
+    if not all(tag_usd_presence):
+        return "TWO_PLUS_10K_MISSING_GENERIC_CONCEPT_OR_USD_ROWS", has_undownloaded_older_files
+    return "TWO_PLUS_10K_CONCEPTS_PRESENT_BUT_NO_QUALIFIED_PAIR", has_undownloaded_older_files
+
+
 def annual_coverage(*, directories, sec_associations, observed, fetcher,
                     sample_n=SAMPLE_N, min_pool=MIN_CURRENT_CIK_POOL):
     if (type(observed) is not datetime or observed.tzinfo is None or
@@ -111,6 +147,8 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
         observed=observed, sample_n=sample_n, min_pool=min_pool)
     outcomes = Counter()
     model_states = Counter()
+    unscored_source_reasons = Counter()
+    unscored_with_older_descriptors = 0
     total_bytes = 0
     source_digest = sha256(b"FUND100_V9_ORIGINAL_SEC_DOCUMENT_SOURCE_DIGEST_V1\n")
     for cik in sample:
@@ -144,6 +182,9 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
                 f"{cik:010d}", observed.date().isoformat())
         except quality.StockSourceStop:
             outcomes["SEC_facts_incompatible_with_generic_industrial_quality_contract"] += 1
+            # Differentiate strict P4A rejection from a low quality score.
+            # Preserve unknown details; never reinterpret as poor economics.
+            unscored_source_reasons["P4A_ORIGINAL_SOURCE_STRICT_VALIDATION_REJECTED"] += 1
             continue
         model_states[observed_quality["state"]] += 1
         if observed_quality.get("score") is not None:
@@ -155,13 +196,25 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
             outcomes["generic_two_fiscal_year_filing_lagged_score_available"] += 1
         else:
             outcomes["generic_filing_lagged_score_unavailable"] += 1
+            reason, archived_descriptor_only = _unscored_source_reason(
+                companyfacts=original["companyfacts"],
+                submissions=original["submissions"],
+                model_state=observed_quality["state"],
+            )
+            unscored_source_reasons[reason] += 1
+            unscored_with_older_descriptors += int(archived_descriptor_only)
     if (outcomes["at_least_one_SEC_document_HTTP_404"] +
         outcomes["both_SEC_documents_received_and_CIK_matched"] != len(sample)
         or outcomes["both_SEC_documents_received_and_CIK_matched"] !=
         outcomes["SEC_facts_incompatible_with_generic_industrial_quality_contract"] +
         outcomes["generic_two_fiscal_year_filing_lagged_score_available"] +
+        outcomes["generic_filing_lagged_score_unavailable"]
+        or sum(unscored_source_reasons.values()) !=
+        outcomes["SEC_facts_incompatible_with_generic_industrial_quality_contract"] +
+        outcomes["generic_filing_lagged_score_unavailable"]
+        or unscored_with_older_descriptors >
         outcomes["generic_filing_lagged_score_unavailable"]):
-        raise SourceHold("Sample source coverage did not reconcile")
+        raise SourceHold("Sample source coverage and gap categories did not reconcile")
     return {
         "schema": SCHEMA,
         "status": "PROSPECTIVE_DETERMINISTIC_CURRENT_CIK_QUALITY_COVERAGE_RESEARCH_ONLY",
@@ -177,6 +230,12 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
         "official_SEC_document_bytes_observed": total_bytes,
         "sample_outcome_counts": dict(sorted(outcomes.items())),
         "generic_original_filing_contract_states": dict(sorted(model_states.items())),
+        "unscored_original_source_reason_counts": dict(sorted(unscored_source_reasons.items())),
+        "unscored_issuer_count_with_undownloaded_older_SEC_file_descriptors_only":
+            unscored_with_older_descriptors,
+        "filings_files_metadata_does_not_prove_archived_10K_or_authorize_backfill": True,
+        "generic_tag_presence_is_not_a_validated_own_accession_10K_fact": True,
+        "unscored_source_reasons_are_not_company_valuation_judgments": True,
         "full_pool_companyfacts_coverage_verified": False,
         "sample_is_randomly_representative_of_US_common_stocks": False,
         "sample_is_persistently_replayable_without_archived_original_bytes": False,
