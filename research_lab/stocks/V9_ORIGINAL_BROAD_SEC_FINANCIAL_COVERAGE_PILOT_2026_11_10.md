@@ -169,6 +169,60 @@ original accession/period, audited concept meaning and business-sector
 appropriate economics should ever lead to a new scored model version;
 do not silently change frozen P4A or older 24/100 SEC cohorts.
 
+## 10 November — original missing-tag counts and 10-K pairing hypothesis
+
+The verified original missing-tag capture
+[run #42848022594](https://github.com/nicobouch97/fund100-research/actions/runs/42848022594)
+succeeded on the SAME 32 issuer roster digest, with 9 generic
+scores and the same 23 unscored. Within the 11 missing-generic-tag
+issuers, original US-GAAP USD field absence overlaps:
+
+- 10 lack exact P4A RevenueFromContractWithCustomerExcludingAssessedTax
+- 5 lack OperatingIncomeLoss
+- 3 lack PaymentsToAcquirePropertyPlantAndEquipment
+- 0 lack NetCashProvidedByUsedInOperatingActivities
+
+Candidate source-only alternates appear somewhere in original SEC
+companyfacts: Revenues in 5, SalesRevenueNet in 1, and
+PaymentsToAcquireProductiveAssets in 1. These groups can overlap.
+Presence is NOT proof of semantic equivalence, same original filing,
+current original period, US common-share identity or investable quality.
+
+### Predeclared next original 10-K accession audit — NO new HTTP
+
+On the same in-memory original 32-issuer SEC source, for each of these
+potential alternate concepts (only where the required generic concept
+is absent), validate whether its source USD facts actually match:
+
+1. An original 10-K accession in that issuer's original SEC
+   filings.recent ledger (not later comparative under newer filing)
+2. Exactly matching filed date and original 10-K fiscal period end,
+   full-year start/end separated 330–380 days, valid finite original
+   numeric amount (not used as a financial score)
+3. Two separate *unique* own-accession eligible 10-K fiscal years,
+   330–400 days between ends, both publicly available under the
+   already established two-weekday filing lag and current latest year
+   no more than 550 days stale
+4. No conflicting amounts or period starts for the same 10-K and
+   no competing amended accession for the same fiscal year.
+   Ambiguity remains a review state, never choose preferred values.
+
+Publish ONLY aggregate alternate-source classification counts:
+two original annual source years (REVIEW ONLY), fewer than two,
+stale/nonconsecutive, and conflicting/multiple original 10-K vintages.
+Reconcile categories against the existing 7 alternative tag-presence
+observations; overlapping issuers are counted per relevant source tag.
+A source-valid own 10-K pair still DOES NOT mean Revenues and
+SalesRevenueNet are interchangeable, or that any revenue/capex amount
+has the same economic interpretation across banks, REITs, foreign
+issuers and industrial firms. No automatic substitutions into P4A,
+no valuation, trading ranking, broker order or cross-sector grade.
+
+The SEC issuer source panel remains current-prospective and is not
+a survivorship-safe historical share-class/filing-vintage source.
+Original source bytes and ticker/CIK roster are not permanently
+archived for future historical replay.
+
 ## Explicit limitations and safety
 
 Only a 32-issuer diagnostic sample; the 5,027-issuer source-wording
