@@ -82,7 +82,11 @@ def test_human_readable_readiness_summary_cannot_claim_execution_release():
     w=original()
     assert 'cat >> "$GITHUB_STEP_SUMMARY"' in w
     assert "Authenticated original broker seven-GET source: **PASS (SOURCE ONLY)**" in w
-    assert "Funding-adjusted LIVE 6/20/35 risk authorization: **NOT VERIFIED**" in w
+    assert 'RISK_PASS: ${{ steps.risk_source.outputs.risk_pass }}' in w
+    assert 'case "$RISK_PASS" in' in w
+    assert "true)  RISK_CLASS='PASS - SOURCE ONLY, NOT A TRADE PERMIT'" in w
+    assert "false) RISK_CLASS='NOT VERIFIED - HOLD'" in w
+    assert "Funding-adjusted LIVE 6/20/35 risk source:" in w
     assert "Actual protected broker account/risk GET source: **PASS**" not in w
     assert "Provider immutable release administration GET: **PASS**" in w
     assert "LIVE first original ACWI order transport: **HARD LOCKED**" in w
