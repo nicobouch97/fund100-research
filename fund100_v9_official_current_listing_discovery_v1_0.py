@@ -95,9 +95,16 @@ def inspect_bytes(raw: bytes, filename: str, *, observed: datetime, min_rows=1):
             raise ListingsStop("Duplicate/invalid listing identifier")
         seen.add(sym)
         etf, test, market = row["ETF"], row["Test Issue"], row[MARKET_FIELD[filename]]
-        if etf not in ("Y", "N") or test not in ("Y", "N") or market not in KNOWN_MARKETS[filename]:
-            raise ListingsStop("Unknown listing flag or market value")
         counts["total"] += 1
+        # The live publisher has emitted categorical field values outside
+        # the documented exchange/flag alphabet. Do NOT label them as common
+        # stock, ETF=N, or as a known venue. Quarantine each affected row,
+        # fingerprint the COMPLETE original source, and make uncertainty
+        # explicit rather than fabricate a known category or silently skip.
+        if (etf not in ("Y", "N") or test not in ("Y", "N")
+            or market not in KNOWN_MARKETS[filename]):
+            counts["quarantined_unknown_market_or_flags"] += 1
+            continue
         counts["etf_" + etf] += 1
         counts["test_" + test] += 1
         markets[market] += 1
@@ -110,6 +117,8 @@ def inspect_bytes(raw: bytes, filename: str, *, observed: datetime, min_rows=1):
         "source_byte_count": len(raw),
         "source_creation_date_ny": created_local.date().isoformat(),
         "listed_rows": counts["total"],
+        "quarantined_unknown_market_or_flags": counts["quarantined_unknown_market_or_flags"],
+        "known_market_and_flag_rows": counts["total"] - counts["quarantined_unknown_market_or_flags"],
         "etf_flag_Y_rows": counts["etf_Y"],
         "test_issue_Y_rows": counts["test_Y"],
         "non_etf_non_test_listing_candidates_not_common_stock": counts["non_etf_non_test"],
@@ -128,9 +137,15 @@ def report(raw_by_filename: dict, *, observed: datetime, min_rows=1):
         v["non_etf_non_test_listing_candidates_not_common_stock"] for v in files.values())
     if candidate_count == 0:
         raise ListingsStop("No original listing candidates")
+    unknown_count = sum(
+        v["quarantined_unknown_market_or_flags"] for v in files.values())
     return {
         "schema": SCHEMA,
-        "status": "SOURCE_DATED_CURRENT_NON_ETF_LISTING_DISCOVERY_ONLY",
+        "status": ("SOURCE_DATED_CURRENT_LISTINGS_WITH_UNKNOWN_CODE_QUARANTINE"
+                   if unknown_count else
+                   "SOURCE_DATED_CURRENT_NON_ETF_LISTING_DISCOVERY_ONLY"),
+        "unknown_code_rows_quarantined_total": unknown_count,
+        "all_directory_categories_explained": unknown_count == 0,
         "captured_utc": utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "sources": files,
         "current_non_etf_non_test_listing_rows_total_not_stock_count": candidate_count,
