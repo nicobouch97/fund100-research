@@ -624,6 +624,157 @@ def test_original_IFRS_only_case_stays_unscored_or_strict_not_US_GAAP_imputed():
     assert out["point_in_time_historical_universe_authenticated"] is False
 
 
+@pytest.mark.parametrize("sic,expected", [
+    ("6021","SEC_SIC_BANK_LENDING_CREDIT_AND_FINANCE_REVIEW_ONLY"),
+    ("6141","SEC_SIC_BANK_LENDING_CREDIT_AND_FINANCE_REVIEW_ONLY"),
+    ("6211","SEC_SIC_BROKER_DEALER_EXCHANGE_ADVICE_REVIEW_ONLY"),
+    ("6311","SEC_SIC_INSURANCE_UNDERWRITING_SERVICES_REVIEW_ONLY"),
+    ("6411","SEC_SIC_INSURANCE_UNDERWRITING_SERVICES_REVIEW_ONLY"),
+    ("6512","SEC_SIC_REAL_ESTATE_OPERATORS_SERVICES_REVIEW_ONLY"),
+    ("6770","SEC_SIC_BLANK_CHECK_COMPANY_6770_NOT_STOCK_APPROVAL"),
+    ("6798","SEC_SIC_REIT_6798_REVIEW_ONLY"),
+    ("6799","SEC_SIC_OTHER_HOLDING_INVESTMENT_STRUCTURES_REVIEW_ONLY"),
+    ("6021","SEC_SIC_BANK_LENDING_CREDIT_AND_FINANCE_REVIEW_ONLY"),
+    ("3571","SEC_SIC_OUTSIDE_6000_TO_6799"),
+    (None,"SIC_MISSING_NOT_FINANCE_CONFIRMED"),
+])
+def test_SEC_specific_finance_subtype_is_not_common_share_or_quality_grade(sic,expected):
+    subs={} if sic is None else {"sic":sic}
+    assert m._current_finance_subtype_from_SEC_sic(subs)==expected
+
+
+@pytest.mark.parametrize("bad", [True, 6.3, {}, ["6798"], "6798X", "٦٧٩٨"])
+def test_finance_SIC_metadata_invalid_never_infers_REIT_or_bank(bad):
+    with pytest.raises(m.SourceHold,match="SIC"):
+        m._current_finance_subtype_from_SEC_sic({"sic":bad})
+
+
+def _finance_sample():
+    facts,sub=fqa.sample()
+    gaap=facts["facts"]["us-gaap"]
+    for tag,values in (("Assets",(500_000_000,520_000_000)),
+                       ("StockholdersEquity",(100_000_000,110_000_000))):
+        gaap[tag]={"units":{"USD":[{
+            "accn":fqa.ACCESSIONS[i], "form":"10-K",
+            "filed":fqa.FILINGS[i], "end":fqa.DATES[i],
+            "val":values[i]
+        } for i in range(2)]}}
+    gaap["NetIncomeLoss"]={"units":{"USD":[{
+        "accn":fqa.ACCESSIONS[i], "form":"10-K",
+        "filed":fqa.FILINGS[i], "start":fqa.FY_START[i],
+        "end":fqa.DATES[i], "val":v
+    } for i,v in enumerate((8_000_000,12_000_000))]}}
+    sub["sic"]="6021"
+    return facts,sub
+
+
+def _core_status(facts=None,sub=None,asof="2026-11-10"):
+    if facts is None or sub is None:
+        facts,sub=_finance_sample()
+    return m._finance_core_original_two_10k_source_readiness(
+        companyfacts=facts,submissions=sub,asof=asof)
+
+
+def test_finance_core_own_10k_balance_sheet_instant_plus_income_annual_research_only():
+    assert _core_status()==(
+        "ASSETS_EQUITY_NETINCOME_TWO_OWN_10KS_SOURCE_ONLY",())
+
+
+def test_finance_missing_core_tags_never_imputed():
+    facts,sub=_finance_sample()
+    del facts["facts"]["us-gaap"]["StockholdersEquity"]
+    assert _core_status(facts,sub)==(
+        "MISSING_EXACT_FINANCE_CORE_CONCEPT_USD_TAG",("equity",))
+
+
+def test_finance_independent_US_GAAP_namespace_cannot_be_inferred_from_IFRS():
+    facts,sub=_finance_sample()
+    facts["facts"]={"ifrs-full":{}}
+    assert _core_status(facts,sub)==("NO_US_GAAP_SOURCE_FOR_FINANCE_CORE",())
+
+
+def test_finance_core_annual_income_cannot_be_instant_source():
+    facts,sub=_finance_sample()
+    del facts["facts"]["us-gaap"]["NetIncomeLoss"]["units"]["USD"][0]["start"]
+    assert _core_status(facts,sub)==(
+        "FINANCE_CORE_FACTS_NOT_IN_SAME_TWO_OWN_10KS",())
+
+
+def test_finance_balance_sheet_cannot_be_annual_duration_source():
+    facts,sub=_finance_sample()
+    facts["facts"]["us-gaap"]["Assets"]["units"]["USD"][0]["start"]=fqa.FY_START[0]
+    assert _core_status(facts,sub)==(
+        "FINANCE_CORE_FACTS_NOT_IN_SAME_TWO_OWN_10KS",())
+
+
+def test_finance_core_later_comparative_row_not_original_older_10k():
+    facts,sub=_finance_sample()
+    old=facts["facts"]["us-gaap"]["Assets"]["units"]["USD"][0]
+    old["accn"]=fqa.ACCESSIONS[1]
+    old["filed"]=fqa.FILINGS[1]
+    assert _core_status(facts,sub)==(
+        "FINANCE_CORE_FACTS_NOT_IN_SAME_TWO_OWN_10KS",())
+
+
+def test_finance_core_two_weekday_lag_prevents_future_fact_use():
+    assert _core_status(asof="2026-11-05")==(
+        "FEWER_THAN_TWO_ORIGINAL_FINANCE_10KS",())
+
+
+def test_finance_core_stale_source_not_two_current_annual_years():
+    assert _core_status(asof="2028-11-10")==(
+        "NONCONSECUTIVE_OR_STALE_FINANCE_10KS",())
+
+
+def test_finance_10k_amendment_same_FY_not_arbitrarily_chosen():
+    facts,sub=_finance_sample()
+    extra={"accessionNumber":"0000320193-26-000099", "form":"10-K",
+           "filingDate":"2026-11-04","reportDate":"2026-10-30",
+           "acceptanceDateTime":"2026-11-04T19:00:00.000Z"}
+    for k,arr in sub["filings"]["recent"].items():
+        arr.append(extra[k])
+    assert _core_status(facts,sub)==(
+        "DUPLICATE_OR_AMENDED_FINANCE_FISCAL_YEARS",())
+
+
+def test_finance_source_instant_fact_conflict_fails_as_unresolved():
+    facts,sub=_finance_sample()
+    r=dict(facts["facts"]["us-gaap"]["Assets"]["units"]["USD"][-1])
+    r["val"]+=1
+    facts["facts"]["us-gaap"]["Assets"]["units"]["USD"].append(r)
+    assert _core_status(facts,sub)==(
+        "CONFLICTING_FINANCE_SOURCE_FACT_VINTAGES",())
+
+
+def test_finance_bad_numeric_fact_is_HOLD_not_bank_grade():
+    facts,sub=_finance_sample()
+    facts["facts"]["us-gaap"]["NetIncomeLoss"]["units"]["USD"][0]["val"]=True
+    with pytest.raises(m.SourceHold,match="amount"):
+        _core_status(facts,sub)
+
+
+def test_finance_source_coverage_counts_are_separate_from_original_P4A_score():
+    def loader(cik,kind):
+        if cik==320193:
+            return _apple_source(cik,kind)
+        facts,sub=_finance_sample()
+        facts["cik"]=sub["cik"]=51143
+        del facts["facts"]["us-gaap"][m.quality.ANNUAL_TAGS["revenue"]]
+        return json.dumps(facts if kind=="companyfacts" else sub).encode()
+    out=run(fetcher=loader)
+    assert out["current_SEC_finance_SIC_subtypes_NOT_verified_security_industries"]=={
+        "SEC_SIC_BANK_LENDING_CREDIT_AND_FINANCE_REVIEW_ONLY":1}
+    assert out["current_SEC_finance_assets_equity_netincome_two_own_10K_source_status_NOT_a_score"]=={
+        "ASSETS_EQUITY_NETINCOME_TWO_OWN_10KS_SOURCE_ONLY":1}
+    assert out["current_SEC_finance_missing_exact_core_tag_USD_issuer_counts"]=={}
+    assert out["sample_outcome_counts"]["generic_two_fiscal_year_filing_lagged_score_available"]==1
+    assert out["sample_outcome_counts"]["generic_filing_lagged_score_unavailable"]==1
+    assert out["finance_balance_sheet_net_income_sources_not_bank_capital_credit_REIT_FFO_metrics"] is True
+    assert out["live_authorized"] is False
+    assert out["broker_reads"]==out["broker_orders"]==out["private_state_writes"]==0
+    assert "6021" not in json.dumps(out)
+
+
 def test_source_identity_mismatch_is_hard_hold_not_missing():
     def bad(cik, kind):
         f,s=fqa.sample()
