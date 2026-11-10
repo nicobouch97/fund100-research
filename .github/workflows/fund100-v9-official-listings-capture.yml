@@ -1,0 +1,89 @@
+name: Fund-100 V9 Official Current Listing Prospective Capture (NO BROKER)
+
+# Source-dated current listing DISCOVERY, not tradability / backtest / alpha.
+# 02:30 UTC Tue-Sat is after the prior US evening directory refresh.
+# No trading secret, private state, SEC API, stock order or cash capability.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v9_official_current_listing_discovery_v1_0.py"
+      - "test_fund100_v9_official_current_listing_discovery_v1_0.py"
+      - "research_lab/stocks/V9_OFFICIAL_CURRENT_LISTINGS_PROSPECTIVE_SOURCE_2026_11_10.md"
+      - ".github/workflows/fund100-v9-official-listings-offline.yml"
+      - ".github/workflows/fund100-v9-official-listings-capture.yml"
+  schedule:
+    - cron: "30 2 * * 2-6"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fund100-v9-official-current-listings-source-capture
+  cancel-in-progress: false
+
+jobs:
+  dated-current-listing-fingerprints:
+    if: github.repository == 'nicobouch97/fund100-research' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Inspect source parser without networking
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          python -m pip install --disable-pip-version-check --no-input 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v9_official_current_listing_discovery_v1_0.py
+      - name: Capture only source fingerprints and bounded category counts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "fund100-v9-source-bot"
+          git config user.email "fund100-v9-source-bot@users.noreply.github.com"
+          DAY="$(date -u +%Y-%m-%d)"
+          OUT="research_lab/stocks/prospective/official_listings/current_snapshot_$DAY.json"
+          BASE="$(git rev-parse HEAD)"
+
+          for attempt in 1 2 3; do
+            if [ -e "$OUT" ]; then
+              echo "Existing daily source fingerprint retained unchanged."
+              exit 0
+            fi
+
+            # The only remote reads are the TWO literal public official files.
+            # The Python program does not persist the vendor security rows.
+            python -B fund100_v9_official_current_listing_discovery_v1_0.py --out "$OUT"
+            git add -- "$OUT"
+            git commit -m "V9 current official listing source receipt $DAY"
+
+            if git push origin HEAD:main; then
+              echo "Current-source SHA/count snapshot published, not a stock trade."
+              exit 0
+            fi
+
+            # Never force or merge stale source evidence onto a newer main.
+            git fetch origin main
+            NEW="$(git rev-parse origin/main)"
+            if [ "$NEW" = "$BASE" ]; then
+              echo "Write failed without newer main; stop, do not retry."
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$BASE" "$NEW"; then
+              echo "Main rewritten; stop, no non-ancestral source publication."
+              exit 1
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Main moved during all three bounded retries."
+              exit 1
+            fi
+            git reset --hard "$NEW"
+            git clean -fd -- research_lab/stocks/prospective/official_listings/
+            BASE="$NEW"
+          done
+          exit 1
