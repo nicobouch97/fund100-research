@@ -436,6 +436,70 @@ def _finance_core_original_two_10k_source_readiness(*, companyfacts: dict,
     return ("ASSETS_EQUITY_NETINCOME_TWO_OWN_10KS_SOURCE_ONLY", ())
 
 
+# Exact 2025 FASB US-GAAP source concepts; a few are ABSENT even for
+# legitimate deposit lenders. These are optional source-coverage diagnostics
+# for current SEC SIC 6000-6199, not interchangeable accounting substitutes.
+BANK_CREDIT_OPTIONAL_INSTANT_TAGS = {
+    "domestic_deposits": "DepositsDomestic",
+    "net_loans_and_leases": "LoansAndLeasesReceivableNetReportedAmount",
+    "financing_credit_loss_allowance": "FinancingReceivableAllowanceForCreditLosses",
+}
+
+
+def _bank_credit_original_two_10k_source_readiness(*, companyfacts: dict,
+                                                   submissions: dict,
+                                                   asof: str) -> tuple[str, tuple[str, ...]]:
+    """Examine three exact USD instant tags on the SAME two original 10-Ks.
+
+    A current issuer SIC 6000-6199 does not prove deposit-taking, banking
+    regulation, eligible listed common shares or a credit-risk model.
+    An absent concept may instead use a different legitimate XBRL tag:
+    neither alternative selection nor score imputation is performed.
+    """
+    source_state, _ = _finance_core_original_two_10k_source_readiness(
+        companyfacts=companyfacts, submissions=submissions, asof=asof)
+    if source_state != "ASSETS_EQUITY_NETINCOME_TWO_OWN_10KS_SOURCE_ONLY":
+        return ("BANK_CREDIT_FINANCE_CORE_SOURCE_NOT_READY", ())
+    concepts = companyfacts["facts"]["us-gaap"]
+    absent = tuple(label for label, tag in BANK_CREDIT_OPTIONAL_INSTANT_TAGS.items()
+                   if not _has_usd_concept(concepts, tag))
+    if absent:
+        return ("MISSING_BANK_CREDIT_EXACT_OPTIONAL_USD_TAG", absent)
+    cutoff = quality.iso_date(asof, "bank credit source cutoff")
+    ledger = quality.submissions_index(submissions)
+    eligible = sorted(
+        ((accn, filing) for accn, filing in ledger.items()
+         if filing["form"] == "10-K"
+         and quality.iso_date(filing["end"], "bank credit FY end") <= cutoff
+         and quality.iso_date(quality.availability_day(
+             filing["filed"]), "bank credit public filing lag") <= cutoff),
+        key=lambda x: (x[1]["end"], x[1]["filed"], x[0]))
+    # The FINANCE core above already proved uniqueness, year continuity and
+    # freshness. Never silently pair a newer comparative row with an old FY.
+    for label, tag in BANK_CREDIT_OPTIONAL_INSTANT_TAGS.items():
+        for accn, filing in eligible[-2:]:
+            amounts = set()
+            for row in concepts[tag]["units"]["USD"]:
+                if type(row) is not dict:
+                    raise SourceHold("Malformed bank credit original fact row")
+                if (row.get("accn") != accn or row.get("form") != "10-K"
+                    or row.get("filed") != filing["filed"]
+                    or row.get("end") != filing["end"]
+                    or row.get("start") is not None):
+                    continue
+                val = row.get("val")
+                if (type(val) not in (int, float)
+                    or not math.isfinite(float(val))
+                    or abs(float(val)) > 1e15):
+                    raise SourceHold("Nonfinite bank credit original SEC amount")
+                amounts.add(float(val))
+            if len(amounts) > 1:
+                return ("CONFLICTING_BANK_CREDIT_ORIGINAL_FACT_VINTAGES", ())
+            if not amounts:
+                return ("BANK_CREDIT_TAGS_NOT_IN_SAME_TWO_OWN_10KS", ())
+    return ("BANK_CREDIT_THREE_INSTANT_TAGS_TWO_OWN_10KS_SOURCE_ONLY", ())
+
+
 def _missing_generic_concepts(companyfacts: dict) -> tuple[str, ...]:
     """Only exact source field presence, independent of historical filing."""
     concepts = companyfacts["facts"]["us-gaap"]
@@ -493,6 +557,8 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
     finance_SIC_subtype_current_issuer_counts = Counter()
     finance_three_core_two_own_10K_source_status = Counter()
     finance_missing_exact_core_USD_tag_counts = Counter()
+    bank_credit_two_own_10k_optional_source_status = Counter()
+    bank_credit_missing_optional_USD_tag_counts = Counter()
     unscored_with_older_descriptors = 0
     total_bytes = 0
     source_digest = sha256(b"FUND100_V9_ORIGINAL_SEC_DOCUMENT_SOURCE_DIGEST_V1\n")
@@ -536,6 +602,14 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
             finance_three_core_two_own_10K_source_status[ready_state] += 1
             for field in missing_finance:
                 finance_missing_exact_core_USD_tag_counts[field] += 1
+            if subtype == "SEC_SIC_BANK_LENDING_CREDIT_AND_FINANCE_REVIEW_ONLY":
+                bank_state, missing_bank = _bank_credit_original_two_10k_source_readiness(
+                    companyfacts=original["companyfacts"],
+                    submissions=original["submissions"],
+                    asof=observed.date().isoformat())
+                bank_credit_two_own_10k_optional_source_status[bank_state] += 1
+                for field in missing_bank:
+                    bank_credit_missing_optional_USD_tag_counts[field] += 1
         try:
             observed_quality = quality.asof_quality(
                 original["companyfacts"], original["submissions"],
@@ -649,6 +723,12 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
         or any(c > finance_three_core_two_own_10K_source_status.get(
                "MISSING_EXACT_FINANCE_CORE_CONCEPT_USD_TAG", 0)
                for c in finance_missing_exact_core_USD_tag_counts.values())
+        or sum(bank_credit_two_own_10k_optional_source_status.values()) !=
+        finance_SIC_subtype_current_issuer_counts.get(
+            "SEC_SIC_BANK_LENDING_CREDIT_AND_FINANCE_REVIEW_ONLY", 0)
+        or any(c > bank_credit_two_own_10k_optional_source_status.get(
+               "MISSING_BANK_CREDIT_EXACT_OPTIONAL_USD_TAG", 0)
+               for c in bank_credit_missing_optional_USD_tag_counts.values())
         or sum(joint_four_inputs_same_10k_source_review_states.values()) !=
         unscored_source_reasons.get(
             "TWO_PLUS_10K_MISSING_GENERIC_CONCEPT_OR_USD_ROWS", 0)
@@ -700,6 +780,11 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
             dict(sorted(finance_three_core_two_own_10K_source_status.items())),
         "current_SEC_finance_missing_exact_core_tag_USD_issuer_counts":
             dict(sorted(finance_missing_exact_core_USD_tag_counts.items())),
+        "current_SEC_bank_credit_exact_optional_instant_three_tag_two_own_10K_source_status_NOT_a_score":
+            dict(sorted(bank_credit_two_own_10k_optional_source_status.items())),
+        "current_SEC_bank_credit_missing_exact_optional_USD_tag_issuer_counts":
+            dict(sorted(bank_credit_missing_optional_USD_tag_counts.items())),
+        "bank_credit_optional_source_not_deposit_taking_or_credit_quality_proof": True,
         "finance_balance_sheet_net_income_sources_not_bank_capital_credit_REIT_FFO_metrics": True,
         "source_finance_subtype_not_legal_US_stock_class_or_true_business_exposure": True,
         "SEC_current_SIC_does_not_verify_US_common_security_or_sector_accounting": True,
