@@ -11,6 +11,7 @@ from hashlib import sha256
 import argparse
 import json
 from math import isfinite, log1p, sqrt
+from numbers import Real
 from pathlib import Path
 
 import pandas as pd
@@ -29,7 +30,7 @@ class AttributionStop(ValueError):
 
 
 def _num(value):
-    if type(value) not in (int, float) or not isfinite(value):
+    if type(value) is bool or not isinstance(value, Real) or not isfinite(float(value)):
         raise AttributionStop("Non-finite original forward daily component")
     return float(value)
 
