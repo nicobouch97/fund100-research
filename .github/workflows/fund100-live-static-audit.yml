@@ -32,6 +32,13 @@ on:
       # drift is a research integrity gate, never a broker trading release.
       # Cross-source SEC current issuer associations use only public research
       # sources and never release brokerage or share-class order eligibility.
+      # Source-original 32-CIK annual SEC financial availability pilot
+      # is strictly research only and must pass complete LIVE safety tests.
+      - "fund100_v9_broad_original_sec_quality_coverage_v1_0.py"
+      - "test_fund100_v9_broad_original_sec_quality_coverage_v1_0.py"
+      - "research_lab/stocks/V9_ORIGINAL_BROAD_SEC_FINANCIAL_COVERAGE_PILOT_2026_11_10.md"
+      - ".github/workflows/fund100-v9-broad-sec-coverage-offline.yml"
+      - ".github/workflows/fund100-v9-broad-sec-coverage-capture.yml"
       - "fund100_v9_sec_current_listing_association_v1_0.py"
       - "test_fund100_v9_sec_current_listing_association_v1_0.py"
       - "research_lab/stocks/V9_CURRENT_NASDAQ_SEC_ASSOCIATION_AUDIT_2026_11_10.md"
@@ -431,6 +438,13 @@ on:
       # drift is a research integrity gate, never a broker trading release.
       # Cross-source SEC current issuer associations use only public research
       # sources and never release brokerage or share-class order eligibility.
+      # Source-original 32-CIK annual SEC financial availability pilot
+      # is strictly research only and must pass complete LIVE safety tests.
+      - "fund100_v9_broad_original_sec_quality_coverage_v1_0.py"
+      - "test_fund100_v9_broad_original_sec_quality_coverage_v1_0.py"
+      - "research_lab/stocks/V9_ORIGINAL_BROAD_SEC_FINANCIAL_COVERAGE_PILOT_2026_11_10.md"
+      - ".github/workflows/fund100-v9-broad-sec-coverage-offline.yml"
+      - ".github/workflows/fund100-v9-broad-sec-coverage-capture.yml"
       - "fund100_v9_sec_current_listing_association_v1_0.py"
       - "test_fund100_v9_sec_current_listing_association_v1_0.py"
       - "research_lab/stocks/V9_CURRENT_NASDAQ_SEC_ASSOCIATION_AUDIT_2026_11_10.md"
