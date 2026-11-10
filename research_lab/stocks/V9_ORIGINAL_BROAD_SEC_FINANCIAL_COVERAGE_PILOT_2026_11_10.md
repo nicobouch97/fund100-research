@@ -223,6 +223,62 @@ a survivorship-safe historical share-class/filing-vintage source.
 Original source bytes and ticker/CIK roster are not permanently
 archived for future historical replay.
 
+## 10 November — genuine SEC alternative-tag pairing and joint-four-input question
+
+The original source capture [run #42852424227](https://github.com/nicobouch97/fund100-research/actions/runs/42852424227)
+on merged PR #617 verified, from the same SHA256-committed 32-CIK
+prospective sample, that **five of seven alternate-tag observations**
+have their own original two-eligible-10-K annual periods.
+Specifically: Revenues 4/5 (one stale/nonconsecutive),
+SalesRevenueNet 0/1 (one insufficient own-filing pair) and
+PaymentsToAcquireProductiveAssets 1/1. These are **field
+observations**, not five distinct issuers nor five new P4A scores.
+P4A still scores exactly **9/32**; original total unscored is 23.
+
+### Next preregistered research-only gate: ALL FOUR inputs jointly
+
+A source tag with its own two original annual years is necessary but
+NOT sufficient for an issuer's full annual financial quality model.
+Check, using exactly the existing 32-issuer issuer-SHA cohort and
+same bounded SEC original companyfacts/submissions downloads, for
+each of the **11 existing missing-generic-tag issuers** whether:
+
+1. For every of the four required generic P4A inputs (revenue,
+   operating income, operating cash flow, capex), use the exact
+   generic tag when available. Only where an exact generic tag is
+   absent, consider the ALREADY PREDECLARED alternative source tags.
+   Do not invent, expand or select tags by favourable values.
+2. The original SEC submissions filings.recent ledger contains
+   at least two different uniquely keyed eligible own 10-K annual
+   FYs as-of the observation, with valid filing day and two-weekday
+   conservative lag, latest annual period nonstale and FY ends
+   separated 330–400 days. Duplicate 10-Ks for the same FY are
+   unresolved, never select an arbitrary amendment.
+3. Each required input has a finite USD source fact for the SAME
+   TWO original 10-K accessions, filing days, fiscal-year ends
+   and annual durations. Within each FY, all four concepts must
+   have the SAME original annual-period start day. Conflicting
+   amount or period start on the same original accession is a
+   source ambiguity; multiple candidate source tags eligible
+   for the same metric is not silently resolved by choosing one.
+4. Publish only a single reason category for EACH original
+   missing-tag issuer and reconcile these to 11, while preserving
+   the previously observed exact-tag gaps and individual
+   alternative-source 10-K status counts. Never publish issuer
+   roster/CIKs, names, tickers, USD values or source archives.
+
+A positive result means solely
+FOUR_SOURCE_INPUTS_SHARE_TWO_ORIGINAL_10KS_REVIEW_ONLY.
+This does **not** validate US common-share security identity,
+GAAP concept equivalence, industry comparability, signed financial
+meaning, point-in-time historical as-of truth, prices, valuation,
+profitability, investable alpha or permission to use new quality
+scores or trade. No alternative will be substituted into P4A.
+Existing eight issuer-specific frozen P4E contracts remain unchanged.
+A subsequent financial-accounting specialist review would be
+required before constructing a distinct, sector-aware quality
+contract. No new SEC GETs or broker calls are authorised.
+
 ## Explicit limitations and safety
 
 Only a 32-issuer diagnostic sample; the 5,027-issuer source-wording

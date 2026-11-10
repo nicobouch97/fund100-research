@@ -177,6 +177,100 @@ def _alternative_original_10k_pair_status(*, companyfacts: dict,
     return "TWO_OWN_ACCESSION_10K_FY_FACTS_REVIEW_ONLY_NOT_EQUIVALENT"
 
 
+def _joint_four_inputs_same_original_10k_years(*, companyfacts: dict,
+                                            submissions: dict,
+                                            missing: tuple[str, ...],
+                                            asof: str) -> str:
+    """Strict original source-COEXISTENCE only, never financial equivalence.
+
+    For each missing generic US-GAAP tag, use solely the preregistered
+    alternative tag candidates; never invent sector or select a tag for
+    its favourable dollar value. Require all FOUR input tags to cover
+    exactly the SAME last two eligible 10-K accession/filing/FY-end keys.
+    If multiple candidate alternatives qualify, do not choose one.
+    """
+    if not missing or any(label not in quality.ANNUAL_TAGS for label in missing):
+        raise SourceHold("Joint original-source probe requires a recognised missing tag")
+    concepts = companyfacts["facts"]["us-gaap"]
+    tag_choices = {}
+    for metric, generic in quality.ANNUAL_TAGS.items():
+        tags = (RESEARCH_ONLY_ALTERNATIVE_CONCEPTS.get(metric, ())
+                if metric in missing else (generic,))
+        available = tuple(tag for tag in tags if _has_usd_concept(concepts, tag))
+        if not available:
+            return "MISSING_ANY_USD_SOURCE_TAG_FOR_ONE_OR_MORE_INPUTS"
+        tag_choices[metric] = available
+
+    asof_day = quality.iso_date(asof, "joint source research date")
+    ledger = quality.submissions_index(submissions)
+    eligible = [
+        (accn, data) for accn, data in ledger.items()
+        if data["form"] == "10-K"
+        and quality.iso_date(data["end"], "10-K FY end") <= asof_day
+        and quality.iso_date(
+            quality.availability_day(data["filed"]), "10-K public lag") <= asof_day
+    ]
+    if len(eligible) < 2:
+        return "INSUFFICIENT_ORIGINAL_ELIGIBLE_10K_LEDGER_YEARS"
+    ends = Counter(row["end"] for _, row in eligible)
+    if any(n > 1 for n in ends.values()):
+        return "MULTIPLE_ORIGINAL_10K_ACCESSIONS_SAME_FY_UNRESOLVED"
+    eligible.sort(key=lambda pair: pair[1]["end"])
+    (prior_accn, prior), (latest_accn, latest) = eligible[-2:]
+    prior_end = quality.iso_date(prior["end"], "prior FY")
+    latest_end = quality.iso_date(latest["end"], "latest FY")
+    if (not 330 <= (latest_end-prior_end).days <= 400
+        or (asof_day-latest_end).days > quality.MAX_STALENESS_DAYS):
+        return "LATEST_TWO_10K_YEARS_STALE_OR_NONCONSECUTIVE"
+
+    period_keys = ((prior_accn, prior), (latest_accn, latest))
+    starts_by_metric = {}
+    for metric, tags in tag_choices.items():
+        qualifying = []
+        for tag in tags:
+            starts = []
+            for accn, filing in period_keys:
+                # Require original source, own accession, exact FY,
+                # full annual duration and a unique original USD value.
+                rows = concepts[tag]["units"]["USD"]
+                matching = set()
+                for row in rows:
+                    if type(row) is not dict:
+                        raise SourceHold("Invalid joint original SEC USD fact row")
+                    if (row.get("accn") != accn or row.get("form") != "10-K"
+                        or row.get("filed") != filing["filed"]
+                        or row.get("end") != filing["end"]):
+                        continue
+                    try:
+                        start = quality.iso_date(row.get("start"), "source FY start")
+                        end = quality.iso_date(row.get("end"), "source FY end")
+                    except quality.StockSourceStop:
+                        continue
+                    if not quality.MIN_FY_DAYS <= (end-start).days <= quality.MAX_FY_DAYS:
+                        continue
+                    amount = row.get("val")
+                    if (type(amount) not in (int, float)
+                        or not math.isfinite(float(amount))
+                        or abs(float(amount)) > 1e15):
+                        raise SourceHold("Untrusted joint original SEC USD amount")
+                    matching.add((start, float(amount)))
+                if len(matching) > 1:
+                    return "CONFLICTING_ORIGINAL_10K_FACT_AMOUNT_OR_START"
+                if not matching:
+                    break
+                starts.append(next(iter(matching))[0])
+            if len(starts) == 2:
+                qualifying.append((tag, tuple(starts)))
+        if not qualifying:
+            return "FOUR_INPUTS_NOT_IN_SAME_TWO_ORIGINAL_10K_ACCESSIONS"
+        if len(qualifying) > 1:
+            return "MULTIPLE_ALTERNATIVE_TAG_OPTIONS_NO_ARBITRARY_PICK"
+        starts_by_metric[metric] = qualifying[0][1]
+    if len({starts for starts in starts_by_metric.values()}) != 1:
+        return "FOUR_INPUTS_10K_ANNUAL_STARTS_NOT_ALIGNED"
+    return "FOUR_SOURCE_INPUTS_SHARE_TWO_ORIGINAL_10KS_REVIEW_ONLY"
+
+
 def _missing_generic_concepts(companyfacts: dict) -> tuple[str, ...]:
     """Only exact source field presence, independent of historical filing."""
     concepts = companyfacts["facts"]["us-gaap"]
@@ -228,6 +322,7 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
     missing_generic_concept_usd_counts = Counter()
     potential_alternative_tag_presence_only = Counter()
     alternative_tag_own_accession_10k_pair_states = Counter()
+    joint_four_inputs_same_10k_source_review_states = Counter()
     unscored_with_older_descriptors = 0
     total_bytes = 0
     source_digest = sha256(b"FUND100_V9_ORIGINAL_SEC_DOCUMENT_SOURCE_DIGEST_V1\n")
@@ -291,6 +386,11 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
                 if not missing:
                     raise SourceHold("Missing-tag census contradicts original source reason")
                 concepts = original["companyfacts"]["facts"]["us-gaap"]
+                joint_state = _joint_four_inputs_same_original_10k_years(
+                    companyfacts=original["companyfacts"],
+                    submissions=original["submissions"],
+                    missing=missing, asof=observed.date().isoformat())
+                joint_four_inputs_same_10k_source_review_states[joint_state] += 1
                 for label in missing:
                     missing_generic_concept_usd_counts[label] += 1
                     for alias in RESEARCH_ONLY_ALTERNATIVE_CONCEPTS.get(label, ()):
@@ -323,6 +423,9 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
         or any(count >
                missing_generic_concept_usd_counts.get(key.split(":")[0], 0)
                for key, count in potential_alternative_tag_presence_only.items())
+        or sum(joint_four_inputs_same_10k_source_review_states.values()) !=
+        unscored_source_reasons.get(
+            "TWO_PLUS_10K_MISSING_GENERIC_CONCEPT_OR_USD_ROWS", 0)
         or sum(alternative_tag_own_accession_10k_pair_states.values()) !=
         sum(potential_alternative_tag_presence_only.values())
         or any(key.split(":")[-1] not in {
@@ -355,6 +458,10 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
             dict(sorted(potential_alternative_tag_presence_only.items())),
         "alternative_tag_original_10K_own_accession_pair_diagnostics_NOT_equivalence":
             dict(sorted(alternative_tag_own_accession_10k_pair_states.items())),
+        "joint_four_input_same_two_original_10K_years_source_states_NOT_a_score":
+            dict(sorted(joint_four_inputs_same_10k_source_review_states.items())),
+        "joint_four_input_source_alignment_not_accounting_semantics_verified": True,
+        "joint_four_input_source_alignment_never_promotes_original_P4A_score": True,
         "alternative_10K_pair_diagnostic_does_not_make_revenue_capex_interchangeable": True,
         "alternative_tag_exists_in_any_current_companyfacts_not_same_10K_proof": True,
         "no_alternative_tag_applied_to_quality_score": True,
