@@ -44,12 +44,12 @@ class AssociationStop(ValueError):
 # Adverse instrument cues ALWAYS supersede a "common stock" mention
 # (e.g. "warrants to purchase common stock").
 _NONCOMMON_CUES = re.compile(
-    r"\\b(?:PREFERRED|PREFERENCE|WARRANTS?|RIGHTS?|"
+    r"\b(?:PREFERRED|PREFERENCE|WARRANTS?|RIGHTS?|"
     r"UNITS?|DEPOSITARY|DEPOSITORY|ADR|ADS|ETN|ETF|ETP|"
     r"NOTES?|BONDS?|DEBENTURES?|CERTIFICATES?|"
-    r"CONVERTIBLE|REDEEMABLE)\\b", re.IGNORECASE)
+    r"CONVERTIBLE|REDEEMABLE)\b", re.IGNORECASE)
 _COMMON_CUES = re.compile(
-    r"\\b(?:COMMON\\s+(?:STOCK|SHARES?)|ORDINARY\\s+SHARES?)\\b",
+    r"\b(?:COMMON\s+(?:STOCK|SHARES?)|ORDINARY\s+SHARES?)\b",
     re.IGNORECASE)
 
 
