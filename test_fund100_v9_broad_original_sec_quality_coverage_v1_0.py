@@ -97,6 +97,9 @@ def test_industrial_quality_model_missing_is_not_zero_imputed():
         "revenue":1, "operating_income":1, "operating_cash_flow":1,
         "capital_expenditure":1,
     }
+    assert out["joint_four_input_same_two_original_10K_years_source_states_NOT_a_score"]=={
+        "MISSING_ANY_USD_SOURCE_TAG_FOR_ONE_OR_MORE_INPUTS":1,
+    }
     assert out["possible_alternative_usgaap_tag_presence_NOT_a_substitute"]=={}
     assert out["generic_unavailable_issuers_with_undownloaded_older_SEC_file_descriptors_only"]==0
 
@@ -228,6 +231,10 @@ def test_alternative_revenue_and_capex_tag_presence_is_no_annual_score():
         "revenue:SalesRevenueNet:TWO_OWN_ACCESSION_10K_FY_FACTS_REVIEW_ONLY_NOT_EQUIVALENT":1,
         "capital_expenditure:PaymentsToAcquireProductiveAssets:TWO_OWN_ACCESSION_10K_FY_FACTS_REVIEW_ONLY_NOT_EQUIVALENT":1,
     }
+    assert out["joint_four_input_same_two_original_10K_years_source_states_NOT_a_score"]=={
+        "MULTIPLE_ALTERNATIVE_TAG_OPTIONS_NO_ARBITRARY_PICK":1,
+    }
+    assert out["joint_four_input_source_alignment_never_promotes_original_P4A_score"] is True
     assert out["alternative_10K_pair_diagnostic_does_not_make_revenue_capex_interchangeable"] is True
     assert out["alternative_tag_exists_in_any_current_companyfacts_not_same_10K_proof"] is True
     assert out["no_alternative_tag_applied_to_quality_score"] is True
@@ -342,6 +349,147 @@ def test_10k_pair_is_stale_at_later_asof_and_cannot_be_backfilled():
     assert m._alternative_original_10k_pair_status(
         companyfacts=facts,submissions=sub,tag="Revenues",
         asof="2028-11-10")=="LATEST_TWO_10K_FY_NOT_CONSECUTIVE_AND_FRESH"
+
+
+def _joint_missing_revenue(*, with_capex=False):
+    facts, sub = fqa.sample()
+    concepts = facts["facts"]["us-gaap"]
+    revenue = concepts.pop(m.quality.ANNUAL_TAGS["revenue"])
+    concepts["Revenues"] = {"units":{"USD":[dict(x)
+        for x in revenue["units"]["USD"]]}}
+    missing = ("revenue",)
+    if with_capex:
+        capex = concepts.pop(m.quality.ANNUAL_TAGS["capital_expenditure"])
+        concepts["PaymentsToAcquireProductiveAssets"] = {"units":{
+            "USD":[dict(x) for x in capex["units"]["USD"]]}}
+        missing = ("revenue","capital_expenditure")
+    return facts, sub, missing
+
+
+def test_joint_four_original_sec_inputs_two_exact_10ks_review_only_not_a_score():
+    facts, sub, missing = _joint_missing_revenue(with_capex=True)
+    assert m._joint_four_inputs_same_original_10k_years(
+        companyfacts=facts,submissions=sub,missing=missing,
+        asof="2026-11-10"
+    )=="FOUR_SOURCE_INPUTS_SHARE_TWO_ORIGINAL_10KS_REVIEW_ONLY"
+
+
+def test_joint_no_automatic_preferred_revenue_if_both_source_alternatives_valid():
+    facts,sub,missing = _joint_missing_revenue()
+    facts["facts"]["us-gaap"]["SalesRevenueNet"] = facts["facts"]["us-gaap"]["Revenues"]
+    assert m._joint_four_inputs_same_original_10k_years(
+        companyfacts=facts,submissions=sub,missing=missing,
+        asof="2026-11-10"
+    )=="MULTIPLE_ALTERNATIVE_TAG_OPTIONS_NO_ARBITRARY_PICK"
+
+
+def test_missing_any_other_original_quality_input_blocks_joint_review():
+    facts,sub,missing = _joint_missing_revenue()
+    del facts["facts"]["us-gaap"][m.quality.ANNUAL_TAGS["operating_income"]]
+    assert m._joint_four_inputs_same_original_10k_years(
+        companyfacts=facts,submissions=sub,missing=("revenue","operating_income"),
+        asof="2026-11-10"
+    )=="MISSING_ANY_USD_SOURCE_TAG_FOR_ONE_OR_MORE_INPUTS"
+
+
+def test_joint_annual_fiscal_start_must_be_identical_across_all_four_fields():
+    facts,sub,missing = _joint_missing_revenue()
+    original=facts["facts"]["us-gaap"][m.quality.ANNUAL_TAGS["operating_income"]]["units"]["USD"]
+    original[1]["start"]="2025-11-02"  # still 330-380 days
+    assert m._joint_four_inputs_same_original_10k_years(
+        companyfacts=facts,submissions=sub,missing=missing,
+        asof="2026-11-10"
+    )=="FOUR_INPUTS_10K_ANNUAL_STARTS_NOT_ALIGNED"
+
+
+def test_joint_recent_10k_comparative_in_later_accession_not_original_older():
+    facts,sub,missing = _joint_missing_revenue()
+    old=facts["facts"]["us-gaap"]["Revenues"]["units"]["USD"][0]
+    old["accn"] = fqa.ACCESSIONS[-1]
+    old["filed"] = fqa.FILINGS[-1]
+    assert m._joint_four_inputs_same_original_10k_years(
+        companyfacts=facts,submissions=sub,missing=missing,
+        asof="2026-11-10"
+    )=="FOUR_INPUTS_NOT_IN_SAME_TWO_ORIGINAL_10K_ACCESSIONS"
+
+
+def test_joint_two_10k_original_facts_must_not_be_from_distinct_securities():
+    facts,sub,missing = _joint_missing_revenue()
+    facts["facts"]["us-gaap"]["Revenues"]["units"]["USD"][-1]["accn"]="0000999999-26-000001"
+    assert m._joint_four_inputs_same_original_10k_years(
+        companyfacts=facts,submissions=sub,missing=missing,
+        asof="2026-11-10"
+    )=="FOUR_INPUTS_NOT_IN_SAME_TWO_ORIGINAL_10K_ACCESSIONS"
+
+
+def test_joint_two_fiscal_years_only_after_public_filing_lag():
+    facts,sub,missing = _joint_missing_revenue()
+    assert m._joint_four_inputs_same_original_10k_years(
+        companyfacts=facts,submissions=sub,missing=missing,
+        asof="2026-11-05"
+    )=="INSUFFICIENT_ORIGINAL_ELIGIBLE_10K_LEDGER_YEARS"
+
+
+def test_joint_two_fiscal_years_stale_must_not_be_used_as_current():
+    facts,sub,missing = _joint_missing_revenue()
+    assert m._joint_four_inputs_same_original_10k_years(
+        companyfacts=facts,submissions=sub,missing=missing,
+        asof="2028-11-10"
+    )=="LATEST_TWO_10K_YEARS_STALE_OR_NONCONSECUTIVE"
+
+
+def test_joint_same_fiscal_year_two_original_filing_accessions_ambiguous():
+    facts,sub,missing = _joint_missing_revenue()
+    extra="0000320193-26-000099"
+    new_10k={
+        "accessionNumber":extra,"form":"10-K",
+        "filingDate":"2026-11-04","reportDate":"2026-10-30",
+        "acceptanceDateTime":"2026-11-04T19:00:00.000Z"}
+    for k,v in sub["filings"]["recent"].items():
+        v.append(new_10k[k])
+    assert m._joint_four_inputs_same_original_10k_years(
+        companyfacts=facts,submissions=sub,missing=missing,
+        asof="2026-11-10"
+    )=="MULTIPLE_ORIGINAL_10K_ACCESSIONS_SAME_FY_UNRESOLVED"
+
+
+def test_joint_same_accession_conflicting_annual_usd_amount_never_picked():
+    facts,sub,missing = _joint_missing_revenue()
+    row=dict(facts["facts"]["us-gaap"]["Revenues"]["units"]["USD"][-1])
+    row["val"] += 1
+    facts["facts"]["us-gaap"]["Revenues"]["units"]["USD"].append(row)
+    assert m._joint_four_inputs_same_original_10k_years(
+        companyfacts=facts,submissions=sub,missing=missing,
+        asof="2026-11-10"
+    )=="CONFLICTING_ORIGINAL_10K_FACT_AMOUNT_OR_START"
+
+
+def test_joint_matching_10k_bad_amount_is_source_hold():
+    facts,sub,missing = _joint_missing_revenue()
+    facts["facts"]["us-gaap"]["Revenues"]["units"]["USD"][-1]["val"]=float("nan")
+    with pytest.raises(m.SourceHold,match="amount"):
+        m._joint_four_inputs_same_original_10k_years(
+            companyfacts=facts,submissions=sub,missing=missing,
+            asof="2026-11-10")
+
+
+def test_joint_sample_reconciles_all_missing_tag_issuers_with_no_new_scores():
+    def loader(cik,kind):
+        if cik==320193:
+            return _apple_source(cik,kind)
+        facts,sub,missing=_joint_missing_revenue(with_capex=True)
+        (facts if kind=="companyfacts" else sub)["cik"]=51143
+        return json.dumps(facts if kind=="companyfacts" else sub).encode()
+    out=run(fetcher=loader)
+    assert out["sample_outcome_counts"][
+        "generic_two_fiscal_year_filing_lagged_score_available"]==1
+    assert out["sample_outcome_counts"][
+        "generic_filing_lagged_score_unavailable"]==1
+    assert out["joint_four_input_same_two_original_10K_years_source_states_NOT_a_score"]=={
+        "FOUR_SOURCE_INPUTS_SHARE_TWO_ORIGINAL_10KS_REVIEW_ONLY":1}
+    assert out["joint_four_input_source_alignment_not_accounting_semantics_verified"] is True
+    assert out["joint_four_input_source_alignment_never_promotes_original_P4A_score"] is True
+    assert out["broker_reads"]==out["broker_orders"]==out["private_state_writes"]==0
 
 
 def test_genuine_usd_tag_presence_does_not_override_filing_packet_eligibility():
