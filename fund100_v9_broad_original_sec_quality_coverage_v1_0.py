@@ -322,6 +322,120 @@ def _issuer_original_source_accounting_context(*, companyfacts: dict,
     return taxonomy, sic_band
 
 
+# SEC SIC is current issuer categorisation, not validated legal share class.
+# Source: SEC standard-industrial-classification code list; do not infer
+# that every company in the general 6700s is a REIT (6798 specifically).
+def _current_finance_subtype_from_SEC_sic(submissions: dict) -> str:
+    raw = submissions.get("sic")
+    if raw is None or raw == "":
+        return "SIC_MISSING_NOT_FINANCE_CONFIRMED"
+    if type(raw) is int:
+        sic = raw
+    elif (type(raw) is str and len(raw) == 4
+          and raw.isascii() and raw.isdecimal()):
+        sic = int(raw)
+    else:
+        raise SourceHold("Original SEC SIC metadata has invalid type or format")
+    if sic == 6798:
+        return "SEC_SIC_REIT_6798_REVIEW_ONLY"
+    if sic == 6770:
+        return "SEC_SIC_BLANK_CHECK_COMPANY_6770_NOT_STOCK_APPROVAL"
+    if 6000 <= sic <= 6199:
+        return "SEC_SIC_BANK_LENDING_CREDIT_AND_FINANCE_REVIEW_ONLY"
+    if 6200 <= sic <= 6299:
+        return "SEC_SIC_BROKER_DEALER_EXCHANGE_ADVICE_REVIEW_ONLY"
+    if 6300 <= sic <= 6499:
+        return "SEC_SIC_INSURANCE_UNDERWRITING_SERVICES_REVIEW_ONLY"
+    if 6500 <= sic <= 6599:
+        return "SEC_SIC_REAL_ESTATE_OPERATORS_SERVICES_REVIEW_ONLY"
+    if 6700 <= sic <= 6799:
+        return "SEC_SIC_OTHER_HOLDING_INVESTMENT_STRUCTURES_REVIEW_ONLY"
+    return "SEC_SIC_OUTSIDE_6000_TO_6799"
+
+
+FINANCE_CORE_SOURCE_TAGS = {
+    "assets": "Assets",
+    "equity": "StockholdersEquity",
+    "net_income": "NetIncomeLoss",
+}
+
+
+def _finance_core_original_two_10k_source_readiness(*, companyfacts: dict,
+                                                    submissions: dict,
+                                                    asof: str) -> tuple[str, tuple[str, ...]]:
+    """Only original bank/finance balance-sheet + annual P&L source coverage.
+
+    Assets and equity are FY-end INSTANT USD facts; net income is an
+    original own-10-K FULL-YEAR flow. A positive result is NOT a bank
+    quality/credit/solvency/REIT-FFO model nor evidence of audited assets.
+    No source amount is exported or used to score/rank.
+    """
+    concepts = companyfacts["facts"].get("us-gaap")
+    if type(concepts) is not dict:
+        return ("NO_US_GAAP_SOURCE_FOR_FINANCE_CORE", ())
+    missing = tuple(label for label, tag in FINANCE_CORE_SOURCE_TAGS.items()
+                    if not _has_usd_concept(concepts, tag))
+    if missing:
+        return ("MISSING_EXACT_FINANCE_CORE_CONCEPT_USD_TAG", missing)
+    clock = quality.iso_date(asof, "finance core source observation")
+    ledger = quality.submissions_index(submissions)
+    eligible = sorted([
+        (accn, filing) for accn, filing in ledger.items()
+        if (filing["form"] == "10-K"
+            and quality.iso_date(filing["end"], "finance FY end") <= clock
+            and quality.iso_date(
+                quality.availability_day(filing["filed"]), "finance public lag") <= clock)
+    ], key=lambda x: (x[1]["end"], x[1]["filed"], x[0]))
+    if len(eligible) < 2:
+        return ("FEWER_THAN_TWO_ORIGINAL_FINANCE_10KS", ())
+    fiscal_ends = Counter(filing["end"] for _, filing in eligible)
+    if any(n != 1 for n in fiscal_ends.values()):
+        return ("DUPLICATE_OR_AMENDED_FINANCE_FISCAL_YEARS", ())
+    (old_accn, old), (new_accn, new) = eligible[-2:]
+    old_end = quality.iso_date(old["end"], "old finance FY")
+    new_end = quality.iso_date(new["end"], "new finance FY")
+    if (not 330 <= (new_end-old_end).days <= 400
+        or (clock-new_end).days > quality.MAX_STALENESS_DAYS):
+        return ("NONCONSECUTIVE_OR_STALE_FINANCE_10KS", ())
+
+    for label, tag in FINANCE_CORE_SOURCE_TAGS.items():
+        for accn, filing in ((old_accn, old), (new_accn, new)):
+            seen = set()
+            for row in concepts[tag]["units"]["USD"]:
+                if type(row) is not dict:
+                    raise SourceHold("Invalid finance original source fact row")
+                if (row.get("accn") != accn or row.get("form") != "10-K"
+                    or row.get("filed") != filing["filed"]
+                    or row.get("end") != filing["end"]):
+                    continue
+                if label == "net_income":
+                    try:
+                        beginning = quality.iso_date(row.get("start"), "finance annual start")
+                        ending = quality.iso_date(row.get("end"), "finance annual end")
+                    except quality.StockSourceStop:
+                        continue
+                    if not quality.MIN_FY_DAYS <= (ending-beginning).days <= quality.MAX_FY_DAYS:
+                        continue
+                    key_start = beginning.isoformat()
+                else:
+                    # An instant statement-of-financial-position amount has
+                    # no start. Do not accept a flow as a balance-sheet value.
+                    if row.get("start") is not None:
+                        continue
+                    key_start = None
+                val = row.get("val")
+                if (type(val) not in (int, float)
+                    or not math.isfinite(float(val))
+                    or abs(float(val)) > 1e15):
+                    raise SourceHold("Nonfinite finance original SEC amount")
+                seen.add((key_start, float(val)))
+            if len(seen) > 1:
+                return ("CONFLICTING_FINANCE_SOURCE_FACT_VINTAGES", ())
+            if not seen:
+                return ("FINANCE_CORE_FACTS_NOT_IN_SAME_TWO_OWN_10KS", ())
+    return ("ASSETS_EQUITY_NETINCOME_TWO_OWN_10KS_SOURCE_ONLY", ())
+
+
 def _missing_generic_concepts(companyfacts: dict) -> tuple[str, ...]:
     """Only exact source field presence, independent of historical filing."""
     concepts = companyfacts["facts"]["us-gaap"]
@@ -376,6 +490,9 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
     joint_four_inputs_same_10k_source_review_states = Counter()
     original_current_accounting_taxonomy_by_P4A_outcome = defaultdict(Counter)
     original_current_SIC_source_band_by_P4A_outcome = defaultdict(Counter)
+    finance_SIC_subtype_current_issuer_counts = Counter()
+    finance_three_core_two_own_10K_source_status = Counter()
+    finance_missing_exact_core_USD_tag_counts = Counter()
     unscored_with_older_descriptors = 0
     total_bytes = 0
     source_digest = sha256(b"FUND100_V9_ORIGINAL_SEC_DOCUMENT_SOURCE_DIGEST_V1\n")
@@ -407,6 +524,18 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
         current_taxonomy, current_sic_band = _issuer_original_source_accounting_context(
             companyfacts=original["companyfacts"],
             submissions=original["submissions"])
+        if current_sic_band == "CURRENT_SIC_FINANCE_INSURANCE_REAL_ESTATE_REVIEW":
+            subtype = _current_finance_subtype_from_SEC_sic(original["submissions"])
+            if subtype in ("SEC_SIC_OUTSIDE_6000_TO_6799", "SIC_MISSING_NOT_FINANCE_CONFIRMED"):
+                raise SourceHold("SEC SIC finance subtype does not reconcile to source broad band")
+            finance_SIC_subtype_current_issuer_counts[subtype] += 1
+            ready_state, missing_finance = _finance_core_original_two_10k_source_readiness(
+                companyfacts=original["companyfacts"],
+                submissions=original["submissions"],
+                asof=observed.date().isoformat())
+            finance_three_core_two_own_10K_source_status[ready_state] += 1
+            for field in missing_finance:
+                finance_missing_exact_core_USD_tag_counts[field] += 1
         try:
             observed_quality = quality.asof_quality(
                 original["companyfacts"], original["submissions"],
@@ -512,6 +641,14 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
                 original_current_SIC_source_band_by_P4A_outcome)
             for status, counts in group.items()
         )
+        or sum(finance_SIC_subtype_current_issuer_counts.values()) !=
+        sum(counts.get("CURRENT_SIC_FINANCE_INSURANCE_REAL_ESTATE_REVIEW", 0)
+            for counts in original_current_SIC_source_band_by_P4A_outcome.values())
+        or sum(finance_three_core_two_own_10K_source_status.values()) !=
+        sum(finance_SIC_subtype_current_issuer_counts.values())
+        or any(c > finance_three_core_two_own_10K_source_status.get(
+               "MISSING_EXACT_FINANCE_CORE_CONCEPT_USD_TAG", 0)
+               for c in finance_missing_exact_core_USD_tag_counts.values())
         or sum(joint_four_inputs_same_10k_source_review_states.values()) !=
         unscored_source_reasons.get(
             "TWO_PLUS_10K_MISSING_GENERIC_CONCEPT_OR_USD_ROWS", 0)
@@ -557,6 +694,14 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
         "original_current_SEC_SIC_coarse_band_by_P4A_outcome_NOT_an_industry_exposure": {
             k: dict(sorted(v.items())) for k, v in sorted(
                 original_current_SIC_source_band_by_P4A_outcome.items())},
+        "current_SEC_finance_SIC_subtypes_NOT_verified_security_industries":
+            dict(sorted(finance_SIC_subtype_current_issuer_counts.items())),
+        "current_SEC_finance_assets_equity_netincome_two_own_10K_source_status_NOT_a_score":
+            dict(sorted(finance_three_core_two_own_10K_source_status.items())),
+        "current_SEC_finance_missing_exact_core_tag_USD_issuer_counts":
+            dict(sorted(finance_missing_exact_core_USD_tag_counts.items())),
+        "finance_balance_sheet_net_income_sources_not_bank_capital_credit_REIT_FFO_metrics": True,
+        "source_finance_subtype_not_legal_US_stock_class_or_true_business_exposure": True,
         "SEC_current_SIC_does_not_verify_US_common_security_or_sector_accounting": True,
         "current_taxonomy_namespace_is_not_verified_historical_filing_coverage": True,
         "alternative_10K_pair_diagnostic_does_not_make_revenue_capex_interchangeable": True,

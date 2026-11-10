@@ -337,6 +337,74 @@ rather than force the US-industrial P4A ratio onto those entities.
 No new SEC GETs, share eligibility claims, original raw bytes
 archive, broker calls, added pilot capital or changes to STOP/kills.
 
+## 10 November — real SEC32 broad industry evidence and finance-specific source feasibility
+
+The first genuine main-only SEC issuer industry/source context receipt
+[run #42860802955](https://github.com/nicobouch97/fund100-research/actions/runs/42860802955)
+completed with the SAME SHA256-committed 32-CIK cohort and SAME
+9 original generic P4A scores, 20 generic unscored and 3 strict
+source rejections. Among the 20 generic unscored, current SEC
+issuer SIC categorised **8 finance/insurance/real-estate**,
+**1 mining/extraction** and **11 other**. Of the three strict
+source rejects, **1 original IFRS-full-only** and **2 neither
+US-GAAP nor IFRS-full** namespaces. These are reasons to test
+alternative sector-specific financial source contracts instead
+of expanding one generic industrial accounting formula.
+
+The official [SEC SIC code list](https://www.sec.gov/search-filings/standard-industrial-classification-sic-code-list)
+distinguishes banks/credit (6000–6199), brokers/financial advice
+(6200–6299), insurance (6300–6499), real estate operators
+(6500–6599), EXACT **6798 REIT**, EXACT **6770 blank-check**,
+and other investment/holdings structures in 6700–6799.
+These are CURRENT issuer business-review descriptors, NOT
+original legally verified share class, domicile, true sector
+exposure, historical SIC or proven financial/accounting quality.
+
+### Next preregistered original finance-specific source feasibility
+
+Using the exact SAME original 32 SEC companyfacts/submissions
+documents already downloaded (NO additional source requests),
+for all current finance SIC 6000–6799 source-coded issuers:
+
+1. Report only aggregate counts for the above SIC categories,
+   never original CIKs, tickers, names, exact SEC SIC, company
+   filing or a multi-dimensional identifying matrix.
+2. In a SEPARATE marginal aggregate, check availability of
+   TWO distinct original eligible 10-K years with the issuer's
+   US-GAAP Assets and StockholdersEquity instantaneous FY-end
+   amounts (NO annual start) plus NetIncomeLoss as a true
+   original full-year start/end duration, all original same
+   issuer CIK, 10-K accession, filed day and FY end. Apply
+   the existing two-weekday public availability lag,
+   annual FY continuity and current annual freshness.
+3. A missing source tag, duplicate original 10-K amendment,
+   mismatched 10-K accession/FY-end/filing date, stale source,
+   invalid dollars or conflicting values must remain
+   explicit missing/ambiguous/research HOLD. Do not impute.
+   Count exact missing core asset/equity/net-income source
+   fields separately, reconciling statuses to finance issuer
+   denominator.
+4. These are original **source-readiness facts ONLY**.
+   Assets/equity/net income are NOT themselves a bank/insurer/
+   REIT investment model, bank capital/solvency ratios,
+   loan-loss reserves, deposit quality, credit growth,
+   insurance liabilities, REIT FFO/AFFO, rent trends,
+   share-class market cap, comparative sector valuation,
+   alpha or approval to place orders.
+
+The next investment-quality development should select
+the financially appropriate issuer-type family only after
+these source counts. Bank quality requires a different
+credit/capital/deposits framework; insurers require reserves;
+REITs need FFO/AFFO and property metrics. Do not substitute
+same-looking US-GAAP concepts into P4A or infer that
+current 2026 companyfacts are archived point-in-time history.
+
+No new SEC GETs, brokerage requests, public identities,
+investment scoring rules or capital permissions are
+introduced. HIGH/STOP/ENGAGED kill, original pilot
+USD 130.30 and USD 65 ticket cap remain unchanged.
+
 ## Explicit limitations and safety
 
 Only a 32-issuer diagnostic sample; the 5,027-issuer source-wording
