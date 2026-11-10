@@ -100,6 +100,30 @@ def _get_sec(cik: int, kind: str, *, agent: str):
     return result
 
 
+# Only potential historical US-GAAP taxonomy ALTERNATIVES to investigate.
+# A concept name existing anywhere in today's companyfacts is NOT evidence
+# that it matches the financial meaning, current fiscal period or 10-K
+# accession of the missing generic metric. Never use these to score.
+RESEARCH_ONLY_ALTERNATIVE_CONCEPTS = {
+    "revenue": ("Revenues", "SalesRevenueNet"),
+    "capital_expenditure": ("PaymentsToAcquireProductiveAssets",),
+}
+
+
+def _has_usd_concept(concepts: dict, tag: str) -> bool:
+    concept = concepts.get(tag)
+    units = concept.get("units") if type(concept) is dict else None
+    usd_rows = units.get("USD") if type(units) is dict else None
+    return type(usd_rows) is list and bool(usd_rows)
+
+
+def _missing_generic_concepts(companyfacts: dict) -> tuple[str, ...]:
+    """Only exact source field presence, independent of historical filing."""
+    concepts = companyfacts["facts"]["us-gaap"]
+    return tuple(label for label, tag in quality.ANNUAL_TAGS.items()
+                 if not _has_usd_concept(concepts, tag))
+
+
 def _unscored_source_reason(*, companyfacts: dict, submissions: dict,
                             model_state: str) -> tuple[str, bool]:
     """Qualify visible gaps, not their unknowable economic cause.
@@ -124,14 +148,7 @@ def _unscored_source_reason(*, companyfacts: dict, submissions: dict,
         return "ZERO_10K_IN_RECENT_SUBMISSIONS_LEDGER", has_undownloaded_older_files
     if tenk == 1:
         return "ONE_10K_IN_RECENT_SUBMISSIONS_LEDGER", has_undownloaded_older_files
-    concepts = companyfacts["facts"]["us-gaap"]
-    tag_usd_presence = []
-    for tag in quality.ANNUAL_TAGS.values():
-        concept = concepts.get(tag)
-        units = concept.get("units") if type(concept) is dict else None
-        usd_rows = units.get("USD") if type(units) is dict else None
-        tag_usd_presence.append(type(usd_rows) is list and len(usd_rows)>0)
-    if not all(tag_usd_presence):
+    if _missing_generic_concepts(companyfacts):
         return "TWO_PLUS_10K_MISSING_GENERIC_CONCEPT_OR_USD_ROWS", has_undownloaded_older_files
     return "TWO_PLUS_10K_CONCEPTS_PRESENT_BUT_NO_QUALIFIED_PAIR", has_undownloaded_older_files
 
@@ -148,6 +165,8 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
     outcomes = Counter()
     model_states = Counter()
     unscored_source_reasons = Counter()
+    missing_generic_concept_usd_counts = Counter()
+    potential_alternative_tag_presence_only = Counter()
     unscored_with_older_descriptors = 0
     total_bytes = 0
     source_digest = sha256(b"FUND100_V9_ORIGINAL_SEC_DOCUMENT_SOURCE_DIGEST_V1\n")
@@ -203,6 +222,19 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
             )
             unscored_source_reasons[reason] += 1
             unscored_with_older_descriptors += int(archived_descriptor_only)
+            if reason == "TWO_PLUS_10K_MISSING_GENERIC_CONCEPT_OR_USD_ROWS":
+                # These are tag-PRESENCE counts among source gaps, NOT
+                # source-vetted financial facts, substitute account values,
+                # security eligibility, scores or predictions.
+                missing = _missing_generic_concepts(original["companyfacts"])
+                if not missing:
+                    raise SourceHold("Missing-tag census contradicts original source reason")
+                concepts = original["companyfacts"]["facts"]["us-gaap"]
+                for label in missing:
+                    missing_generic_concept_usd_counts[label] += 1
+                    for alias in RESEARCH_ONLY_ALTERNATIVE_CONCEPTS.get(label, ()):
+                        if _has_usd_concept(concepts, alias):
+                            potential_alternative_tag_presence_only[label + ":" + alias] += 1
     if (outcomes["at_least_one_SEC_document_HTTP_404"] +
         outcomes["both_SEC_documents_received_and_CIK_matched"] != len(sample)
         or outcomes["both_SEC_documents_received_and_CIK_matched"] !=
@@ -213,7 +245,16 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
         outcomes["SEC_facts_incompatible_with_generic_industrial_quality_contract"] +
         outcomes["generic_filing_lagged_score_unavailable"]
         or unscored_with_older_descriptors >
-        outcomes["generic_filing_lagged_score_unavailable"]):
+        outcomes["generic_filing_lagged_score_unavailable"]
+        or not (
+            unscored_source_reasons.get(
+                "TWO_PLUS_10K_MISSING_GENERIC_CONCEPT_OR_USD_ROWS", 0)
+            <= sum(missing_generic_concept_usd_counts.values())
+            <= 4 * unscored_source_reasons.get(
+                "TWO_PLUS_10K_MISSING_GENERIC_CONCEPT_OR_USD_ROWS", 0))
+        or any(count >
+               missing_generic_concept_usd_counts.get(key.split(":")[0], 0)
+               for key, count in potential_alternative_tag_presence_only.items())):
         raise SourceHold("Sample source coverage and gap categories did not reconcile")
     return {
         "schema": SCHEMA,
@@ -231,6 +272,12 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
         "sample_outcome_counts": dict(sorted(outcomes.items())),
         "generic_original_filing_contract_states": dict(sorted(model_states.items())),
         "unscored_original_source_reason_counts": dict(sorted(unscored_source_reasons.items())),
+        "missing_exact_generic_usgaap_USD_tag_issuer_counts":
+            dict(sorted(missing_generic_concept_usd_counts.items())),
+        "possible_alternative_usgaap_tag_presence_NOT_a_substitute":
+            dict(sorted(potential_alternative_tag_presence_only.items())),
+        "alternative_tag_exists_in_any_current_companyfacts_not_same_10K_proof": True,
+        "no_alternative_tag_applied_to_quality_score": True,
         "generic_unavailable_issuers_with_undownloaded_older_SEC_file_descriptors_only":
             unscored_with_older_descriptors,
         "filings_files_metadata_does_not_prove_archived_10K_or_authorize_backfill": True,
