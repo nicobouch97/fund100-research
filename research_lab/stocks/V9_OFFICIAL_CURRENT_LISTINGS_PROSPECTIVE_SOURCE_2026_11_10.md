@@ -76,6 +76,34 @@ that threshold. No historical constituent membership, issuer fundamentals,
 SEC CIK-to-share-class join, ticker reuse, current broker eligibility, genuine
 point-in-time valuation, backtested return, 5-pillar score or alpha.
 
+## 10 November 2026 — first genuine capture: safely rejected unrecognised code
+
+The first protected main-only real directory capture run
+[#42803592563](https://github.com/nicobouch97/fund100-research/actions/runs/42803592563)
+successfully completed the offline regression checks but failed while parsing
+the publisher's live category/flag values: `Unknown listing flag or market
+value`. No source receipts, counts or erroneous stock universe were
+published. In particular, this is **not** evidence that all live publisher
+rows fit the five documented exchange codes or Y/N flags.
+
+The documented venue alphabets remain Nasdaq Q/G/S and other-listed
+N/A/P/Z/V. The updated reader continues to **reject** malformed source rows,
+missing headers/footer, duplicates, missing/stale files and unexpected
+delimiters; it now records a separate **quarantined row count** for a
+structurally sound row carrying an unrecognised market, test or ETF code.
+Such rows are excluded from the non-ETF/non-test discovery candidate count,
+and the entire original source byte SHA is still recorded. Its status is
+`SOURCE_DATED_CURRENT_LISTINGS_WITH_UNKNOWN_CODE_QUARANTINE`, with
+`all_directory_categories_explained=false` whenever any row is quarantined.
+The unknown value itself and the security identifiers/names are never
+published. No unsupported new official market code is guessed.
+
+This makes first-source acquisition *auditable* rather than misrepresenting
+an unknown class as a common share. A partial classification cannot be
+promoted to an exhaustive investable universe or historical evidence.
+Future differences must be explained from authoritative original publisher
+documentation and separately reviewed before adding any new known codes.
+
 ## Next useful independent admission step
 
 After a real first capture, inspect **aggregate counts and row-class
