@@ -137,12 +137,13 @@ def evaluate_original_sell_only(*,account,positions,orders,clock,history,
         equity=_money(account.get("equity"))
         if abs(equity-cash-gross)>max(Decimal("1.00"),equity*Decimal(".02")):
             raise ActiveSellStop("Cash/equity/holdings no longer reconcile")
-        # First ACWI is a SELL; no new buys, leverage, excess deposits,
-        # wash sale consideration, or unsettled sale proceeds are authorized.
-        # Full liquidation of the independently authenticated, already-owned
-        # ACWI inventory REDUCES exposure. The S1 $65 MAX_ORDER cap applies
-        # to NEW orders, not liquidation of the original bootstrap shares.
-        # Never size by a caller-supplied amount or allow more than live equity.
+        # First ACWI is a SELL of exact original owned shares. No new buys,
+        # leverage, additional deposits, or unsettled proceeds are deployable.
+        # Credit history above the original $130.30 principal mandate
+        # CANNOT increase the first sale quantity or any future BUY budget.
+        # The S1 $65 MAX_ORDER cap applies to NEW risk/spending orders,
+        # not a full liquidation of pre-existing original ACWI inventory.
+        # Never size by caller-supplied funds, CSD amounts or account equity.
         if by_symbol[SYMBOL][1]>equity:
             raise ActiveSellStop("Original ACWI liquidation exceeds current broker equity")
         if (len(activities)>=100
@@ -153,8 +154,16 @@ def evaluate_original_sell_only(*,account,positions,orders,clock,history,
         deposits=[
             cashrisk._decimal(row.get("net_amount"))
             for row in activities if row["activity_type"]=="CSD"]
-        if len(deposits)!=1 or not Decimal(0)<deposits[0]<=limits.CAP:
-            raise ActiveSellStop("Original authorized $130.30 funded capital breached")
+        # CSD credits are NOT independently established owner principal:
+        # a bank-returned withdrawal may also surface as a CSD. Require
+        # the original single positive cash-credit source, but DO NOT use
+        # its gross amount as a gate for SELLING the already-owned ACWI.
+        # All increased/unattributed cash remains unspendable under the
+        # unchanged $130.30 standing pilot budget; only a separate durable
+        # source-authenticated principal mandate can authorize new purchases.
+        if len(deposits)!=1 or not deposits[0]>0:
+            raise ActiveSellStop("Original cash-credit direction/count unqualified")
+        credits_within_original_pilot_cap=deposits[0]<=limits.CAP
         # The historical 1M source began AFTER funding and cannot prove
         # inception. Reconcile an independently queried 3M suffix in this
         # SAME broker process. No new request methods or dynamic routes.
@@ -241,6 +250,10 @@ def evaluate_original_sell_only(*,account,positions,orders,clock,history,
         "capital_ceiling_usd":"130.30",
         "full_original_acwi_exit_bounded_by_authenticated_inventory":True,
         "maximum_new_order_notional_usd":"65.00",
+        "original_credit_at_or_below_pilot_ceiling":
+            credits_within_original_pilot_cap,
+        "unattributed_credit_or_new_principal_spend_authorized":False,
+        "original_acwi_sell_only_no_additional_principal_deployment":True,
         "broker_order_authorized":True,
         "broker_post_attempts":0,
         "orders_submitted_here":0,
