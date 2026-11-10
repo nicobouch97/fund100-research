@@ -722,6 +722,12 @@ def approved_scoped_live_script(
                 "cea00b694b52e3ad1835305796608684c765e8e4",
             "fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0.py":
                 "a9d06686dfc86a2c006250c29cfe87848e747db3",
+            # These exact modules are imported by the live 8-GET
+            # source within the credentialed protected Python process.
+            "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py":
+                "e8afe0f4770d6ff7aa75be423d2e71f68a70b588",
+            "fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py":
+                "b4e7f84ad8ba3a0aa7e9dd06c2b75915f5d60bb3",
             "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py":
                 "ae6831f2eef6dc07a7a5eaed3cdfdb48e51b41ed",
             "fund100_v6_s1_staged_controller_core_v1_0.py":
