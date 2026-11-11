@@ -89,8 +89,8 @@ def venue_matches(value:str,expected:str)->bool:
     if expected=="Nasdaq":
         return "NASDAQ" in phrase and "NYSE" not in phrase
     if expected=="NYSE":
-        return ("NEW YORK STOCK EXCHANGE" in phrase or re.search(r"\\bNYSE\\b",phrase))
-                and not any(x in phrase for x in ("AMERICAN","ARCA"))
+        return (("NEW YORK STOCK EXCHANGE" in phrase or "NYSE" in phrase)
+                and not any(x in phrase for x in ("AMERICAN","ARCA")))
     if expected=="NYSE American":
         return "NYSE AMERICAN" in phrase
     if expected=="NYSE Arca":
@@ -103,9 +103,8 @@ def venue_matches(value:str,expected:str)->bool:
 def classify_10k(*, parsed:dict, ticker:str,venue:str)->str:
     """One own filing, one explicit plain-common 12b row, same original symbol."""
     if (type(parsed) is not dict or type(ticker) is not str
-        or re.fullmatch(r"[A-Z][A-Z0-9.\\-]{0,18}",ticker) is None
-        or venue not in f4.link.SEC_EXCHANGES["nasdaqlisted.txt"].values() |
-                      set(f4.link.SEC_EXCHANGES["otherlisted.txt"].values())):
+        or re.fullmatch(r"[A-Z][A-Z0-9.-]{0,18}",ticker) is None
+        or venue not in {"Nasdaq","NYSE","NYSE American","NYSE Arca","Cboe","IEX"}):
         raise CoverHold("Original SEC cover input contract invalid")
     rows=parsed.get("possible_12b_security_class_rows")
     if type(rows) is not list or len(rows)>100:
