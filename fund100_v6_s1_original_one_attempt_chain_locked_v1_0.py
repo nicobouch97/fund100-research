@@ -14,6 +14,7 @@ import re
 import fund100_v6_s1_one_time_owner_claim_cas_v1_0 as ownership
 import fund100_v6_s1_immutable_release_publish_locked_v1_0 as publisher
 import fund100_v6_s1_fresh_acwi_order_time_risk_getonly_v1_0 as risk
+import fund100_v6_s1_first_acwi_economic_preclaim_v1_0 as economic
 import fund100_v6_s1_private_git_cas_protocol_v1_0 as ledger
 import fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0 as prepost
 import fund100_v6_s1_public_genesis_witness_v1_0 as witness
@@ -329,6 +330,22 @@ def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
             raise ChainStop("Current broker order-time ACTIVE V2 HIGH SELL scope invalid")
     except Exception:
         raise ChainStop("Fresh first-attempt broker risk unavailable; no private claim") from None
+
+    # A BROKER RISK PASS IS NOT A TRADE SIGNAL. Before touching either
+    # signed private HEAD or consuming the original non-retry owner fence,
+    # independently require a source-owned current economic reason to EXIT
+    # ACWI rather than keep it. The presently unqualified XLK momentum
+    # heuristic and a purely technical readiness PASS cannot release a SELL.
+    # The economic source is always NO_TRADE on main; no replacement funding,
+    # no separate BUY, no private claim, no broker POST and no owner prompt.
+    try:
+        economic_report=economic.inspect_current_original_exit(
+            original_qty=context["original_qty"],broker_risk=ready)
+        economic.require_preclaim_exit_economics(
+            report=economic_report,original_qty=context["original_qty"])
+    except Exception:
+        raise ChainStop(
+            "Original ACWI economic NO_TRADE; no signed owner claim") from None
 
     # Exact current original seq1, unclaimed owner seq0 and initial public
     # witnesses, independently authenticated BEFORE first irreversible PUT.
