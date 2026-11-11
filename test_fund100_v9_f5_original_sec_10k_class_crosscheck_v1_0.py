@@ -33,6 +33,23 @@ def primary_markup(*, symbol="AAPL", exchange="Nasdaq Global Select Market",
             f" of the Act: None</p></body></html>").encode()
 
 
+
+
+def test_authentic_sec_submissions_text_cik_matches_original_issuer_exactly():
+    # SEC's real submissions endpoint typically reports a zero-padded CIK
+    # string, unlike companyfacts; the broad SEC original source decoder
+    # already accepts exactly this representation.
+    for value in (str(SEC_CIK),f"{SEC_CIK:010d}",SEC_CIK):
+        payload=submissions(cik=value)
+        v,status=m.candidate_filing(submissions=payload,cik=SEC_CIK,observed=ASOF)
+        assert status=="SOURCE_ELIGIBLE"
+        assert v[0]==SEC_PATH
+    for value in ("0000999999","not-a-CIK","-320193","320193.0",
+                  "",None,True,320193.0):
+        with pytest.raises(m.CoverHold,match="CIK inconsistent"):
+            m.candidate_filing(submissions=submissions(cik=value),
+                               cik=SEC_CIK,observed=ASOF)
+
 def test_original_10k_filing_selection_checks_own_cik_lag_and_year():
     v,state=m.candidate_filing(submissions=submissions(),cik=SEC_CIK,observed=ASOF)
     assert state=="SOURCE_ELIGIBLE"
@@ -112,7 +129,7 @@ def test_real_source_shape_aggregate_no_account_or_single_issuer_rows(monkeypatc
     calls=[]
     def sub(cik):
         calls.append(("sub",cik))
-        return json.dumps(submissions()).encode()
+        return json.dumps(submissions(cik=f"{SEC_CIK:010d}")).encode()
     def primary(path):
         calls.append(("primary",path))
         assert path==SEC_PATH
