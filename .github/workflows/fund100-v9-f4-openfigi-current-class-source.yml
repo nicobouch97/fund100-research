@@ -1,0 +1,92 @@
+name: Fund-100 V9 F4 Current OpenFIGI Class Reference (NO BROKER)
+
+# Single protected first main capture; current provider symbol mapping only,
+# NOT SEC issuer-to-class attestation or a historical investable universe.
+on:
+  pull_request:
+    paths:
+      - "fund100_v9_f4_current_openfigi_class_reference_v1_0.py"
+      - "test_fund100_v9_f4_current_openfigi_class_reference_v1_0.py"
+      - ".github/workflows/fund100-v9-f4-openfigi-current-class-source.yml"
+      - "research_lab/stocks/V9_F4_CURRENT_OPENFIGI_SHARE_CLASS_SOURCE_2026_11_11.md"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v9_f4_current_openfigi_class_reference_v1_0.py"
+      - "test_fund100_v9_f4_current_openfigi_class_reference_v1_0.py"
+      - ".github/workflows/fund100-v9-f4-openfigi-current-class-source.yml"
+      - "research_lab/stocks/V9_F4_CURRENT_OPENFIGI_SHARE_CLASS_SOURCE_2026_11_11.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v9-f4-original-openfigi-source
+  cancel-in-progress: false
+
+jobs:
+  offline-no-broker-no-api-credentials:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing SEC-source tests
+        run: python -m pip install --disable-pip-version-check --no-input 'pytest>=8,<9' 'pandas==2.3.3'
+      - name: Strict original selection, no brokerage, third-party source ambiguity negative tests
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_v9_official_current_listing_discovery_v1_0.py \
+            test_fund100_v9_sec_current_listing_association_v1_0.py \
+            test_fund100_v9_broad_original_sec_quality_coverage_v1_0.py \
+            test_fund100_v9_f4_current_openfigi_class_reference_v1_0.py
+          python - <<'PY'
+          import fund100_v9_f4_current_openfigi_class_reference_v1_0 as x
+          assert x.URL == "https://api.openfigi.com/v3/mapping"
+          assert x.NO_BROKER_GETS == x.NO_BROKER_POSTS == x.NO_BROKER_ORDERS == x.NO_PRIVATE_WRITES == 0
+          assert x.LIVE_AUTHORIZED is False
+          PY
+
+  first-main-current-public-reference-source-only:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'nicobouch97/fund100-research'
+    needs: offline-no-broker-no-api-credentials
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing original public SEC-source dependency
+        run: python -m pip install --disable-pip-version-check --no-input 'pandas==2.3.3'
+      - name: First actual three official reads and one bounded no-key OpenFIGI DATA mapping POST
+        env:
+          # SEC identity only for SEC Fair Access, never passed to OpenFIGI.
+          SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$FUND100_BROKER_KILL_SWITCH" = "ENGAGED"
+          test "$FUND100_LIVE_WRITE_MODE" = "DISABLED"
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          python -B fund100_v9_f4_current_openfigi_class_reference_v1_0.py \
+            --out "$RUNNER_TEMP/v9-f4-current-openfigi-aggregate.json"
+      - name: Preserve only nonreconstructible aggregate source status and fingerprints
+        uses: actions/upload-artifact@v4
+        with:
+          name: v9-f4-current-openfigi-source-${{ github.run_id }}
+          path: ${{ runner.temp }}/v9-f4-current-openfigi-aggregate.json
+          retention-days: 30
+          if-no-files-found: error
