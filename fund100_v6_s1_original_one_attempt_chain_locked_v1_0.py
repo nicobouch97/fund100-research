@@ -343,9 +343,30 @@ def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
             original_qty=context["original_qty"],broker_risk=ready)
         economic.require_preclaim_exit_economics(
             report=economic_report,original_qty=context["original_qty"])
+    except economic.EconomicNoTrade:
+        # Autonomous normal abstention, not a failed broker execution:
+        # before original private HEAD reads, without a signed owner claim.
+        # Another scheduled run may re-evaluate fresh economic evidence.
+        # No order exists to be retried or recovered.
+        return {
+            "schema":SCHEMA,
+            "status":"ORIGINAL_ACWI_ECONOMIC_NO_TRADE_KEEP_HOLDINGS",
+            "original_owner_claim_attempts":0,
+            "original_signed_possible_POST_attempts":0,
+            "immutable_release_publication_attempts":0,
+            "reviewed_broker_order_attempts":0,
+            "broker_receipt_validation_proven":False,
+            "broker_receipt_stage":None,
+            "allow_restart_or_second_order":False,
+            "independent_order_fill_and_settlement_verified":False,
+            "owner_fence_consumed":False,
+            "can_recheck_with_new_economic_evidence":True,
+            "account":None,"original_qty":None,"client_order_id":None,
+            "private_hmac":None,"owner_nonce":None,"broker_receipt":None,
+        }
     except Exception:
         raise ChainStop(
-            "Original ACWI economic NO_TRADE; no signed owner claim") from None
+            "Original ACWI economic source unexpected failure; no owner claim") from None
 
     # Exact current original seq1, unclaimed owner seq0 and initial public
     # witnesses, independently authenticated BEFORE first irreversible PUT.
