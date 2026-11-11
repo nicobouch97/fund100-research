@@ -175,3 +175,55 @@ def test_10k_without_filing_or_unreachable_original_stays_hold(monkeypatch):
     assert o["frozen_issuer_source_status_counts"][
         "ORIGINAL_SEC_SUBMISSIONS_404_HOLD"]==1
     assert o["original_issuer_count"]==8
+
+
+@pytest.mark.parametrize("reason,expected",[
+    ("HTTP_403", "ORIGINAL_SEC_ARCHIVE_HTTP_403_HOLD"),
+    ("HTTP_404", "ORIGINAL_SEC_ARCHIVE_HTTP_404_HOLD"),
+    ("HTTP_429", "ORIGINAL_SEC_ARCHIVE_HTTP_429_HOLD"),
+    ("HTTP_5XX", "ORIGINAL_SEC_ARCHIVE_HTTP_5XX_HOLD"),
+    ("PRIMARY_INDEX_10K_NOT_UNIQUE",
+     "ORIGINAL_SEC_ARCHIVE_PRIMARY_INDEX_10K_NOT_UNIQUE_HOLD"),
+    ("PRIMARY_INDEX_INVALID", "ORIGINAL_SEC_ARCHIVE_PRIMARY_INDEX_INVALID_HOLD"),
+    ("PRIMARY_INDEX_UNSAFE_DOCUMENT",
+     "ORIGINAL_SEC_ARCHIVE_PRIMARY_INDEX_UNSAFE_DOCUMENT_HOLD"),
+    ("PRIMARY_INDEX_OVERSIZED",
+     "ORIGINAL_SEC_ARCHIVE_PRIMARY_INDEX_OVERSIZED_HOLD"),
+    ("PRIMARY_10K_OVERSIZED",
+     "ORIGINAL_SEC_ARCHIVE_PRIMARY_10K_OVERSIZED_HOLD"),
+    ("INCOMPLETE_SOURCE", "ORIGINAL_SEC_ARCHIVE_INCOMPLETE_SOURCE_HOLD"),
+    ("TIMEOUT", "ORIGINAL_SEC_ARCHIVE_TIMEOUT_HOLD"),
+    ("TRANSPORT_ERROR", "ORIGINAL_SEC_ARCHIVE_TRANSPORT_ERROR_HOLD"),
+    ("untrusted issuer record CIK 320193 /v2/orders",
+     "ORIGINAL_SEC_ARCHIVE_UNCLASSIFIED_SOURCE_FAILURE_HOLD"),
+])
+def test_original_sec_failure_reason_is_fixed_allowlist_no_account_leak(reason,expected):
+    import fund100_stock_historical_sec_listing_p4u_v1_0 as p4u
+    assert m.sec_original_archive_hold(p4u.FilingSourceFailure(reason))==expected
+    assert "320193" not in expected and "/v2/orders" not in expected
+    with pytest.raises(m.CoverHold):
+        m.sec_original_archive_hold(ValueError(reason))
+
+
+def test_original_sec_archive_403_is_an_explicit_hold_in_same_eight_issuer_cohort(
+        monkeypatch):
+    import fund100_stock_historical_sec_listing_p4u_v1_0 as p4u
+    monkeypatch.setattr(m.f4,"selected_jobs",lambda **kw:(
+        [(SEC_CIK,"AAPL","Nasdaq")],m.FROZEN_F4_CIK_COMMITMENT,8))
+    requested=[]
+    def original_index_get(path):
+        requested.append(path)
+        raise p4u.FilingSourceFailure("HTTP_403")
+    output=m.assess(directories={},sec_raw=b"{}",observed=ASOF,
+                    submissions_get=lambda _:json.dumps(
+                        submissions(cik=f"{SEC_CIK:010d}")).encode(),
+                    primary_get=original_index_get,min_pool=2)
+    assert requested==[SEC_PATH]
+    assert output["original_issuer_count"]==8
+    assert output["frozen_issuer_source_status_counts"]=={
+        "ORIGINAL_SEC_ARCHIVE_HTTP_403_HOLD":1,
+        "PRECOMMITTED_ISSUER_MULTI_SYMBOL_OR_UNMATCHED_HOLD":7,
+    }
+    assert output["original_vendor_figi_to_sec_cik_identity_proven"] is False
+    assert output["broker_gets"]==output["broker_posts"]==output["broker_orders"]==0
+

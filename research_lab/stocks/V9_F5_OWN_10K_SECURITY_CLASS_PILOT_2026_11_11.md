@@ -75,3 +75,30 @@ HIGH 6/20/35 bounds, 5% cash floor, standing signed private-owner
 requirements, STOP and engaged broker kill, first ACWI economic
 NO_TRADE gate and hard-locked writer; this research does not alter
 funded holdings, market decisions or per-trade approval behavior.
+
+## Authentic 11 November source receipt, first exposure of archive missingness
+
+The first original F5 main source [run #43013743375](https://github.com/nicobouch97/fund100-research/actions/runs/43013743375)
+**failed** on a real SEC submissions text-CIK representation mismatch, caught and
+strictly repaired by independently audited [PR #637](https://github.com/nicobouch97/fund100-research/pull/637).
+This is not evidence of an original issuer class match.
+
+The next main-only original F5 [run #43015401429](https://github.com/nicobouch97/fund100-research/actions/runs/43015401429)
+**succeeded** as a source audit at 11:52 UTC with the original 8-CIK commitment:
+**1** issuer had `NO_RECENT_ASOF_ELIGIBLE_OWN_10K_HOLD` under the
+conservative source contract, and **7** had
+`SEC_PRIMARY_INDEX_OR_DOCUMENT_UNAVAILABLE_HOLD`.
+**0/8** qualified for an exact original issuer-filed common class/ticker/exchange
+review cross-check. This is *source unavailability*, not an 8/8 issuer/security
+mismatch, and not proof of historical ineligibility.
+
+The existing primary SEC Archive fetcher exposes only a bounded known reason
+code for an original HTTP/transport/filing-index failure, but F5 originally
+collapsed all seven into one unavailable status. This limited reason-code
+diagnostic separately aggregates original HTTP 403/429/404, source transport,
+unsafe/nonunique original index and document size/format failures, without
+publisher-supplied response text, URLs, investor/SEC identity, CIK, tickers,
+filing text or accession numbers. Unsupported failure codes are generic HOLD.
+An authenticated capture with original SEC Archives access still must
+demonstrate its own real source; repeated GETs are not authorization to
+accept a mirror/alternative without its original provenance.
