@@ -14,7 +14,7 @@ TOKEN = "mock-get-only-actions-token"
 
 def healthy():
     run = {
-        "id": 123456789, "name": "Fund-100 LIVE Risk Watch (autonomous)",
+        "id": 123456789, "name": "Fund-100 V6-S1 Independent First ACWI Risk Watch (NO TRADE)",
         "path": gate.WATCH_PATH, "event": "schedule",
         "head_branch": "main", "head_sha": SHA, "run_attempt": 1,
         "status": "completed", "conclusion": "success",
@@ -170,15 +170,15 @@ def test_invalid_credentials_expected_sha_or_naive_time_denied():
 
 def test_exact_watch_step_and_workflow_contract_is_readonly():
     from pathlib import Path
-    workflow = Path(".github/workflows/fund100-live-risk-watch.yml").read_text()
-    monitor = Path("fund100_live_risk_monitor_v1_0.py").read_text()
+    workflow = Path(".github/workflows/fund100-v6-s1-independent-risk-watch.yml").read_text()
+    monitor = Path("fund100_v6_s1_independent_risk_watch_v1_0.py").read_text()
     entry = Path("fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py").read_text()
-    assert "id: broker_risk" in workflow
+    assert "id: v6_risk" in workflow
     assert "name: " + gate.PASS_STEP in workflow
     assert "github.event_name == 'schedule'" in workflow
-    assert "steps.broker_risk.outputs.verified_live_account_risk == 'YES'" in workflow
-    assert 'result == "WITHIN_RISK_LIMITS"' in monitor
-    assert 'result == "ALREADY_STOPPED"' not in monitor.split('if __name__ == "__main__":')[-1]
+    assert "steps.v6_risk.outputs.verified_v6_original_acwi_risk == 'YES'" in workflow
+    assert 'return EXPECTED_PASS' in monitor
+    assert 'return "ALREADY_STOPPED"' in monitor
     assert "live_watch.require_recent_scheduled_risk_pass(" in entry
     assert "ORIGINAL_ACWI_ENTRYPOINT_RELEASED=False" in entry
     assert "ONE_ATTEMPT_EXECUTION_RELEASED=False" in Path(
