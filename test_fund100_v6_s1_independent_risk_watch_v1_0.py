@@ -210,17 +210,39 @@ def test_unverified_running_risk_stops_before_cancel_and_no_pass(monkeypatch,
     assert not output.exists()
 
 
-def test_stop_unknown_never_claims_autostop_or_runs_cancel(monkeypatch):
+def test_stop_unknown_never_claims_success_but_attempts_independent_cancel(
+        monkeypatch):
     go(monkeypatch)
     monkeypatch.setattr(watch, "_risk_eight_get",
                         lambda: (_ for _ in ()).throw(ValueError("data")))
     def unconfirmed():
         raise TimeoutError("unknown CAS ack")
     monkeypatch.setattr(watch, "_stop_v6_first_only", unconfirmed)
+    attempted = []
     monkeypatch.setattr(watch.cancel, "cancel_open_fund100_orders",
-                        lambda: pytest.fail("No cancel before confirmed STOP"))
-    with pytest.raises(watch.V6WatchStop, match="STOP not confirmed"):
+                        lambda: attempted.append("CANCEL_ATTEMPTED") or 0)
+    with pytest.raises(watch.V6WatchStop, match="STOP unconfirmed"):
         watch.watch_once()
+    assert attempted == ["CANCEL_ATTEMPTED"]
+
+
+def test_unknown_stop_and_failed_cancel_never_claim_success(monkeypatch):
+    go(monkeypatch)
+    monkeypatch.setattr(watch, "_risk_eight_get",
+                        lambda: (_ for _ in ()).throw(ValueError("risk")))
+    calls = []
+    def uncertain_stop():
+        calls.append("STOP_ATTEMPTED")
+        raise TimeoutError("unknown stop ack")
+    def uncertain_cancel():
+        calls.append("CANCEL_ATTEMPTED")
+        raise TimeoutError("unknown broker cancel")
+    monkeypatch.setattr(watch, "_stop_v6_first_only", uncertain_stop)
+    monkeypatch.setattr(watch.cancel, "cancel_open_fund100_orders",
+                        uncertain_cancel)
+    with pytest.raises(watch.V6WatchStop, match="STOP unconfirmed"):
+        watch.watch_once()
+    assert calls == ["STOP_ATTEMPTED", "CANCEL_ATTEMPTED"]
 
 
 def test_cancel_error_not_claimed_as_auto_stop_success(monkeypatch):
