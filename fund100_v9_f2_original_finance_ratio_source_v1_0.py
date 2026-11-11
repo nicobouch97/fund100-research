@@ -31,6 +31,27 @@ class FinanceRatioHold(ValueError):
     pass
 
 
+def _subtype_matches_original_sic(submissions:dict,subtype:str)->bool:
+    raw=submissions.get("sic")
+    if type(raw) is int:
+        sic=raw
+    elif (type(raw) is str and len(raw)==4
+          and raw.isascii() and raw.isdecimal()):
+        sic=int(raw)
+    else:
+        return False
+    return (
+        (subtype=="SEC_SIC_BANK_LENDING_CREDIT_AND_FINANCE_REVIEW_ONLY"
+         and 6000<=sic<=6199)
+        or (subtype=="SEC_SIC_BROKER_DEALER_EXCHANGE_ADVICE_REVIEW_ONLY"
+            and 6200<=sic<=6299)
+        or (subtype=="SEC_SIC_INSURANCE_UNDERWRITING_SERVICES_REVIEW_ONLY"
+            and 6300<=sic<=6499)
+        or (subtype=="SEC_SIC_REAL_ESTATE_OPERATORS_SERVICES_REVIEW_ONLY"
+            and 6500<=sic<=6599)
+    )
+
+
 def _money(raw)->Decimal:
     if type(raw) not in (int,float) or not math.isfinite(float(raw)) or abs(float(raw))>1e15:
         raise FinanceRatioHold("Original SEC monetary fact nonfinite or invalid")
@@ -43,7 +64,10 @@ def _one_original(*,concepts,filing,accession,label):
         "equity":"StockholdersEquity",
         "net_income":"NetIncomeLoss",
     }[label]
-    rows=concepts.get(tag,{}).get("units",{}).get("USD")
+    concept=concepts.get(tag)
+    if type(concept) is not dict or type(concept.get("units")) is not dict:
+        raise FinanceRatioHold("Original finance exact USD concept malformed")
+    rows=concept["units"].get("USD")
     if type(rows) is not list:
         raise FinanceRatioHold("Original finance exact USD source missing")
     found=set()
@@ -83,7 +107,8 @@ def describe(*,companyfacts:dict,submissions:dict,cik:str,asof:str,
     """
     if (type(subtype) is not str or subtype not in REVIEWABLE_SUBTYPES
         or core_source_state!=READY
-        or type(companyfacts) is not dict or type(submissions) is not dict):
+        or type(companyfacts) is not dict or type(submissions) is not dict
+        or not _subtype_matches_original_sic(submissions,subtype)):
         raise FinanceRatioHold("Sector accounting source unqualified")
     try:
         quality.validate_identity(companyfacts,submissions,cik)
