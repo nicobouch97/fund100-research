@@ -1,0 +1,66 @@
+# Independent V6-S1 original ACWI account HIGH risk, NOT a trade release.
+# Separate from legacy V5 risk watcher, whose operator MUST stay STOP.
+name: Fund-100 V6-S1 Independent First ACWI Risk Watch (NO TRADE)
+
+on:
+  schedule:
+    - cron: "8,23,38,53 13-22 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-s1-independent-first-acwi-risk-watch
+  cancel-in-progress: false
+
+jobs:
+  risk-watch:
+    name: Independent V6-S1 original ACWI broker risk watch
+    # A separate source-locked V6 GO still has to pass. No job can turn GO on.
+    if: github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 12
+    # STOP-only CAS can revoke V6 GO after risk fault; cannot enable trading.
+    permissions:
+      contents: write
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+      FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+      FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+    steps:
+      - name: Checkout protected main without persistent token
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pin original funded HIGH XNYS risk calendar
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_EVENT_NAME" = 'schedule'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-v6-s1-independent-risk-watch.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$FUND100_RISK_LEVEL" = 'HIGH'
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          python -m pip install --disable-pip-version-check --no-input --only-binary=:all: 'pandas==2.3.3' 'exchange-calendars==4.13.2'
+      - name: Check V6 first ACWI independent LIVE broker risk or STOP
+        id: v6_risk
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          python -B fund100_v6_s1_independent_risk_watch_v1_0.py
+      - name: Attest independent V6 original ACWI broker risk PASS
+        if: ${{ github.event_name == 'schedule' && steps.v6_risk.outputs.verified_v6_original_acwi_risk == 'YES' }}
+        run: |
+          set -euo pipefail
+          echo 'Independent V6 first ACWI broker 8-GET HIGH risk PASS; not an order permit.'
