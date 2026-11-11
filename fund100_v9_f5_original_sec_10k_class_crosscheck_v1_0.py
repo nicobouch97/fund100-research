@@ -47,7 +47,13 @@ def candidate_filing(*, submissions:dict, cik:int, observed:datetime):
     if type(observed) is not datetime or observed.tzinfo is None:
         raise CoverHold("Missing acquisition clock")
     day=observed.astimezone(timezone.utc).date()
-    if type(submissions) is not dict or submissions.get("cik")!=cik:
+    # The authentic SEC submissions API sends the CIK as a digit string,
+    # while its companyfacts endpoint often sends an integer. Reuse the
+    # existing bounded issuer identity contract; never coerce arbitrary text
+    # or a mismatched/bool/floating identity into a successful match.
+    if (type(submissions) is not dict
+        or not quality.cik_matches_expected(submissions.get("cik"),
+                                            f"{cik:010d}")):
         raise CoverHold("SEC submissions response CIK inconsistent")
     try:
         ledger=quality.submissions_index(submissions)
