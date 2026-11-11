@@ -51,15 +51,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: fund100-live-broker
     timeout-minutes: 10
-    # The currently dormant source uses one short-lived GitHub Actions
-    # token for public witness (issues:write) and immutable Release
-    # (contents:write). This CANNOT release an original ACWI order because
-    # both optional issuer switches, the one-shot entry/chain/source/writer
-    # release switches and the operator/deployment variable remain OFF.
-    # The broker and private ledger tokens do not inherit public scope.
+    # Dormant: no public issue/release mutation authority until a reviewed
+    # funded source release. Broker/private secrets are also deliberately
+    # withheld. The one-shot entry/chain/writer hard locks remain OFF.
     permissions:
-      contents: write
-      issues: write
+      contents: read
+      issues: read
       actions: read
     env:
       FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
@@ -112,14 +109,9 @@ jobs:
         # Only this step receives live/WRITE credentials, and only after the
         # protected main/HIGH/current STOP checks above. No retry,
         # followup continuation step, debug credential print or log artifact.
-        env:
-          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
-          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
-          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
-          FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}
-          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
-          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
-          GITHUB_TOKEN: ${{ github.token }}
+        # No broker/private/HMAC credentials until a separately reviewed
+        # source release. The entry remains code-HARD-LOCKED. Adding secrets
+        # here requires a new credential-audit and release review.
         run: |
           set -euo pipefail
           # Current main always raises source-hard-locked before broker or CAS.
