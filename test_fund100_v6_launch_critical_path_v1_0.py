@@ -19,6 +19,8 @@ def test_real_main_is_locked_and_no_authority_conferred():
     assert set(report["stages"]) == {"first_acwi_sell", "first_xlk_buy", "recurring_automation"}
     assert all(s["code_status"] == "CODE_LOCKED" for s in report["stages"].values())
     assert all(s["locked_flags"] for s in report["stages"].values())
+    assert "ECONOMIC_SOURCE_RELEASED" in report["stages"]["first_acwi_sell"]["locked_flags"]
+    assert "REQUIRE_SOURCE_BACKED_EXIT_ECONOMICS_OR_KEEP_ACWI_NO_TRADE" in report["critical_path"]
     assert all(s["live_runtime_verified"] is False for s in report["stages"].values())
 
 def _copy(tmp_path: Path):
@@ -55,6 +57,22 @@ def test_true_code_flag_still_not_a_broker_permit(tmp_path):
     report = m.snapshot(root)
     assert report["live_order_authorized"] is False
     assert report["stages"]["first_acwi_sell"]["code_status"] == "CODE_LOCKED"
+
+def test_original_economic_source_missing_or_dynamic_cannot_silently_release(tmp_path):
+    root = _copy(tmp_path)
+    f = root / "fund100_v6_s1_first_acwi_economic_preclaim_v1_0.py"
+    original = f.read_text(encoding="utf-8")
+    f.write_text(original.replace(
+        "ECONOMIC_SOURCE_RELEASED=False","ECONOMIC_SOURCE_RELEASED=bool(1)"),
+        encoding="utf-8")
+    with pytest.raises(m.LaunchHold,match="Dynamic"):
+        m.snapshot(root)
+    f.write_text(original.replace(
+        "ECONOMIC_SOURCE_RELEASED=False","RELEASE_FLAG_RENAMED=False"),
+        encoding="utf-8")
+    with pytest.raises(m.LaunchHold,match="Missing release flag"):
+        m.snapshot(root)
+
 
 def test_shared_account_writer_mutex_change_holds(tmp_path):
     root = _copy(tmp_path)

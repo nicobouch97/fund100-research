@@ -113,6 +113,27 @@ def test_full_original_entry_with_exact_ephemeral_public_issuer_and_no_pat(
     assert inputs['context']['original_qty'] not in str(got)
 
 
+def test_full_original_first_entry_economic_no_trade_is_normal_zero_order(
+        first_protected_original_run,monkeypatch):
+    from test_fund100_v6_s1_original_one_attempt_chain_locked_v1_0 import (
+        REAL_ECONOMIC_INSPECT,
+    )
+    import fund100_v6_s1_first_acwi_economic_preclaim_v1_0 as economic
+    state,inputs,hydrations=first_protected_original_run
+    monkeypatch.setattr(economic,"ECONOMIC_SOURCE_RELEASED",False)
+    monkeypatch.setattr(
+        economic,"inspect_current_original_exit",REAL_ECONOMIC_INSPECT)
+    got=entry.run_protected_first_acwi_once()
+    assert got["status"]=="FIRST_ORIGINAL_ACWI_NO_TRADE_KEEP_HOLDINGS"
+    assert got["broker_send_attempts"]==0
+    assert got["original_owner_fence_consumed"] is False
+    assert got["can_recheck_with_new_economic_evidence"] is True
+    assert got["broker_receipt_stage"] is None
+    assert len(hydrations)==1
+    assert state["events"]==["setting","absent","broker_preflight"]
+    assert state["write_calls"]==0
+
+
 def test_full_ephemeral_entry_rejects_legacy_pat_before_hydration(
         first_protected_original_run,monkeypatch):
     state,inputs,hydrations=first_protected_original_run

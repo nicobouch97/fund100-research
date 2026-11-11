@@ -14,6 +14,7 @@ import re
 import fund100_v6_s1_one_time_owner_claim_cas_v1_0 as ownership
 import fund100_v6_s1_immutable_release_publish_locked_v1_0 as publisher
 import fund100_v6_s1_fresh_acwi_order_time_risk_getonly_v1_0 as risk
+import fund100_v6_s1_first_acwi_economic_preclaim_v1_0 as economic
 import fund100_v6_s1_private_git_cas_protocol_v1_0 as ledger
 import fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0 as prepost
 import fund100_v6_s1_public_genesis_witness_v1_0 as witness
@@ -329,6 +330,43 @@ def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
             raise ChainStop("Current broker order-time ACTIVE V2 HIGH SELL scope invalid")
     except Exception:
         raise ChainStop("Fresh first-attempt broker risk unavailable; no private claim") from None
+
+    # A BROKER RISK PASS IS NOT A TRADE SIGNAL. Before touching either
+    # signed private HEAD or consuming the original non-retry owner fence,
+    # independently require a source-owned current economic reason to EXIT
+    # ACWI rather than keep it. The presently unqualified XLK momentum
+    # heuristic and a purely technical readiness PASS cannot release a SELL.
+    # The economic source is always NO_TRADE on main; no replacement funding,
+    # no separate BUY, no private claim, no broker POST and no owner prompt.
+    try:
+        economic_report=economic.inspect_current_original_exit(
+            original_qty=context["original_qty"],broker_risk=ready)
+        economic.require_preclaim_exit_economics(
+            report=economic_report,original_qty=context["original_qty"])
+    except economic.EconomicNoTrade:
+        # Autonomous normal abstention, not a failed broker execution:
+        # before original private HEAD reads, without a signed owner claim.
+        # Another scheduled run may re-evaluate fresh economic evidence.
+        # No order exists to be retried or recovered.
+        return {
+            "schema":SCHEMA,
+            "status":"ORIGINAL_ACWI_ECONOMIC_NO_TRADE_KEEP_HOLDINGS",
+            "original_owner_claim_attempts":0,
+            "original_signed_possible_POST_attempts":0,
+            "immutable_release_publication_attempts":0,
+            "reviewed_broker_order_attempts":0,
+            "broker_receipt_validation_proven":False,
+            "broker_receipt_stage":None,
+            "allow_restart_or_second_order":False,
+            "independent_order_fill_and_settlement_verified":False,
+            "owner_fence_consumed":False,
+            "can_recheck_with_new_economic_evidence":True,
+            "account":None,"original_qty":None,"client_order_id":None,
+            "private_hmac":None,"owner_nonce":None,"broker_receipt":None,
+        }
+    except Exception:
+        raise ChainStop(
+            "Original ACWI economic source unexpected failure; no owner claim") from None
 
     # Exact current original seq1, unclaimed owner seq0 and initial public
     # witnesses, independently authenticated BEFORE first irreversible PUT.

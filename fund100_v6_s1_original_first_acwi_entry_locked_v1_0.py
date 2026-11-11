@@ -130,6 +130,37 @@ def run_protected_first_acwi_once()->dict:
                                         e["FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN"]),
             broker_key=e["ALPACA_LIVE_KEY"],
             broker_secret=e["ALPACA_LIVE_SECRET"])
+        if type(result) is dict and result.get("status")==(
+                "ORIGINAL_ACWI_ECONOMIC_NO_TRADE_KEEP_HOLDINGS"):
+            if (result.get("schema")!=chain.SCHEMA
+                or type(result.get("original_owner_claim_attempts")) is not int
+                or result.get("original_owner_claim_attempts")!=0
+                or type(result.get("original_signed_possible_POST_attempts")) is not int
+                or result.get("original_signed_possible_POST_attempts")!=0
+                or type(result.get("immutable_release_publication_attempts")) is not int
+                or result.get("immutable_release_publication_attempts")!=0
+                or type(result.get("reviewed_broker_order_attempts")) is not int
+                or result.get("reviewed_broker_order_attempts")!=0
+                or result.get("broker_receipt_validation_proven") is not False
+                or result.get("broker_receipt_stage") is not None
+                or result.get("owner_fence_consumed") is not False
+                or result.get("can_recheck_with_new_economic_evidence") is not True
+                or result.get("independent_order_fill_and_settlement_verified") is not False
+                or result.get("allow_restart_or_second_order") is not False):
+                raise EntryStop("Original NO_TRADE contract inconsistent; STOP")
+            return {
+                "schema":SCHEMA,
+                "status":"FIRST_ORIGINAL_ACWI_NO_TRADE_KEEP_HOLDINGS",
+                "broker_send_attempts":0,
+                "broker_receipt_stage":None,
+                "broker_receipt_validation_proven":False,
+                "independent_fill_and_settlement_verified":False,
+                "original_owner_fence_consumed":False,
+                "can_recheck_with_new_economic_evidence":True,
+                "resubmission_permitted":False,
+                "first_order_execution_source_released":False,
+                "secret_or_private_source_in_report":None,
+            }
         if (type(result) is not dict
             or result.get("status")!="ORIGINAL_ACWI_SINGLE_ATTEMPT_COMPLETED_NO_RETRY"
             or result.get("allow_restart_or_second_order") is not False
@@ -161,8 +192,12 @@ def main()->None:
     outcome=run_protected_first_acwi_once()
     print(outcome["status"])
     print("Broker send attempts:",outcome["broker_send_attempts"])
-    print("Broker ACK category:",outcome["broker_receipt_stage"])
-    print("No restart or resubmit; fills/settlement need independent review.")
+    if outcome["status"]=="FIRST_ORIGINAL_ACWI_NO_TRADE_KEEP_HOLDINGS":
+        print("Economic NO_TRADE: keep original ACWI; signed owner unclaimed.")
+        print("Fresh future evidence can be rechecked; no order to retry.")
+    else:
+        print("Broker ACK category:",outcome["broker_receipt_stage"])
+        print("No restart or resubmit; fills/settlement need independent review.")
 
 
 if __name__=="__main__":

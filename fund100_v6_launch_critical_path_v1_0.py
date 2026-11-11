@@ -20,6 +20,7 @@ STAGES = {
             "PREPOST_PUBLIC_WITNESS_RELEASED"],
         "fund100_v6_s1_immutable_release_publish_locked_v1_0.py": ["PUBLISH_SIGNED_HEAD_RELEASED"],
         "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py": ["ACTIVE_HIGH_SELL_SOURCE_RELEASED"],
+        "fund100_v6_s1_first_acwi_economic_preclaim_v1_0.py": ["ECONOMIC_SOURCE_RELEASED"],
         "fund100_alpaca_live_writer_candidate_v1_1.py": [
             "V6_S1_ACWI_QTY_SELL_TRANSPORT_RELEASED",
             "V6_S1_ACWI_QTY_SELL_EXECUTION_RELEASED",
@@ -145,6 +146,7 @@ def snapshot(root=ROOT):
         "current_broker_private_head_immutable_and_environment_state": "NOT_VERIFIED_OFFLINE",
         "critical_path": [
             "VERIFY_FRESH_PROTECTED_SIGNED_BROKER_AND_OPERATOR_SOURCE",
+            "REQUIRE_SOURCE_BACKED_EXIT_ECONOMICS_OR_KEEP_ACWI_NO_TRADE",
             "REVIEW_AND_RELEASE_AT_MOST_ONE_ORIGINAL_ACWI_SELL",
             "RECONCILE_ACTUAL_FILL_AND_SETTLED_CASH",
             "REVIEW_AND_RELEASE_AT_MOST_ONE_ORIGINAL_XLK_BUY",
