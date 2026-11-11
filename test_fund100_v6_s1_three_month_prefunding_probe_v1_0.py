@@ -321,7 +321,16 @@ def test_active_pure_replay_original_evaluator_only_no_broker_or_post(monkeypatc
             "same_process_real_broker_gets":8,
             "original_strict_postfunding_6_20_35_risk_pass":True,
             "sell_only_original_legacy_ACWI":True,
-            "buy_authorized":False,"broker_post_attempts":0}
+            "full_original_acwi_exit_bounded_by_authenticated_inventory":True,
+            "capital_ceiling_usd":"130.30",
+            "maximum_new_order_notional_usd":"65.00",
+            "unattributed_credit_or_new_principal_spend_authorized":False,
+            "original_acwi_sell_only_no_additional_principal_deployment":True,
+            "original_acwi_exact_fractional_holdings_verified":True,
+            "original_open_market_and_no_pending_order_verified":True,
+            "buy_authorized":False,"broker_order_authorized":True,
+            "orders_submitted_here":0,"settled_cash_verified":False,
+            "broker_post_attempts":0}
     monkeypatch.setattr(active,"evaluate_original_sell_only",qualified)
     d=data()
     args=dict(account=d["account"],positions=[],orders=[],
@@ -362,15 +371,92 @@ def test_active_pure_replay_rejects_without_sensitive_details(
     assert status.endswith("_HOLD")
 
 
-def test_original_funding_shape_and_fixed_pilot_ceiling_are_distinct_holds():
-    # Both are code-owned STOP-only categories, never a broker order permit.
+def test_original_credit_source_is_distinct_from_any_new_buy_principal_permit():
+    # Neither CSD count nor credit amount can grant BUY authority.
     reasons=q._ACTIVE_REPLAY_SAFE_HOLD_REASONS
     funding=reasons["Original account funding source not singly qualified"]
-    ceiling=reasons["Original authorized $130.30 funded capital breached"]
-    assert funding=="ACTIVE_FUNDING_SOURCE_SHAPE_HOLD"
-    assert ceiling=="ACTIVE_PILOT_CAPITAL_CEILING_HOLD"
-    assert funding!=ceiling and funding.endswith("_HOLD") and ceiling.endswith("_HOLD")
-    assert all("PRIVATE" not in x and "$" not in x for x in (funding,ceiling))
+    credit=reasons["Original cash-credit direction/count unqualified"]
+    assert funding==credit=="ACTIVE_FUNDING_SOURCE_SHAPE_HOLD"
+    assert "Original authorized $130.30 funded capital breached" not in reasons
+    assert "ACTIVE_PILOT_CAPITAL_CEILING_HOLD" not in reasons.values()
+    assert all("PRIVATE" not in x and "$" not in x for x in (funding,credit))
+
+
+def test_every_literal_evaluator_stop_has_a_fixed_redacted_diagnostic():
+    # A future active source change may not silently turn an intended
+    # funding/cap failure into unknown diagnostic on the next NYSE open.
+    import ast
+    import inspect
+    import textwrap
+    import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+    tree=ast.parse(textwrap.dedent(inspect.getsource(
+        active.evaluate_original_sell_only)))
+    reasons={
+        call.args[0].value for call in ast.walk(tree)
+        if isinstance(call,ast.Call)
+        and isinstance(call.func,ast.Name)
+        and call.func.id=="ActiveSellStop"
+        and call.args
+        and isinstance(call.args[0],ast.Constant)
+        and isinstance(call.args[0].value,str)
+    }
+    assert reasons, "Original ACTIVE SELL evaluator has no classified failure modes"
+    assert reasons<=set(q._ACTIVE_REPLAY_SAFE_HOLD_REASONS)
+    assert all(category.endswith("_HOLD") for category in
+               q._ACTIVE_REPLAY_SAFE_HOLD_REASONS.values())
+
+
+
+@pytest.mark.parametrize("bad",[
+    ("unattributed_credit_or_new_principal_spend_authorized",True),
+    ("unattributed_credit_or_new_principal_spend_authorized",None),
+    ("original_acwi_sell_only_no_additional_principal_deployment",False),
+    ("original_acwi_sell_only_no_additional_principal_deployment",None),
+    ("capital_ceiling_usd","999.00"),
+    ("maximum_new_order_notional_usd","130.30"),
+    ("full_original_acwi_exit_bounded_by_authenticated_inventory",False),
+    ("broker_order_authorized",False),
+    ("original_acwi_exact_fractional_holdings_verified",False),
+    ("original_open_market_and_no_pending_order_verified",False),
+    ("orders_submitted_here",1),
+    ("settled_cash_verified",True),
+])
+def test_no_buy_principal_research_match_requires_every_original_risk_guard(
+        monkeypatch,bad):
+    import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
+    import fund100_v6_s1_protected_first_acwi_intent_only_v1_0 as intent
+    monkeypatch.setattr(active,"ACTIVE_HIGH_SELL_SOURCE_RELEASED",False)
+    monkeypatch.setattr(intent,"original_acwi_qty",lambda:"0.25")
+    baseline={
+        "status":"ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2",
+        "same_process_real_broker_gets":8,
+        "original_acwi_exact_fractional_holdings_verified":True,
+        "original_open_market_and_no_pending_order_verified":True,
+        "original_strict_postfunding_6_20_35_risk_pass":True,
+        "sell_only_original_legacy_ACWI":True,
+        "full_original_acwi_exit_bounded_by_authenticated_inventory":True,
+        "capital_ceiling_usd":"130.30",
+        "maximum_new_order_notional_usd":"65.00",
+        "unattributed_credit_or_new_principal_spend_authorized":False,
+        "original_acwi_sell_only_no_additional_principal_deployment":True,
+        "buy_authorized":False,"broker_order_authorized":True,
+        "orders_submitted_here":0,"settled_cash_verified":False,
+        "broker_post_attempts":0,
+    }
+    altered=dict(baseline)
+    altered[bad[0]]=bad[1]
+    monkeypatch.setattr(active,"evaluate_original_sell_only",lambda **kw:altered)
+    d=data()
+    args=dict(account=d["account"],positions=[],orders=[],
+              clock={"is_open":True},history=d["month_history"],
+              activities=d["activities"],none_history=d["month_history"],
+              extended_history=d["three_month_history"],
+              bootstrap={},policy={},observed_at_utc=d["observed_at_utc"])
+    assert q._active_sell_pure_replay(**args)==(
+        "ACTIVE_PURE_EVALUATOR_RESULT_NOT_QUALIFIED_HOLD")
+    altered.pop(bad[0])
+    assert q._active_sell_pure_replay(**args)==(
+        "ACTIVE_PURE_EVALUATOR_RESULT_NOT_QUALIFIED_HOLD")
 
 
 def test_active_pure_replay_unknown_exception_never_leaks_private_error(monkeypatch):
