@@ -36,6 +36,8 @@ on:
       # is strictly research only and must pass complete LIVE safety tests.
       - "fund100_v9_broad_original_sec_quality_coverage_v1_0.py"
       - "test_fund100_v9_broad_original_sec_quality_coverage_v1_0.py"
+      - "fund100_v9_f2_original_finance_ratio_source_v1_0.py"
+      - "test_fund100_v9_f2_original_finance_ratio_source_v1_0.py"
       - "research_lab/stocks/V9_ORIGINAL_BROAD_SEC_FINANCIAL_COVERAGE_PILOT_2026_11_10.md"
       - ".github/workflows/fund100-v9-broad-sec-coverage-offline.yml"
       - ".github/workflows/fund100-v9-broad-sec-coverage-capture.yml"
@@ -442,6 +444,8 @@ on:
       # is strictly research only and must pass complete LIVE safety tests.
       - "fund100_v9_broad_original_sec_quality_coverage_v1_0.py"
       - "test_fund100_v9_broad_original_sec_quality_coverage_v1_0.py"
+      - "fund100_v9_f2_original_finance_ratio_source_v1_0.py"
+      - "test_fund100_v9_f2_original_finance_ratio_source_v1_0.py"
       - "research_lab/stocks/V9_ORIGINAL_BROAD_SEC_FINANCIAL_COVERAGE_PILOT_2026_11_10.md"
       - ".github/workflows/fund100-v9-broad-sec-coverage-offline.yml"
       - ".github/workflows/fund100-v9-broad-sec-coverage-capture.yml"
