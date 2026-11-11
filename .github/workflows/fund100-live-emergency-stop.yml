@@ -57,3 +57,37 @@ jobs:
         run: |
           set -euo pipefail
           python fund100_live_emergency_stop_v1_0.py
+
+  cancel-v6-original-acwi-order:
+    name: Independently cancel only signed original V6 ACWI SELL
+    needs: stop-signal
+    # This separate job still runs if either STOP CAS fails, so an already
+    # open V6 order has its own independent broker cancellation attempt.
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout protected main without persistent credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify emergency workflow provenance before any broker secret
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-live-emergency-stop.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Cancel only original signed V6 ACWI SELL and verify broker open orders
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+        run: |
+          set -euo pipefail
+          # Isolated exact-ledger-id, ACWI-symbol, sell-side matcher.
+          # NO new broker orders, NO position liquidation, NO STOP rearm.
+          python fund100_v6_s1_first_acwi_signed_cancel_only_v1_0.py
