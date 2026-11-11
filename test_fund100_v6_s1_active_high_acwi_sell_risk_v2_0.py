@@ -375,7 +375,16 @@ def test_authenticated_next_utc_date_labels_are_same_nyse_session_under_ny_local
     def next_utc_day(docs):
         for idx in (4,7):
             docs[idx]["timestamp"]=[t+10*3600 for t in docs[idx]["timestamp"]]
-    state,_=mock_sources(monkeypatch,mutations=next_utc_day)
+    state,docs=mock_sources(monkeypatch,mutations=next_utc_day)
+    # Diagnostic is synthetic and credentialless: surface the precise
+    # source rejection instead of active's deliberately generic LIVE HOLD.
+    # Do not loosen the risk source or any production trading latch.
+    observed=active.extended._now(datetime.now(timezone.utc).isoformat())
+    for which,limit in ((4,70),(7,100)):
+        try:
+            active.extended._daily(docs[which],observed,maximum=limit)
+        except active.extended.ExtendedSourceStop as err:
+            pytest.fail(f"Synthetic NY-local fixture daily source {which}: {err}")
     monkeypatch.setattr(active.cashrisk,"inspect",ORIGINAL_CASHRISK_INSPECT)
     got=active.inspect_active_original_acwi_sell(
         original_qty=QTY,key=KEY,secret=SECRET)
@@ -406,7 +415,15 @@ def test_nylocal_shift_cannot_hide_real_missing_funded_session(monkeypatch):
         # Delete a funded close that precedes the six-mark 1M suffix.
         del docs[7]["timestamp"][5]
         del docs[7]["equity"][5]
-    state,_=mock_sources(monkeypatch,mutations=gap)
+    state,docs=mock_sources(monkeypatch,mutations=gap)
+    # Even a deliberately missing funded close must pass structural 3M
+    # parsing before the separate exchange-session completeness check.
+    observed=active.extended._now(datetime.now(timezone.utc).isoformat())
+    for which,limit in ((4,70),(7,100)):
+        try:
+            active.extended._daily(docs[which],observed,maximum=limit)
+        except active.extended.ExtendedSourceStop as err:
+            pytest.fail(f"Synthetic NY-local gap fixture daily source {which}: {err}")
     with pytest.raises(active.ActiveSellStop,match="exchange-session"):
         active.inspect_active_original_acwi_sell(
             original_qty=QTY,key=KEY,secret=SECRET)
