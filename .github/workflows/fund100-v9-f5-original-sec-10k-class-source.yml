@@ -8,6 +8,8 @@ on:
     paths:
       - "fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0.py"
       - "test_fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0.py"
+      - "fund100_stock_historical_sec_listing_p4u_v1_0.py"
+      - "test_fund100_stock_historical_sec_listing_p4u_v1_0.py"
       - ".github/workflows/fund100-v9-f5-original-sec-10k-class-source.yml"
       - "research_lab/stocks/V9_F5_OWN_10K_SECURITY_CLASS_PILOT_2026_11_11.md"
   push:
@@ -15,6 +17,8 @@ on:
     paths:
       - "fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0.py"
       - "test_fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0.py"
+      - "fund100_stock_historical_sec_listing_p4u_v1_0.py"
+      - "test_fund100_stock_historical_sec_listing_p4u_v1_0.py"
       - ".github/workflows/fund100-v9-f5-original-sec-10k-class-source.yml"
       - "research_lab/stocks/V9_F5_OWN_10K_SECURITY_CLASS_PILOT_2026_11_11.md"
 
@@ -46,6 +50,7 @@ jobs:
             test_fund100_v9_sec_current_listing_association_v1_0.py \
             test_fund100_v9_broad_original_sec_quality_coverage_v1_0.py \
             test_fund100_v9_f4_current_openfigi_class_reference_v1_0.py \
+            test_fund100_stock_historical_sec_listing_p4u_v1_0.py \
             test_fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0.py
           python - <<'PY'
           import fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0 as m
