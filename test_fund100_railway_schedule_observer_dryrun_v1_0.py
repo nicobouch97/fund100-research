@@ -133,7 +133,7 @@ def test_source_contains_no_live_trading_or_api_secret_access():
 
 
 def test_container_isolated_from_repo_and_no_creds():
-    docker = Path("Dockerfile.railway-schedule-observer").read_text()
+    docker = Path("Dockerfile").read_text()
     assert "fund100_railway_schedule_observer_dryrun_v1_0.py" in docker
     assert "COPY ." not in docker
     assert "ENV ALPACA" not in docker
