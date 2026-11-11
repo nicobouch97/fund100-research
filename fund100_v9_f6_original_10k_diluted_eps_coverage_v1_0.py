@@ -78,6 +78,7 @@ def assess(*, directories: dict, sec_raw: bytes, observed: datetime,
     states = Counter()
     documents = []
     class_matches = 0
+    matched_ciks = []
     companyfacts_requested = 0
     for cik, ticker, venue in jobs:
         try:
@@ -113,6 +114,7 @@ def assess(*, directories: dict, sec_raw: bytes, observed: datetime,
                 states[reason] += 1
                 continue
             class_matches += 1
+            matched_ciks.append(cik)
             companyfacts_requested += 1
             try:
                 facts_raw = facts_get(cik)
@@ -141,6 +143,10 @@ def assess(*, directories: dict, sec_raw: bytes, observed: datetime,
     # do not choose only the new favored companies if original source drifts.
     if class_matches != F5_CLASS_MATCHES:
         raise EpsCoverageHold("Original F5 three class matches changed; no EPS cohort promoted")
+    class_subset_hash = sha256(
+        b"FUND100_V9_F6_FIRST_CLASS_MATCHED_CIKS_V1\\n" +
+        b"|".join(f"{c:010d}".encode("ascii") for c in sorted(matched_ciks))
+    ).hexdigest()
     return {
         "schema":SCHEMA,
         "first_f5_own_10k_run":F5_FIRST_OWN_10K_RUN,
@@ -150,10 +156,11 @@ def assess(*, directories: dict, sec_raw: bytes, observed: datetime,
             ("\n".join(documents)+"\n").encode()).hexdigest(),
         "original_issuer_denominator":n,
         "original_issuer_declared_12b_class_candidates":class_matches,
+        "current_12b_class_candidate_issuer_commitment_sha256":class_subset_hash,
         "companyfacts_source_requests_for_only_class_candidates":companyfacts_requested,
         "source_status_counts":dict(sorted(states.items())),
         "eps_is_issuer_us_gaap_not_proven_share_class_valuation":True,
-        "eps_original_filing_accession_date_matched":True,
+        "eps_original_filing_accession_date_matching_required":True,
         "independent_issuer_cik_to_figi_proven":False,
         "class_specific_shares_and_market_cap_price_verified":False,
         "expected_alpha_or_cheap_stock_inferred":False,
