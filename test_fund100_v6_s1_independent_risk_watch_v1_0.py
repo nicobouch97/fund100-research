@@ -191,6 +191,48 @@ def test_v5_must_remain_historically_stopped_even_when_v6_is_go(monkeypatch):
         watch._risk_eight_get()
 
 
+def test_unavailable_initial_v6_operator_never_assumes_stopped_or_pass(
+        monkeypatch, tmp_path):
+    output = tmp_path / "not-a-risk-pass"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    actions = []
+    def inaccessible():
+        actions.append("V6_MAIN_CONTROL_GET_UNAVAILABLE")
+        raise TimeoutError("synthetic GitHub read timeout")
+    monkeypatch.setattr(watch.v6, "read_current_control", inaccessible)
+    monkeypatch.setattr(watch.broker, "load_credentials",
+                        lambda: pytest.fail("Eight risk GETs may not start"))
+    monkeypatch.setattr(watch, "_stop_v6_first_only",
+                        lambda: actions.append("STOP_ONLY_CAS") or "STOPPED")
+    monkeypatch.setattr(watch.cancel, "cancel_open_fund100_orders",
+                        lambda: actions.append("SIGNED_IDS_ONLY_CANCEL") or 0)
+    assert watch.watch_once() == "AUTO_STOP_CONFIRMED"
+    assert actions == [
+        "V6_MAIN_CONTROL_GET_UNAVAILABLE", "STOP_ONLY_CAS",
+        "SIGNED_IDS_ONLY_CANCEL",
+    ]
+    assert not output.exists()
+
+
+def test_unavailable_initial_v6_operator_and_stop_ack_still_attempts_cancel(
+        monkeypatch, tmp_path):
+    output = tmp_path / "not-a-risk-pass"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    actions = []
+    monkeypatch.setattr(watch.v6, "read_current_control",
+        lambda: (_ for _ in ()).throw(TimeoutError("V6 unknown")))
+    def stop_unknown():
+        actions.append("STOP_CAS_UNKNOWN")
+        raise TimeoutError("No acknowledgment")
+    monkeypatch.setattr(watch, "_stop_v6_first_only", stop_unknown)
+    monkeypatch.setattr(watch.cancel, "cancel_open_fund100_orders",
+                        lambda: actions.append("SELECTIVE_CANCEL") or 0)
+    with pytest.raises(watch.V6WatchStop, match="STOP unconfirmed"):
+        watch.watch_once()
+    assert actions == ["STOP_CAS_UNKNOWN", "SELECTIVE_CANCEL"]
+    assert not output.exists()
+
+
 def test_unverified_running_risk_stops_before_cancel_and_no_pass(monkeypatch,
                                                                  tmp_path):
     go(monkeypatch)
