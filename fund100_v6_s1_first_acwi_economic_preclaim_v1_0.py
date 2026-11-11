@@ -104,6 +104,7 @@ def require_preclaim_exit_economics(*,report:dict,original_qty:str)->None:
         or report.get("schema")!=SCHEMA
         or report.get("status")!=MATCH_STATUS
         or report.get("decision")!="SELL_ONLY_AFTER_QUALIFIED_ECONOMIC_CASE"
+        or type(report.get("economic_reason")) is not str
         or report.get("economic_reason") not in PERMITTED_REASONS
         or report.get("source_owned_authentication") is not True
         or report.get("source_premarket_availability_verified") is not True
