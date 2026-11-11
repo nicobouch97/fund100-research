@@ -1,0 +1,56 @@
+name: Fund-100 Railway Schedule Observer Offline Safety (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_railway_schedule_observer_dryrun_v1_0.py"
+      - "test_fund100_railway_schedule_observer_dryrun_v1_0.py"
+      - "Dockerfile"
+      - "RAILWAY_SCHEDULE_OBSERVER_DRYRUN.md"
+      - ".github/workflows/fund100-railway-observer-offline.yml"
+  push:
+    branches:
+      - "research/railway-schedule-observer-dryrun-20261111"
+    paths:
+      - "fund100_railway_schedule_observer_dryrun_v1_0.py"
+      - "test_fund100_railway_schedule_observer_dryrun_v1_0.py"
+      - "Dockerfile"
+      - "RAILWAY_SCHEDULE_OBSERVER_DRYRUN.md"
+      - ".github/workflows/fund100-railway-observer-offline.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    name: Independent observer synthetic tests only
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install offline testing dependency
+        run: python -m pip install --disable-pip-version-check --no-input 'pytest==8.4.2'
+      - name: Run credentialless Railway observer regression
+        run: python -m pytest -q test_fund100_railway_schedule_observer_dryrun_v1_0.py
+      - name: Verify worker cannot attest any LIVE risk or request credentials
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import fund100_railway_schedule_observer_dryrun_v1_0 as observer
+          assert observer.NO_BROKER and observer.NO_AUTH
+          assert observer.NO_WRITE and observer.NO_TRADE
+          worker = Path(observer.__file__).read_text()
+          assert 'https://api.alpaca.markets' not in worker
+          assert 'method="POST"' not in worker
+          docker = Path('Dockerfile').read_text()
+          assert 'USER observer' in docker
+          assert 'COPY .' not in docker
+          assert 'CMD ["python", "-u", "/app/observer.py"]' in docker
+          print('External schedule observer is dry-run only; no risk PASS or broker orders.')
+          PY
