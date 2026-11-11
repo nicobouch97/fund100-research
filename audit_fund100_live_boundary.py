@@ -912,7 +912,7 @@ def approved_scoped_live_script(
 
 
 PYTHON_SCRIPT_PATTERN = re.compile(
-    r"""(?:^|\s)python(?:3)?\s+([A-Za-z0-9_./-]+\.py)(?:\s|$)""",
+    r"""(?:^|\s)python(?:3)?\s+(?:-[a-zA-Z]+\s+)*([A-Za-z0-9_./-]+\.py)(?:\s|$)""",
     re.IGNORECASE,
 )
 
