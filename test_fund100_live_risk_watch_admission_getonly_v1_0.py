@@ -112,7 +112,7 @@ def test_newer_failed_run_never_falls_back_to_older_pass():
                  updated_at="2026-11-11T16:17:05Z",
                  conclusion="failure")
     runs["workflow_runs"].insert(0, newer)
-    with pytest.raises(gate.RiskWatchAdmissionStop, match="latest"):
+    with pytest.raises(gate.RiskWatchAdmissionStop, match="Latest scheduled watcher"):
         verify(runs, jobs)
 
 
