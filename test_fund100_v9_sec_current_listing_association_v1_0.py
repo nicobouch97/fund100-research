@@ -310,3 +310,18 @@ def test_exact_noncommon_symbol_never_becomes_security_valuation_eligibility():
     assert statuses["SINGLE_MATCH_ALTERNATIVE_INSTRUMENT_TEXT_QUARANTINE"] == 1
     assert result["SEC_CIK_to_one_matched_symbol_proves_exact_share_class"] is False
     assert "71111" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("extra", [
+    [320193, "Apple alt class with unknown venue", "AAPLX", None],
+    [320193, "Apple alt class with noncanonical ticker", "AAPL/X", "Nasdaq"],
+])
+def test_quarantined_sec_rows_still_disqualify_one_share_class_denominator(extra):
+    # Existing SEC matching filters correctly refuse null/unknown symbols,
+    # but their original existence must remain issuer-multiplicity evidence.
+    result=inspect(sec_rows=SR + [extra])
+    assert result["association_reason_counts"]["exact_current_ticker_and_exchange_associations"] == 3
+    assert result["SEC_CIK_to_current_symbol_denominator_source_status_counts_NOT_security_class"][
+        "MULTIPLE_OR_UNRECONCILED_SEC_TICKER_VENUE_ASSOCIATIONS"] == 1
+    assert result["original_asof_price_and_class_specific_shares_verified"] is False
+    assert extra[2] not in json.dumps(result)
