@@ -13,6 +13,7 @@ import os
 import re
 
 import fund100_v6_s1_original_one_attempt_chain_locked_v1_0 as chain
+import fund100_live_risk_watch_admission_getonly_v1_0 as live_watch
 
 SCHEMA="FUND100_V6_S1_FIRST_ACWI_ORIGINAL_EXECUTION_ENTRY_HARD_LOCKED_V1"
 ORIGINAL_ACWI_ENTRYPOINT_RELEASED=False
@@ -109,6 +110,17 @@ def run_protected_first_acwi_once()->dict:
         distinct=distinct+(e["FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN"],)
         if len(set(distinct))!=5:
             raise EntryStop("Original first-run requires five independent GitHub principals")
+
+    # Independent scheduled watcher must have actually inspected LIVE broker
+    # risk and produced a fresh PASS-only GitHub job step. A workflow marked
+    # successful while ALREADY_STOPPED does NOT satisfy this admission.
+    # This veto is applied before reading signed original state, any owner
+    # claim, immutable publish or broker POST; never lifts source hard locks.
+    try:
+        live_watch.require_recent_scheduled_risk_pass(
+            token=e["GITHUB_TOKEN"],main_sha=e["GITHUB_SHA"])
+    except Exception:
+        raise EntryStop("Recent independent scheduled broker-risk PASS missing; STOP") from None
 
     # Do not log original signed bytes, quantity, public comment bodies,
     # account identifiers, owner nonce or secrets. This call does NO writes.
