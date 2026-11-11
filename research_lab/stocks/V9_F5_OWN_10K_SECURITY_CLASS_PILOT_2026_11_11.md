@@ -102,3 +102,46 @@ filing text or accession numbers. Unsupported failure codes are generic HOLD.
 An authenticated capture with original SEC Archives access still must
 demonstrate its own real source; repeated GETs are not authorization to
 accept a mirror/alternative without its original provenance.
+
+## Authentic 12:06 UTC archive index result and bounded iXBRL parser hypothesis
+
+The protected main-only original source [run #43017414953](https://github.com/nicobouch97/fund100-research/actions/runs/43017414953)
+completed with the same frozen eight original F4 CIKs. It distinguished
+**7** `ORIGINAL_SEC_ARCHIVE_PRIMARY_INDEX_UNSAFE_DOCUMENT_HOLD` and
+**1** `NO_RECENT_ASOF_ELIGIBLE_OWN_10K_HOLD`. No original issuer-class
+ticker/venue confirmation. No SEC 403/429 source failure was reported
+among the seven: the first-party original filing-index document row
+did not fit the older 2017-oriented P4U filename grammar.
+
+An independently reviewed *public, unrelated* modern official SEC 2025
+filing index illustrates `v-20250930.htm  iXBRL` in the document cell,
+where the anchor opens an official SEC `/ix?doc=/Archives/.../v-20250930.htm`
+viewer rather than linking directly to the original `.htm` URL:
+https://www.sec.gov/Archives/edgar/data/1403161/000140316125000089/0001403161-25-000089-index.htm
+
+The safety-preserving hypothesis is that the current archive index
+places `iXBRL` decorative text *after* an otherwise safe original
+filename, and the trusted official SEC viewer query is a wrapper
+around the exact same underlying original SEC archived primary file.
+This is **not yet proof** that all seven F4 cohort filings have the
+same formatting; the next source run must establish actual outcomes.
+
+The minimal shared original P4U parser change supports only a literal
+trailing `iXBRL` marker and a viewer reference whose **single decoded
+`doc` query equals the independently constructed original
+same-CIK/same-accession/same-document canonical URL**. It still
+rejects cross-host, HTTP downgrade, other filing, traversal,
+additional parameters, duplicate queries, fragments, unexpected
+cell text and unapproved filenames. The viewer itself is *never*
+downloaded or followed; only the exact canonical primary SEC
+document gets one bounded original GET.
+
+P4U's original historic 2017 direct-filing behavior and all
+unrelated research paths must continue to pass their existing
+adversarial tests. The F5 main-only research workflow now explicitly
+runs P4U's parser tests and retriggers on these code changes.
+A positive 12(b) class result remains issuer-declared *review only*;
+neither a completed original 10-K receipt nor the external FIGI
+reference independently certifies a legal CIK-to-FIGI ownership bridge,
+class shares, vintage returns, market cap, undervaluation, first
+ACWI SELL or any trading release.

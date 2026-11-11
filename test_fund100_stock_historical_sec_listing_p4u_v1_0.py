@@ -324,6 +324,105 @@ def sec_filing_detail(path, *, name="primary10k.htm", href=None, form="10-K"):
         '</table></html>').encode()
 
 
+def _public_ixbrl_10k_filing_index(path, *, viewer_href=None, badge="iXBRL"):
+    """Official-style inline XBRL index uses filename anchor + an iXBRL badge."""
+    _, doc_url = p4u._primary_urls(path, "primary10k.htm")
+    if viewer_href is None:
+        viewer_href = "/ix?doc=" + doc_url.removeprefix("https://www.sec.gov")
+    original = sec_filing_detail(path, href=viewer_href)
+    return original.replace(
+        b"primary10k.htm</a>",
+        ("primary10k.htm</a>&nbsp;<span>" + badge + "</span>").encode())
+
+
+def test_modern_sec_index_ixbrl_viewer_is_only_a_canonical_original_filename():
+    """SEC public modern 10-K indexes show 'document.htm iXBRL' in one cell."""
+    path = "edgar/data/1001/0001001-17-000001.txt"
+    name, index_url, doc_url = p4u._primary_10k_from_index(
+        path, _public_ixbrl_10k_filing_index(path))
+    assert name == "primary10k.htm"
+    assert doc_url == p4u._primary_urls(path, "primary10k.htm")[1]
+    assert "/ix?" not in doc_url
+    # SEC may percent-encode the identical viewer doc query, but it does
+    # not change the original primary URL used for the eventual GET.
+    from urllib.parse import quote
+    ix_href = "/ix?doc=" + quote(doc_url.removeprefix("https://www.sec.gov"),
+                                safe="")
+    assert p4u._primary_10k_from_index(
+        path, _public_ixbrl_10k_filing_index(path, viewer_href=ix_href)
+    ) == (name, index_url, doc_url)
+
+
+@pytest.mark.parametrize("url_variant", [
+    "untrusted_external_host",
+    "wrong_accession",
+    "wrong_document",
+    "extra_query",
+    "duplicate_query",
+    "unsafe_traversal",
+    "non_https",
+    "link_fragment",
+])
+def test_ixbrl_index_badge_never_allows_cross_source_document(url_variant):
+    path = "edgar/data/1001/0001001-17-000001.txt"
+    _, doc_url = p4u._primary_urls(path, "primary10k.htm")
+    relative = doc_url.removeprefix("https://www.sec.gov")
+    variants = {
+        "untrusted_external_host": "https://attacker.example/ix?doc=" + relative,
+        "wrong_accession": "/ix?doc=" + relative.replace(
+            "000100117000001", "000100117000002"),
+        "wrong_document": "/ix?doc=" + relative.replace(
+            "primary10k.htm", "unrelated.htm"),
+        "extra_query": "/ix?doc=" + relative + "&source=other",
+        "duplicate_query": "/ix?doc=" + relative + "&doc=" + relative,
+        "unsafe_traversal": "/ix?doc=" + relative.replace(
+            "primary10k.htm", "../primary10k.htm"),
+        "non_https": "http://www.sec.gov/ix?doc=" + relative,
+        "link_fragment": "/ix?doc=" + relative + "#exhibit",
+    }
+    with pytest.raises(p4u.FilingSourceFailure) as err:
+        p4u._primary_10k_from_index(
+            path, _public_ixbrl_10k_filing_index(
+                path, viewer_href=variants[url_variant]))
+    assert err.value.reason_code == "PRIMARY_INDEX_UNSAFE_LINK"
+
+
+@pytest.mark.parametrize("tail", ["iXBRL and more", "alt-file.htm",
+                                  "iXBRL /ix", "iXBRL ../secret.htm"])
+def test_unknown_ixbrl_index_cell_decoration_never_becomes_file(tail):
+    path = "edgar/data/1001/0001001-17-000001.txt"
+    with pytest.raises(p4u.FilingSourceFailure) as err:
+        p4u._primary_10k_from_index(
+            path, _public_ixbrl_10k_filing_index(path, badge=tail))
+    assert err.value.reason_code == "PRIMARY_INDEX_UNSAFE_DOCUMENT"
+
+
+def test_modern_sec_ixbrl_index_downloads_underlying_primary_not_viewer(monkeypatch):
+    path = "edgar/data/1001/0001001-17-000001.txt"
+    index_url, doc_url = p4u._primary_urls(path, "primary10k.htm")
+    index = _public_ixbrl_10k_filing_index(path)
+    requested = []
+    class Response:
+        status = 200
+        def __init__(self,url): self.url=url
+        def __enter__(self): return self
+        def __exit__(self,*args): return False
+        def geturl(self): return self.url
+        def read(self,limit):
+            requested.append(self.url)
+            return {index_url:index, doc_url:b"<html><body>10-K</body></html>"}[self.url]
+    def fake_urlopen(request,timeout):
+        assert timeout == 35
+        assert request.full_url in {index_url,doc_url}
+        return Response(request.full_url)
+    monkeypatch.setattr(p4u,"urlopen",fake_urlopen)
+    value = p4u._official_primary_10k_get(path,"Research contact@example.com")
+    assert value[0] == b"<html><body>10-K</body></html>"
+    assert value[1] == index
+    assert value[2:] == ("primary10k.htm",doc_url,index_url)
+    assert requested == [index_url,doc_url]
+
+
 def test_primary_filing_detail_identifies_only_same_accession_original_10k():
     path = "edgar/data/1001/0001001-17-000001.txt"
     name, index_url, primary_url = p4u._primary_10k_from_index(

@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 import re
 from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qsl, urlsplit
 from urllib.request import Request, urlopen
 
 from fund100_stock_historical_sec_population_p4t_v1_0 import (
@@ -587,7 +588,14 @@ def _primary_10k_from_index(path: str, index_raw: bytes) -> tuple[str, str, str]
     for row in parser.rows:
         if len(row) < 4 or row[3][0].strip().upper() != "10-K":
             continue
-        filename = row[2][0].strip()
+        # Current official SEC filing indexes often label the document
+        # `primary.htm  iXBRL` and link it through /ix?doc=/Archives/...
+        # The decorative 'iXBRL' is never part of the original filename.
+        # Only one exact literal badge is accepted; unexpected cell text
+        # and paths stay unsafe. This is NOT a request to the XBRL viewer.
+        label = " ".join(row[2][0].split())
+        filename = (label[:-len(" iXBRL")] if label.endswith(" iXBRL")
+                    else label)
         href = row[2][1]
         try:
             index_url, document_url = _primary_urls(path, filename)
@@ -595,7 +603,22 @@ def _primary_10k_from_index(path: str, index_raw: bytes) -> tuple[str, str, str]
             raise FilingSourceFailure("PRIMARY_INDEX_UNSAFE_DOCUMENT") from None
         relative = document_url.removeprefix("https://www.sec.gov")
         if href not in (filename, relative, document_url):
-            raise FilingSourceFailure("PRIMARY_INDEX_UNSAFE_LINK")
+            # No cross-accession/browser-redirect/other-host or arbitrary
+            # query accepted. URL is inspected ONLY to prove it targets the
+            # exact canonical primary filing, then document_url is used.
+            if type(href) is not str or len(href) > 1024:
+                raise FilingSourceFailure("PRIMARY_INDEX_UNSAFE_LINK")
+            try:
+                view = urlsplit(href)
+                params = parse_qsl(view.query, keep_blank_values=True,
+                                   strict_parsing=True, max_num_fields=2)
+            except ValueError:
+                raise FilingSourceFailure("PRIMARY_INDEX_UNSAFE_LINK") from None
+            if (view.path != "/ix" or view.fragment
+                or (view.scheme, view.netloc) not in {
+                    ("", ""), ("https", "www.sec.gov")}
+                or params != [("doc", relative)]):
+                raise FilingSourceFailure("PRIMARY_INDEX_UNSAFE_LINK")
         found.append((filename, index_url, document_url))
     if len(found) != 1:
         raise FilingSourceFailure("PRIMARY_INDEX_10K_NOT_UNIQUE")
