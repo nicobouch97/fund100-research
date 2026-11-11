@@ -164,4 +164,4 @@ if __name__ == "__main__":
         if not output:
             raise RiskMonitorStop("No trusted GitHub step output; no PASS evidence")
         with open(output, "a", encoding="utf-8") as stream:
-            stream.write("verified_live_account_risk=YES\\n".replace("\\\\n", "\\n"))
+            stream.write("verified_live_account_risk=YES" + chr(10))
