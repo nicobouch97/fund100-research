@@ -133,9 +133,13 @@ def run_protected_first_acwi_once()->dict:
         if type(result) is dict and result.get("status")==(
                 "ORIGINAL_ACWI_ECONOMIC_NO_TRADE_KEEP_HOLDINGS"):
             if (result.get("schema")!=chain.SCHEMA
+                or type(result.get("original_owner_claim_attempts")) is not int
                 or result.get("original_owner_claim_attempts")!=0
+                or type(result.get("original_signed_possible_POST_attempts")) is not int
                 or result.get("original_signed_possible_POST_attempts")!=0
+                or type(result.get("immutable_release_publication_attempts")) is not int
                 or result.get("immutable_release_publication_attempts")!=0
+                or type(result.get("reviewed_broker_order_attempts")) is not int
                 or result.get("reviewed_broker_order_attempts")!=0
                 or result.get("broker_receipt_validation_proven") is not False
                 or result.get("broker_receipt_stage") is not None
