@@ -253,3 +253,75 @@ def test_no_broker_or_late_filing_research_trading_claim():
     assert "submit_order" not in src
     assert m.NO_BROKER_READS==m.NO_BROKER_ORDERS==m.NO_PRIVATE_STATE_WRITES==0
     assert m.LIVE_AUTHORIZED is False
+
+
+def test_current_issuer_one_symbol_is_only_denominator_research_not_security_class():
+    result=inspect()
+    assert result["SEC_CIK_to_current_symbol_denominator_source_status_counts_NOT_security_class"] == {
+        "SINGLE_MATCH_COMMON_TEXT_ONLY_UNVERIFIED_SHARE_CLASS": 2,
+        "SINGLE_MATCH_NO_EXPLICIT_CLASS_TEXT_QUARANTINE": 1,
+    }
+    for field in (
+        "SEC_CIK_to_one_matched_symbol_proves_exact_share_class",
+        "SEC_issuer_level_share_count_proves_same_traded_class_denominator",
+        "original_asof_price_and_class_specific_shares_verified",
+        "current_ticker_link_is_historical_or_delisting_coverage",
+        "current_class_source_status_is_stock_valuation_or_buy_signal",
+    ):
+        assert result[field] is False
+    assert result["broker_reads"] == result["broker_orders"] == 0
+    for sensitive in ("Apple Inc.", "AAPL", "320193", "Microsoft Corporation", "MSFT"):
+        assert sensitive not in json.dumps(result)
+
+
+def test_additional_sec_class_without_listing_match_quarantines_entire_issuer_denominator():
+    # Exactly matching AAPL remains an issuer association, but the extra
+    # SEC share/symbol means no class-specific market cap can be assumed.
+    result=inspect(sec_rows=SR + [[320193, "Apple other class", "AAPLX", "Nasdaq"]])
+    assert result["association_reason_counts"]["exact_current_ticker_and_exchange_associations"] == 3
+    assert result["SEC_CIK_to_current_symbol_denominator_source_status_counts_NOT_security_class"] == {
+        "MULTIPLE_OR_UNRECONCILED_SEC_TICKER_VENUE_ASSOCIATIONS": 1,
+        "SINGLE_MATCH_COMMON_TEXT_ONLY_UNVERIFIED_SHARE_CLASS": 1,
+        "SINGLE_MATCH_NO_EXPLICIT_CLASS_TEXT_QUARANTINE": 1,
+    }
+    assert result["original_asof_price_and_class_specific_shares_verified"] is False
+    assert "AAPLX" not in json.dumps(result)
+
+
+def test_two_genuine_listed_symbols_linked_to_one_issuer_are_not_one_denominator():
+    dirs=directories(nasdaq_rows=NR + (
+        "AAPLX|Apple Inc. - Class B Common Stock|G|N|N|100|N|N",
+    ))
+    sec=SR + [[320193, "Apple Inc.", "AAPLX", "Nasdaq"]]
+    result=inspect(dirs=dirs,sec_rows=sec)
+    status=result["SEC_CIK_to_current_symbol_denominator_source_status_counts_NOT_security_class"]
+    assert status["MULTIPLE_OR_UNRECONCILED_SEC_TICKER_VENUE_ASSOCIATIONS"] == 1
+    assert sum(status.values()) == result["distinct_SEC_filer_CIKs_with_exact_current_ticker_exchange_association"]
+    assert result["current_class_source_status_is_stock_valuation_or_buy_signal"] is False
+
+
+def test_exact_noncommon_symbol_never_becomes_security_valuation_eligibility():
+    dirs=directories(other_rows=OR + (
+        "PREF|Example Preferred Shares|N|PREF|N|100|N|PREF",
+    ))
+    sec=SR + [[71111,"Example Group","PREF","NYSE"]]
+    result=inspect(dirs=dirs,sec_rows=sec)
+    statuses=result["SEC_CIK_to_current_symbol_denominator_source_status_counts_NOT_security_class"]
+    assert statuses["SINGLE_MATCH_ALTERNATIVE_INSTRUMENT_TEXT_QUARANTINE"] == 1
+    assert result["SEC_CIK_to_one_matched_symbol_proves_exact_share_class"] is False
+    assert "71111" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("extra", [
+    [320193, "Apple alt class with unknown venue", "AAPLX", None],
+    [320193, "Apple alt class with noncanonical ticker", "AAPL/X", "Nasdaq"],
+])
+def test_quarantined_sec_rows_still_disqualify_one_share_class_denominator(extra):
+    # Existing SEC matching filters correctly refuse null/unknown symbols,
+    # but their original existence must remain issuer-multiplicity evidence.
+    result=inspect(sec_rows=SR + [extra])
+    assert result["association_reason_counts"]["exact_current_ticker_and_exchange_associations"] == 3
+    assert result["SEC_CIK_to_current_symbol_denominator_source_status_counts_NOT_security_class"][
+        "MULTIPLE_OR_UNRECONCILED_SEC_TICKER_VENUE_ASSOCIATIONS"] == 1
+    assert result["original_asof_price_and_class_specific_shares_verified"] is False
+    assert extra[2] not in json.dumps(result)
