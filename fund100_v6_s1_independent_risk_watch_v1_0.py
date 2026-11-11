@@ -195,16 +195,25 @@ def watch_once() -> str:
         # any further order by confirming a persistent V6 current-main STOP.
         # Never leak source financial data or raw API error responses.
         print("Independent V6 original ACWI risk unavailable; requesting STOP.")
+        stop_confirmed = False
         try:
-            if _stop_v6_first_only() not in ("STOPPED", "ALREADY_STOPPED"):
-                raise V6WatchStop("Automatic STOP unknown")
+            stop_confirmed = _stop_v6_first_only() in (
+                "STOPPED", "ALREADY_STOPPED")
         except Exception:
-            raise V6WatchStop("V6 automatic STOP not confirmed; HOLD") from None
+            pass  # Unknown STOP ack: NEVER retry; STILL attempt cancellation.
+        cancel_confirmed = False
         try:
-            # Selective Fund-100 cancellation only, never liquidation.
+            # Independent best-effort selective cancellation, even if the
+            # V6 Git STOP CAS failed, raced or had an unknown acknowledgement.
+            # No other account orders and no positions may be touched.
             cancel.cancel_open_fund100_orders()
+            cancel_confirmed = True
         except Exception:
-            raise V6WatchStop("V6 STOP confirmed but order cancel uncertain") from None
+            pass
+        if not stop_confirmed:
+            raise V6WatchStop("V6 automatic STOP unconfirmed; cancel attempted; HOLD")
+        if not cancel_confirmed:
+            raise V6WatchStop("V6 STOP confirmed but order cancel uncertain")
         return "AUTO_STOP_CONFIRMED"
 
 
