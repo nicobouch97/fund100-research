@@ -73,7 +73,7 @@ def test_original_12b_parser_used_for_exact_symbol_and_venue():
 
 
 @pytest.mark.parametrize("change,expected",[
-    ({"symbol":"", "exchange":"Nasdaq"}, "NO_STRUCTURED_12B_PLAIN_COMMON_ROW_HOLD"),
+    ({"symbol":"", "exchange":"Nasdaq"}, "NO_INDEPENDENT_10K_TICKER_SYMBOL_HOLD"),
     ({"security":"Preferred Stock"}, "NO_STRUCTURED_12B_PLAIN_COMMON_ROW_HOLD"),
     ({"security":"Warrants to purchase Common Stock"}, "NO_STRUCTURED_12B_PLAIN_COMMON_ROW_HOLD"),
     ({"exchange":"Cboe"}, "NO_STRUCTURED_12B_PLAIN_COMMON_ROW_HOLD"),
@@ -140,8 +140,9 @@ def test_source_document_not_canonical_is_never_favorable(monkeypatch):
     monkeypatch.setattr(m.f4,"selected_jobs",lambda **kw:(
         [(SEC_CIK,"AAPL","Nasdaq")],m.FROZEN_F4_CIK_COMMITMENT,8))
     def bad_primary(path):
-        return primary_markup(),b"index","name.htm","https://untrusted.example/10k",
-               "https://untrusted.example/index"
+        return (primary_markup(),b"index","name.htm",
+                "https://untrusted.example/10k",
+                "https://untrusted.example/index")
     with pytest.raises(m.CoverHold):
         m.assess(directories={},sec_raw=b"{}",observed=ASOF,
                  submissions_get=lambda _:json.dumps(submissions()).encode(),
