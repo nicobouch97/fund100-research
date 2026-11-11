@@ -78,10 +78,13 @@ def test_stop_recognizes_only_fund100_generated_client_ids():
         "f100live-123456789abc-b-acwi",
         "f100live-prod-1234567890abcdef-s-xle",
         "f100-live-bootstrap-1234567890abcdef-b-acwi",
-        "f100v6s1-" + "a" * 24 + "-s",
+        stop.v6_signed_ledger.CLIENT_IDS["ACWI"],
+        stop.v6_signed_ledger.CLIENT_IDS["EEM"],
+        stop.v6_signed_ledger.CLIENT_IDS["XLV"],
     ]:
         assert stop.is_fund100_client_id(cid)
     for cid in [
+        "f100v6s1-" + "a" * 24 + "-s",
         "f100v6s1-" + "a" * 24 + "-b",
         "f100v6s1-" + "a" * 23 + "-s",
         "f100v6s1-" + "z" * 24 + "-s",
@@ -159,7 +162,7 @@ def test_v6_signed_original_sale_is_selectively_cancelled_without_touching_manua
     ours, manual = str(uuid4()), str(uuid4())
     calls = []
     listings = iter([
-        [{"id": ours, "client_order_id": "f100v6s1-" + "a" * 24 + "-s"},
+        [{"id": ours, "client_order_id": stop.v6_signed_ledger.CLIENT_IDS["ACWI"]},
          {"id": manual, "client_order_id": "manual-stay-open"}],
         [{"id": manual, "client_order_id": "manual-stay-open"}],
     ])
