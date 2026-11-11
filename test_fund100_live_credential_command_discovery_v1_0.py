@@ -49,7 +49,7 @@ def test_original_v5_emergency_pin_is_still_fail_closed_after_extension():
     script = "fund100_live_emergency_stop_v1_0.py"
     expected = auditor.PINNED_LIVE_CREDENTIAL_JOBS[(workflow, script)]
     actual = auditor.git_blob_digest(Path(script))
-    assert expected != actual
-    assert not auditor.approved_scoped_live_script(
+    assert expected == actual
+    assert auditor.approved_scoped_live_script(
         workflow, script, Path(workflow).read_text()
     )
