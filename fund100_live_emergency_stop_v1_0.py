@@ -22,6 +22,9 @@ FUND100_CLIENT_IDS = (
     re.compile(r"^f100live-[0-9a-f]{12}-[bs]-[a-z0-9]{1,12}$"),
     re.compile(r"^f100live-prod-[0-9a-f]{16}-[bs]-[a-z0-9]{1,12}$"),
     re.compile(r"^f100-live-bootstrap-[0-9a-f]{16}-[bs]-[a-z0-9]{1,12}$"),
+    # Exact signed V6-S1 original migration ledger client-order IDs.
+    # A V6 automatic risk STOP must cancel a still-open original ACWI sell.
+    re.compile(r"^f100v6s1-[0-9a-f]{24}-s$"),
 )
 
 
