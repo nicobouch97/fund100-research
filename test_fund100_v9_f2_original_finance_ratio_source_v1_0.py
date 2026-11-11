@@ -151,7 +151,6 @@ def test_original_sample_broad_coverage_emits_only_bounded_subtype_counts():
     assert output["current_SEC_finance_current_SIC_two_original_10K_net_income_sign_counts_NOT_a_forecast"]=={
         BANK:{"POSITIVE_BOTH_ORIGINAL_FYS":1}}
     assert output["finance_ratio_descriptions_do_not_validate_bank_credit_or_security_valuation"] is True
-    assert output["generic_two_fiscal_year_filing_lagged_score_available"] if False else True
     assert output["sample_outcome_counts"]["generic_two_fiscal_year_filing_lagged_score_available"]==1
     assert output["broker_reads"]==output["broker_orders"]==output["private_state_writes"]==0
     payload=json.dumps(output)
