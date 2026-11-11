@@ -179,10 +179,10 @@ def _emit_pass_only() -> None:
 
 def watch_once() -> str:
     _scope()
-    if not _current_v6_first_go():
-        # Initial expected pre-launch STOP: no broker request and no PASS.
-        return "ALREADY_STOPPED"
     try:
+        if not _current_v6_first_go():
+            # Verified initial pre-launch STOP: no broker request and no PASS.
+            return "ALREADY_STOPPED"
         verdict = _risk_eight_get()
         if verdict == "MARKET_CLOSED_NO_PASS":
             return verdict
