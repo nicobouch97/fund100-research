@@ -1,0 +1,94 @@
+name: Fund-100 V9 F7 Fixed Three Prior-Completed Vendor Price Source (NO BROKER)
+
+# Exactly the three first source-reviewed original 10-K class/SEC EPS issuers.
+# Unauthenticated historical price vendor, research only, never account/quote.
+on:
+  pull_request:
+    paths:
+      - "fund100_v9_f7_current_completed_vendor_price_source_v1_0.py"
+      - "test_fund100_v9_f7_current_completed_vendor_price_source_v1_0.py"
+      - ".github/workflows/fund100-v9-f7-current-completed-price-source.yml"
+      - "research_lab/stocks/V9_F7_FROZEN_THREE_COMPLETED_PRICE_COVERAGE_2026_11_11.md"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v9_f7_current_completed_vendor_price_source_v1_0.py"
+      - "test_fund100_v9_f7_current_completed_vendor_price_source_v1_0.py"
+      - ".github/workflows/fund100-v9-f7-current-completed-price-source.yml"
+      - "research_lab/stocks/V9_F7_FROZEN_THREE_COMPLETED_PRICE_COVERAGE_2026_11_11.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v9-f7-prior-completed-research-vendor-only
+  cancel-in-progress: false
+
+jobs:
+  price-source-pinned-no-network-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Use existing market data source dependency versions
+        run: python -m pip install --disable-pip-version-check --no-input -r requirements.txt
+      - name: Test original SEC class identity and 21 prior market sessions
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_v9_f4_current_openfigi_class_reference_v1_0.py \
+            test_fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0.py \
+            test_fund100_v9_f6_original_10k_diluted_eps_coverage_v1_0.py \
+            test_fund100_v8_sec100_completed_vendor_price_coverage_v1_0.py \
+            test_fund100_v9_f7_current_completed_vendor_price_source_v1_0.py
+          python - <<'PY'
+          import fund100_v9_f7_current_completed_vendor_price_source_v1_0 as p
+          assert p.NO_BROKER_GET == p.NO_BROKER_POST == p.NO_BROKER_ORDERS == p.NO_PRIVATE_WRITES == 0
+          assert p.LIVE_AUTHORIZED is False
+          assert p.NO_FIGI_CIK_IDENTITY_PROOF is True
+          assert p.F6_FIRST_POSITIVE_EPS_SOURCE_RUN == 43026350533
+          PY
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+
+  protected-main-original-three-public-completed-price-source:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'nicobouch97/fund100-research'
+    needs: price-source-pinned-no-network-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing public stock source dependencies only
+        run: python -m pip install --disable-pip-version-check --no-input -r requirements.txt
+      - name: Acquire official SEC identity followed by public vendor completed-session data
+        env:
+          SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$FUND100_BROKER_KILL_SWITCH" = ENGAGED
+          test "$FUND100_LIVE_WRITE_MODE" = DISABLED
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          python -B fund100_v9_f7_current_completed_vendor_price_source_v1_0.py \
+            --out "$RUNNER_TEMP/v9-f7-public-prior-price-aggregate.json"
+      - name: Store only source-count and hash receipt, NEVER issuer, price or quote
+        uses: actions/upload-artifact@v4
+        with:
+          name: v9-f7-fixed-three-prior-price-${{ github.run_id }}
+          path: ${{ runner.temp }}/v9-f7-public-prior-price-aggregate.json
+          if-no-files-found: error
+          retention-days: 30
