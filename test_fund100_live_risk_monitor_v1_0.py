@@ -182,8 +182,7 @@ def test_only_genuine_scheduled_broker_risk_pass_emits_fixed_actions_output(
     monkeypatch.setenv("GITHUB_EVENT_NAME","schedule")
     monkeypatch.setenv("GITHUB_OUTPUT",str(output))
     assert monitor.emit_scheduled_pass_only_output("WITHIN_RISK_LIMITS") is True
-    assert output.read_bytes()==b"verified_live_account_risk=YES\\n".replace(
-        b"\\\\n", bytes([10]))
+    assert output.read_bytes()==b"verified_live_account_risk=YES"+bytes([10])
 
 
 @pytest.mark.parametrize("outcome",[
