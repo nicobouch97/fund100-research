@@ -290,7 +290,7 @@ def test_pinned_workflow_has_no_order_post_or_v5_unstop():
     assert "GITHUB_EVENT_NAME" in w or "github.event_name" in w
     assert "contents: write" in w and "contents: read" in w
     assert "ALPACA_LIVE_KEY" in w and "ALPACA_LIVE_SECRET" in w
-    assert "python -B fund100_v6_s1_independent_risk_watch_v1_0.py" in w
+    assert "python fund100_v6_s1_independent_risk_watch_v1_0.py" in w
     assert "submit_order" not in s and "method=\"POST\"" not in s
     assert "first_original_acwi_sell_enabled=False" in s
     assert "NO_TRADE_RELEASE = True" in s
