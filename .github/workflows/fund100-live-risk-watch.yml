@@ -2,9 +2,12 @@ name: Fund-100 LIVE Risk Watch (autonomous)
 
 on:
   schedule:
-    # Every 15 minutes on US trading weekdays, spanning ET market hours
-    # in both daylight-saving and standard-time periods.
-    - cron: "*/15 13-22 * * 1-5"
+    # Stagger four 15-minute slots away from the start of each UTC hour.
+    # GitHub cron is best-effort, NOT an execution-time or live-risk PASS.
+    # A missing/delayed risk run must keep future new-order admission CLOSED;
+    # do not infer safety from an ALREADY_STOPPED successful workflow.
+    # Window spans US trading weekdays across ET daylight/standard time.
+    - cron: "4,19,34,49 13-22 * * 1-5"
   workflow_dispatch:
 
 permissions:
