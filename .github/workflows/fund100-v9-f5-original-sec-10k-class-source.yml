@@ -1,0 +1,93 @@
+name: Fund-100 V9 F5 Original SEC 10-K Section 12(b) Source (NO BROKER)
+
+# Original eight F4 issuers; two public Nasdaq directories plus SEC CIK map,
+# followed by bounded original SEC 10-K issuer cover rows only. No OpenFIGI
+# redo, price provider, account keys, orders or class-market-cap inference.
+on:
+  pull_request:
+    paths:
+      - "fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0.py"
+      - "test_fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0.py"
+      - ".github/workflows/fund100-v9-f5-original-sec-10k-class-source.yml"
+      - "research_lab/stocks/V9_F5_OWN_10K_SECURITY_CLASS_PILOT_2026_11_11.md"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0.py"
+      - "test_fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0.py"
+      - ".github/workflows/fund100-v9-f5-original-sec-10k-class-source.yml"
+      - "research_lab/stocks/V9_F5_OWN_10K_SECURITY_CLASS_PILOT_2026_11_11.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v9-f5-original-own-sec-10k-class
+  cancel-in-progress: false
+
+jobs:
+  isolated-offline-original-10k-source-parsing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install no-network original SEC research dependencies
+        run: python -m pip install --disable-pip-version-check --no-input 'pytest>=8,<9' 'pandas==2.3.3'
+      - name: Test source-specific original SEC classes and no investor account
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_v9_official_current_listing_discovery_v1_0.py \
+            test_fund100_v9_sec_current_listing_association_v1_0.py \
+            test_fund100_v9_broad_original_sec_quality_coverage_v1_0.py \
+            test_fund100_v9_f4_current_openfigi_class_reference_v1_0.py \
+            test_fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0.py
+          python - <<'PY'
+          import fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0 as m
+          assert m.NO_BROKER_READS == m.NO_BROKER_POSTS == m.NO_BROKER_ORDERS == m.NO_PRIVATE_WRITES == 0
+          assert m.LIVE_AUTHORIZED is False
+          assert m.F4_FIRST_SOURCE_RUN == 43008393873
+          PY
+
+  protected-main-one-original-sec-filing-source-receipt:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'nicobouch97/fund100-research'
+    needs: isolated-offline-original-10k-source-parsing
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing quality and SEC parser dependencies
+        run: python -m pip install --disable-pip-version-check --no-input 'pandas==2.3.3'
+      - name: Acquire strictly original own SEC 10-K filing-index and primary rows
+        env:
+          SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$FUND100_BROKER_KILL_SWITCH" = ENGAGED
+          test "$FUND100_LIVE_WRITE_MODE" = DISABLED
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          python -B fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0.py \
+            --out "$RUNNER_TEMP/v9-f5-original-sec-own-10k-aggregate.json"
+      - name: Archive only redacted source counts and aggregate proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: v9-f5-original-sec-own-10k-source-${{ github.run_id }}
+          path: ${{ runner.temp }}/v9-f5-original-sec-own-10k-aggregate.json
+          if-no-files-found: error
+          retention-days: 30
