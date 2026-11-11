@@ -27,6 +27,16 @@ decision *after* a valid fresh broker risk report and *before* any
 private signed seq1/owner HEAD read, owner CAS, public release or
 broker POST. The original production source and writer locks stay false.
 
+A genuine economic abstention is a **successful, zero-order autonomous
+decision**, not a failed GitHub workflow. The coordinator returns a fixed,
+redacted NO_TRADE receipt with zero signed owner claims, zero orders and
+explicit permission to re-evaluate *new* evidence at a later scheduled
+window. The original entry verifies the exact zero-order receipt and
+returns normally; an unexpected economic runtime exception still fails
+closed. Rechecking after **no order ever sent** is not a retry of an
+ambiguous live order acknowledgement. Broker risk/reconciliation failure
+continues to STOP rather than being relabeled as a routine abstention.
+
 Credentialless offline unit tests only monkeypatch economic source
 authorization to exercise the already mocked full signed transaction
 and adversarial failures. This cannot make a live order or add broker
