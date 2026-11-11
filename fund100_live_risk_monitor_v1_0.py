@@ -153,3 +153,15 @@ def monitor_once() -> str:
 if __name__ == "__main__":
     result = monitor_once()
     print("Fund-100 risk monitor:", result)
+    # GitHub Actions' success means nothing when STOPPED (zero broker GETs).
+    # Emit a PASS-only, fixed-value ephemeral step output for the independent
+    # scheduled workflow. No balances, positions, credentials or public state.
+    # A missing/unwritable output file FAILS the healthy job, never approves it.
+    if (result == "WITHIN_RISK_LIMITS"
+        and os.environ.get("GITHUB_ACTIONS") == "true"
+        and os.environ.get("GITHUB_EVENT_NAME") == "schedule"):
+        output = os.environ.get("GITHUB_OUTPUT")
+        if not output:
+            raise RiskMonitorStop("No trusted GitHub step output; no PASS evidence")
+        with open(output, "a", encoding="utf-8") as stream:
+            stream.write("verified_live_account_risk=YES\\n".replace("\\\\n", "\\n"))
