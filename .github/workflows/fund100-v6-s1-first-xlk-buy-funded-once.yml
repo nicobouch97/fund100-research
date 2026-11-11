@@ -93,13 +93,9 @@ jobs:
         # account/risk GETs, original immutable witness, BUY genesis/seq1,
         # seq2 HMAC CAS, another risk check, max one broker BUY POST.
         # Any uncertainty permanently HOLDS; no retries or follow-on jobs.
-        env:
-          FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}
-          FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}
-          FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}
-          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
-          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
-          GITHUB_TOKEN: ${{ github.token }}
+        # No broker/private/HMAC credentials until a separately reviewed
+        # source release. The entry remains code-HARD-LOCKED. Adding secrets
+        # here requires a new credential-audit and release review.
         run: |
           set -euo pipefail
           # main production source/writer releases are ALL still FALSE.

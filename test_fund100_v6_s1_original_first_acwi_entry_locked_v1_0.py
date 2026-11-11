@@ -57,11 +57,13 @@ def test_future_scoped_public_release_uses_short_lived_job_token_only():
     from pathlib import Path
     workflow=Path(".github/workflows/fund100-v6-s1-original-first-acwi-funded-once.yml").read_text()
     block=workflow.split("  first-original-acwi-sell-once:",1)[1]
-    assert "contents: write" in block and "issues: write" in block
+    assert "contents: write" not in block and "issues: write" not in block
+    assert "contents: read" in block and "issues: read" in block
     assert "actions: read" in block
     assert "FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ secrets." not in block
-    assert "GITHUB_TOKEN: ${{ github.token }}" in block
-    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets." in block
+    assert "GITHUB_TOKEN: ${{ github.token }}" not in block
+    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets." not in block
+    assert "secrets." not in block
     assert "FUND100_BROKER_KILL_SWITCH" in block
     assert "FUND100_V6_S1_FIRST_ACWI_LIVE_DEPLOYED" in block
     assert "github.run_attempt == 1" in block

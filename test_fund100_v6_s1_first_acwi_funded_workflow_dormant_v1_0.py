@@ -52,9 +52,11 @@ def test_first_acwi_hard_stop_runs_before_any_broker_or_private_token_exists():
     t=src()
     first=t.index("- name: Fail closed before original single-process transaction")
     pip=t.index("- name: Install pinned funded XNYS risk-calendar dependencies")
-    secrets=t.index("FUND100_PRIVATE_STATE_READ_TOKEN:")
     order=t.index("python -B fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py")
-    assert first<pip<secrets<order
+    assert first<pip<order
+    assert "secrets." not in t
+    assert "ALPACA_LIVE_KEY" not in t and "ALPACA_LIVE_SECRET" not in t
+    assert "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" not in t
     for gate in (
         'test "$FUND100_RISK_LEVEL" = \'HIGH\'',
         'test "$FUND100_BROKER_KILL_SWITCH" = \'DISENGAGED\'',
@@ -68,7 +70,8 @@ def test_first_acwi_hard_stop_runs_before_any_broker_or_private_token_exists():
     assert t.count("python -B fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py")==1
     assert "retry:" not in t and "continue-on-error: true" not in t
     assert "permissions:" in t and "contents: read" in t
-    assert "issues: write" in t
+    assert "issues: write" not in t and "issues: read" in t
+    assert "contents: write" not in t
     assert t.count("actions: read")==2  # Exact signed run metadata provenance
     assert "'pandas==2.3.3'" in t and "'exchange-calendars==4.13.2'" in t
 
@@ -105,8 +108,8 @@ def test_workflow_funded_stage_has_no_manual_per_order_approval():
     t=src()
     assert "workflow_dispatch:" not in t
     assert "approval_phrase" not in t
-    assert "GITHUB_TOKEN: ${{ github.token }}" in t.replace("\\","")
+    assert "GITHUB_TOKEN: ${{ github.token }}" not in t
     # Only one potentially funded execution step and its separate secrets,
     # guarded by current V6 GO, kill and one-shot immutable source.
     assert t.count("One authenticated first-attempt original signed ACWI SELL")>=1
-    assert "FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}" in t.replace("\\","")
+    assert "FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX" not in t

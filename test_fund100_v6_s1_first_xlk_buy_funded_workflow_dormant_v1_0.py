@@ -62,9 +62,14 @@ def test_first_buy_funded_schedule_shares_all_live_order_mutex_and_stops_early()
     assert w.count("actions: read")==2  # Authenticated original Actions run proof
     first=w.index("- name: Fail closed before first XLK BUY source or private HTTP")
     pip=w.index("- name: Install pinned first BUY XNYS risk calendar")
-    secrets=w.index("FUND100_PRIVATE_STATE_READ_TOKEN:")
     execute=w.index("python -B fund100_v6_s1_first_xlk_buy_original_entry_locked_v1_0.py")
-    assert first<pip<secrets<execute
+    assert first<pip<execute
+    # Dormant trade blueprint must not receive broker, HMAC or private Git
+    # credentials until a separately reviewed funding release.
+    assert "secrets." not in w
+    assert "GITHUB_TOKEN: " not in w
+    for name in entry.REQUIRED_ENV:
+        assert name+": " not in w
     for check in (
         'test "$GITHUB_ACTIONS" = \'true\'',
         f'test "$GITHUB_WORKFLOW_REF" = \'{REF}\'',
@@ -80,9 +85,9 @@ def test_first_buy_funded_schedule_shares_all_live_order_mutex_and_stops_early()
         assert check in w
     assert "'pandas==2.3.3'" in w
     assert "'exchange-calendars==4.13.2'" in w
-    assert w.count("ALPACA_LIVE_SECRET:")==1
-    assert w.count("FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN:")==1
-    assert "GITHUB_TOKEN: ${{ github.token }}" in w
+    assert w.count("ALPACA_LIVE_SECRET:")==0
+    assert w.count("FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN:")==0
+    assert "GITHUB_TOKEN: ${{ github.token }}" not in w
 
 def test_original_first_buy_independent_release_booleans_all_still_false():
     assert entry.FIRST_XLK_BUY_ENTRY_RELEASED is False

@@ -175,9 +175,14 @@ def test_protected_workflow_reuses_existing_private_and_broker_access_without_wr
     assert "contents: write" not in workflow
     for s in ("secrets.ALPACA_LIVE_KEY","secrets.ALPACA_LIVE_SECRET",
               "secrets.FUND100_PRIVATE_STATE_READ_TOKEN",
-              "secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN",
               "secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN"):
         assert s in workflow
+    # This dual-principal GET currently requires the existing private
+    # writer and release-writer tokens for independent attestation. The
+    # source/transport is read-only and byte-pinned; follow-up should
+    # replace the write-capable credentials with distinct read-only scopes.
+    assert "secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN" in workflow
+    assert "secrets.FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN" in workflow
     assert "python -B fund100_v6_integrated_journal_broker_strategy_getonly_v1_0.py" in workflow
     audit=Path(".github/workflows/fund100-live-static-audit.yml").read_text()
     for path in ("fund100_v6_integrated_journal_broker_strategy_getonly_v1_0.py",

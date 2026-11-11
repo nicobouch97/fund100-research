@@ -270,6 +270,13 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-v6-s1-original-client-id-getonly.yml",
         "fund100_v6_s1_live_original_client_ids_getonly_v1_0.py",
     ): "31d4ff0e1e90091eb8514f06452adeded782f019",
+    # Existing integrated GET-only main-push readiness, with an explicitly
+    # The dual-principal signed HEAD requires write-capable verification\n    # credentials for GETs. Keep code and workflow exactly SHA-pinned.
+    # This exact script is READ-ONLY and never a trading approval.
+    (
+        ".github/workflows/fund100-v6-integrated-journal-broker-strategy-getonly.yml",
+        "fund100_v6_integrated_journal_broker_strategy_getonly_v1_0.py",
+    ): "e21f0adc75454ee625bd2ebc8f9a92c51733a048",
     # Reviewed exact terminal-stop bootstrap SHA. Reject any drift; this
     # writer's new eligibility additionally depends on the independent
     # source-pinned /v2/orders + ENGAGED pre-HTTP AST check below.
@@ -407,6 +414,61 @@ def approved_scoped_live_script(
         }.items():
             dep_path = ROOT / dependency
             if not dep_path.is_file() or git_blob_digest(dep_path) != expected_digest:
+                return False
+
+    if script == "fund100_v6_integrated_journal_broker_strategy_getonly_v1_0.py":
+        # Previously overlooked because the workflow invokes 'python -B'.
+        # Scope to the one audited GET-only main-push workflow and exact
+        # script + current YAML blob; no new executable permissions.
+        if workflow != ".github/workflows/fund100-v6-integrated-journal-broker-strategy-getonly.yml":
+            return False
+        if git_blob_digest(ROOT / workflow) != "9cc579cf0c5c17938214ef6f5ddc32364c9a4aa4":
+            return False
+        for required in (
+            "if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
+            "environment: fund100-live-broker",
+            "permissions:\n  contents: read",
+            "FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}",
+            "FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}",
+            "test \"$FUND100_BROKER_KILL_SWITCH\" = \"ENGAGED\"",
+            "python -B fund100_v6_integrated_journal_broker_strategy_getonly_v1_0.py",
+            "FUND100_PRIVATE_STATE_READ_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_READ_TOKEN }}",
+            "FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN: ${{ secrets.FUND100_PRIVATE_STATE_PRODUCTION_WRITE_TOKEN }}",
+            "FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX: ${{ secrets.FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX }}",
+            "FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN }}",
+            "FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN }}",
+            "ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}",
+            "ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}",
+        ):
+            if required not in source:
+                return False
+        for forbidden in (
+            "contents: write", "workflow_dispatch:", "schedule:",
+        ):
+            if forbidden in source:
+                return False
+        for dependency, pinned in {
+            "fund100_v6_recurring_anchored_current_head_getonly_v1_0.py":
+                "261a9e1c647947ce666e7fb11640952411ba119f",
+            "fund100_v6_recurring_immutable_genesis_v2_once_v1_0.py":
+                "fc83f203bb478c0536e68bd30d5585a82c4ad88a",
+            "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
+                "cebb99bf22ea175a23cf2c0802d1822ae740534f",
+            "fund100_alpaca_live_readonly_smoke.py":
+                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+            "fund100_v6_recurring_real_cas_transport_locked_v1_0.py":
+                "512f370ac37c459ea9d5fcaf87b11cf80c485302",
+            "fund100_v6_recurring_seq1_immutable_release_recovery_locked_v1_0.py":
+                "ffb4f048db2762167c8a9dbd57a4cb948354d86f",
+            "fund100_v6_recurring_seq1_durable_release_attempt_fence_offline_v1_0.py":
+                "eb43a2225092c52a778f9b7026487c3d3cfacbda",
+            "fund100_v6_brokerless_transition_preview_v1_0.py":
+                "a0b4efc660f30395b6cdda104f0eddf63b8a6dd9",
+            "fund100_live_operator_control_v1_0.py":
+                PINNED_PRODUCTION_OPERATOR_MODULE,
+        }.items():
+            dep = ROOT / dependency
+            if not dep.is_file() or git_blob_digest(dep) != pinned:
                 return False
 
     if script == "fund100_live_bootstrap_v1_0.py":
@@ -958,7 +1020,7 @@ def approved_scoped_live_script(
 
 
 PYTHON_SCRIPT_PATTERN = re.compile(
-    r"""(?:^|\s)python(?:3)?\s+([A-Za-z0-9_./-]+\.py)(?:\s|$)""",
+    r"""(?:^|\s)python(?:3)?\s+(?:-[a-zA-Z]+\s+)*([A-Za-z0-9_./-]+\.py)(?:\s|$)""",
     re.IGNORECASE,
 )
 
