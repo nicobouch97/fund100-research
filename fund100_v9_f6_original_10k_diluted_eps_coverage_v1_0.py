@@ -144,7 +144,7 @@ def assess(*, directories: dict, sec_raw: bytes, observed: datetime,
     if class_matches != F5_CLASS_MATCHES:
         raise EpsCoverageHold("Original F5 three class matches changed; no EPS cohort promoted")
     class_subset_hash = sha256(
-        b"FUND100_V9_F6_FIRST_CLASS_MATCHED_CIKS_V1\\n" +
+        b"FUND100_V9_F6_FIRST_CLASS_MATCHED_CIKS_V1\n" +
         b"|".join(f"{c:010d}".encode("ascii") for c in sorted(matched_ciks))
     ).hexdigest()
     return {
