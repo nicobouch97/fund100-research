@@ -16,8 +16,6 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from uuid import UUID
 
-import fund100_v6_s1_private_git_cas_protocol_v1_0 as v6_signed_ledger
-
 
 LIVE_HOST = "https://api.alpaca.markets"
 FUND100_CLIENT_IDS = (
@@ -27,19 +25,13 @@ FUND100_CLIENT_IDS = (
 )
 
 
-# Only the three immutable first-migration signed ACWI/EEM/XLV IDs.
-# A generic f100v6s1-shaped user order must NEVER be cancelled.
-EXACT_V6_SIGNED_CLIENT_IDS = frozenset(v6_signed_ledger.CLIENT_IDS.values())
-
-
 class EmergencyStopError(RuntimeError):
     pass
 
 
 def is_fund100_client_id(value: object) -> bool:
-    return isinstance(value, str) and (
-        value in EXACT_V6_SIGNED_CLIENT_IDS
-        or any(expression.fullmatch(value) for expression in FUND100_CLIENT_IDS)
+    return isinstance(value, str) and any(
+        expression.fullmatch(value) for expression in FUND100_CLIENT_IDS
     )
 
 
