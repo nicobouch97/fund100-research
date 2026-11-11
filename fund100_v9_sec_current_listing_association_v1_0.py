@@ -145,6 +145,15 @@ def inspect(*, nasdaq_raw:dict, sec_raw:bytes, observed:datetime,
     matched_name_evidence = Counter()
     explicit_common_text_ciks = set()
     linked_ciks = set()
+    # An issuer CIK is NOT the identity of a separately listed share class.
+    # Count every SEC ticker+exchange association for each CIK, including
+    # associations whose listing symbol is absent or an alternative instrument.
+    # One matched common-text line cannot erase another listed class.
+    sec_issuer_pairs = defaultdict(set)
+    for sec_ticker, associations in index.items():
+        for sec_cik, sec_venue in associations:
+            sec_issuer_pairs[sec_cik].add((sec_ticker, sec_venue))
+    matched_symbols_by_cik = defaultdict(set)
     for ticker, expected_exchange, name_cue in rows:
         if directory_counts[ticker] > 1:
             outcome["same_ticker_in_multiple_listing_records"] += 1
@@ -161,11 +170,29 @@ def inspect(*, nasdaq_raw:dict, sec_raw:bytes, observed:datetime,
             else:
                 outcome["exact_current_ticker_and_exchange_associations"] += 1
                 linked_ciks.add(cik)
+                matched_symbols_by_cik[cik].add((ticker, expected_exchange, name_cue))
                 matched_name_evidence[name_cue] += 1
                 if name_cue == "EXPLICIT_COMMON_OR_ORDINARY_WORDING_REVIEW_ONLY":
                     explicit_common_text_ciks.add(cik)
     if sum(outcome.values()) != len(rows):
         raise AssociationStop("Coverage classification did not exhaust source population")
+    # The categories are mutually exclusive per current matched SEC issuer,
+    # and remain strictly provenance diagnostics, NOT class approval.
+    issuer_symbol_status = Counter()
+    for cik in linked_ciks:
+        matched = matched_symbols_by_cik[cik]
+        if len(matched) != 1 or len(sec_issuer_pairs[cik]) != 1:
+            issuer_symbol_status["MULTIPLE_OR_UNRECONCILED_SEC_TICKER_VENUE_ASSOCIATIONS"] += 1
+        else:
+            cue = next(iter(matched))[2]
+            if cue == "EXPLICIT_COMMON_OR_ORDINARY_WORDING_REVIEW_ONLY":
+                issuer_symbol_status["SINGLE_MATCH_COMMON_TEXT_ONLY_UNVERIFIED_SHARE_CLASS"] += 1
+            elif cue == "EXPLICIT_ALTERNATIVE_INSTRUMENT_WORDING_REVIEW_ONLY":
+                issuer_symbol_status["SINGLE_MATCH_ALTERNATIVE_INSTRUMENT_TEXT_QUARANTINE"] += 1
+            else:
+                issuer_symbol_status["SINGLE_MATCH_NO_EXPLICIT_CLASS_TEXT_QUARANTINE"] += 1
+    if sum(issuer_symbol_status.values()) != len(linked_ciks):
+        raise AssociationStop("SEC issuer/share-class ambiguity coverage inconsistent")
     return {
         "schema": SCHEMA,
         "stage": "PROSPECTIVE_CURRENT_ISSUER_ASSOCIATION_COVERAGE_NOT_STOCK_UNIVERSE",
@@ -184,6 +211,13 @@ def inspect(*, nasdaq_raw:dict, sec_raw:bytes, observed:datetime,
             dict(sorted(matched_name_evidence.items())),
         "distinct_current_SEC_CIKs_with_explicit_common_wording_only":
             len(explicit_common_text_ciks),
+        "SEC_CIK_to_current_symbol_denominator_source_status_counts_NOT_security_class": 
+            dict(sorted(issuer_symbol_status.items())),
+        "SEC_CIK_to_one_matched_symbol_proves_exact_share_class": False,
+        "SEC_issuer_level_share_count_proves_same_traded_class_denominator": False,
+        "original_asof_price_and_class_specific_shares_verified": False,
+        "current_ticker_link_is_historical_or_delisting_coverage": False,
+        "current_class_source_status_is_stock_valuation_or_buy_signal": False,
         "source_name_cues_are_verified_security_classes": False,
         "source_name_cues_are_approval_to_trade": False,
         "issuer_name_cue_is_US_domicile_proof": False,
