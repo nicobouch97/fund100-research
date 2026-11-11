@@ -40,6 +40,32 @@ class CoverHold(ValueError):
     pass
 
 
+# These are literal, independently defined P4U original SEC filing source
+# error codes. Expose at most the bounded *reason family*, never an HTTP
+# response body/header, issuer, accession, filename, URL or contact user agent.
+# The first F5 source receipt exposed seven unqualified original 10-K archive
+# requests; a generic unavailable category cannot distinguish a 403/429 from
+# a genuinely non-unique 10-K filing-index table.
+SAFE_SEC_ARCHIVE_SOURCE_REASONS = frozenset({
+    "HTTP_403", "HTTP_404", "HTTP_429", "HTTP_5XX", "HTTP_OTHER",
+    "TIMEOUT", "NETWORK_UNAVAILABLE", "TRANSPORT_ERROR", "INCOMPLETE_SOURCE",
+    "EMPTY_SOURCE", "NONCANONICAL_HTTP_RESPONSE", "PRIMARY_INDEX_INVALID",
+    "PRIMARY_INDEX_UNSAFE_DOCUMENT", "PRIMARY_INDEX_UNSAFE_LINK",
+    "PRIMARY_INDEX_10K_NOT_UNIQUE", "PRIMARY_INDEX_IDENTITY_MISMATCH",
+    "PRIMARY_INDEX_OVERSIZED", "PRIMARY_10K_OVERSIZED",
+})
+
+
+def sec_original_archive_hold(exc: p4u.FilingSourceFailure) -> str:
+    """Opaque, allowlisted, redacted source failure: no untrusted details."""
+    if not isinstance(exc, p4u.FilingSourceFailure):
+        raise CoverHold("Original source failure contract unavailable")
+    reason = exc.reason_code
+    if type(reason) is str and reason in SAFE_SEC_ARCHIVE_SOURCE_REASONS:
+        return "ORIGINAL_SEC_ARCHIVE_" + reason + "_HOLD"
+    return "ORIGINAL_SEC_ARCHIVE_UNCLASSIFIED_SOURCE_FAILURE_HOLD"
+
+
 def candidate_filing(*, submissions:dict, cik:int, observed:datetime):
     """Latest own 10-K source accession only; never infer a historic stock."""
     if type(cik) is not int or not 0<cik<10_000_000_000:
@@ -163,8 +189,8 @@ def assess(*,directories:dict,sec_raw:bytes,observed:datetime,
             path, accession, filed, end=filing
             try:
                 primary,index_raw,filename,primary_url,index_url=primary_get(path)
-            except p4u.FilingSourceFailure:
-                states["SEC_PRIMARY_INDEX_OR_DOCUMENT_UNAVAILABLE_HOLD"]+=1
+            except p4u.FilingSourceFailure as source_exc:
+                states[sec_original_archive_hold(source_exc)]+=1
                 continue
             if (type(primary) is not bytes
                 or type(index_raw) is not bytes or not index_raw
