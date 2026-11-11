@@ -164,6 +164,51 @@ def test_no_owner_entered_confirmation_required_for_one_mocked_first_run(
     assert "ORIGINAL_ACWI_ENTRYPOINT_RELEASED=False" in source
 
 
+def test_first_entry_accepts_only_exact_zero_order_economic_no_trade(
+        activated_offline,monkeypatch):
+    keys,events,_=activated_offline
+    shape={
+        "schema":chain.SCHEMA,
+        "status":"ORIGINAL_ACWI_ECONOMIC_NO_TRADE_KEEP_HOLDINGS",
+        "original_owner_claim_attempts":0,
+        "original_signed_possible_POST_attempts":0,
+        "immutable_release_publication_attempts":0,
+        "reviewed_broker_order_attempts":0,
+        "broker_receipt_validation_proven":False,
+        "broker_receipt_stage":None,
+        "independent_order_fill_and_settlement_verified":False,
+        "allow_restart_or_second_order":False,
+        "owner_fence_consumed":False,
+        "can_recheck_with_new_economic_evidence":True,
+    }
+    monkeypatch.setattr(
+        chain,"run_exact_first_acwi_attempt",lambda **kw:dict(shape))
+    got=entry.run_protected_first_acwi_once()
+    assert got["status"]=="FIRST_ORIGINAL_ACWI_NO_TRADE_KEEP_HOLDINGS"
+    assert got["broker_send_attempts"]==0
+    assert got["original_owner_fence_consumed"] is False
+    assert got["broker_receipt_stage"] is None
+    assert got["can_recheck_with_new_economic_evidence"] is True
+    assert got["secret_or_private_source_in_report"] is None
+    for value in keys.values():
+        assert value not in str(got)
+    for field,bad in (
+        ("original_owner_claim_attempts",1),
+        ("original_signed_possible_POST_attempts",1),
+        ("immutable_release_publication_attempts",1),
+        ("reviewed_broker_order_attempts",1),
+        ("owner_fence_consumed",True),
+        ("broker_receipt_validation_proven",True),
+        ("can_recheck_with_new_economic_evidence",False),
+    ):
+        altered=dict(shape)
+        altered[field]=bad
+        monkeypatch.setattr(
+            chain,"run_exact_first_acwi_attempt",lambda **kw:dict(altered))
+        with pytest.raises(entry.EntryStop,match="NEVER RETRY"):
+            entry.run_protected_first_acwi_once()
+
+
 def test_one_run_wires_real_coordinator_argument_contract_offline_only(activated_offline):
     keys,events,context=activated_offline
     observed=entry.run_protected_first_acwi_once()
