@@ -173,3 +173,45 @@ def test_cancel_error_cannot_claim_auto_stop_success(monkeypatch):
     )
     with pytest.raises(monitor.RiskMonitorStop, match="cancellation"):
         monitor.monitor_once()
+
+
+def test_only_genuine_scheduled_broker_risk_pass_emits_fixed_actions_output(
+        monkeypatch,tmp_path):
+    output=tmp_path/"risk-step-output"
+    monkeypatch.setenv("GITHUB_ACTIONS","true")
+    monkeypatch.setenv("GITHUB_EVENT_NAME","schedule")
+    monkeypatch.setenv("GITHUB_OUTPUT",str(output))
+    assert monitor.emit_scheduled_pass_only_output("WITHIN_RISK_LIMITS") is True
+    assert output.read_bytes()==b"verified_live_account_risk=YES\\n".replace(
+        b"\\\\n", bytes([10]))
+
+
+@pytest.mark.parametrize("outcome",[
+    "ALREADY_STOPPED", "AUTO_STOP_CONFIRMED",
+    "UNKNOWN", "", None
+])
+def test_stopped_or_failed_monitor_cannot_emit_broker_pass(
+        monkeypatch,tmp_path,outcome):
+    output=tmp_path/"risk-step-output"
+    monkeypatch.setenv("GITHUB_ACTIONS","true")
+    monkeypatch.setenv("GITHUB_EVENT_NAME","schedule")
+    monkeypatch.setenv("GITHUB_OUTPUT",str(output))
+    assert monitor.emit_scheduled_pass_only_output(outcome) is False
+    assert not output.exists()
+
+
+def test_manual_dispatch_never_attests_scheduled_pass(monkeypatch,tmp_path):
+    output=tmp_path/"risk-step-output"
+    monkeypatch.setenv("GITHUB_ACTIONS","true")
+    monkeypatch.setenv("GITHUB_EVENT_NAME","workflow_dispatch")
+    monkeypatch.setenv("GITHUB_OUTPUT",str(output))
+    assert monitor.emit_scheduled_pass_only_output("WITHIN_RISK_LIMITS") is False
+    assert not output.exists()
+
+
+def test_scheduled_healthy_without_actions_output_holds(monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS","true")
+    monkeypatch.setenv("GITHUB_EVENT_NAME","schedule")
+    monkeypatch.delenv("GITHUB_OUTPUT",raising=False)
+    with pytest.raises(monitor.RiskMonitorStop,match="no PASS evidence"):
+        monitor.emit_scheduled_pass_only_output("WITHIN_RISK_LIMITS")
