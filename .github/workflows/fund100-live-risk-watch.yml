@@ -35,9 +35,20 @@ jobs:
           python-version: "3.12"
 
       - name: Check risk or trigger persistent STOP
+        id: broker_risk
         env:
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
           ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
         run: |
           set -euo pipefail
           python fund100_live_risk_monitor_v1_0.py
+
+      # A GitHub 'success' by itself also includes ALREADY_STOPPED, with
+      # ZERO broker GETs. This exact step only runs on a real healthy
+      # broker account + positions + history PASS from the scheduled job.
+      # Order-time admission must verify this step's GitHub API conclusion.
+      - name: Attest independent LIVE broker risk PASS
+        if: ${{ github.event_name == 'schedule' && steps.broker_risk.outputs.verified_live_account_risk == 'YES' }}
+        run: |
+          set -euo pipefail
+          echo 'Independent scheduled account broker risk PASS (no balances logged)'
