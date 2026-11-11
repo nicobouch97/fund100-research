@@ -6,6 +6,7 @@ import pytest
 
 import fund100_v6_s1_original_one_attempt_chain_locked_v1_0 as chain
 import fund100_v6_s1_first_acwi_economic_preclaim_v1_0 as economic
+REAL_ECONOMIC_INSPECT=economic.inspect_current_original_exit
 import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
 import fund100_v6_s1_acwi_unique_owner_fence_offline_v1_0 as fence
 import fund100_v6_s1_private_git_cas_protocol_v1_0 as ledger
@@ -205,8 +206,7 @@ def test_real_economic_no_trade_blocks_before_any_private_head_or_order(
     # but restore the genuine production economic source and source lock.
     monkeypatch.setattr(economic,"ECONOMIC_SOURCE_RELEASED",False)
     monkeypatch.setattr(
-        economic,"inspect_current_original_exit",
-        __import__("importlib").reload(economic).inspect_current_original_exit)
+        economic,"inspect_current_original_exit",REAL_ECONOMIC_INSPECT)
     with pytest.raises(chain.ChainStop,match="economic NO_TRADE"):
         chain.run_exact_first_acwi_attempt(**args)
     assert state["events"]==["setting","absent","broker_preflight"]
