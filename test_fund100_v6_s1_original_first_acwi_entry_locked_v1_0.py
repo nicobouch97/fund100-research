@@ -109,6 +109,10 @@ def test_unreleased_main_entry_blocks_before_any_source_or_side_effect(monkeypat
 @pytest.fixture
 def activated_offline(monkeypatch):
     keys=env(monkeypatch)
+    # Offline fixture only: real scheduled broker risk proof is separately
+    # tested by the credentialless GET-only module's fail-closed mocks.
+    monkeypatch.setattr(entry.live_watch,
+                        "require_recent_scheduled_risk_pass",lambda **kw:True)
     monkeypatch.setattr(entry,"ORIGINAL_ACWI_ENTRYPOINT_RELEASED",True)
     monkeypatch.setattr(chain,"ONE_ATTEMPT_EXECUTION_RELEASED",True)
     # Only this legacy five-principal synthetic fixture uses an old PAT.
@@ -362,3 +366,17 @@ def test_entrypoint_contains_no_network_or_scheduled_trading_workflow():
     assert "urlopen(" not in source and "Request(" not in source
     assert "run_exact_first_acwi_attempt(" in source
     assert "active_execution=True" in source
+
+
+def test_missing_scheduled_broker_pass_never_reads_original_or_claims_owner(
+        activated_offline,monkeypatch):
+    _keys,events,_context=activated_offline
+    def missing(**kwargs):
+        raise entry.live_watch.RiskWatchAdmissionStop(
+            "No fresh scheduled LIVE risk PASS")
+    monkeypatch.setattr(entry.live_watch,
+                        "require_recent_scheduled_risk_pass",missing)
+    with pytest.raises(entry.EntryStop,match="scheduled broker-risk PASS missing"):
+        entry.run_protected_first_acwi_once()
+    assert events==[]
+    assert entry.RETRY_AFTER_UNCERTAIN_OUTCOME is False
