@@ -1,0 +1,95 @@
+name: Fund-100 V9 F8 Original SEC Two-FY Quality for Frozen EPS Three (NO BROKER)
+
+# Do NOT select more successful stocks. Original SEC: exactly eight issuer
+# cohort and exactly three previously committed 10-K common-class candidates.
+on:
+  pull_request:
+    paths:
+      - "fund100_v9_f8_fixed_three_original_sec_quality_v1_0.py"
+      - "test_fund100_v9_f8_fixed_three_original_sec_quality_v1_0.py"
+      - ".github/workflows/fund100-v9-f8-original-sec-quality-source.yml"
+      - "research_lab/stocks/V9_F8_THREE_OWN_10K_TWO_FY_QUALITY_2026_11_11.md"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v9_f8_fixed_three_original_sec_quality_v1_0.py"
+      - "test_fund100_v9_f8_fixed_three_original_sec_quality_v1_0.py"
+      - ".github/workflows/fund100-v9-f8-original-sec-quality-source.yml"
+      - "research_lab/stocks/V9_F8_THREE_OWN_10K_TWO_FY_QUALITY_2026_11_11.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v9-f8-first-three-original-two-year-sec-quality
+  cancel-in-progress: false
+
+jobs:
+  fixed-cohort-original-quality-no-network-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing SEC research requirements
+        run: python -m pip install --disable-pip-version-check --no-input -r requirements.txt
+      - name: Verify exact own 10-K two-year quality and no source promotion
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_stock_sec_quality_p4a_v1_0.py \
+            test_fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0.py \
+            test_fund100_v9_f6_original_10k_diluted_eps_coverage_v1_0.py \
+            test_fund100_v9_f7_current_completed_vendor_price_source_v1_0.py \
+            test_fund100_v9_f8_fixed_three_original_sec_quality_v1_0.py
+          python - <<'PY'
+          import fund100_v9_f8_fixed_three_original_sec_quality_v1_0 as m
+          assert m.NO_BROKER_GET == m.NO_BROKER_POST == m.NO_BROKER_ORDERS == m.NO_PRIVATE_WRITES == 0
+          assert m.LIVE_AUTHORIZED is False
+          assert m.SHARE_CLASS_VALUATION_VALIDATED is False
+          assert m.F6_ORIGINAL_OWN_EPS_RUN == 43026350533
+          assert m.F7_ORIGINAL_COMPLETED_PRICE_RUN == 43030160608
+          PY
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+
+  protected-main-original-three-two-fy-quality-source:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'nicobouch97/fund100-research'
+    needs: fixed-cohort-original-quality-no-network-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install existing SEC research dependencies only
+        run: python -m pip install --disable-pip-version-check --no-input -r requirements.txt
+      - name: Get original SEC filings and companyfacts only; no brokerage
+        env:
+          SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$FUND100_BROKER_KILL_SWITCH" = ENGAGED
+          test "$FUND100_LIVE_WRITE_MODE" = DISABLED
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          python -B fund100_v9_f8_fixed_three_original_sec_quality_v1_0.py \
+            --out "$RUNNER_TEMP/v9-f8-original-two-year-quality.json"
+      - name: Retain only original-source status counts and opaque fingerprints
+        uses: actions/upload-artifact@v4
+        with:
+          name: v9-f8-three-own-10k-quality-${{ github.run_id }}
+          path: ${{ runner.temp }}/v9-f8-original-two-year-quality.json
+          if-no-files-found: error
+          retention-days: 30
