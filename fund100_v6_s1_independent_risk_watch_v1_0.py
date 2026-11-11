@@ -79,7 +79,7 @@ def _check_main_stopped_and_v6_go() -> None:
     broker.require_readonly_arm()
 
 
-def _risk_eight_get() -> None:
+def _risk_eight_get() -> str:
     """Fixed original eight broker GETs; no writer, no order POST."""
     _scope()
     _check_main_stopped_and_v6_go()
@@ -99,9 +99,16 @@ def _risk_eight_get() -> None:
                            {"period":"3M", "timeframe":"1D"})):
         raise V6WatchStop("Fixed eight original broker GET contract changed")
     docs = []
-    for path, params in approved:
+    for index, (path, params) in enumerate(approved):
         docs.append(broker.get_json(path=path, params=params,
                                     key=key, secret=secret))
+        # A closed exchange is normal before/after market; it must NOT
+        # continually auto-STOP an otherwise safely armed standing V6.
+        # It also must never emit a broker-risk PASS for a pending order.
+        if (index == 3 and type(docs[3]) is dict
+            and docs[3].get("is_open") is False):
+            _check_main_stopped_and_v6_go()
+            return "MARKET_CLOSED_NO_PASS"
     _check_main_stopped_and_v6_go()
     bootstrap, _ = original.original(original_files.BOOT)
     policy, _ = original.original(original_files.POLICY)
@@ -128,6 +135,7 @@ def _risk_eight_get() -> None:
     # production permission; this is an independent GET-only watcher only.
     _check_main_stopped_and_v6_go()
     _scope()
+    return EXPECTED_PASS
 
 
 def _stop_v6_first_only() -> str:
@@ -175,7 +183,11 @@ def watch_once() -> str:
         # Initial expected pre-launch STOP: no broker request and no PASS.
         return "ALREADY_STOPPED"
     try:
-        _risk_eight_get()
+        verdict = _risk_eight_get()
+        if verdict == "MARKET_CLOSED_NO_PASS":
+            return verdict
+        if verdict != EXPECTED_PASS:
+            raise V6WatchStop("V6 broker risk PASS unavailable")
         _emit_pass_only()
         return EXPECTED_PASS
     except Exception:
