@@ -169,7 +169,7 @@ def assess(*,directories:dict,sec_raw:bytes,observed:datetime,
             states[classify_10k(parsed=parsed,ticker=ticker,venue=venue)]+=1
             provenance.extend((sha256(index_raw).hexdigest(),
                                sha256(primary).hexdigest()))
-        except (sec.StockSourceStop,quality.StockSourceStop,p4u.ListingEvidenceStop):
+        except (sec.SecIntakeStop,quality.StockSourceStop,p4u.ListingEvidenceStop):
             states["SEC_ORIGINAL_SOURCE_UNQUALIFIED_HOLD"]+=1
         # No source errors become a counted success; no replacement names.
     remaining=n-len(jobs)
