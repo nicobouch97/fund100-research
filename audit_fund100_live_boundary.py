@@ -298,6 +298,12 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-live-emergency-stop.yml",
         "fund100_live_emergency_stop_v1_0.py",
     ): "5ef6fb7c8e01a8f002b6167aca28c89590931767",
+    # Independent STOP-only first original V6 ACWI broker cancellation.
+    # Exact SHA approved separately; NEVER extend the V5 cancellation matcher.
+    (
+        ".github/workflows/fund100-live-emergency-stop.yml",
+        "fund100_v6_s1_first_acwi_signed_cancel_only_v1_0.py",
+    ): "8b7655297314f84c8adcd335b2f2e40b87f3e5d8",
     (
         ".github/workflows/fund100-live-risk-watch.yml",
         "fund100_live_risk_monitor_v1_0.py",
@@ -362,6 +368,46 @@ def approved_scoped_live_script(
     path = ROOT / script
     if not path.is_file() or git_blob_digest(path) != expected:
         return False
+
+    if script == "fund100_v6_s1_first_acwi_signed_cancel_only_v1_0.py":
+        # Exact original signed ACWI cancellation only; do not turn a broad
+        # emergency workflow into a generic source of broker write authority.
+        if workflow != ".github/workflows/fund100-live-emergency-stop.yml":
+            return False
+        required_workflow = (
+            "name: Fund-100 STOP TRADING (operator emergency)",
+            "workflow_dispatch:",
+            "group: fund100-operator-emergency-stop",
+            "cancel-v6-original-acwi-order:",
+            "needs: stop-signal",
+            "if: ${{ always() && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}",
+            "environment: fund100-live-broker",
+            "persist-credentials: false",
+            "test \"$GITHUB_WORKFLOW_REF\" = 'nicobouch97/fund100-research/.github/workflows/fund100-live-emergency-stop.yml@refs/heads/main'",
+            "ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}",
+            "ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}",
+            "python fund100_v6_s1_first_acwi_signed_cancel_only_v1_0.py",
+            "python fund100_live_emergency_stop_v1_0.py",
+            "python fund100_live_operator_control_v1_0.py",
+            "v6.commit_stop_signal()",
+        )
+        if any(item not in source for item in required_workflow):
+            return False
+        if source.count("python fund100_v6_s1_first_acwi_signed_cancel_only_v1_0.py") != 1:
+            return False
+        for dependency, expected_digest in {
+            "fund100_live_emergency_stop_v1_0.py":
+                "5ef6fb7c8e01a8f002b6167aca28c89590931767",
+            "fund100_v6_s1_private_git_cas_protocol_v1_0.py":
+                "9b9f8917faa21b4157600ac642f80595445a7276",
+            "fund100_v6_s1_operator_control_v2_0.py":
+                "c0b2e9a3ae1820b8fb7fb4d4b8be8bae55fa2e9d",
+            "fund100_live_operator_control_v1_0.py":
+                "953c015d2c38c84212f31c290f325504754ad425",
+        }.items():
+            dep_path = ROOT / dependency
+            if not dep_path.is_file() or git_blob_digest(dep_path) != expected_digest:
+                return False
 
     if script == "fund100_live_bootstrap_v1_0.py":
         # Unlike GET-only credential readers, this source can submit a
