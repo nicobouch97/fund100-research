@@ -28,8 +28,13 @@ The main-only source checker:
 
 1. Reuses the unchanged deterministic F4 first-eight CIK hash
    `caa63b8763c38ae04e911ed05f7baaba086722062b5ba0d134c0b0082c21d972`.
-   Any source drift away from the original **three** class-review matches
-   fails closed; no successful replacement issuer is selected.
+   The original source must still produce exactly **three** class-review
+   matches, or it fails closed. The earlier F5 report retained aggregate
+   counts, NOT a cryptographic commitment to the exact three CIKs, so that
+   count alone cannot prove the same three people/company identities.
+   F6 therefore also commits a SHA256 of the exact per-run three CIK
+   subset for future unchanged-identity crosschecks. No issuer is
+   retrospectively reselected to obtain favorable earnings.
 2. Fetches same issuer official SEC submissions and exact primary
    index-verified 10-K for the same source census as F5, preserving
    same CIK, latest filed own 10-K fiscal end, conservative two-weekday
