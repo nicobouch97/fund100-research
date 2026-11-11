@@ -394,8 +394,11 @@ _ACTIVE_REPLAY_SAFE_HOLD_REASONS = {
         "ACTIVE_BROKER_EQUITY_CASH_HOLD",
     "Original account funding source not singly qualified":
         "ACTIVE_FUNDING_SOURCE_SHAPE_HOLD",
-    "Original authorized $130.30 funded capital breached":
-        "ACTIVE_PILOT_CAPITAL_CEILING_HOLD",
+    # CSD amount is NOT an owner principal permit. A positive credit
+    # above the original cap may not block liquidation of original shares,
+    # and may never finance a new order.
+    "Original cash-credit direction/count unqualified":
+        "ACTIVE_FUNDING_SOURCE_SHAPE_HOLD",
     "Unqualified original 3M portfolio history":
         "ACTIVE_HISTORY_1M_3M_HOLD",
     "Original 1M and 3M historical source disagreement":
@@ -463,9 +466,19 @@ def _active_sell_pure_replay(*, account, positions, orders, clock,
     if (report.get('status')==
             'ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2'
         and report.get('same_process_real_broker_gets')==8
+        and report.get('original_acwi_exact_fractional_holdings_verified') is True
+        and report.get('original_open_market_and_no_pending_order_verified') is True
         and report.get('original_strict_postfunding_6_20_35_risk_pass') is True
         and report.get('sell_only_original_legacy_ACWI') is True
+        and report.get('full_original_acwi_exit_bounded_by_authenticated_inventory') is True
+        and report.get('capital_ceiling_usd')=='130.30'
+        and report.get('maximum_new_order_notional_usd')=='65.00'
+        and report.get('unattributed_credit_or_new_principal_spend_authorized') is False
+        and report.get('original_acwi_sell_only_no_additional_principal_deployment') is True
         and report.get('buy_authorized') is False
+        and report.get('broker_order_authorized') is True
+        and report.get('orders_submitted_here')==0
+        and report.get('settled_cash_verified') is False
         and report.get('broker_post_attempts')==0):
         return 'ACTIVE_PURE_SOURCE_MATCH_RESEARCH_ONLY'
     return 'ACTIVE_PURE_EVALUATOR_RESULT_NOT_QUALIFIED_HOLD'
