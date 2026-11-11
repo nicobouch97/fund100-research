@@ -24,6 +24,7 @@ import fund100_v9_sec_current_listing_association_v1_0 as link
 import fund100_v9_official_current_listing_discovery_v1_0 as listing
 import fund100_stock_sec_source_p4b_v1_0 as sec
 import fund100_stock_sec_quality_p4a_v1_0 as quality
+import fund100_v9_f2_original_finance_ratio_source_v1_0 as f2
 
 SCHEMA = "FUND100_V9_DETERMINISTIC_CURRENT_SEC_QUALITY_SOURCE_COVERAGE_V1"
 SELECTION_DOMAIN = b"FUND100_V9_20261110_CURRENT_ISSUER_SAMPLE_V1:"
@@ -556,6 +557,10 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
     original_current_SIC_source_band_by_P4A_outcome = defaultdict(Counter)
     finance_SIC_subtype_current_issuer_counts = Counter()
     finance_three_core_two_own_10K_source_status = Counter()
+    finance_source_ratio_status_not_a_score = Counter()
+    finance_source_ratio_roaa_bucket_by_current_SEC_subtype = defaultdict(Counter)
+    finance_source_ratio_equity_bucket_by_current_SEC_subtype = defaultdict(Counter)
+    finance_source_ratio_net_income_sign_by_current_SEC_subtype = defaultdict(Counter)
     finance_missing_exact_core_USD_tag_counts = Counter()
     bank_credit_two_own_10k_optional_source_status = Counter()
     bank_credit_missing_optional_USD_tag_counts = Counter()
@@ -600,6 +605,39 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
                 submissions=original["submissions"],
                 asof=observed.date().isoformat())
             finance_three_core_two_own_10K_source_status[ready_state] += 1
+            # Descriptive same-accession original source-derived ratios only;
+            # no issuer identities, exact amounts, ranking or buy selection.
+            if (ready_state==f2.READY
+                and subtype in f2.REVIEWABLE_SUBTYPES):
+                diag=f2.describe(
+                    companyfacts=original["companyfacts"],
+                    submissions=original["submissions"],
+                    cik=f"{cik:010d}",asof=observed.date().isoformat(),
+                    subtype=subtype,core_source_state=ready_state)
+                if (diag.get("schema")!=f2.SCHEMA
+                    or diag.get("subtype")!=subtype
+                    or diag.get("status") not in (
+                        f2.OUTPUT,"ORIGINAL_FINANCE_NONPOSITIVE_ASSETS_RATIO_UNAVAILABLE")
+                    or diag.get("broker_gets")!=0
+                    or diag.get("broker_posts")!=0
+                    or diag.get("broker_orders")!=0
+                    or diag.get("live_authorized") is not False
+                    or diag.get("issuer_rank") is not None
+                    or diag.get("trade_decision") is not None):
+                    raise SourceHold("Non-scoring original finance source diagnostic invalid")
+                finance_source_ratio_status_not_a_score[diag["status"]]+=1
+                for counter,key in (
+                    (finance_source_ratio_roaa_bucket_by_current_SEC_subtype,
+                     "latest_return_on_average_assets_bucket"),
+                    (finance_source_ratio_equity_bucket_by_current_SEC_subtype,
+                     "latest_equity_to_assets_bucket"),
+                    (finance_source_ratio_net_income_sign_by_current_SEC_subtype,
+                     "net_income_two_year_sign_state")):
+                    bucket=diag[key]
+                    if type(bucket) is str and bucket:
+                        counter[subtype][bucket]+=1
+                    elif bucket is not None:
+                        raise SourceHold("Non-finite finance original source bucket")
             for field in missing_finance:
                 finance_missing_exact_core_USD_tag_counts[field] += 1
             if subtype == "SEC_SIC_BANK_LENDING_CREDIT_AND_FINANCE_REVIEW_ONLY":
@@ -723,6 +761,16 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
         or any(c > finance_three_core_two_own_10K_source_status.get(
                "MISSING_EXACT_FINANCE_CORE_CONCEPT_USD_TAG", 0)
                for c in finance_missing_exact_core_USD_tag_counts.values())
+        or sum(finance_source_ratio_status_not_a_score.values()) >
+        finance_three_core_two_own_10K_source_status.get(f2.READY,0)
+        or any(
+            sum(categories.values()) >
+            finance_source_ratio_status_not_a_score.get(f2.OUTPUT,0)
+            for categories_by_subtype in (
+                finance_source_ratio_roaa_bucket_by_current_SEC_subtype,
+                finance_source_ratio_equity_bucket_by_current_SEC_subtype,
+                finance_source_ratio_net_income_sign_by_current_SEC_subtype)
+            for categories in categories_by_subtype.values())
         or sum(bank_credit_two_own_10k_optional_source_status.values()) !=
         finance_SIC_subtype_current_issuer_counts.get(
             "SEC_SIC_BANK_LENDING_CREDIT_AND_FINANCE_REVIEW_ONLY", 0)
@@ -780,6 +828,18 @@ def annual_coverage(*, directories, sec_associations, observed, fetcher,
             dict(sorted(finance_three_core_two_own_10K_source_status.items())),
         "current_SEC_finance_missing_exact_core_tag_USD_issuer_counts":
             dict(sorted(finance_missing_exact_core_USD_tag_counts.items())),
+        "current_SEC_finance_original_own_10K_ratio_source_status_NOT_a_score":
+            dict(sorted(finance_source_ratio_status_not_a_score.items())),
+        "current_SEC_finance_current_SIC_ROAA_descriptive_bucket_counts_NOT_a_grade": {
+            k:dict(sorted(v.items())) for k,v in sorted(
+                finance_source_ratio_roaa_bucket_by_current_SEC_subtype.items())},
+        "current_SEC_finance_current_SIC_equity_to_assets_descriptive_bucket_counts_NOT_capital_grade": {
+            k:dict(sorted(v.items())) for k,v in sorted(
+                finance_source_ratio_equity_bucket_by_current_SEC_subtype.items())},
+        "current_SEC_finance_current_SIC_two_original_10K_net_income_sign_counts_NOT_a_forecast": {
+            k:dict(sorted(v.items())) for k,v in sorted(
+                finance_source_ratio_net_income_sign_by_current_SEC_subtype.items())},
+        "finance_ratio_descriptions_do_not_validate_bank_credit_or_security_valuation":True,
         "current_SEC_bank_credit_exact_optional_instant_three_tag_two_own_10K_source_status_NOT_a_score":
             dict(sorted(bank_credit_two_own_10k_optional_source_status.items())),
         "current_SEC_bank_credit_missing_exact_optional_USD_tag_issuer_counts":
