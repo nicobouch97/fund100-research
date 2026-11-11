@@ -69,9 +69,17 @@ def mock_sources(monkeypatch, *, enabled=True, mutations=None):
     # Derive exact XNYS sessions (no Sundays, fake weekdays or skipped
     # market closes) so the new 3M source has a genuine pre-funding prefix.
     market=xcals.get_calendar("XNYS")
-    days=market.sessions_in_range(
+    # The +10h NY-local regression below moves a 15:00Z session label
+    # to 01:00Z the next UTC day. Select only sessions whose *shifted*
+    # timestamp is already in the past at test execution time. Otherwise
+    # midnight-UTC CI runs can fail the legitimate future-mark guard
+    # before they reach the exchange-session assertions.
+    eligible=market.sessions_in_range(
         pd.Timestamp(now.date())-pd.Timedelta(days=40),
-        pd.Timestamp(now.date())-pd.Timedelta(days=1))[-12:]
+        pd.Timestamp(now.date()))
+    days=[x for x in eligible
+          if int(x.timestamp())+25*3600 <= now.timestamp()]
+    days=days[-12:]
     assert len(days)==12
     # Source 1D observations are labeled in NY-local exchange time;
     # synthetic UTC 15:00 is always the same New York market session date.
