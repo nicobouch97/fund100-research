@@ -206,6 +206,10 @@ def report(*,directories,sec_raw,observed,figi_raw,figi_observed,
         "original_source_asof_utc":observed.astimezone(timezone.utc).isoformat(),
         "original_openfigi_response_at_utc":figi_observed.astimezone(timezone.utc).isoformat(),
         "original_eight_cik_sha256_commitment":commitment,
+        "original_sec_current_association_sha256":sha256(sec_raw).hexdigest(),
+        "original_nasdaq_directory_sha256_by_filename":{
+            name:sha256(directories[name]).hexdigest()
+            for name in sorted(listing.FILES)},
         "registered_original_issuer_cohort_not_return_selected":total,
         "first_eight_source_linked_current_symbols_queried":len(jobs),
         "precommitted_issuer_source_missing_or_ambiguous":total-len(jobs),
