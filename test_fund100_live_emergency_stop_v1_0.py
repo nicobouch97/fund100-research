@@ -78,9 +78,14 @@ def test_stop_recognizes_only_fund100_generated_client_ids():
         "f100live-123456789abc-b-acwi",
         "f100live-prod-1234567890abcdef-s-xle",
         "f100-live-bootstrap-1234567890abcdef-b-acwi",
+        "f100v6s1-" + "a" * 24 + "-s",
     ]:
         assert stop.is_fund100_client_id(cid)
     for cid in [
+        "f100v6s1-" + "a" * 24 + "-b",
+        "f100v6s1-" + "a" * 23 + "-s",
+        "f100v6s1-" + "z" * 24 + "-s",
+        "f100v6s1-" + "a" * 24 + "-s-extra",
         "f100-test-risk-guard",
         "f100live-123456789abc-b-../../evil",
         "f100live-notahash-b-acwi",
@@ -146,3 +151,25 @@ def test_stop_refuses_success_if_orders_remain(monkeypatch):
     monkeypatch.setattr(stop.time, "sleep", lambda _n: None)
     with pytest.raises(stop.EmergencyStopError):
         stop.cancel_open_fund100_orders()
+
+
+def test_v6_signed_original_sale_is_selectively_cancelled_without_touching_manual(
+        monkeypatch):
+    from uuid import uuid4
+    ours, manual = str(uuid4()), str(uuid4())
+    calls = []
+    listings = iter([
+        [{"id": ours, "client_order_id": "f100v6s1-" + "a" * 24 + "-s"},
+         {"id": manual, "client_order_id": "manual-stay-open"}],
+        [{"id": manual, "client_order_id": "manual-stay-open"}],
+    ])
+    def fake_request(method, path):
+        calls.append((method, path))
+        return next(listings) if method == "GET" else None
+    monkeypatch.setattr(stop, "_alpaca_request", fake_request)
+    assert stop.cancel_open_fund100_orders() == 1
+    assert calls == [
+        ("GET", "/v2/orders?status=open&limit=500"),
+        ("DELETE", "/v2/orders/" + ours),
+        ("GET", "/v2/orders?status=open&limit=500"),
+    ]
