@@ -177,7 +177,7 @@ def assess(*,directories:dict,sec_raw:bytes,observed:datetime,
         states["PRECOMMITTED_ISSUER_MULTI_SYMBOL_OR_UNMATCHED_HOLD"]=remaining
     if sum(states.values())!=n:
         raise CoverHold("Source statuses do not reconcile to frozen eight")
-    fingerprint=sha256(("\\n".join(provenance)+"\\n").encode()).hexdigest()
+    fingerprint=sha256(("\n".join(provenance)+"\n").encode()).hexdigest()
     return {
         "schema":SCHEMA,
         "source_kind":"CURRENT_2026_ORIGINAL_OWN_10K_CLASS_DISCLOSURE_NOT_SECURITY_MASTER",
@@ -223,7 +223,7 @@ def main():
     output=assess(directories=directories,sec_raw=sec_raw,observed=observed,
                   submissions_get=submissions_get,primary_get=primary_get)
     args.out.parent.mkdir(parents=True,exist_ok=True)
-    args.out.write_text(json.dumps(output,sort_keys=True,indent=2)+"\\n")
+    args.out.write_text(json.dumps(output,sort_keys=True,indent=2)+"\n")
     print("Frozen first original SEC issuer cohort:",output["original_issuer_count"])
     print("Original SEC 10-K own-class 12b source states:",
           output["frozen_issuer_source_status_counts"])
