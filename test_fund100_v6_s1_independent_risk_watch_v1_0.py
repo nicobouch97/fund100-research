@@ -52,7 +52,7 @@ def go(monkeypatch):
 def deny_side_effects(monkeypatch):
     monkeypatch.setattr(watch.broker, "load_credentials",
                         lambda: pytest.fail("Unwanted broker credentials"))
-    monkeypatch.setattr(watch.cancel, "cancel_open_fund100_orders",
+    monkeypatch.setattr(watch.cancel, "cancel_open_first_signed_acwi_orders",
                         lambda: pytest.fail("Unwanted cancel"))
     monkeypatch.setattr(watch, "_stop_v6_first_only",
                         lambda: pytest.fail("Unwanted remote STOP"))
@@ -97,7 +97,7 @@ def test_healthy_v6_running_emits_only_a_fixed_output(monkeypatch, tmp_path):
                         lambda: watch.EXPECTED_PASS)
     monkeypatch.setattr(watch, "_stop_v6_first_only",
                         lambda: pytest.fail("Healthy never writes STOP"))
-    monkeypatch.setattr(watch.cancel, "cancel_open_fund100_orders",
+    monkeypatch.setattr(watch.cancel, "cancel_open_first_signed_acwi_orders",
                         lambda: pytest.fail("Healthy never cancels"))
     assert watch.watch_once() == watch.EXPECTED_PASS
     assert path.read_bytes() == (
@@ -112,7 +112,7 @@ def test_market_closed_is_hold_not_permanent_stop_or_pass(monkeypatch, tmp_path)
                         lambda: "MARKET_CLOSED_NO_PASS")
     monkeypatch.setattr(watch, "_stop_v6_first_only",
                         lambda: pytest.fail("Closed market should not set STOP"))
-    monkeypatch.setattr(watch.cancel, "cancel_open_fund100_orders",
+    monkeypatch.setattr(watch.cancel, "cancel_open_first_signed_acwi_orders",
                         lambda: pytest.fail("Closed market should not cancel"))
     assert watch.watch_once() == "MARKET_CLOSED_NO_PASS"
     assert not path.exists()
@@ -204,7 +204,7 @@ def test_unavailable_initial_v6_operator_never_assumes_stopped_or_pass(
                         lambda: pytest.fail("Eight risk GETs may not start"))
     monkeypatch.setattr(watch, "_stop_v6_first_only",
                         lambda: actions.append("STOP_ONLY_CAS") or "STOPPED")
-    monkeypatch.setattr(watch.cancel, "cancel_open_fund100_orders",
+    monkeypatch.setattr(watch.cancel, "cancel_open_first_signed_acwi_orders",
                         lambda: actions.append("SIGNED_IDS_ONLY_CANCEL") or 0)
     assert watch.watch_once() == "AUTO_STOP_CONFIRMED"
     assert actions == [
@@ -225,7 +225,7 @@ def test_unavailable_initial_v6_operator_and_stop_ack_still_attempts_cancel(
         actions.append("STOP_CAS_UNKNOWN")
         raise TimeoutError("No acknowledgment")
     monkeypatch.setattr(watch, "_stop_v6_first_only", stop_unknown)
-    monkeypatch.setattr(watch.cancel, "cancel_open_fund100_orders",
+    monkeypatch.setattr(watch.cancel, "cancel_open_first_signed_acwi_orders",
                         lambda: actions.append("SELECTIVE_CANCEL") or 0)
     with pytest.raises(watch.V6WatchStop, match="STOP unconfirmed"):
         watch.watch_once()
@@ -245,7 +245,7 @@ def test_unverified_running_risk_stops_before_cancel_and_no_pass(monkeypatch,
     monkeypatch.setattr(watch, "_risk_eight_get", failed)
     monkeypatch.setattr(watch, "_stop_v6_first_only",
                         lambda: actions.append("PERSISTENT_STOP") or "STOPPED")
-    monkeypatch.setattr(watch.cancel, "cancel_open_fund100_orders",
+    monkeypatch.setattr(watch.cancel, "cancel_open_first_signed_acwi_orders",
                         lambda: actions.append("SELECTIVE_CANCEL") or 0)
     assert watch.watch_once() == "AUTO_STOP_CONFIRMED"
     assert actions == ["broker_risk_HOLD","PERSISTENT_STOP","SELECTIVE_CANCEL"]
@@ -261,7 +261,7 @@ def test_stop_unknown_never_claims_success_but_attempts_independent_cancel(
         raise TimeoutError("unknown CAS ack")
     monkeypatch.setattr(watch, "_stop_v6_first_only", unconfirmed)
     attempted = []
-    monkeypatch.setattr(watch.cancel, "cancel_open_fund100_orders",
+    monkeypatch.setattr(watch.cancel, "cancel_open_first_signed_acwi_orders",
                         lambda: attempted.append("CANCEL_ATTEMPTED") or 0)
     with pytest.raises(watch.V6WatchStop, match="STOP unconfirmed"):
         watch.watch_once()
@@ -280,7 +280,7 @@ def test_unknown_stop_and_failed_cancel_never_claim_success(monkeypatch):
         calls.append("CANCEL_ATTEMPTED")
         raise TimeoutError("unknown broker cancel")
     monkeypatch.setattr(watch, "_stop_v6_first_only", uncertain_stop)
-    monkeypatch.setattr(watch.cancel, "cancel_open_fund100_orders",
+    monkeypatch.setattr(watch.cancel, "cancel_open_first_signed_acwi_orders",
                         uncertain_cancel)
     with pytest.raises(watch.V6WatchStop, match="STOP unconfirmed"):
         watch.watch_once()
@@ -292,7 +292,7 @@ def test_cancel_error_not_claimed_as_auto_stop_success(monkeypatch):
     monkeypatch.setattr(watch, "_risk_eight_get",
                         lambda: (_ for _ in ()).throw(ValueError("risk")))
     monkeypatch.setattr(watch, "_stop_v6_first_only", lambda: "STOPPED")
-    monkeypatch.setattr(watch.cancel, "cancel_open_fund100_orders",
+    monkeypatch.setattr(watch.cancel, "cancel_open_first_signed_acwi_orders",
                         lambda: (_ for _ in ()).throw(TimeoutError("cancel")))
     with pytest.raises(watch.V6WatchStop, match="cancel uncertain"):
         watch.watch_once()
