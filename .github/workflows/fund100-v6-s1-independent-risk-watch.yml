@@ -58,7 +58,7 @@ jobs:
           ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
         run: |
           set -euo pipefail
-          python -B fund100_v6_s1_independent_risk_watch_v1_0.py
+          python fund100_v6_s1_independent_risk_watch_v1_0.py
       - name: Attest independent V6 original ACWI broker risk PASS
         if: ${{ github.event_name == 'schedule' && steps.v6_risk.outputs.verified_v6_original_acwi_risk == 'YES' }}
         run: |
