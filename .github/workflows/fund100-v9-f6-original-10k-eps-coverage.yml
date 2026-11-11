@@ -1,0 +1,95 @@
+name: Fund-100 V9 F6 Original SEC Own 10-K Diluted EPS Coverage (NO BROKER)
+
+# Exactly the first eight F4 SEC issuer CIKs. Only own 10-K diluted EPS
+# availability for F5's three originally class-reviewed issuer candidates.
+# This is a one-off source feasibility pilot, not an earnings yield, a
+# selection signal, a price lookup, or an order permission.
+on:
+  pull_request:
+    paths:
+      - "fund100_v9_f6_original_10k_diluted_eps_coverage_v1_0.py"
+      - "test_fund100_v9_f6_original_10k_diluted_eps_coverage_v1_0.py"
+      - ".github/workflows/fund100-v9-f6-original-10k-eps-coverage.yml"
+      - "research_lab/stocks/V9_F6_OWN_10K_EPS_SOURCE_COVERAGE_2026_11_11.md"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v9_f6_original_10k_diluted_eps_coverage_v1_0.py"
+      - "test_fund100_v9_f6_original_10k_diluted_eps_coverage_v1_0.py"
+      - ".github/workflows/fund100-v9-f6-original-10k-eps-coverage.yml"
+      - "research_lab/stocks/V9_F6_OWN_10K_EPS_SOURCE_COVERAGE_2026_11_11.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v9-f6-original-10k-eps-source
+  cancel-in-progress: false
+
+jobs:
+  offline-original-earnings-provenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install known source parser requirements only
+        run: python -m pip install --disable-pip-version-check --no-input 'pytest>=8,<9' 'pandas==2.3.3' 'exchange-calendars==4.13.2'
+      - name: Verify SEC exact own accession EPS, fixed eight and no broker transport
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            test_fund100_stock_sec_eps_yield_p4s_v1_0.py \
+            test_fund100_stock_historical_sec_listing_p4u_v1_0.py \
+            test_fund100_v9_f4_current_openfigi_class_reference_v1_0.py \
+            test_fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0.py \
+            test_fund100_v9_f6_original_10k_diluted_eps_coverage_v1_0.py
+          python - <<'PY'
+          import fund100_v9_f6_original_10k_diluted_eps_coverage_v1_0 as m
+          assert m.NO_BROKER_GET == m.NO_BROKER_POST == m.NO_BROKER_ORDERS == m.NO_PRIVATE_WRITES == 0
+          assert m.LIVE_AUTHORIZED is False
+          assert m.F5_FIRST_OWN_10K_RUN == 43021601200
+          assert m.F5_CLASS_MATCHES == 3
+          PY
+
+  protected-main-first-original-eps-source:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'nicobouch97/fund100-research'
+    needs: offline-original-earnings-provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+      FUND100_LIVE_WRITE_MODE: DISABLED
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install exact research parsing runtime, NO broker secrets
+        run: python -m pip install --disable-pip-version-check --no-input 'pandas==2.3.3' 'exchange-calendars==4.13.2'
+      - name: Source original issuer 10-K EPS from approved SEC endpoints only
+        env:
+          SEC_USER_AGENT: ${{ secrets.FUND100_SEC_USER_AGENT }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_REPOSITORY" = "nicobouch97/fund100-research"
+          test "$FUND100_BROKER_KILL_SWITCH" = ENGAGED
+          test "$FUND100_LIVE_WRITE_MODE" = DISABLED
+          grep -Eq '"trading_enabled": false' fund100_live_operator_control.json
+          grep -Eq '"trading_enabled": false' fund100_v6_s1_operator_control.json
+          python -B fund100_v9_f6_original_10k_diluted_eps_coverage_v1_0.py \
+            --out "$RUNNER_TEMP/v9-f6-earnings-source-aggregate.json"
+      - name: Archive only counts and opaque whole-cohort source SHA
+        uses: actions/upload-artifact@v4
+        with:
+          name: v9-f6-own-10k-eps-source-${{ github.run_id }}
+          path: ${{ runner.temp }}/v9-f6-earnings-source-aggregate.json
+          if-no-files-found: error
+          retention-days: 30
