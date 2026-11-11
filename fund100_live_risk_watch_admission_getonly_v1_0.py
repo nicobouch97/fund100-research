@@ -15,11 +15,11 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 REPO = "nicobouch97/fund100-research"
 API = "https://api.github.com/repos/" + REPO
-WATCH_PATH = ".github/workflows/fund100-live-risk-watch.yml"
-WORKFLOW_RUNS = API + "/actions/workflows/fund100-live-risk-watch.yml/runs?event=schedule&per_page=20"
-WATCH_JOB_NAME = "Independent LIVE account risk watch"
-CHECK_STEP = "Check risk or trigger persistent STOP"
-PASS_STEP = "Attest independent LIVE broker risk PASS"
+WATCH_PATH = ".github/workflows/fund100-v6-s1-independent-risk-watch.yml"
+WORKFLOW_RUNS = API + "/actions/workflows/fund100-v6-s1-independent-risk-watch.yml/runs?event=schedule&per_page=20"
+WATCH_JOB_NAME = "Independent V6-S1 original ACWI broker risk watch"
+CHECK_STEP = "Check V6 first ACWI independent LIVE broker risk or STOP"
+PASS_STEP = "Attest independent V6 original ACWI broker risk PASS"
 MAX_AGE_SECONDS = 20 * 60
 MAX_RUN_DURATION_SECONDS = 10 * 60
 MAX_RESPONSE_BYTES = 300000
@@ -115,7 +115,7 @@ def require_recent_scheduled_risk_pass(*, token: str, main_sha: str,
     latest = max(runs, key=lambda r: _time(r.get("created_at")))
     run_id = latest.get("id")
     if (type(run_id) is not int or run_id <= 0
-        or latest.get("name") != "Fund-100 LIVE Risk Watch (autonomous)"
+        or latest.get("name") != "Fund-100 V6-S1 Independent First ACWI Risk Watch (NO TRADE)"
         or latest.get("path") != WATCH_PATH
         or latest.get("event") != "schedule"
         or latest.get("head_branch") != "main"
