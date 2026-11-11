@@ -194,9 +194,11 @@ def test_first_entry_accepts_only_exact_zero_order_economic_no_trade(
         assert value not in str(got)
     for field,bad in (
         ("original_owner_claim_attempts",1),
+        ("original_owner_claim_attempts",False),
         ("original_signed_possible_POST_attempts",1),
         ("immutable_release_publication_attempts",1),
         ("reviewed_broker_order_attempts",1),
+        ("reviewed_broker_order_attempts",False),
         ("owner_fence_consumed",True),
         ("broker_receipt_validation_proven",True),
         ("can_recheck_with_new_economic_evidence",False),
