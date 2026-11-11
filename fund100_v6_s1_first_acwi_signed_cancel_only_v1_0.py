@@ -69,3 +69,11 @@ def cancel_open_first_signed_acwi_orders() -> int:
         if attempt < RECONCILIATION_ATTEMPTS - 1:
             time.sleep(2)
     raise FirstAcwiCancelStop("Signed original ACWI broker order remains open")
+
+
+if __name__ == "__main__":
+    count = cancel_open_first_signed_acwi_orders()
+    print("Original V6 ACWI emergency cancellation checked; no trade submitted.")
+    print("Exact signed ACWI orders selected for cancellation:", count)
+    print("Other account orders cancelled: NO")
+    print("Portfolio positions liquidated: NO")
