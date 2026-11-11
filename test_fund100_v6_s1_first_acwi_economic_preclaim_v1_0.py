@@ -62,6 +62,7 @@ def test_even_a_forged_positive_report_cannot_bypass_main_source_release():
     ("decision","BUY_XLK_DIRECTLY"),
     ("economic_reason","UNVALIDATED_HISTORICAL_MOMENTUM"),
     ("economic_reason",None),
+    ("economic_reason",["INDEPENDENTLY_SOURCED_COSTED_ROTATION"]),
     ("source_owned_authentication",False),
     ("source_premarket_availability_verified",False),
     ("original_inventory_bound",False),
