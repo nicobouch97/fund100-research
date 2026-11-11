@@ -146,6 +146,8 @@ def test_frozen_original_eight_and_only_three_class_matches_fetch_companyfacts(m
     assert report["original_issuer_denominator"]==8
     assert report["original_issuer_declared_12b_class_candidates"]==3
     assert report["companyfacts_source_requests_for_only_class_candidates"]==3
+    assert len(report["current_12b_class_candidate_issuer_commitment_sha256"])==64
+    assert report["eps_original_filing_accession_date_matching_required"] is True
     assert report["source_status_counts"]=={
         "ORIGINAL_OWN_10K_DILUTED_EPS_POSITIVE_REVIEW_ONLY":1,
         "ORIGINAL_OWN_10K_DILUTED_EPS_NONPOSITIVE_REVIEW_ONLY":1,
