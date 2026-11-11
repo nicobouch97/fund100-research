@@ -207,8 +207,13 @@ def test_real_economic_no_trade_blocks_before_any_private_head_or_order(
     monkeypatch.setattr(economic,"ECONOMIC_SOURCE_RELEASED",False)
     monkeypatch.setattr(
         economic,"inspect_current_original_exit",REAL_ECONOMIC_INSPECT)
-    with pytest.raises(chain.ChainStop,match="economic NO_TRADE"):
-        chain.run_exact_first_acwi_attempt(**args)
+    result=chain.run_exact_first_acwi_attempt(**args)
+    assert result["status"]=="ORIGINAL_ACWI_ECONOMIC_NO_TRADE_KEEP_HOLDINGS"
+    assert result["original_owner_claim_attempts"]==0
+    assert result["reviewed_broker_order_attempts"]==0
+    assert result["owner_fence_consumed"] is False
+    assert result["can_recheck_with_new_economic_evidence"] is True
+    assert result["original_qty"] is None
     assert state["events"]==["setting","absent","broker_preflight"]
     assert state["write_calls"]==0
 
@@ -235,7 +240,24 @@ def test_forged_exit_decision_never_claims_signed_owner(
         r[bad_field]=bad_value
         return r
     monkeypatch.setattr(economic,"inspect_current_original_exit",forged)
-    with pytest.raises(chain.ChainStop,match="economic NO_TRADE"):
+    result=chain.run_exact_first_acwi_attempt(**args)
+    assert result["status"]=="ORIGINAL_ACWI_ECONOMIC_NO_TRADE_KEEP_HOLDINGS"
+    assert result["original_owner_claim_attempts"]==0
+    assert result["reviewed_broker_order_attempts"]==0
+    assert result["owner_fence_consumed"] is False
+    assert result["can_recheck_with_new_economic_evidence"] is True
+    assert result["original_qty"] is None
+    assert state["events"]==["setting","absent","broker_preflight"]
+    assert state["write_calls"]==0
+
+
+def test_unexpected_economic_exception_is_terminal_preclaim_stop(
+        setup,monkeypatch):
+    state,args=setup
+    def broken(**kwargs):
+        raise RuntimeError("synthetic unexpected economic runtime failure")
+    monkeypatch.setattr(economic,"inspect_current_original_exit",broken)
+    with pytest.raises(chain.ChainStop,match="economic source unexpected failure"):
         chain.run_exact_first_acwi_attempt(**args)
     assert state["events"]==["setting","absent","broker_preflight"]
     assert state["write_calls"]==0
