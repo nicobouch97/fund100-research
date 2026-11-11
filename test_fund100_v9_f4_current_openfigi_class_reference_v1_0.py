@@ -24,8 +24,8 @@ def fake(records, *, share=None):
         response.append({"data":[{
             "ticker":ticker,"exchCode":"US","marketSector":"Equity",
             "securityType":"Common Stock","securityType2":"Common Stock",
-            "figi":f"BBG0000000{i+1}","compositeFIGI":f"BBG0000001{i+1}",
-            "shareClassFIGI":share or f"BBG0000002{i+1}",
+            "figi":f"BBG00000000{i+1}","compositeFIGI":f"BBG00000010{i+1}",
+            "shareClassFIGI":share or f"BBG00000020{i+1}",
             "name":"Unverified issuer name"
         }]})
     return json.dumps(response).encode()
