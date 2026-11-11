@@ -150,9 +150,14 @@ def inspect(*, nasdaq_raw:dict, sec_raw:bytes, observed:datetime,
     # associations whose listing symbol is absent or an alternative instrument.
     # One matched common-text line cannot erase another listed class.
     sec_issuer_pairs = defaultdict(set)
-    for sec_ticker, associations in index.items():
-        for sec_cik, sec_venue in associations:
-            sec_issuer_pairs[sec_cik].add((sec_ticker, sec_venue))
+    # sec_records() already validated *all* original JSON row types and
+    # source envelope. Examine even its quarantined null-exchange or
+    # unrecognised-symbol rows as issuer multiplicity evidence, never as
+    # qualified ticker matches. A second unmapped share must still prevent
+    # claiming one safe share-price denominator.
+    for sec_cik, _, sec_ticker, sec_venue in json.loads(
+            sec_raw.decode("utf-8-sig"))["data"]:
+        sec_issuer_pairs[sec_cik].add((sec_ticker, sec_venue))
     matched_symbols_by_cik = defaultdict(set)
     for ticker, expected_exchange, name_cue in rows:
         if directory_counts[ticker] > 1:
