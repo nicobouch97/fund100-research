@@ -27,7 +27,7 @@ import fund100_v6_s1_live_private_xle_activity_getonly_v1_0 as activities
 import fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 as native
 import fund100_v6_s1_three_month_prefunding_probe_v1_0 as extended
 import fund100_alpaca_live_readonly_smoke as broker
-import fund100_live_emergency_stop_v1_0 as cancel
+import fund100_v6_s1_first_acwi_signed_cancel_only_v1_0 as cancel
 
 SCHEMA = "FUND100_V6_S1_INDEPENDENT_SCHEDULED_ACWI_RISK_WATCH_V1"
 WATCH_REF = ("nicobouch97/fund100-research/.github/workflows/"
@@ -206,7 +206,7 @@ def watch_once() -> str:
             # Independent best-effort selective cancellation, even if the
             # V6 Git STOP CAS failed, raced or had an unknown acknowledgement.
             # No other account orders and no positions may be touched.
-            cancel.cancel_open_fund100_orders()
+            cancel.cancel_open_first_signed_acwi_orders()
             cancel_confirmed = True
         except Exception:
             pass
