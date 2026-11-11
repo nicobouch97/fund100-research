@@ -5,6 +5,7 @@ import os
 import pytest
 
 import fund100_v6_s1_original_one_attempt_chain_locked_v1_0 as chain
+import fund100_v6_s1_first_acwi_economic_preclaim_v1_0 as economic
 import fund100_v6_s1_active_high_acwi_sell_risk_v2_0 as active
 import fund100_v6_s1_acwi_unique_owner_fence_offline_v1_0 as fence
 import fund100_v6_s1_private_git_cas_protocol_v1_0 as ledger
@@ -79,6 +80,15 @@ def setup(monkeypatch):
     # Keep the entire coordinator fake-transport fixture strictly offline.
     # The real ACTIVE gate is exercised independently in its dedicated tests.
     monkeypatch.setattr(active,"_scope",lambda:None)
+    # Full signed-chain transport tests deliberately use a synthetic
+    # qualified strategy report; production economic source ALWAYS HOLDS.
+    monkeypatch.setattr(economic,"ECONOMIC_SOURCE_RELEASED",True)
+    def fake_approved_economics(*,original_qty,broker_risk):
+        assert original_qty==c["original_qty"]
+        assert broker_risk["original_strict_postfunding_6_20_35_risk_pass"] is True
+        from test_fund100_v6_s1_first_acwi_economic_preclaim_v1_0 import fake_qualified
+        return dict(fake_qualified(),original_qty=original_qty)
+    monkeypatch.setattr(economic,"inspect_current_original_exit",fake_approved_economics)
     state={"owner":initial,"ledger":c["reserved_source"],
            "events":[],"write_calls":0}
     def log(x):state["events"].append(x)
@@ -187,6 +197,61 @@ def setup(monkeypatch):
         public_release_write_token=PUBLISH,broker_key=KEY,broker_secret=SECRET,
     )
     return state,args
+
+def test_real_economic_no_trade_blocks_before_any_private_head_or_order(
+        setup,monkeypatch):
+    state,args=setup
+    # Keep existing fully credentialless fake signed chain & broker risk,
+    # but restore the genuine production economic source and source lock.
+    monkeypatch.setattr(economic,"ECONOMIC_SOURCE_RELEASED",False)
+    monkeypatch.setattr(
+        economic,"inspect_current_original_exit",
+        __import__("importlib").reload(economic).inspect_current_original_exit)
+    with pytest.raises(chain.ChainStop,match="economic NO_TRADE"):
+        chain.run_exact_first_acwi_attempt(**args)
+    assert state["events"]==["setting","absent","broker_preflight"]
+    assert state["write_calls"]==0
+
+
+@pytest.mark.parametrize("bad_field,bad_value",[
+    ("status","NO_PROVEN_BUY"),
+    ("decision","SELL_WITHOUT_REASON"),
+    ("economic_reason","UNVALIDATED_RELATIVE_STRENGTH"),
+    ("source_owned_authentication",False),
+    ("source_premarket_availability_verified",False),
+    ("original_inventory_bound",False),
+    ("hold_acwi_comparator_included",False),
+    ("sale_replacement_and_cash_drag_after_costs_checked",False),
+    ("costed_positive_economic_case_or_independent_risk_reduction",False),
+    ("new_buy_or_new_principal_authorized",True),
+    ("live_orders",1),
+])
+def test_forged_exit_decision_never_claims_signed_owner(
+        setup,monkeypatch,bad_field,bad_value):
+    state,args=setup
+    old=economic.inspect_current_original_exit
+    def forged(**kwargs):
+        r=dict(old(**kwargs))
+        r[bad_field]=bad_value
+        return r
+    monkeypatch.setattr(economic,"inspect_current_original_exit",forged)
+    with pytest.raises(chain.ChainStop,match="economic NO_TRADE"):
+        chain.run_exact_first_acwi_attempt(**args)
+    assert state["events"]==["setting","absent","broker_preflight"]
+    assert state["write_calls"]==0
+
+
+def test_original_no_trade_source_admission_precedes_both_private_head_reads():
+    from pathlib import Path
+    s=Path(chain.__file__).read_text()
+    assert s.index("economic.require_preclaim_exit_economics(")<s.index(
+        "order=_real_current(")
+    assert s.index("economic.require_preclaim_exit_economics(")<s.index(
+        "claim=ownership.claim_for_same_attempt_only(")
+    assert s.index("economic.require_preclaim_exit_economics(")>s.index(
+        "ready=risk.inspect_actual_original_seven_get(")
+    assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
+
 
 def test_exact_one_attempt_all_valid_original_signed_heads_same_run(setup):
     state,args=setup
