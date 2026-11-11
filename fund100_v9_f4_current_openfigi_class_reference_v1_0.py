@@ -183,7 +183,8 @@ def classify(*, jobs, raw):
         counts["CURRENT_SYMBOL_COMMON_CLASS_CANDIDATE_NOT_CIK_PROVEN"]+=1
     if sum(counts.values())!=len(jobs):
         raise FigiHold("OpenFIGI source classifications fail original count")
-    return dict(sorted(counts.items()))
+    return dict(sorted((category, count) for category, count in counts.items()
+                       if count > 0))
 
 
 def report(*,directories,sec_raw,observed,figi_raw,figi_observed,
