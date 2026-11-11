@@ -150,18 +150,25 @@ def monitor_once() -> str:
     return "WITHIN_RISK_LIMITS"
 
 
+def emit_scheduled_pass_only_output(result: str) -> bool:
+    """Fixed-value, ephemeral Actions output, never evidence for STOPPED.
+
+    A succeeded STOPPED watcher performs zero broker GETs, so may NEVER
+    produce the named healthy-PASS step used by new-order admission.
+    """
+    if (result != "WITHIN_RISK_LIMITS"
+        or os.environ.get("GITHUB_ACTIONS") != "true"
+        or os.environ.get("GITHUB_EVENT_NAME") != "schedule"):
+        return False
+    output = os.environ.get("GITHUB_OUTPUT")
+    if not output:
+        raise RiskMonitorStop("No trusted GitHub step output; no PASS evidence")
+    with open(output, "a", encoding="utf-8") as stream:
+        stream.write("verified_live_account_risk=YES" + chr(10))
+    return True
+
+
 if __name__ == "__main__":
     result = monitor_once()
     print("Fund-100 risk monitor:", result)
-    # GitHub Actions' success means nothing when STOPPED (zero broker GETs).
-    # Emit a PASS-only, fixed-value ephemeral step output for the independent
-    # scheduled workflow. No balances, positions, credentials or public state.
-    # A missing/unwritable output file FAILS the healthy job, never approves it.
-    if (result == "WITHIN_RISK_LIMITS"
-        and os.environ.get("GITHUB_ACTIONS") == "true"
-        and os.environ.get("GITHUB_EVENT_NAME") == "schedule"):
-        output = os.environ.get("GITHUB_OUTPUT")
-        if not output:
-            raise RiskMonitorStop("No trusted GitHub step output; no PASS evidence")
-        with open(output, "a", encoding="utf-8") as stream:
-            stream.write("verified_live_account_risk=YES" + chr(10))
+    emit_scheduled_pass_only_output(result)
