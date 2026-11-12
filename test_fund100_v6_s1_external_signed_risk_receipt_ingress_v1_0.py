@@ -235,7 +235,7 @@ def test_fake_http_health_success_is_not_risk_pass(monkeypatch):
         run(sender)
 
 
-def test_unreleased_reader_not_wired_to_trade_entry_or_railway():
+def test_unreleased_reader_mandatory_for_locked_entry_but_not_deployed_on_railway():
     code = Path(ingress.__file__).read_text()
     assert "RECEIPT_INGRESS_RELEASED = False" in code
     assert "EXPECTED_ACCOUNT_BINDING_SHA256 = None" in code
@@ -247,6 +247,14 @@ def test_unreleased_reader_not_wired_to_trade_entry_or_railway():
     assert "ALPACA_LIVE_KEY" not in code
     assert "ALPACA_LIVE_SECRET" not in code
     entry=Path("fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py").read_text()
-    assert "fund100_v6_s1_external_signed_risk_receipt_ingress_v1_0" not in entry
+    # The first trading entry now REQUIRES an independently signed risk
+    # receipt. This source wiring does not release the hard-locked GET or
+    # establish an approved signing key, policy or retail account.
+    assert "import fund100_v6_s1_external_signed_risk_receipt_ingress_v1_0 as external_risk" in entry
+    assert "external_risk.require_fresh_signed_external_risk_pass(" in entry
+    assert "ORIGINAL_ACWI_ENTRYPOINT_RELEASED=False" in entry
+    assert entry.index("external_risk.require_fresh_signed_external_risk_pass(") < entry.index(
+        "live_watch.require_recent_scheduled_risk_pass(") < entry.index(
+        "chain.prepare_original_acwi_context_getonly(")
     docker=Path("Dockerfile").read_text()
     assert "fund100_v6_s1_external_signed_risk_receipt_ingress_v1_0" not in docker
