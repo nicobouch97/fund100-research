@@ -1,0 +1,40 @@
+name: Fund-100 Railway HTTP Callback Preflight (NO BROKER, NO OAUTH)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_railway_risk_watch_http_preflight_v1_0.py'
+      - 'test_fund100_railway_risk_watch_http_preflight_v1_0.py'
+      - 'fund100_railway_schedule_observer_dryrun_v1_0.py'
+      - 'test_fund100_railway_schedule_observer_dryrun_v1_0.py'
+      - 'Dockerfile'
+      - '.github/workflows/fund100-railway-http-preflight-mock-only.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_railway_risk_watch_http_preflight_v1_0.py'
+      - 'test_fund100_railway_risk_watch_http_preflight_v1_0.py'
+      - 'Dockerfile'
+      - '.github/workflows/fund100-railway-http-preflight-mock-only.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  localhost-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify local HTTP safety and public-only schedule tests
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_railway_risk_watch_http_preflight_v1_0.py test_fund100_railway_schedule_observer_dryrun_v1_0.py
+          grep -Fq 'OAUTH_CALLBACK_RELEASED = False' fund100_railway_risk_watch_http_preflight_v1_0.py
+          ! grep -q '^COPY \.' Dockerfile
