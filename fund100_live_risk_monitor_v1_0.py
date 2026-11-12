@@ -66,10 +66,11 @@ def inspect_live_risk(
         raise RiskMonitorStop("Malformed Alpaca account.")
     # Alpaca flags must be authentic booleans. A missing/null/string flag
     # is UNKNOWN, never proof that this live account is unblocked.
-    # Account-wide restrictions are distinct from the trading flag.
+    # Account-wide blocks and an owner-initiated trade suspension also deny trading.
     if (account.get("status") != "ACTIVE"
         or account.get("trading_blocked") is not False
-        or account.get("account_blocked") is not False):
+        or account.get("account_blocked") is not False
+        or account.get("trade_suspended_by_user") is not False):
         raise RiskMonitorStop("Alpaca account unavailable for LIVE trading.")
     if actual_account_binding != policy.get("account_binding_sha256"):
         raise RiskMonitorStop("Unexpected broker account binding.")
