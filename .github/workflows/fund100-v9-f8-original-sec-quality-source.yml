@@ -7,6 +7,8 @@ on:
     paths:
       - "fund100_v9_f8_fixed_three_original_sec_quality_v1_0.py"
       - "test_fund100_v9_f8_fixed_three_original_sec_quality_v1_0.py"
+      - "fund100_v9_f9_original_inline_class_shares_source_v1_0.py"
+      - "test_fund100_v9_f9_original_inline_class_shares_source_v1_0.py"
       - ".github/workflows/fund100-v9-f8-original-sec-quality-source.yml"
       - "research_lab/stocks/V9_F8_THREE_OWN_10K_TWO_FY_QUALITY_2026_11_11.md"
   push:
@@ -14,6 +16,8 @@ on:
     paths:
       - "fund100_v9_f8_fixed_three_original_sec_quality_v1_0.py"
       - "test_fund100_v9_f8_fixed_three_original_sec_quality_v1_0.py"
+      - "fund100_v9_f9_original_inline_class_shares_source_v1_0.py"
+      - "test_fund100_v9_f9_original_inline_class_shares_source_v1_0.py"
       - ".github/workflows/fund100-v9-f8-original-sec-quality-source.yml"
       - "research_lab/stocks/V9_F8_THREE_OWN_10K_TWO_FY_QUALITY_2026_11_11.md"
 
@@ -45,12 +49,16 @@ jobs:
             test_fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0.py \
             test_fund100_v9_f6_original_10k_diluted_eps_coverage_v1_0.py \
             test_fund100_v9_f7_current_completed_vendor_price_source_v1_0.py \
-            test_fund100_v9_f8_fixed_three_original_sec_quality_v1_0.py
+            test_fund100_v9_f8_fixed_three_original_sec_quality_v1_0.py \
+            test_fund100_v9_f9_original_inline_class_shares_source_v1_0.py
           python - <<'PY'
           import fund100_v9_f8_fixed_three_original_sec_quality_v1_0 as m
           assert m.NO_BROKER_GET == m.NO_BROKER_POST == m.NO_BROKER_ORDERS == m.NO_PRIVATE_WRITES == 0
           assert m.LIVE_AUTHORIZED is False
           assert m.SHARE_CLASS_VALUATION_VALIDATED is False
+          import fund100_v9_f9_original_inline_class_shares_source_v1_0 as ix
+          assert ix.NO_BROKER_GET == ix.NO_BROKER_POST == ix.NO_BROKER_ORDERS == ix.NO_PRIVATE_WRITES == 0
+          assert ix.LIVE_AUTHORIZED is False and ix.SHARE_CLASS_VALUATION_VALIDATED is False
           assert m.F6_ORIGINAL_OWN_EPS_RUN == 43026350533
           assert m.F7_ORIGINAL_COMPLETED_PRICE_RUN == 43030160608
           PY
