@@ -30,6 +30,46 @@ def request(port, path, method="GET"):
         conn.close()
 
 
+
+@pytest.mark.parametrize("page,term", [
+    ("/", b"Fund-100 Read-Only Monitor"),
+    ("/privacy", b"Privacy Notice"),
+    ("/terms", b"Terms of Use"),
+])
+def test_public_app_pages_exist_with_no_script_or_broker_access(
+        http_server, page, term):
+    status, headers, raw = request(http_server, page)
+    assert status == 200
+    assert headers["Content-Type"] == "text/html; charset=utf-8"
+    assert term in raw
+    assert b"Alpaca" in raw
+    assert b"read-only" in raw.lower()
+    assert b"<script" not in raw.lower()
+    assert b"<form" not in raw.lower()
+    assert b"oauth/token" not in raw
+    assert "no-store" in headers["Cache-Control"]
+    assert "default-src 'none'" in headers["Content-Security-Policy"]
+    assert headers["X-Frame-Options"] == "DENY"
+    assert "Set-Cookie" not in headers
+
+
+def test_public_homepage_explicitly_denies_current_account_access(http_server):
+    _, _, raw = request(http_server, "/")
+    assert b"No account access enabled" in raw
+    assert b"not yet active" in raw
+    assert b"does not place, modify, or cancel trades" in raw
+    assert b"/privacy" in raw and b"/terms" in raw
+    for term in (b"access_token", b"client_secret",
+                 b"ALPACA_LIVE_KEY", b"risk_pass_attested"):
+        assert term not in raw
+
+
+def test_public_website_does_not_alter_oauth_callback_contract(http_server):
+    status, _, body = request(http_server, "/oauth/callback")
+    assert status == 503
+    assert json.loads(body)["error"] == "OAUTH_CALLBACK_NOT_RELEASED"
+
+
 def test_health_never_attests_broker_risk_or_trading(http_server):
     status, headers, body = request(http_server, "/healthz")
     assert status == 200
@@ -57,7 +97,7 @@ def test_auth_callback_rejects_and_does_not_echo_state_or_code(http_server):
 
 
 def test_unknown_or_unsafe_methods_denied(http_server):
-    for path in ("/", "/v2/account", "/oauth/token",
+    for path in ("/nonexistent", "/v2/account", "/oauth/token",
                  "/oauth/authorize", "/risk-pass"):
         status, _, raw = request(http_server, path)
         assert status == 404
