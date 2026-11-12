@@ -16,7 +16,7 @@ NO_BROKER_GET=NO_BROKER_POST=NO_BROKER_ORDERS=NO_PRIVATE_WRITES=0
 LIVE_AUTHORIZED=False
 SHARE_CLASS_VALUATION_VALIDATED=False
 
-MAX_PRIMARY_BYTES=10_000_000
+MAX_PRIMARY_BYTES=32_000_000
 MAX_CONTEXTS=10_000
 MAX_DEI_FACTS=1000
 NUMERIC=re.compile(r"(?:[0-9]+|[1-9][0-9]{0,2}(?:,[0-9]{3})+)(?:\.[0-9]+)?\Z")
@@ -91,6 +91,7 @@ def classify_original_inline_primary(*, original:bytes, cik:int, filed:str,
     except (ValueError,TypeError,UnicodeError,html.etree.LxmlError):
         return "INLINE_PRIMARY_UNPARSEABLE_HOLD"
     if (root.get("xmlns:ix")!="http://www.xbrl.org/2013/inlineXBRL"
+        or root.get("xmlns:xbrldi")!="http://xbrl.org/2006/xbrldi"
         or not (root.get("xmlns:dei") or "").startswith("http://xbrl.sec.gov/dei/")
         or root.get("xmlns:xbrli")!="http://www.xbrl.org/2003/instance"):
         return "INLINE_DEI_NAMESPACE_UNVERIFIED_HOLD"
@@ -102,7 +103,15 @@ def classify_original_inline_primary(*, original:bytes, cik:int, filed:str,
         key=ctx.get("id")
         if not key or key in contexts or len(key)>160:
             return "DUPLICATE_OR_INVALID_INLINE_CONTEXT_ID_HOLD"
-        contexts[key]=_context_class(ctx,cik=cik,filed=due,fiscal_end=end)
+        kind=_context_class(ctx,cik=cik,filed=due,fiscal_end=end)
+        if kind=="DIMENSIONED":
+            axis=_children(_children(ctx,"xbrli:entity")[0],"xbrli:segment")[0][0].get("dimension")
+            if ((axis=="us-gaap:StatementClassOfStockAxis" and
+                 not (root.get("xmlns:us-gaap") or "").startswith("http://fasb.org/us-gaap/"))
+                or (axis=="ifrs-full:ClassesOfShareCapitalAxis" and
+                    not (root.get("xmlns:ifrs-full") or "").startswith("http://xbrl.ifrs.org/taxonomy/"))):
+                kind=None
+        contexts[key]=kind
     units={}
     for unit in root.iter("xbrli:unit"):
         key=unit.get("id")
@@ -148,6 +157,9 @@ def classify_original_inline_primary(*, original:bytes, cik:int, filed:str,
         seen[ref]=value
     # A valid tagged class fact still lacks independent class-member -> exact
     # registered security mapping. No number, member, or ticker is released.
+    classes={contexts[ref] for ref in seen}
+    if len(classes)>1:
+        return "MIXED_ENTITY_AND_DIMENSIONED_INLINE_SHARES_HOLD"
     return ("INLINE_DIMENSIONED_CLASS_SHARES_UNMAPPED_REVIEW_ONLY"
-            if any(contexts[ref]=="DIMENSIONED" for ref in seen)
+            if "DIMENSIONED" in classes
             else "INLINE_ISSUER_WIDE_SHARES_ONLY_NO_CLASS_MATCH_HOLD")
