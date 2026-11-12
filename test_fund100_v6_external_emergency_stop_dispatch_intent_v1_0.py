@@ -34,7 +34,10 @@ def test_offline_synthetic_failure_only_produces_exact_emergency_stop_plan(
             "https://api.github.com/repos/nicobouch97/fund100-research/"
             "actions/workflows/fund100-live-emergency-stop.yml/dispatches"),
         "json_body": '{"ref":"main"}',
-        "expected_acceptance_status": 204,
+        "expected_acceptance_status": 200,
+        "github_api_version_if_released": "2026-03-10",
+        "expected_response_fields": ("workflow_run_id","run_url","html_url"),
+        "workflow_run_id_required_for_future_verification": True,
         "permission_required_if_released": "Actions:write",
         "outage_category": reason,
         "dispatch_attempt_count": 0,
@@ -48,6 +51,7 @@ def test_offline_synthetic_failure_only_produces_exact_emergency_stop_plan(
         "inputs": None,
     }
     assert json.loads(plan["json_body"]) == {"ref": "main"}
+    assert plan["workflow_run_id_required_for_future_verification"] is True
 
 
 @pytest.mark.parametrize("reason", [

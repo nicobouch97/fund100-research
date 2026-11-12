@@ -1,0 +1,37 @@
+name: Fund-100 Emergency STOP Completion Evidence (MOCK ONLY)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v6_emergency_stop_completion_evidence_v1_0.py'
+      - 'test_fund100_v6_emergency_stop_completion_evidence_v1_0.py'
+      - '.github/workflows/fund100-v6-emergency-stop-completion-offline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v6_emergency_stop_completion_evidence_v1_0.py'
+      - 'test_fund100_v6_emergency_stop_completion_evidence_v1_0.py'
+      - '.github/workflows/fund100-v6-emergency-stop-completion-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  no-github-no-alpaca:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify STOP/cancel completion is not inferred from dispatch ACK
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_emergency_stop_completion_evidence_v1_0.py
+          grep -Fq 'STOP_COMPLETION_SOURCE_RELEASED = False' fund100_v6_emergency_stop_completion_evidence_v1_0.py
+          grep -Fq 'EXPECTED_BROKER_ACCOUNT_BINDING_SHA256 = None' fund100_v6_emergency_stop_completion_evidence_v1_0.py
+          ! grep -Fq 'fund100_v6_emergency_stop_completion_evidence_v1_0.py' Dockerfile
