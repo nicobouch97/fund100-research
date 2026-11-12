@@ -81,8 +81,16 @@ def classify_original_inline_primary(*, original:bytes, cik:int, filed:str,
     except (ValueError,TypeError):
         return "INVALID_ORIGINAL_PRIMARY_DATE_HOLD"
     low=original.lower()
-    if b"<!doctype" in low or b"<!entity" in low:
+    # HTML5 primary 10-Ks commonly begin with a harmless standard
+    # <!DOCTYPE html>. Reject internal subsets, custom DTDs, public/system
+    # identifiers and XML entity declarations; never fetch a remote DTD.
+    if b"<!entity" in low:
         return "PRIMARY_DOCUMENT_DTD_OR_ENTITY_HOLD"
+    if b"<!doctype" in low:
+        stripped=low.lstrip()
+        if (re.match(rb"<!doctype\s+html\s*>",stripped) is None
+            or low.count(b"<!doctype")!=1):
+            return "PRIMARY_DOCUMENT_DTD_OR_ENTITY_HOLD"
     if b"ix:nonfraction" not in low:
         return "NO_INLINE_XBRL_NUMERIC_FACTS_IN_PRIMARY_HOLD"
     try:
