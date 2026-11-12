@@ -150,6 +150,11 @@ def test_full_source_exact_eight_and_three_with_strict_score_and_no_leaks(monkey
     assert calls["facts"]==CANDIDATES
     assert report["original_eight_sec_issuer_count"]==8
     assert report["exact_first_three_class_issuer_count"]==3
+    assert report["original_inline_primary_class_contexts_checked"]==3
+    assert report["original_inline_primary_class_context_status_counts"]=={
+        "NO_INLINE_XBRL_NUMERIC_FACTS_IN_PRIMARY_HOLD":3}
+    assert report["original_ixbrl_context_not_independent_class_security_identity"] is True
+    assert report["original_inline_primary_reuses_existing_index_verified_sec_get"] is True
     assert report["original_dei_issuer_shares_checked"]==3
     assert report["original_dei_issuer_shares_status_counts"]=={
         "OWN_10K_DEI_ISSUER_SHARES_NOT_PROVIDED_HOLD":3}
