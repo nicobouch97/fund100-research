@@ -1,0 +1,36 @@
+name: Fund-100 External Emergency STOP Dispatch Intent (OFFLINE, NO CREDENTIALS)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v6_external_emergency_stop_dispatch_intent_v1_0.py'
+      - 'test_fund100_v6_external_emergency_stop_dispatch_intent_v1_0.py'
+      - '.github/workflows/fund100-v6-emergency-stop-dispatch-intent-offline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v6_external_emergency_stop_dispatch_intent_v1_0.py'
+      - 'test_fund100_v6_external_emergency_stop_dispatch_intent_v1_0.py'
+      - '.github/workflows/fund100-v6-emergency-stop-dispatch-intent-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  offline-no-dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Prove exact existing emergency workflow binding and inert STOP only plan
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_external_emergency_stop_dispatch_intent_v1_0.py
+          grep -Fq 'STOP_DISPATCH_PLANNING_RELEASED = False' fund100_v6_external_emergency_stop_dispatch_intent_v1_0.py
+          grep -Fq 'HTTP_DISPATCH_TRANSPORT_RELEASED = False' fund100_v6_external_emergency_stop_dispatch_intent_v1_0.py
