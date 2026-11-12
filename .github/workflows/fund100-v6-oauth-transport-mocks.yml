@@ -1,0 +1,36 @@
+name: Fund-100 V6 Readonly OAuth Broker Transport Candidate (OFFLINE)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v6_readonly_oauth_eight_get_transport_v1_0.py'
+      - 'test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py'
+      - '.github/workflows/fund100-v6-oauth-transport-mocks.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v6_readonly_oauth_eight_get_transport_v1_0.py'
+      - 'test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py'
+      - '.github/workflows/fund100-v6-oauth-transport-mocks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  offline-get-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prove source-locked OAuth GET-only transport with mocked HTTP
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py
+          grep -Fq 'GET_TRANSPORT_RELEASED = False' fund100_v6_readonly_oauth_eight_get_transport_v1_0.py
+          test ! -e .github/workflows/fund100-v6-oauth-broker-live.yml
