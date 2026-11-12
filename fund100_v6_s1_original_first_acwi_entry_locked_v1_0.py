@@ -1,8 +1,9 @@
 """Single-process original V6 ACWI SELL coordinator entry, production HARD LOCKED.
 
-This is NOT wired into any GitHub Actions workflow. The existing protected
-read-only admission stays entirely unchanged. Even a user manually running
-this module cannot advance signed state or send an order while source release
+This is NOT wired into any GitHub Actions workflow. Any future execution
+requires BOTH a fresh independently signed broker-risk receipt and the old
+scheduled-risk PASS, before reading private state or sending an order.
+Even a user manually running this module cannot advance state while source release
 is False. A future *separately reviewed and explicitly authorised* protected
 main-only workflow will supply strictly segregated scopes and invoke this
 exact function ONCE; uncertainty permanently holds, with no automatic retry.
@@ -14,6 +15,7 @@ import re
 
 import fund100_v6_s1_original_one_attempt_chain_locked_v1_0 as chain
 import fund100_live_risk_watch_admission_getonly_v1_0 as live_watch
+import fund100_v6_s1_external_signed_risk_receipt_ingress_v1_0 as external_risk
 
 SCHEMA="FUND100_V6_S1_FIRST_ACWI_ORIGINAL_EXECUTION_ENTRY_HARD_LOCKED_V1"
 ORIGINAL_ACWI_ENTRYPOINT_RELEASED=False
@@ -48,6 +50,7 @@ REQUIRED_SECRETS=(
     "ALPACA_LIVE_KEY",
     "ALPACA_LIVE_SECRET",
     "GITHUB_TOKEN",
+    "FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN",
 )
 
 class EntryStop(RuntimeError):
@@ -111,6 +114,27 @@ def run_protected_first_acwi_once()->dict:
         if len(set(distinct))!=5:
             raise EntryStop("Original first-run requires five independent GitHub principals")
 
+    # Mandatory independent Ed25519 broker-risk evidence BEFORE signed source,
+    # private CAS, immutable release or any broker POST. GitHub green status,
+    # a healthy Railway page, or cached risk MUST NOT be a substitute.
+    # No skip or fallback when the monitor is missing. Ingress and Ed25519
+    # verifier both remain source-locked on the deployed main branch today.
+    external_read_token=e["FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN"]
+    if external_read_token in set(distinct)|{
+        e["ALPACA_LIVE_KEY"],e["ALPACA_LIVE_SECRET"],
+        e["FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX"]
+    }:
+        raise EntryStop("External risk receipt read principal not isolated; STOP")
+    try:
+        signed_ok=external_risk.require_fresh_signed_external_risk_pass(
+            main_sha=e["GITHUB_SHA"],readonly_token=external_read_token)
+        if signed_ok is not True:
+            raise EntryStop("Independent signed risk PASS invalid")
+    except Exception:
+        raise EntryStop("Fresh independent external signed broker-risk PASS missing; STOP") from None
+
+    # Previously reviewed scheduled PASS is an ADDITIONAL, independent veto.
+    # It can never replace the fresh signed risk evidence above.
     # Independent scheduled watcher must have actually inspected LIVE broker
     # risk and produced a fresh PASS-only GitHub job step. A workflow marked
     # successful while ALREADY_STOPPED does NOT satisfy this admission.
