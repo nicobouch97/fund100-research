@@ -1,0 +1,36 @@
+name: Fund-100 External Independent Ed25519 Risk Receipt (MOCK ONLY)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v6_external_signed_risk_receipt_getonly_v1_0.py'
+      - 'test_fund100_v6_external_signed_risk_receipt_getonly_v1_0.py'
+      - '.github/workflows/fund100-v6-external-risk-receipt-offline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v6_external_signed_risk_receipt_getonly_v1_0.py'
+      - 'test_fund100_v6_external_signed_risk_receipt_getonly_v1_0.py'
+      - '.github/workflows/fund100-v6-external-risk-receipt-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-unsigned-no-broker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify fake Ed25519 signed receipts and hard stop before network
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9' 'cryptography>=45,<47'
+          python -m pytest -q test_fund100_v6_external_signed_risk_receipt_getonly_v1_0.py
+          grep -Fq 'RECEIPT_VERIFICATION_RELEASED = False' fund100_v6_external_signed_risk_receipt_getonly_v1_0.py
+          test ! -e .github/workflows/fund100-v6-external-risk-receipt-live.yml
