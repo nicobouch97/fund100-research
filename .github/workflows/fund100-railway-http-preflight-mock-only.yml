@@ -60,7 +60,8 @@ jobs:
                       assert obj["trading_authorized"] is False
                       assert obj["oauth_callback_active"] is False
                       break
-              except (urllib.error.URLError,TimeoutError):
+              except (OSError, urllib.error.URLError, TimeoutError):
+                  # A published port may reset until Python's listener starts.
                   time.sleep(1)
           else:
               raise AssertionError("Docker dry-run health never became ready")
