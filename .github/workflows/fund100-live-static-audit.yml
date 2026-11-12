@@ -320,8 +320,7 @@ on:
       # Source-locked consent URL and callback state are a credential boundary.
       - "fund100_v6_oauth_readonly_consent_preflight_v1_0.py"
       - "test_fund100_v6_oauth_readonly_consent_preflight_v1_0.py"
-      # Source-locked token exchange and durable single-use OAuth CSRF
-      # must always receive the whole LIVE credential boundary audit.
+      # Source-locked Trading OAuth exchange contract and atomic single-use CSRF.
       - "fund100_v6_readonly_oauth_code_exchange_v1_0.py"
       - "test_fund100_v6_readonly_oauth_code_exchange_v1_0.py"
       - "fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py"
@@ -769,8 +768,7 @@ on:
       # Source-locked consent URL and callback state are a credential boundary.
       - "fund100_v6_oauth_readonly_consent_preflight_v1_0.py"
       - "test_fund100_v6_oauth_readonly_consent_preflight_v1_0.py"
-      # Source-locked token exchange and durable single-use OAuth CSRF
-      # must always receive the whole LIVE credential boundary audit.
+      # Source-locked Trading OAuth exchange contract and atomic single-use CSRF.
       - "fund100_v6_readonly_oauth_code_exchange_v1_0.py"
       - "test_fund100_v6_readonly_oauth_code_exchange_v1_0.py"
       - "fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py"
