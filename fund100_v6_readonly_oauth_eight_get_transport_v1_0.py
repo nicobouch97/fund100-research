@@ -93,9 +93,28 @@ def _request_one(path: str, params: tuple, token: str, *, transport=None):
         raise ReadonlyOAuthTransportStop("Broker GET transport unavailable") from None
 
 
-def original_eight_get_snapshot(token: str, *, transport=None) -> tuple:
-    """Exactly eight GETs with a single scoped OAuth bearer; no trading API keys."""
+def _require_readonly_oauth_grant(grant: object) -> str:
+    """Inspect the trusted OAuth token-exchange result, NEVER an app-declared scope.
+
+    A claimed empty scope in a caller-made dictionary is not authentication
+    evidence: the future caller must obtain the grant from Alpaca over TLS,
+    without requesting write scopes, and verify its account binding.
+    """
+    if (type(grant) is not dict
+        or set(grant) != {"access_token", "token_type", "scope"}
+        or grant.get("token_type") not in ("bearer", "Bearer")
+        # No requested grant is needed to GET Trading API account state.
+        # Explicitly reject trading, account:write, data and unknown scopes.
+        or grant.get("scope") != ""
+        or not _valid_token(grant.get("access_token"))):
+        raise ReadonlyOAuthTransportStop("OAuth grant not explicitly read-only")
+    return grant["access_token"]
+
+
+def original_eight_get_snapshot(readonly_grant: dict, *, transport=None) -> tuple:
+    """Exactly eight GETs after checking a read-only OAuth grant contract."""
     if GET_TRANSPORT_RELEASED is not True:
         raise ReadonlyOAuthTransportStop("Unreleased independent OAuth GET transport")
+    token = _require_readonly_oauth_grant(readonly_grant)
     return tuple(_request_one(path, params, token, transport=transport)
                  for path, params in REQUEST_PLAN)
