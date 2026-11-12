@@ -44,6 +44,8 @@ jobs:
           mkdir -p /tmp/fund100-docker-smoke
           cp Dockerfile fund100_railway_schedule_observer_dryrun_v1_0.py fund100_railway_risk_watch_http_preflight_v1_0.py /tmp/fund100-docker-smoke/
           docker build --tag fund100-dryrun-smoke:ci /tmp/fund100-docker-smoke/
+          # The shipped image must run without root before any hosted smoke.
+          test "$(docker image inspect --format '{{.Config.User}}' fund100-dryrun-smoke:ci)" = "observer"
           container_id="$(docker run --detach --read-only --cap-drop=ALL --security-opt=no-new-privileges --memory=128m --pids-limit=64 --add-host=api.github.com:127.0.0.1 -e PORT=8080 -p 127.0.0.1:18765:8080 fund100-dryrun-smoke:ci)"
           trap 'docker rm -f "$container_id" >/dev/null 2>&1 || true' EXIT
           python - <<'PY'
