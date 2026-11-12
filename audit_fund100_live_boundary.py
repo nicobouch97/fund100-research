@@ -408,7 +408,7 @@ def approved_scoped_live_script(
             "fund100_v6_s1_private_git_cas_protocol_v1_0.py":
                 "9b9f8917faa21b4157600ac642f80595445a7276",
             "fund100_v6_s1_operator_control_v2_0.py":
-                "c0b2e9a3ae1820b8fb7fb4d4b8be8bae55fa2e9d",
+                "7d586e55d190692f6ab0fd263146b3faf9f547f0",
             "fund100_live_operator_control_v1_0.py":
                 "953c015d2c38c84212f31c290f325504754ad425",
         }.items():
