@@ -151,6 +151,9 @@ def test_secrets_limited_to_final_single_step_and_exact_protected_names():
     ):
         assert name+": ${{ secrets."+name+" }}" in execution
     assert "GITHUB_TOKEN: ${{ github.token }}" in execution
+    assert ("FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN: "
+            "${{ secrets.FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN }}") in execution
+    assert execution.count("FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN:")==1
     assert "secrets." not in initial
     assert "GITHUB_TOKEN:" not in initial
 
