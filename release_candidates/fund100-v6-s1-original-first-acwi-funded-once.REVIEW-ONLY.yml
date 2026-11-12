@@ -108,6 +108,9 @@ jobs:
           FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN: ${{ secrets.FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN }}
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
           ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+          # Dedicated read-only bearer for future authenticated risk receipt
+          # GET, isolated from brokerage and GitHub writer principals.
+          FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN: ${{ secrets.FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
