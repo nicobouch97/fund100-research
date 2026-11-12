@@ -58,7 +58,8 @@ def mock_sources(monkeypatch, *, enabled=True, mutations=None):
     now=datetime.now(timezone.utc)
     account={
         "id":ACCOUNT,"status":"ACTIVE","account_blocked":False,
-        "trading_blocked":False,"multiplier":"1",
+        "trading_blocked":False,"trade_suspended_by_user":False,
+        "multiplier":"1",
         "cash":"60.00","equity":"100.00","last_equity":"100.00",
     }
     positions=[
@@ -272,7 +273,8 @@ def test_risk_break_cannot_authorize_sell(monkeypatch,risk):
 
 
 
-@pytest.mark.parametrize("field",["account_blocked","trading_blocked"])
+@pytest.mark.parametrize("field",["account_blocked","trading_blocked",
+                                   "trade_suspended_by_user"])
 @pytest.mark.parametrize("value",[None,"false",0,1,True])
 def test_original_first_sell_requires_explicit_false_broker_unblocked_flags(
         monkeypatch,field,value):
@@ -287,7 +289,8 @@ def test_original_first_sell_requires_explicit_false_broker_unblocked_flags(
     assert state["reads"]==8
 
 
-@pytest.mark.parametrize("field",["account_blocked","trading_blocked"])
+@pytest.mark.parametrize("field",["account_blocked","trading_blocked",
+                                   "trade_suspended_by_user"])
 def test_original_first_sell_missing_broker_block_flag_fails_closed(monkeypatch,field):
     def mutate(docs):
         docs[0].pop(field)
