@@ -86,7 +86,8 @@ def original_own_10k_dei_issuer_shares_status(*, facts:dict, accession:str,
         fiscal_end, filed_day = date.fromisoformat(end), date.fromisoformat(filed)
     except (TypeError, ValueError):
         return "INVALID_ORIGINAL_10K_SHARES_DATE_HOLD"
-    if fiscal_end > filed_day or (filed_day - fiscal_end).days > 550:
+    if (fiscal_end.isoformat()!=end or filed_day.isoformat()!=filed
+        or fiscal_end > filed_day or (filed_day - fiscal_end).days > 550):
         return "INVALID_ORIGINAL_10K_SHARES_DATE_HOLD"
     if type(facts) is not dict or type(facts.get("facts")) is not dict:
         return "INVALID_DEI_SOURCE_HOLD"
@@ -103,6 +104,8 @@ def original_own_10k_dei_issuer_shares_status(*, facts:dict, accession:str,
     units=concept["units"]
     if set(units)!={"shares"} or type(units["shares"]) is not list:
         return "DEI_SHARE_UNIT_OR_CLASS_AMBIGUOUS_HOLD"
+    if len(units["shares"])>1000:
+        return "UNBOUNDED_DEI_SHARE_SOURCE_HOLD"
     found=set()
     for row in units["shares"]:
         if type(row) is not dict:
@@ -116,7 +119,7 @@ def original_own_10k_dei_issuer_shares_status(*, facts:dict, accession:str,
             dated=date.fromisoformat(row["end"])
         except (KeyError,TypeError,ValueError):
             return "INVALID_DEI_SHARE_DATE_HOLD"
-        if not (fiscal_end<=dated<=filed_day
+        if not (dated.isoformat()==row["end"] and fiscal_end<=dated<=filed_day
                 and (dated-fiscal_end).days<=MAX_DEI_COVER_AFTER_FY_DAYS):
             return "DEI_SHARE_DATE_NOT_ORIGINAL_FILING_ASOF_HOLD"
         shares=row.get("val")
