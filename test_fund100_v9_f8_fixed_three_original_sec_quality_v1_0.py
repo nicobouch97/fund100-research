@@ -245,6 +245,10 @@ def test_exact_issuer_wide_dei_count_is_still_not_stock_class_market_cap():
     ([_cover_share_row(end="2026-12-31")], "DEI_SHARE_DATE_NOT_ORIGINAL_FILING_ASOF_HOLD"),
     ([_cover_share_row(end="2023-12-31")], "DEI_SHARE_DATE_NOT_ORIGINAL_FILING_ASOF_HOLD"),
     ([_cover_share_row(end="malformed")], "INVALID_DEI_SHARE_DATE_HOLD"),
+    ([_cover_share_row(end="2026-W06-1")],
+     "DEI_SHARE_DATE_NOT_ORIGINAL_FILING_ASOF_HOLD"),
+    ([_cover_share_row(val=1.5)], "INVALID_DEI_ISSUER_SHARE_COUNT_HOLD"),
+    ([_cover_share_row()]*1001, "UNBOUNDED_DEI_SHARE_SOURCE_HOLD"),
     ([_cover_share_row(),_cover_share_row(val=123_456_780)],
      "MULTIPLE_OR_CONFLICTING_ORIGINAL_DEI_SHARES_HOLD"),
     ([_cover_share_row(accn="0000000000-20-123456")],
@@ -295,3 +299,10 @@ def test_dei_source_counts_remain_separate_from_existing_quality_counts(monkeypa
         "original_sec_cik_to_permanent_share_class_figi_legally_proven"))
     for raw in ("123456789",f6test.ACC,str(CANDIDATES[0])):
         assert raw not in json.dumps(report)
+
+
+def test_noncanonical_orig_filing_date_never_reused_as_issuer_valuation():
+    assert f8.original_own_10k_dei_issuer_shares_status(
+        facts=_dei_facts([_cover_share_row()]),accession=f6test.ACC,
+        filed="20260220",end=f6test.END
+    )=="INVALID_ORIGINAL_10K_SHARES_DATE_HOLD"
