@@ -7,6 +7,7 @@ import pytest
 import fund100_v6_readonly_oauth_eight_get_transport_v1_0 as candidate
 
 FAKE_TOKEN = "mock-readonly-oauth-token-123456789"
+READONLY_GRANT = {"access_token": FAKE_TOKEN, "token_type": "bearer", "scope": ""}
 
 
 def fake_sender(calls, *, status=200, value=None):
@@ -36,7 +37,7 @@ def test_release_literal_false_blocks_without_transport_or_credentials(monkeypat
     assert candidate.NO_TRADE_RELEASE and candidate.NO_BROKER_WRITE
     assert candidate.NO_OPERATOR_WRITE and candidate.NO_GITHUB_WRITE
     with pytest.raises(candidate.ReadonlyOAuthTransportStop, match="Unreleased"):
-        candidate.original_eight_get_snapshot(FAKE_TOKEN)
+        candidate.original_eight_get_snapshot(READONLY_GRANT)
     with pytest.raises(candidate.ReadonlyOAuthTransportStop, match="Unreleased"):
         candidate._request_one("/v2/account", (), FAKE_TOKEN)
 
@@ -45,7 +46,7 @@ def test_original_eight_exact_gets_are_the_only_mocked_requests(monkeypatch):
     monkeypatch.setattr(candidate, "GET_TRANSPORT_RELEASED", True)
     calls = []
     result = candidate.original_eight_get_snapshot(
-        FAKE_TOKEN, transport=fake_sender(calls))
+        READONLY_GRANT, transport=fake_sender(calls))
     assert len(result) == 8
     assert all(item == {"ok": True} for item in result)
     assert len(calls) == 8
@@ -83,8 +84,49 @@ def test_header_injection_or_invalid_token_fails_closed(monkeypatch, token):
     monkeypatch.setattr(candidate, "GET_TRANSPORT_RELEASED", True)
     calls = []
     with pytest.raises(candidate.ReadonlyOAuthTransportStop):
-        candidate.original_eight_get_snapshot(token, transport=fake_sender(calls))
+        candidate.original_eight_get_snapshot(
+            dict(READONLY_GRANT, access_token=token), transport=fake_sender(calls))
     assert calls == []
+
+
+@pytest.mark.parametrize("bad_scope", [
+    "trading", "account:write", "account:write trading", "data", "read",
+    "trading data", " Trading ", None, ["trading"], 2,
+])
+def test_overprivileged_or_unrecognized_oauth_scope_denied_before_any_get(
+        monkeypatch, bad_scope):
+    monkeypatch.setattr(candidate, "GET_TRANSPORT_RELEASED", True)
+    calls = []
+    with pytest.raises(candidate.ReadonlyOAuthTransportStop, match="read-only"):
+        candidate.original_eight_get_snapshot(
+            dict(READONLY_GRANT, scope=bad_scope),
+            transport=fake_sender(calls))
+    assert calls == []
+
+
+def test_missing_scope_and_wrong_bearer_type_denied_without_network(monkeypatch):
+    monkeypatch.setattr(candidate, "GET_TRANSPORT_RELEASED", True)
+    calls = []
+    for value in (
+        {"access_token": FAKE_TOKEN, "token_type": "bearer"},
+        dict(READONLY_GRANT, token_type="mac"),
+        dict(READONLY_GRANT, client_secret="never-allow-extra-secrets"),
+        [],
+        "read-only",
+    ):
+        with pytest.raises(candidate.ReadonlyOAuthTransportStop, match="read-only"):
+            candidate.original_eight_get_snapshot(
+                value, transport=fake_sender(calls))
+    assert calls == []
+
+
+def test_exact_empty_scope_from_mock_oauth_grant_permits_only_fake_gets(
+        monkeypatch):
+    monkeypatch.setattr(candidate, "GET_TRANSPORT_RELEASED", True)
+    calls = []
+    assert len(candidate.original_eight_get_snapshot(
+        dict(READONLY_GRANT), transport=fake_sender(calls))) == 8
+    assert len(calls) == 8
 
 
 def test_non200_and_bad_response_never_become_risk_evidence(monkeypatch):
@@ -103,7 +145,7 @@ def test_non200_and_bad_response_never_become_risk_evidence(monkeypatch):
         else:
             sender = fake_sender(calls, status=status, value=value)
         with pytest.raises(candidate.ReadonlyOAuthTransportStop):
-            candidate.original_eight_get_snapshot(FAKE_TOKEN, transport=sender)
+            candidate.original_eight_get_snapshot(READONLY_GRANT, transport=sender)
 
 
 def test_source_does_not_contain_live_keys_order_writes_or_runtime_workflow():
