@@ -9,7 +9,7 @@ Only aggregate coverage; no issuer/stock score rows, alpha or broker I/O.
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from hashlib import sha256
 import argparse
 import json
@@ -72,6 +72,67 @@ def original_same_filing_quality_status(*,facts:dict,submissions:dict,cik:int,
     return f"ORIGINAL_SAME_10K_TWO_FY_QUALITY_SCORE_{score}_OF_3_REVIEW_ONLY"
 
 
+
+# A DEI common-share count belongs to the SEC issuer. It is NOT a
+# proven listing-class share count, market-cap denominator, or BUY signal.
+MAX_DEI_COVER_AFTER_FY_DAYS = 180
+MAX_PLAUSIBLE_ISSUER_SHARES = 100_000_000_000_000
+
+
+def original_own_10k_dei_issuer_shares_status(*, facts:dict, accession:str,
+                                               filed:str, end:str)->str:
+    """Classify only an exact, original own-10K, issuer-wide instant fact."""
+    try:
+        fiscal_end, filed_day = date.fromisoformat(end), date.fromisoformat(filed)
+    except (TypeError, ValueError):
+        return "INVALID_ORIGINAL_10K_SHARES_DATE_HOLD"
+    if (fiscal_end.isoformat()!=end or filed_day.isoformat()!=filed
+        or fiscal_end > filed_day or (filed_day - fiscal_end).days > 550):
+        return "INVALID_ORIGINAL_10K_SHARES_DATE_HOLD"
+    if type(facts) is not dict or type(facts.get("facts")) is not dict:
+        return "INVALID_DEI_SOURCE_HOLD"
+    dei=facts["facts"].get("dei")
+    if dei is None:
+        return "OWN_10K_DEI_ISSUER_SHARES_NOT_PROVIDED_HOLD"
+    if type(dei) is not dict:
+        return "INVALID_DEI_SOURCE_HOLD"
+    concept=dei.get("EntityCommonStockSharesOutstanding")
+    if concept is None:
+        return "OWN_10K_DEI_ISSUER_SHARES_NOT_PROVIDED_HOLD"
+    if type(concept) is not dict or type(concept.get("units")) is not dict:
+        return "INVALID_DEI_SOURCE_HOLD"
+    units=concept["units"]
+    if set(units)!={"shares"} or type(units["shares"]) is not list:
+        return "DEI_SHARE_UNIT_OR_CLASS_AMBIGUOUS_HOLD"
+    if len(units["shares"])>1000:
+        return "UNBOUNDED_DEI_SHARE_SOURCE_HOLD"
+    found=set()
+    for row in units["shares"]:
+        if type(row) is not dict:
+            return "INVALID_DEI_SOURCE_HOLD"
+        if any(row.get(k)!=v for k,v in (("accn",accession),
+                                        ("filed",filed),("form","10-K"))):
+            continue
+        if row.get("start") is not None:
+            return "DEI_SHARE_COUNT_NOT_INSTANT_HOLD"
+        try:
+            dated=date.fromisoformat(row["end"])
+        except (KeyError,TypeError,ValueError):
+            return "INVALID_DEI_SHARE_DATE_HOLD"
+        if not (dated.isoformat()==row["end"] and fiscal_end<=dated<=filed_day
+                and (dated-fiscal_end).days<=MAX_DEI_COVER_AFTER_FY_DAYS):
+            return "DEI_SHARE_DATE_NOT_ORIGINAL_FILING_ASOF_HOLD"
+        shares=row.get("val")
+        if type(shares) is not int or not 0<shares<=MAX_PLAUSIBLE_ISSUER_SHARES:
+            return "INVALID_DEI_ISSUER_SHARE_COUNT_HOLD"
+        found.add((dated,shares))
+    if not found:
+        return "OWN_10K_DEI_ISSUER_SHARES_NOT_PROVIDED_HOLD"
+    if len(found)!=1:
+        return "MULTIPLE_OR_CONFLICTING_ORIGINAL_DEI_SHARES_HOLD"
+    return "OWN_10K_DEI_ISSUER_SHARES_UNALLOCATED_REVIEW_ONLY"
+
+
 def assess(*,directories,sec_raw,observed,submissions_get,primary_get,
            companyfacts_get,min_pool=1000):
     """Same 8, same exact F6 three issuer identities, three companyfacts GETs."""
@@ -93,6 +154,7 @@ def assess(*,directories,sec_raw,observed,submissions_get,primary_get,
         directories=directories,sec_raw=sec_raw,observed=observed,
         submissions_get=original_sub,primary_get=primary_get,min_pool=min_pool)
     states=Counter(others)
+    shares_states=Counter()
     if len(candidates)!=3:
         raise QualitySourceHold("Original first three issuer candidates changed")
     for cik,ticker,venue in candidates:
@@ -118,6 +180,8 @@ def assess(*,directories,sec_raw,observed,submissions_get,primary_get,
                 continue
             hashes.append(sha256(raw).hexdigest())
             facts=sec.decode_source(raw,expected_cik=f"{cik:010d}")
+            shares_states[original_own_10k_dei_issuer_shares_status(
+                facts=facts,accession=accession,filed=filed,end=end)]+=1
             status=original_same_filing_quality_status(
                 facts=facts,submissions=sub,cik=cik,accession=accession,
                 filed=filed,end=end,observed=observed)
@@ -140,6 +204,10 @@ def assess(*,directories,sec_raw,observed,submissions_get,primary_get,
         "original_sec_submissions_companyfacts_sha256":sha256(
             ("\n".join(hashes)+"\n").encode()).hexdigest(),
         "source_status_counts":dict(sorted(states.items())),
+        "original_dei_issuer_shares_checked":sum(shares_states.values()),
+        "original_dei_issuer_shares_status_counts":dict(sorted(shares_states.items())),
+        "issuer_shares_not_security_class_outstanding_or_market_cap":True,
+        "no_eps_price_earnings_yield_or_trade_promotion_from_dei":True,
         "original_own_two_year_us_gaap_cashflow_revenue_margin_review_only":True,
         "same_filing_positive_eps_required_for_quality":True,
         "source_comparison_uses_existing_predeclared_p4a_quality_criteria":True,
@@ -186,6 +254,7 @@ def main():
     args.out.write_text(json.dumps(result,sort_keys=True,indent=2)+"\n")
     print("Original eight issuer source denominator:",result["original_eight_sec_issuer_count"])
     print("First three issuer fixed quality source statuses:",result["source_status_counts"])
+    print("Original DEI issuer-wide share coverage:",result["original_dei_issuer_shares_status_counts"])
     print("Zero stock names, CIKs, annual values, account or broker network.")
 
 
