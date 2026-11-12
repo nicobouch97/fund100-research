@@ -14,6 +14,7 @@ def account():
     return {
         "status": "ACTIVE", "trading_blocked": False,
         "account_blocked": False,
+        "trade_suspended_by_user": False,
         "equity": "102", "last_equity": "101.5",
     }
 
@@ -81,6 +82,10 @@ def test_lower_risk_profile_triggers_on_existing_exposure():
     ("account_blocked", "false"),
     ("account_blocked", 0),
     ("account_blocked", True),
+    ("trade_suspended_by_user", None),
+    ("trade_suspended_by_user", "false"),
+    ("trade_suspended_by_user", 0),
+    ("trade_suspended_by_user", True),
 ])
 def test_live_broker_account_unknown_or_blocked_flags_never_pass(flag,value):
     evidence=account()
@@ -89,7 +94,8 @@ def test_live_broker_account_unknown_or_blocked_flags_never_pass(flag,value):
         check(account=evidence)
 
 
-@pytest.mark.parametrize("field",["trading_blocked","account_blocked"])
+@pytest.mark.parametrize("field",[
+    "trading_blocked","account_blocked","trade_suspended_by_user"])
 def test_missing_broker_restriction_flag_never_passes(field):
     evidence=account()
     del evidence[field]
