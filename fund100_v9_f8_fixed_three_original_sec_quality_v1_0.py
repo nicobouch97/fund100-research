@@ -25,6 +25,7 @@ import fund100_v9_sec_current_listing_association_v1_0 as link
 import fund100_v9_f5_original_sec_10k_class_crosscheck_v1_0 as f5
 import fund100_v9_f6_original_10k_diluted_eps_coverage_v1_0 as f6
 import fund100_v9_f7_current_completed_vendor_price_source_v1_0 as f7
+import fund100_v9_f9_original_inline_class_shares_source_v1_0 as f9
 
 SCHEMA="FUND100_V9_F8_FIXED_THREE_OWN_10K_TWO_FY_QUALITY_SOURCE_V1"
 F6_ORIGINAL_OWN_EPS_RUN=43026350533
@@ -150,11 +151,25 @@ def assess(*,directories,sec_raw,observed,submissions_get,primary_get,
             source_cache[cik]=raw
             hashes.append(sha256(raw).hexdigest())
         return raw
+    # Retain verified original primary 10-K bytes in memory only. The same
+    # F7 SEC GET already required for original 12(b) proof is reused for
+    # inline XBRL class-source diagnostics; never fetch a revised filing.
+    primary_bytes={}
+    def original_primary(path):
+        payload=primary_get(path)
+        if (type(payload) is not tuple or len(payload)!=5
+            or type(payload[0]) is not bytes
+            or not 0<len(payload[0])<=f9.MAX_PRIMARY_BYTES
+            or path in primary_bytes):
+            raise QualitySourceHold("Original 10-K primary source unqualified")
+        primary_bytes[path]=payload[0]
+        return payload
     candidates,others,eight_sha,three_sha,primary_sha,n=f7.source_issuer_candidates(
         directories=directories,sec_raw=sec_raw,observed=observed,
-        submissions_get=original_sub,primary_get=primary_get,min_pool=min_pool)
+        submissions_get=original_sub,primary_get=original_primary,min_pool=min_pool)
     states=Counter(others)
     shares_states=Counter()
+    inline_class_states=Counter()
     if len(candidates)!=3:
         raise QualitySourceHold("Original first three issuer candidates changed")
     for cik,ticker,venue in candidates:
@@ -166,7 +181,12 @@ def assess(*,directories,sec_raw,observed,submissions_get,primary_get,
             if filing is None:
                 states["ORIGINAL_ANNUAL_SOURCE_DRIFT_AFTER_CLASS_REVIEW_HOLD"]+=1
                 continue
-            _,accession,filed,end=filing
+            path,accession,filed,end=filing
+            if path not in primary_bytes:
+                raise QualitySourceHold("Missing previously verified original primary 10-K")
+            inline_class_states[f9.classify_original_inline_primary(
+                original=primary_bytes[path],cik=cik,filed=filed,
+                fiscal_end=end)]+=1
             try:
                 raw=companyfacts_get(cik)
             except broad.SourceHold:
@@ -204,6 +224,11 @@ def assess(*,directories,sec_raw,observed,submissions_get,primary_get,
         "original_sec_submissions_companyfacts_sha256":sha256(
             ("\n".join(hashes)+"\n").encode()).hexdigest(),
         "source_status_counts":dict(sorted(states.items())),
+        "original_inline_primary_class_contexts_checked":sum(inline_class_states.values()),
+        "original_inline_primary_class_context_status_counts":dict(
+            sorted(inline_class_states.items())),
+        "original_ixbrl_context_not_independent_class_security_identity":True,
+        "original_inline_primary_reuses_existing_index_verified_sec_get":True,
         "original_dei_issuer_shares_checked":sum(shares_states.values()),
         "original_dei_issuer_shares_status_counts":dict(sorted(shares_states.items())),
         "issuer_shares_not_security_class_outstanding_or_market_cap":True,
@@ -255,6 +280,8 @@ def main():
     print("Original eight issuer source denominator:",result["original_eight_sec_issuer_count"])
     print("First three issuer fixed quality source statuses:",result["source_status_counts"])
     print("Original DEI issuer-wide share coverage:",result["original_dei_issuer_shares_status_counts"])
+    print("Original inline class-axis XBRL source coverage:",
+          result["original_inline_primary_class_context_status_counts"])
     print("Zero stock names, CIKs, annual values, account or broker network.")
 
 
