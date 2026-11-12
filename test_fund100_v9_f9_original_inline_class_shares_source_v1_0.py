@@ -88,6 +88,10 @@ def test_unverified_primary_date_or_entity_markup_dtd_never_promotes():
     assert check(original_html(),filed="2026-W08-5") == (
         "INVALID_ORIGINAL_PRIMARY_DATE_HOLD")
     assert check(b"<!DOCTYPE html>"+original_html()) == (
+        "INLINE_DIMENSIONED_CLASS_SHARES_UNMAPPED_REVIEW_ONLY")
+    assert check(b"<!DOCTYPE html PUBLIC 'external-dtd'>"+original_html()) == (
+        "PRIMARY_DOCUMENT_DTD_OR_ENTITY_HOLD")
+    assert check(b"<!DOCTYPE html [<!ENTITY unsafe 'x'>]>"+original_html()) == (
         "PRIMARY_DOCUMENT_DTD_OR_ENTITY_HOLD")
 
 
