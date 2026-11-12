@@ -102,6 +102,9 @@ def evaluate_original_sell_only(*,account,positions,orders,clock,history,
             # that Alpaca permits an order. Require literal broker booleans.
             or account.get("account_blocked") is not False
             or account.get("trading_blocked") is not False
+            # A broker-side owner suspension is a hard veto even if
+            # ordinary trading/account-block flags both report false.
+            or account.get("trade_suspended_by_user") is not False
             or str(account.get("multiplier"))!="1"
             or type(account.get("id")) is not str
             or not account["id"].strip()):

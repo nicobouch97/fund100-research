@@ -834,7 +834,7 @@ def approved_scoped_live_script(
             # These exact modules are imported by the live 8-GET
             # source within the credentialed protected Python process.
             "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py":
-                "e8afe0f4770d6ff7aa75be423d2e71f68a70b588",
+                "71e8076d38253eb4995c06d68275fc30600c84e2",
             "fund100_v6_s1_protected_first_acwi_intent_only_v1_0.py":
                 "b4e7f84ad8ba3a0aa7e9dd06c2b75915f5d60bb3",
             "fund100_v6_s1_live_cashflow_risk_bounds_v1_0.py":
