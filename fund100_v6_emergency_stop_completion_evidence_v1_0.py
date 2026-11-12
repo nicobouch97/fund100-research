@@ -1,8 +1,9 @@
 """Offline-only completion evidence for Fund-100's existing emergency STOP.
 
-The GitHub workflow_dispatch API returns HTTP 204 without proving that the
-workflow ran, that its two STOP latches were committed, or that broker orders
-were cancelled. This verifier requires ALL of those independent observations.
+GitHub workflow_dispatch API v2026-03-10 returns HTTP 200 and a workflow
+run ID. This proves only which run was requested, NOT that the STOP latches
+were committed or broker orders were cancelled. The verifier binds that
+exact run ID to ALL three jobs and independent state/broker observations.
 
 Caller-supplied dictionaries are not authenticated evidence: a FUTURE separately
 reviewed reader must fetch GitHub run/jobs via authenticated read-only API and
@@ -118,6 +119,7 @@ def _require_jobs(jobs: object, *, run_id: int, head_sha: str,
 
 
 def verify_emergency_stop_completion(*, run: object, jobs: object,
+                                     expected_dispatch_run_id: int,
                                      v5_control: object, v6_control: object,
                                      broker_account: object,
                                      broker_open_orders: object,
@@ -146,8 +148,13 @@ def verify_emergency_stop_completion(*, run: object, jobs: object,
     alarm = _utc(alarm_detected_at_utc)
     if not alarm <= now or (now-alarm).total_seconds() > MAX_POST_ALARM_VERIFICATION_SECONDS:
         raise StopCompletionStop("Emergency alarm stale or in future")
-    if (type(run) is not dict or set(run) != RUN_FIELDS
-        or type(run.get("id")) is not int or run["id"] <= 0
+    # The caller must bind the run ID returned by the actual authenticated
+    # dispatch. An arbitrary recent manual STOP run cannot be substituted.
+    if (type(expected_dispatch_run_id) is not int
+        or expected_dispatch_run_id <= 0
+        or type(run) is not dict or set(run) != RUN_FIELDS
+        or type(run.get("id")) is not int
+        or run["id"] != expected_dispatch_run_id
         or run.get("name") != WORKFLOW_NAME
         or run.get("path") != WORKFLOW
         or run.get("event") != "workflow_dispatch"
@@ -224,5 +231,5 @@ def verify_emergency_stop_completion(*, run: object, jobs: object,
         "new_trading_orders_authorized": False,
         "broker_fills_or_settlement_verified": False,
         "no_possible_future_fill_guarantee": False,
-        "stop_dispatch_http_204_alone_is_proof": False,
+        "dispatch_http_200_alone_is_stop_proof": False,
     }

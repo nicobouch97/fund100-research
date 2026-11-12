@@ -33,7 +33,12 @@ ENDPOINT = (
 )
 REF = "main"
 BODY_UTF8 = '{"ref":"main"}'
-EXPECTED_HTTP_STATUS_IF_SENT = 204  # Accepted trigger != confirmed STOP.
+# GitHub workflow_dispatch API 2026-03-10 returns a specific run id by
+# default (since the February 2026 run-details improvement). This proves
+# which run was requested, NOT that STOP/cancel succeeded.
+GITHUB_API_VERSION_IF_SENT = "2026-03-10"
+EXPECTED_HTTP_STATUS_IF_SENT = 200
+EXPECTED_RESPONSE_FIELDS = ("workflow_run_id", "run_url", "html_url")
 FUTURE_REQUIRED_GITHUB_PERMISSION = "Actions:write"
 OUTAGE_REASONS = frozenset((
     "BROKER_RISK_HOLD",
@@ -79,6 +84,9 @@ def plan_stop_only_dispatch(*, reason: object) -> dict:
         "endpoint": ENDPOINT,
         "json_body": BODY_UTF8,
         "expected_acceptance_status": EXPECTED_HTTP_STATUS_IF_SENT,
+        "github_api_version_if_released": GITHUB_API_VERSION_IF_SENT,
+        "expected_response_fields": EXPECTED_RESPONSE_FIELDS,
+        "workflow_run_id_required_for_future_verification": True,
         "permission_required_if_released": FUTURE_REQUIRED_GITHUB_PERMISSION,
         "outage_category": reason,
         "dispatch_attempt_count": 0,

@@ -67,7 +67,8 @@ def v6():
 
 def evidence():
     return {
-        "run":run(),"jobs":jobs(),"v5_control":v5(),"v6_control":v6(),
+        "run":run(),"jobs":jobs(),"expected_dispatch_run_id":123456789,
+        "v5_control":v5(),"v6_control":v6(),
         "broker_account":{"id":ACCOUNT_ID,"status":"ACTIVE"},
         "broker_open_orders":[],
         "alarm_detected_at_utc":ALARM,
@@ -113,7 +114,7 @@ def test_synthetic_all_three_jobs_and_current_stops_without_open_orders(
         "new_trading_orders_authorized":False,
         "broker_fills_or_settlement_verified":False,
         "no_possible_future_fill_guarantee":False,
-        "stop_dispatch_http_204_alone_is_proof":False,
+        "dispatch_http_200_alone_is_stop_proof":False,
     }
 
 
@@ -266,6 +267,27 @@ def test_policy_pin_must_be_independent_and_exact(released_only_in_offline_mock,
     with pytest.raises(proof.StopCompletionStop,match="account binding"):
         verify()
 
+
+
+@pytest.mark.parametrize("run_id", [None, 0, -1, True, 123456788, "123456789"])
+def test_completion_must_match_exact_run_id_from_authenticated_dispatch(
+        released_only_in_offline_mock, run_id):
+    with pytest.raises(proof.StopCompletionStop):
+        verify(expected_dispatch_run_id=run_id)
+
+
+def test_github_200_with_run_id_is_still_only_dispatch_not_stop(
+        released_only_in_offline_mock):
+    # The exact dispatched run can queue, fail or skip cancellation.
+    r=run()
+    r["status"]="queued"
+    with pytest.raises(proof.StopCompletionStop):
+        verify(run=r)
+    # Even if GitHub reports success, current-main STOP must be observed.
+    control=v5()
+    control["trading_enabled"]=True
+    with pytest.raises(proof.StopCompletionStop):
+        verify(v5_control=control)
 
 def test_source_never_dispatches_writes_or_appears_in_live_railway():
     src=Path(proof.__file__).read_text()
