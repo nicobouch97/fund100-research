@@ -306,8 +306,10 @@ on:
       - "test_fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0.py"
       # Dormant broker OAuth bearer handling is a sensitive privilege boundary.
       # Both its implementation and mocked scope tests require the FULL LIVE audit.
-      # Public Railway dry-run HTTP/OAuth callback stub (must never accept
-      # a code or promote schedule diagnostics to broker-risk PASS).
+      # Ed25519 external risk evidence requires full audit, even while source locked.
+      - "fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
+      - "test_fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
+      # Public Railway dry-run HTTP callback remains inert and non-credentialed.
       - "fund100_railway_risk_watch_http_preflight_v1_0.py"
       - "test_fund100_railway_risk_watch_http_preflight_v1_0.py"
       - "Dockerfile"
@@ -747,8 +749,10 @@ on:
       - "test_fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0.py"
       # Dormant broker OAuth bearer handling is a sensitive privilege boundary.
       # Both its implementation and mocked scope tests require the FULL LIVE audit.
-      # Public Railway dry-run HTTP/OAuth callback stub (must never accept
-      # a code or promote schedule diagnostics to broker-risk PASS).
+      # Ed25519 external risk evidence requires full audit, even while source locked.
+      - "fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
+      - "test_fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
+      # Public Railway dry-run HTTP callback remains inert and non-credentialed.
       - "fund100_railway_risk_watch_http_preflight_v1_0.py"
       - "test_fund100_railway_risk_watch_http_preflight_v1_0.py"
       - "Dockerfile"

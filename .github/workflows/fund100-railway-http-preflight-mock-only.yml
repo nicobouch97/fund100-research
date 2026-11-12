@@ -38,3 +38,44 @@ jobs:
           python -m pytest -q test_fund100_railway_risk_watch_http_preflight_v1_0.py test_fund100_railway_schedule_observer_dryrun_v1_0.py
           grep -Fq 'OAUTH_CALLBACK_RELEASED = False' fund100_railway_risk_watch_http_preflight_v1_0.py
           ! grep -q '^COPY \.' Dockerfile
+      - name: Build isolated non-root Docker image and test inert HTTP endpoints (NO INTERNET)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fund100-docker-smoke
+          cp Dockerfile fund100_railway_schedule_observer_dryrun_v1_0.py fund100_railway_risk_watch_http_preflight_v1_0.py /tmp/fund100-docker-smoke/
+          docker build --tag fund100-dryrun-smoke:ci /tmp/fund100-docker-smoke/
+          container_id="$(docker run --detach --read-only --cap-drop=ALL --security-opt=no-new-privileges --memory=128m --pids-limit=64 --add-host=api.github.com:127.0.0.1 -e PORT=8080 -p 127.0.0.1:18765:8080 fund100-dryrun-smoke:ci)"
+          trap 'docker rm -f "$container_id" >/dev/null 2>&1 || true' EXIT
+          python - <<'PY'
+          import json, time, urllib.request, urllib.error
+          base="http://127.0.0.1:18765"
+          for attempt in range(45):
+              try:
+                  with urllib.request.urlopen(base+"/healthz",timeout=2) as r:
+                      assert r.status==200
+                      obj=json.load(r)
+                      assert obj["broker_risk_pass"] is False
+                      assert obj["trading_authorized"] is False
+                      assert obj["oauth_callback_active"] is False
+                      break
+              except (urllib.error.URLError,TimeoutError):
+                  time.sleep(1)
+          else:
+              raise AssertionError("Docker dry-run health never became ready")
+          try:
+              urllib.request.urlopen(base+"/oauth/callback?code=FAKE-SHOULD-NOT-LOG&state=FAKE-SHOULD-NOT-LOG",timeout=5)
+          except urllib.error.HTTPError as e:
+              assert e.code==503
+              result=json.load(e)
+              assert result["trading_authorized"] is False
+          else:
+              raise AssertionError("OAuth callback unexpectedly became active")
+          with urllib.request.urlopen(base+"/status",timeout=5) as r:
+              result=json.load(r)
+              assert result["broker_risk_pass"] is False
+              assert result["trading_authorized"] is False
+          print("Docker health and disabled callback validated: NO BROKER/OAUTH/PASS")
+          PY
+          docker logs "$container_id" 2>&1 | tee /tmp/fund100-dryrun-smoke.log
+          ! grep -Fq 'FAKE-SHOULD-NOT-LOG' /tmp/fund100-dryrun-smoke.log
+          ! grep -Fq 'ALPACA_LIVE_' /tmp/fund100-dryrun-smoke.log
