@@ -317,6 +317,9 @@ on:
       # requesting existing manual emergency STOP. No live dispatch now.
       - "fund100_v6_external_emergency_stop_dispatch_intent_v1_0.py"
       - "test_fund100_v6_external_emergency_stop_dispatch_intent_v1_0.py"
+      # STOP/cancel completion is independently proven, never from dispatch ACK.
+      - "fund100_v6_emergency_stop_completion_evidence_v1_0.py"
+      - "test_fund100_v6_emergency_stop_completion_evidence_v1_0.py"
       # Public Railway dry-run HTTP callback remains inert and non-credentialed.
       - "fund100_railway_risk_watch_http_preflight_v1_0.py"
       - "test_fund100_railway_risk_watch_http_preflight_v1_0.py"
@@ -773,6 +776,9 @@ on:
       # requesting existing manual emergency STOP. No live dispatch now.
       - "fund100_v6_external_emergency_stop_dispatch_intent_v1_0.py"
       - "test_fund100_v6_external_emergency_stop_dispatch_intent_v1_0.py"
+      # STOP/cancel completion is independently proven, never from dispatch ACK.
+      - "fund100_v6_emergency_stop_completion_evidence_v1_0.py"
+      - "test_fund100_v6_emergency_stop_completion_evidence_v1_0.py"
       # Public Railway dry-run HTTP callback remains inert and non-credentialed.
       - "fund100_railway_risk_watch_http_preflight_v1_0.py"
       - "test_fund100_railway_risk_watch_http_preflight_v1_0.py"
