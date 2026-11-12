@@ -306,6 +306,9 @@ on:
       - "test_fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0.py"
       # Dormant broker OAuth bearer handling is a sensitive privilege boundary.
       # Both its implementation and mocked scope tests require the FULL LIVE audit.
+      # Ed25519 external risk evidence requires full audit, even while source locked.
+      - "fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
+      - "test_fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
       - "fund100_v6_readonly_oauth_eight_get_transport_v1_0.py"
       - "test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py"
       # Source-locked consent URL and callback state are a credential boundary.
@@ -740,6 +743,9 @@ on:
       - "test_fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0.py"
       # Dormant broker OAuth bearer handling is a sensitive privilege boundary.
       # Both its implementation and mocked scope tests require the FULL LIVE audit.
+      # Ed25519 external risk evidence requires full audit, even while source locked.
+      - "fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
+      - "test_fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
       - "fund100_v6_readonly_oauth_eight_get_transport_v1_0.py"
       - "test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py"
       # Source-locked consent URL and callback state are a credential boundary.
