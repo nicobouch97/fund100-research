@@ -1,0 +1,79 @@
+name: Fund-100 Railway Public HTTPS Readiness (GET ONLY, NO CREDENTIALS)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fund100-railway-public-https-readiness.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-https-no-oauth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Prove public TLS, neutral health/status and inert OAuth callback
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import ssl
+          from urllib.error import HTTPError
+          from urllib.request import Request, HTTPRedirectHandler, build_opener, HTTPSHandler
+
+          HOST = "fund100-risk-observer-dryrun.up.railway.app"
+          BASE = "https://" + HOST
+          class NoRedirect(HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  raise AssertionError("Railway external redirect forbidden")
+
+          opener = build_opener(NoRedirect(), HTTPSHandler(context=ssl.create_default_context()))
+
+          def read_endpoint(path, expected_http):
+              req = Request(BASE+path, method="GET",
+                            headers={"Accept":"application/json",
+                                     "User-Agent":"Fund100-readonly-external-acceptance"})
+              try:
+                  response = opener.open(req, timeout=12)
+              except HTTPError as e:
+                  response = e
+              with response:
+                  assert response.status == expected_http, "Unexpected HTTP status at " + path
+                  assert response.geturl() == BASE + path
+                  assert response.headers.get_content_type() == "application/json"
+                  assert "no-store" in response.headers.get("Cache-Control", "")
+                  assert response.headers.get("Set-Cookie") is None
+                  body = response.read(2049)
+              assert len(body) <= 2048
+              obj = json.loads(body)
+              assert type(obj) is dict
+              assert obj["trading_authorized"] is False
+              # These fields describe HTTP and anonymous GitHub activity,
+              # never a valid *broker* risk PASS or trade decision.
+              print(path + ": " + str(expected_http) + ", NO TRADE")
+              return obj
+
+          health = read_endpoint("/healthz", 200)
+          assert health["broker_risk_pass"] is False
+          assert health["oauth_callback_active"] is False
+          assert health["mode"] == "DRY_RUN_NO_BROKER"
+          status = read_endpoint("/status", 200)
+          assert status["broker_risk_pass"] is False
+          assert status["mode"] == "DRY_RUN_NO_BROKER"
+          assert status["observation"] in {
+              "NOT_YET_OBSERVED", "SOURCE_UNAVAILABLE",
+              "NO_RECORDED_SCHEDULE_RUN",
+              "SCHEDULE_RUN_RECORDED_NOT_RISK_PASS",
+              "SCHEDULE_ACTIVITY_STALE",
+          }
+          callback = read_endpoint("/oauth/callback", 503)
+          assert callback["error"] == "OAUTH_CALLBACK_NOT_RELEASED"
+          # NEVER send an OAuth authorization code, state, client_id,
+          # token or any account query to this public acceptance test.
+          assert all("?" not in path for path in ("/healthz","/status","/oauth/callback"))
+          print("Public Railway TLS/health/read-only diagnostic verified; no live broker access")
+          PY
