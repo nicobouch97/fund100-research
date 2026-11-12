@@ -24,6 +24,8 @@ def healthy():
     job = {
         "name": gate.WATCH_JOB_NAME, "run_id": run["id"],
         "head_sha": SHA, "status": "completed", "conclusion": "success",
+        "started_at": "2026-11-11T16:04:08Z",
+        "completed_at": "2026-11-11T16:04:29Z",
         "steps": [
             {"name": gate.CHECK_STEP, "status": "completed",
              "conclusion": "success"},
@@ -133,6 +135,40 @@ def test_stopped_or_non_pass_step_never_admitted(change):
     with pytest.raises(gate.RiskWatchAdmissionStop,
                        match="PASS step"):
         verify(runs, jobs)
+
+
+@pytest.mark.parametrize("field,bad", [
+    ("started_at", None),
+    ("completed_at", None),
+    ("started_at", "not-a-time"),
+    ("completed_at", "2026-11-11T16:19:00Z"),
+    ("started_at", "2026-11-11T16:05:00Z"),
+    ("started_at", "2026-11-11T16:03:00Z"),
+])
+def test_job_timestamps_must_be_present_ordered_and_bounded(field, bad):
+    runs, jobs = healthy()
+    jobs["jobs"][0][field] = bad
+    with pytest.raises(gate.RiskWatchAdmissionStop):
+        verify(runs, jobs)
+
+
+def test_late_workflow_metadata_update_never_freshens_old_broker_pass():
+    runs, jobs = healthy()
+    # The run has been updated recently, but its broker job ended long ago.
+    runs["workflow_runs"][0]["updated_at"] = "2026-11-11T16:13:30Z"
+    now = datetime(2026, 11, 11, 16, 32, tzinfo=timezone.utc)
+    assert (now - gate._time(runs["workflow_runs"][0]["updated_at"])).total_seconds() < 20*60
+    with pytest.raises(gate.RiskWatchAdmissionStop, match="PASS job stale"):
+        verify(runs, jobs, now=now)
+
+
+def test_job_timestamp_at_20_minute_freshness_boundary():
+    runs, jobs = healthy()
+    end = datetime(2026, 11, 11, 16, 4, 29, tzinfo=timezone.utc)
+    from datetime import timedelta
+    assert verify(runs, jobs, now=end + timedelta(minutes=20)) is True
+    with pytest.raises(gate.RiskWatchAdmissionStop, match="PASS job stale"):
+        verify(runs, jobs, now=end + timedelta(minutes=20, seconds=1))
 
 
 def test_incomplete_job_page_is_denied():
