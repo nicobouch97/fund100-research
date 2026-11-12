@@ -57,6 +57,35 @@ jobs:
               print(path + ": " + str(expected_http) + ", NO TRADE")
               return obj
 
+          def read_public_html(path, required):
+              req = Request(BASE + path, method="GET",
+                            headers={"Accept": "text/html",
+                                     "User-Agent": "Fund100-readonly-external-acceptance"})
+              with opener.open(req, timeout=12) as response:
+                  assert response.status == 200, "Public app page unavailable " + path
+                  assert response.geturl() == BASE + path
+                  assert response.headers.get_content_type() == "text/html"
+                  assert "no-store" in response.headers.get("Cache-Control", "")
+                  assert response.headers.get("Set-Cookie") is None
+                  assert "default-src 'none'" in response.headers.get("Content-Security-Policy", "")
+                  body = response.read(40001)
+              assert len(body) <= 40000
+              for term in required:
+                  assert term.encode("utf-8") in body, "Missing public disclosure at " + path
+              assert b"<script" not in body.lower()
+              assert b"<form" not in body.lower()
+              print(path + ": 200, REAL APP PAGE, NO AUTH")
+
+          read_public_html("/", ("Fund-100 Read-Only Monitor",
+                                 "No account access enabled",
+                                 "not yet active",
+                                 "does not place, modify, or cancel trades"))
+          read_public_html("/privacy", ("Privacy Notice",
+                                        "no access to Alpaca accounts",
+                                        "Website visit metadata"))
+          read_public_html("/terms", ("Terms of Use",
+                                      "private, experimental investment",
+                                      "does not place, change, or cancel securities orders"))
           health = read_endpoint("/healthz", 200)
           assert health["broker_risk_pass"] is False
           assert health["oauth_callback_active"] is False
