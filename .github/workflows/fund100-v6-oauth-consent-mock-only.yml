@@ -1,0 +1,36 @@
+name: Fund-100 V6 Readonly OAuth Consent CSRF Preflight (MOCK ONLY)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_v6_oauth_readonly_consent_preflight_v1_0.py'
+      - 'test_fund100_v6_oauth_readonly_consent_preflight_v1_0.py'
+      - '.github/workflows/fund100-v6-oauth-consent-mock-only.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_v6_oauth_readonly_consent_preflight_v1_0.py'
+      - 'test_fund100_v6_oauth_readonly_consent_preflight_v1_0.py'
+      - '.github/workflows/fund100-v6-oauth-consent-mock-only.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  fake-consent-no-network:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate readonly live OAuth URL, callback CSRF and release locks
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_oauth_readonly_consent_preflight_v1_0.py
+          grep -Fq 'AUTHORIZATION_PLAN_RELEASED = False' fund100_v6_oauth_readonly_consent_preflight_v1_0.py
+          test ! -e .github/workflows/fund100-v6-oauth-live-consent.yml
