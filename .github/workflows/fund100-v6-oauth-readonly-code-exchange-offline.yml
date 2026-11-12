@@ -1,0 +1,42 @@
+name: Fund-100 Trading OAuth Readonly Code Exchange + Atomic CSRF (MOCK ONLY)
+
+on:
+  pull_request:
+    paths:
+      - "fund100_v6_readonly_oauth_code_exchange_v1_0.py"
+      - "test_fund100_v6_readonly_oauth_code_exchange_v1_0.py"
+      - "fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py"
+      - "test_fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py"
+      - ".github/workflows/fund100-v6-oauth-readonly-code-exchange-offline.yml"
+  push:
+    branches: [main]
+    paths:
+      - "fund100_v6_readonly_oauth_code_exchange_v1_0.py"
+      - "test_fund100_v6_readonly_oauth_code_exchange_v1_0.py"
+      - "fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py"
+      - "test_fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py"
+      - ".github/workflows/fund100-v6-oauth-readonly-code-exchange-offline.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  fake-token-and-state-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Prove scope, CSRF one-time storage and live locks without secrets
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_v6_readonly_oauth_code_exchange_v1_0.py test_fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py
+          grep -Fq 'CODE_EXCHANGE_RELEASED = False' fund100_v6_readonly_oauth_code_exchange_v1_0.py
+          grep -Fq 'APP_REGISTRATION_APPROVED = False' fund100_v6_readonly_oauth_code_exchange_v1_0.py
+          grep -Fq 'NO_TOKEN_STORAGE = True' fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py
+          test ! -e .github/workflows/fund100-v6-oauth-real-token-exchange.yml
