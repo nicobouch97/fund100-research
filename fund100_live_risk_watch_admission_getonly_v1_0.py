@@ -145,4 +145,13 @@ def require_recent_scheduled_risk_pass(*, token: str, main_sha: str,
         or not _one_step_ok(job.get("steps"), CHECK_STEP)
         or not _one_step_ok(job.get("steps"), PASS_STEP)):
         raise RiskWatchAdmissionStop("No verified scheduled broker-risk PASS step")
+    # GitHub's workflow run updated_at can change after its actual risk job.
+    # The broker PASS must be fresh as of its own recorded completion, not
+    # merely as of a later workflow metadata update or re-indexing.
+    job_started = _time(job.get("started_at"))
+    job_ended = _time(job.get("completed_at"))
+    if (not began <= job_started <= job_ended <= ended
+        or (job_ended - job_started).total_seconds() > MAX_RUN_DURATION_SECONDS
+        or not 0 <= (now - job_ended).total_seconds() <= MAX_AGE_SECONDS):
+        raise RiskWatchAdmissionStop("Broker-risk PASS job stale or time-inconsistent")
     return True
