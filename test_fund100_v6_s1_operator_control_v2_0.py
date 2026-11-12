@@ -139,6 +139,18 @@ def test_wrong_execution_context_makes_no_network_calls(monkeypatch,key,value):
         v6.read_current_control(transport=f.run)
     assert f.gets==f.puts==0
 
+
+@pytest.mark.parametrize("event",["schedule","push","pull_request","repository_dispatch"])
+def test_low_level_v6_put_transport_rejects_nonmanual_events_before_network(
+        monkeypatch,event):
+    # Even if a scheduled process has a contents:write GitHub token, it
+    # cannot bypass _token(write=True) with a direct _request(method='PUT').
+    monkeypatch.setenv("GITHUB_EVENT_NAME",event)
+    f=Fake(dict(FIELDS,trading_enabled=True,first_original_acwi_sell_enabled=True))
+    with pytest.raises(v6.V6OperatorStop,match="manual emergency scope"):
+        v6._request(method="PUT",token=TOKEN,raw=b'{}',transport=f.run)
+    assert f.gets == f.puts == 0
+
 def test_stop_write_requires_emergency_manual_dispatch(monkeypatch):
     monkeypatch.setenv("GITHUB_EVENT_NAME","push")
     f=Fake(dict(FIELDS,trading_enabled=True,first_original_acwi_sell_enabled=True))

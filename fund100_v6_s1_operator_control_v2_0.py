@@ -47,6 +47,11 @@ def _token(*,write=False):
 def _request(*,method,token,raw=None,transport=None):
     if method not in ("GET","PUT") or method=="PUT" and raw is None:
         raise V6OperatorStop("Only V6 current GET / STOP-only PUT approved")
+    # Defense in depth. Scheduled and push jobs MUST NOT bypass the manual
+    # emergency STOP gate by calling this low-level transport directly.
+    # A separate, narrowly scoped scheduled STOP authority is NOT released.
+    if method == "PUT" and os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch":
+        raise V6OperatorStop("V6 STOP GitHub write requires manual emergency scope")
     url=API+("?ref=main&nonce="+str(time.time_ns()) if method=="GET" else "")
     h={"Accept":"application/vnd.github+json",
        "Authorization":"Bearer "+token,
