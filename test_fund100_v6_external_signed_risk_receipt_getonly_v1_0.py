@@ -40,9 +40,12 @@ def sign(r):
             PRIVATE.sign(v._canonical(r)).hex()}
 
 
-def check(envelope=None, **kwargs):
+_UNSET = object()
+
+
+def check(envelope=_UNSET, **kwargs):
     return v.verify_independent_risk_receipt(
-        envelope=sign(good_receipt()) if envelope is None else envelope,
+        envelope=sign(good_receipt()) if envelope is _UNSET else envelope,
         expected_main_sha=kwargs.pop("main_sha", SHA),
         expected_account_binding_sha256=kwargs.pop("account", ACCOUNT),
         expected_risk_policy_sha256=kwargs.pop("policy", POLICY),
