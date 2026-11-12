@@ -320,6 +320,11 @@ on:
       # Source-locked consent URL and callback state are a credential boundary.
       - "fund100_v6_oauth_readonly_consent_preflight_v1_0.py"
       - "test_fund100_v6_oauth_readonly_consent_preflight_v1_0.py"
+      # Source-locked Trading OAuth exchange contract and atomic single-use CSRF.
+      - "fund100_v6_readonly_oauth_code_exchange_v1_0.py"
+      - "test_fund100_v6_readonly_oauth_code_exchange_v1_0.py"
+      - "fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py"
+      - "test_fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py"
       - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "test_fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0.py"
@@ -763,6 +768,11 @@ on:
       # Source-locked consent URL and callback state are a credential boundary.
       - "fund100_v6_oauth_readonly_consent_preflight_v1_0.py"
       - "test_fund100_v6_oauth_readonly_consent_preflight_v1_0.py"
+      # Source-locked Trading OAuth exchange contract and atomic single-use CSRF.
+      - "fund100_v6_readonly_oauth_code_exchange_v1_0.py"
+      - "test_fund100_v6_readonly_oauth_code_exchange_v1_0.py"
+      - "fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py"
+      - "test_fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py"
       - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "test_fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0.py"
