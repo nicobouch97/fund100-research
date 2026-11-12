@@ -30,6 +30,8 @@ def first_protected_original_run(monkeypatch,signed_chain_setup):
     # entire signed original coordinator still executes with fake I/O.
     monkeypatch.setattr(entry.live_watch,
                         "require_recent_scheduled_risk_pass",lambda **kw:True)
+    monkeypatch.setattr(entry.external_risk,
+                        "require_fresh_signed_external_risk_pass",lambda **kw:True)
     # Legacy five-principal synthetic fixture; production staged token is
     # ephemeral and has no long-lived Release PAT in the protected workflow.
     monkeypatch.setattr(entry,"SCOPED_GITHUB_PUBLIC_DUAL_ROLE_RELEASED",False)
@@ -46,6 +48,8 @@ def first_protected_original_run(monkeypatch,signed_chain_setup):
         ("FUND100_IMMUTABLE_RELEASE_ADMIN_READ_TOKEN",ADMIN),
         ("FUND100_IMMUTABLE_RELEASE_WRITE_TOKEN",PUBLISH),
         ("GITHUB_TOKEN",ISSUE),
+        ("FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN",
+         "test-fund100-external-receipt-readonly-credential-123"),
         ("ALPACA_LIVE_KEY",KEY),
         ("ALPACA_LIVE_SECRET",SECRET),
     ):

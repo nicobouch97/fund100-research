@@ -30,6 +30,8 @@ def env(monkeypatch):
         "ALPACA_LIVE_KEY":"test-original-broker-api-key",
         "ALPACA_LIVE_SECRET":"test-original-broker-secret",
         "GITHUB_TOKEN":"test-original-issue-writer-token",
+        "FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN":
+            "test-fund100-external-receipt-readonly-credential-123",
     }
     for key,val in keys.items():
         monkeypatch.setenv(key,val)
@@ -115,6 +117,9 @@ def activated_offline(monkeypatch):
     # tested by the credentialless GET-only module's fail-closed mocks.
     monkeypatch.setattr(entry.live_watch,
                         "require_recent_scheduled_risk_pass",lambda **kw:True)
+    # Synthetic proof only: production signer and ingress stay HARD LOCKED.
+    monkeypatch.setattr(entry.external_risk,
+                        "require_fresh_signed_external_risk_pass",lambda **kw:True)
     monkeypatch.setattr(entry,"ORIGINAL_ACWI_ENTRYPOINT_RELEASED",True)
     monkeypatch.setattr(chain,"ONE_ATTEMPT_EXECUTION_RELEASED",True)
     # Only this legacy five-principal synthetic fixture uses an old PAT.
@@ -382,3 +387,93 @@ def test_missing_scheduled_broker_pass_never_reads_original_or_claims_owner(
         entry.run_protected_first_acwi_once()
     assert events==[]
     assert entry.RETRY_AFTER_UNCERTAIN_OUTCOME is False
+
+
+@pytest.mark.parametrize("mode", [
+    "outage","stale","wrong_account","wrong_policy","bad_signature",
+    "false","none","truthy_integer",
+])
+def test_missing_or_invalid_signed_external_risk_refuses_original_order(
+        activated_offline,monkeypatch,mode):
+    _keys,events,_context=activated_offline
+    seen=[]
+    def deny(**kw):
+        seen.append(kw)
+        if mode in ("false","none","truthy_integer"):
+            return {"false":False,"none":None,"truthy_integer":1}[mode]
+        raise entry.external_risk.ExternalReceiptIngressStop("synthetic blocked")
+    monkeypatch.setattr(entry.external_risk,
+                        "require_fresh_signed_external_risk_pass",deny)
+    with pytest.raises(entry.EntryStop,match="external signed broker-risk PASS missing"):
+        entry.run_protected_first_acwi_once()
+    assert len(seen)==1
+    assert seen[0]["main_sha"]=="a"*40
+    assert seen[0]["readonly_token"]==(
+        "test-fund100-external-receipt-readonly-credential-123")
+    assert events==[]
+
+
+def test_missing_signed_risk_token_refuses_before_private_source(activated_offline,monkeypatch):
+    _keys,events,_context=activated_offline
+    seen=[]
+    monkeypatch.delenv("FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN")
+    monkeypatch.setattr(entry.external_risk,
+                        "require_fresh_signed_external_risk_pass",
+                        lambda **kw:seen.append(kw))
+    with pytest.raises(entry.EntryStop,match="credential contract"):
+        entry.run_protected_first_acwi_once()
+    assert seen==[] and events==[]
+
+
+def test_signed_risk_token_cannot_be_same_broker_or_github_identity(activated_offline,monkeypatch):
+    keys,events,_context=activated_offline
+    for principal in ("GITHUB_TOKEN","ALPACA_LIVE_KEY",
+                      "ALPACA_LIVE_SECRET",
+                      "FUND100_PRIVATE_STATE_READ_TOKEN"):
+        monkeypatch.setenv("FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN",
+                           keys[principal])
+        with pytest.raises(entry.EntryStop,match="read principal not isolated"):
+            entry.run_protected_first_acwi_once()
+    assert events==[]
+
+
+def test_independent_signed_pass_is_mandatory_even_when_github_job_is_green(
+        activated_offline,monkeypatch):
+    _keys,events,_context=activated_offline
+    seen=[]
+    monkeypatch.setattr(entry.live_watch,
+                        "require_recent_scheduled_risk_pass",
+                        lambda **kw:seen.append("github-green") or True)
+    monkeypatch.setattr(entry.external_risk,
+                        "require_fresh_signed_external_risk_pass",
+                        lambda **kw: (_ for _ in ()).throw(
+                            entry.external_risk.ExternalReceiptIngressStop("outage")))
+    with pytest.raises(entry.EntryStop,match="external signed broker-risk PASS missing"):
+        entry.run_protected_first_acwi_once()
+    assert seen==[] and events==[]
+
+
+def test_exact_independent_risk_then_scheduled_gate_before_private_read(
+        activated_offline,monkeypatch):
+    _keys,events,_context=activated_offline
+    checks=[]
+    monkeypatch.setattr(entry.external_risk,
+                        "require_fresh_signed_external_risk_pass",
+                        lambda **kw:checks.append("ed25519") or True)
+    monkeypatch.setattr(entry.live_watch,
+                        "require_recent_scheduled_risk_pass",
+                        lambda **kw:checks.append("github-job") or True)
+    result=entry.run_protected_first_acwi_once()
+    assert result["status"]=="FIRST_ORIGINAL_ACWI_ORDER_ATTEMPTED_NO_RETRY"
+    assert checks==["ed25519","github-job"]
+    assert events==["signed_read","coordinator_one_attempt"]
+
+
+def test_first_acwi_main_releases_and_external_signer_are_all_still_locked():
+    assert entry.ORIGINAL_ACWI_ENTRYPOINT_RELEASED is False
+    assert entry.external_risk.RECEIPT_INGRESS_RELEASED is False
+    assert entry.external_risk.EXPECTED_ACCOUNT_BINDING_SHA256 is None
+    assert entry.external_risk.EXPECTED_RISK_POLICY_SHA256 is None
+    assert entry.external_risk.signed.RECEIPT_VERIFICATION_RELEASED is False
+    assert entry.external_risk.signed.APPROVED_SIGNER_PUBLIC_KEY_HEX is None
+
