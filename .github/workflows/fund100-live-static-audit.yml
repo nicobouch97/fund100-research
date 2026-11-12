@@ -309,6 +309,12 @@ on:
       # Ed25519 external risk evidence requires full audit, even while source locked.
       - "fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
       - "test_fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
+      # Public Railway dry-run HTTP callback remains inert and non-credentialed.
+      - "fund100_railway_risk_watch_http_preflight_v1_0.py"
+      - "test_fund100_railway_risk_watch_http_preflight_v1_0.py"
+      - "Dockerfile"
+      - "fund100_railway_schedule_observer_dryrun_v1_0.py"
+      - "test_fund100_railway_schedule_observer_dryrun_v1_0.py"
       - "fund100_v6_readonly_oauth_eight_get_transport_v1_0.py"
       - "test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py"
       # Source-locked consent URL and callback state are a credential boundary.
@@ -746,6 +752,12 @@ on:
       # Ed25519 external risk evidence requires full audit, even while source locked.
       - "fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
       - "test_fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
+      # Public Railway dry-run HTTP callback remains inert and non-credentialed.
+      - "fund100_railway_risk_watch_http_preflight_v1_0.py"
+      - "test_fund100_railway_risk_watch_http_preflight_v1_0.py"
+      - "Dockerfile"
+      - "fund100_railway_schedule_observer_dryrun_v1_0.py"
+      - "test_fund100_railway_schedule_observer_dryrun_v1_0.py"
       - "fund100_v6_readonly_oauth_eight_get_transport_v1_0.py"
       - "test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py"
       # Source-locked consent URL and callback state are a credential boundary.

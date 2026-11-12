@@ -51,6 +51,19 @@ jobs:
           docker = Path('Dockerfile').read_text()
           assert 'USER observer' in docker
           assert 'COPY .' not in docker
-          assert 'CMD ["python", "-u", "/app/observer.py"]' in docker
+          # Railway may run the original CLI observer or the newer
+          # two-file HTTP dry-run preflight; BOTH must remain no-broker.
+          approved=(
+              'CMD ["python", "-u", "/app/observer.py"]',
+              'CMD ["python", "-u", "/app/fund100_railway_risk_watch_http_preflight_v1_0.py"]',
+          )
+          assert sum(1 for cmd in approved if cmd in docker)==1
+          if approved[1] in docker:
+              stub=Path('fund100_railway_risk_watch_http_preflight_v1_0.py').read_text()
+              assert 'OAUTH_CALLBACK_RELEASED = False' in stub
+              assert 'NO_BROKER = True' in stub
+              assert 'NO_TOKEN_EXCHANGE = True' in stub
+              assert 'ALPACA_LIVE_KEY' not in stub
+              assert 'ALPACA_LIVE_SECRET' not in stub
           print('External schedule observer is dry-run only; no risk PASS or broker orders.')
           PY
