@@ -306,12 +306,14 @@ on:
       - "test_fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0.py"
       # Dormant broker OAuth bearer handling is a sensitive privilege boundary.
       # Both its implementation and mocked scope tests require the FULL LIVE audit.
-      # Independent external Ed25519 receipt verifier is never order GO,
-      # but is a sensitive broker risk evidence boundary requiring full audit.
+      # Ed25519 external risk evidence requires full audit, even while source locked.
       - "fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
       - "test_fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
       - "fund100_v6_readonly_oauth_eight_get_transport_v1_0.py"
       - "test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py"
+      # Source-locked consent URL and callback state are a credential boundary.
+      - "fund100_v6_oauth_readonly_consent_preflight_v1_0.py"
+      - "test_fund100_v6_oauth_readonly_consent_preflight_v1_0.py"
       - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "test_fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0.py"
@@ -741,12 +743,14 @@ on:
       - "test_fund100_v6_s1_first_xlk_buy_source_workflow_scope_locked_v1_0.py"
       # Dormant broker OAuth bearer handling is a sensitive privilege boundary.
       # Both its implementation and mocked scope tests require the FULL LIVE audit.
-      # Independent external Ed25519 receipt verifier is never order GO,
-      # but is a sensitive broker risk evidence boundary requiring full audit.
+      # Ed25519 external risk evidence requires full audit, even while source locked.
       - "fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
       - "test_fund100_v6_external_signed_risk_receipt_getonly_v1_0.py"
       - "fund100_v6_readonly_oauth_eight_get_transport_v1_0.py"
       - "test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py"
+      # Source-locked consent URL and callback state are a credential boundary.
+      - "fund100_v6_oauth_readonly_consent_preflight_v1_0.py"
+      - "test_fund100_v6_oauth_readonly_consent_preflight_v1_0.py"
       - "fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "test_fund100_v6_s1_active_high_acwi_sell_risk_v2_0.py"
       - "fund100_v6_s1_trading_api_post_sale_cash_screen_v1_0.py"
