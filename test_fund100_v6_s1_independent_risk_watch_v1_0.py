@@ -300,30 +300,33 @@ def test_cancel_error_not_claimed_as_auto_stop_success(monkeypatch):
         watch.watch_once()
 
 
-def test_stop_only_v6_cas_never_enables_trading_and_never_retries(monkeypatch):
+def test_scheduled_watcher_cannot_bypass_manual_only_v6_put_authority(monkeypatch):
+    # Future automated STOP must have a separately approved scoped
+    # credential/path. For now the scheduled monitor cannot PUT to GitHub.
     go(monkeypatch)
-    writes = []
-    state = dict(RUNNING)
-    def fake_request(*, method, token, raw=None):
-        assert token == "mock-v6-public-github-token"
-        if method == "GET":
-            return {"sha":"a"*40, "source":dict(state)}
-        assert method == "PUT" and raw is not None
-        writes.append(json.loads(raw))
-        actual = json.loads(base64.b64decode(writes[-1]["content"]))
-        assert actual == STOPPED
-        assert writes[-1]["sha"] == "a"*40
-        state.update(actual)
-        return {"status":"fake-ack"}
-    monkeypatch.setattr(watch.v6, "_request", fake_request)
-    monkeypatch.setattr(watch.v6, "_parse",
-                        lambda source: dict(source["source"]))
-    monkeypatch.setattr(watch.v6, "read_current_control",
-                        lambda: dict(state))
-    assert watch._stop_v6_first_only() == "STOPPED"
-    assert len(writes) == 1 and state == STOPPED
-    assert watch._stop_v6_first_only() == "ALREADY_STOPPED"
-    assert len(writes) == 1
+    calls=[]
+    monkeypatch.setattr(watch.v6, "_request",
+        lambda **kwargs: calls.append(kwargs["method"]) or
+            pytest.fail("Scheduled STOP must not reach GET or PUT"))
+    with pytest.raises(watch.v6.V6OperatorStop, match="manual emergency workflow"):
+        watch._stop_v6_first_only()
+    assert calls == []
+
+
+def test_scheduled_stop_denial_never_marks_risk_pass_or_auto_stop(monkeypatch,tmp_path):
+    go(monkeypatch)
+    output=tmp_path/"pass-never"
+    monkeypatch.setenv("GITHUB_OUTPUT",str(output))
+    monkeypatch.setattr(watch,"_risk_eight_get",
+        lambda: (_ for _ in ()).throw(TimeoutError("synthetic risk outage")))
+    attempts=[]
+    monkeypatch.setattr(watch.cancel,"cancel_open_first_signed_acwi_orders",
+        lambda: attempts.append("ATTEMPTED_SIGNED_CANCEL") or 0)
+    # _stop_v6_first_only actually calls the protected manual scope, no mock.
+    with pytest.raises(watch.V6WatchStop, match="STOP unconfirmed"):
+        watch.watch_once()
+    assert attempts==["ATTEMPTED_SIGNED_CANCEL"]
+    assert not output.exists()
 
 
 def test_source_dormant_lock_rejects_before_operator_or_broker(monkeypatch):

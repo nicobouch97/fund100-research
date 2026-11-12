@@ -149,7 +149,10 @@ def _stop_v6_first_only() -> str:
     _scope()
     if MAX_STOP_CAS_ATTEMPTS != 1:
         raise V6WatchStop("Unsafe V6 STOP retry policy")
-    token = v6._token()
+    # Never bypass the operator module's manual-only PUT credential guard.
+    # Until a separately audited automatic STOP authority exists this
+    # scheduled code must fail closed rather than silently writing GitHub.
+    token = v6._token(write=True)
     existing = v6._request(method="GET", token=token)
     before = v6._parse(existing)
     if (before["trading_enabled"] is False
