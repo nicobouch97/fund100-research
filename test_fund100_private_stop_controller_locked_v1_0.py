@@ -314,7 +314,7 @@ def test_unknown_network_dispatch_outcome_cannot_supply_run_id(
     ("state", "ATTEMPT_RESERVED"),
     ("reason", "USER_SUPPLIED_REASON"),
     ("dispatch_run_id", None),
-    ("dispatch_run_id", "123456"),
+    ("dispatch_run_id", "not-an-integer"),
     ("dispatch_run_id", -3),
     ("dispatch_run_id", 0),
     ("dispatch_run_id", "100000000000000000000"),
