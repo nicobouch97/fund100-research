@@ -169,6 +169,11 @@ def _capture_private_eight_get_witness() -> dict | str:
     # coherent right up to the in-memory witness handoff boundary.
     _check_main_stopped_and_v6_go()
     _scope()
+    # Re-read final monotonic age after the independent STOP check, not
+    # only before it; a slow GitHub state read cannot leave a stale PASS.
+    if (not 0 <= time.monotonic() - started_monotonic
+            <= MAX_BROKER_SNAPSHOT_SECONDS + MAX_RISK_EVALUATION_SECONDS):
+        raise V6WatchStop("Private broker witness stale at final handoff")
     return {
         "checked": checked,
         "account_id": account_id,
