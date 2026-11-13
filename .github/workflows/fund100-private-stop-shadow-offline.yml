@@ -1,0 +1,59 @@
+name: Fund-100 Private STOP Shadow Volume Runtime (NO BROKER)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_private_stop_shadow_volume_heartbeat_v1_0.py'
+      - 'test_fund100_private_stop_shadow_volume_heartbeat_v1_0.py'
+      - 'Dockerfile.private-stop-shadow'
+      - '.github/workflows/fund100-private-stop-shadow-offline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_private_stop_shadow_volume_heartbeat_v1_0.py'
+      - 'test_fund100_private_stop_shadow_volume_heartbeat_v1_0.py'
+      - 'Dockerfile.private-stop-shadow'
+      - '.github/workflows/fund100-private-stop-shadow-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  offline-shadow-volume:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      FUND100_LIVE_WRITE_MODE: DISABLED
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test offline shadow storage and no-credential invariants
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_private_stop_shadow_volume_heartbeat_v1_0.py
+      - name: Build standalone image and verify durable Docker mount across restarts
+        run: |
+          set -euo pipefail
+          docker build -f Dockerfile.private-stop-shadow \
+            -t fund100-private-shadow:offline .
+          volume="$(mktemp -d)"
+          chmod 0755 "$volume"
+          # No network, HTTP port, broker key, GitHub token, STOP token or signer.
+          docker run --rm --network none -v "$volume:/data" \
+            -e FUND100_SHADOW_ONESHOT=1 \
+            fund100-private-shadow:offline > "$RUNNER_TEMP/f100-shadow-first.json"
+          grep -Fq '"durable_sequence": 1' "$RUNNER_TEMP/f100-shadow-first.json"
+          grep -Fq '"order_authorized": false' "$RUNNER_TEMP/f100-shadow-first.json"
+          grep -Fq '"broker_risk_pass": false' "$RUNNER_TEMP/f100-shadow-first.json"
+          docker run --rm --network none -v "$volume:/data" \
+            -e FUND100_SHADOW_ONESHOT=1 \
+            fund100-private-shadow:offline > "$RUNNER_TEMP/f100-shadow-second.json"
+          grep -Fq '"durable_sequence": 2' "$RUNNER_TEMP/f100-shadow-second.json"
+          sudo test -f "$volume/fund100-shadow-host.sqlite3"
+          sudo rm -rf "$volume"
