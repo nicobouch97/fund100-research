@@ -121,6 +121,53 @@ def test_status_only_reports_public_diagnostic_not_broker(http_server):
     assert doc["trading_authorized"] is False
 
 
+def test_real_v6_schedule_stale_is_publicly_observable_but_never_risk_pass(
+        http_server):
+    web.publish_diagnostic({
+        "observation":"SCHEDULE_RUN_RECORDED_NOT_RISK_PASS",
+        "seconds_since_last_recorded_run":500,
+        "v6_observation":"SCHEDULE_ACTIVITY_STALE",
+        "v6_seconds_since_last_recorded_run":3800,
+        "v6_schedule_due":True,
+        "v6_schedule_heartbeat_missing_or_stale":True,
+    })
+    status,headers,body=request(http_server,"/status")
+    doc=json.loads(body)
+    assert status==200
+    assert doc["v6_observation"]=="SCHEDULE_ACTIVITY_STALE"
+    assert doc["v6_seconds_since_last_recorded_run"]==3800
+    assert doc["v6_schedule_due"] is True
+    assert doc["v6_schedule_heartbeat_missing_or_stale"] is True
+    assert doc["broker_risk_pass"] is False
+    assert doc["trading_authorized"] is False
+    assert "no-store" in headers["Cache-Control"]
+
+
+def test_inconsistent_v6_safe_flag_is_rejected_by_railway_status(http_server):
+    good={
+        "observation":"SOURCE_UNAVAILABLE",
+        "seconds_since_last_recorded_run":None,
+        "v6_observation":"NO_RECORDED_SCHEDULE_RUN",
+        "v6_seconds_since_last_recorded_run":None,
+        "v6_schedule_due":True,
+        "v6_schedule_heartbeat_missing_or_stale":True,
+    }
+    web.publish_diagnostic(good)
+    for changes in (
+        {"v6_schedule_heartbeat_missing_or_stale":False},
+        {"v6_schedule_due":"true"},
+        {"v6_observation":"BROKER_RISK_PASS"},
+        {"v6_seconds_since_last_recorded_run":-1},
+        {"v6_seconds_since_last_recorded_run":True},
+    ):
+        web.publish_diagnostic(dict(good,**changes))
+        _,_,body=request(http_server,"/status")
+        doc=json.loads(body)
+        assert doc["v6_observation"]=="NO_RECORDED_SCHEDULE_RUN"
+        assert doc["v6_schedule_heartbeat_missing_or_stale"] is True
+        assert doc["broker_risk_pass"] is False
+
+
 def test_bad_public_diagnostic_cannot_override_evidence(http_server):
     web.publish_diagnostic({"observation": "SOURCE_UNAVAILABLE",
                             "seconds_since_last_recorded_run": None})
