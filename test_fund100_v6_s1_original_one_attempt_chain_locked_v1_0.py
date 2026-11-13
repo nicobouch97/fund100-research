@@ -91,7 +91,20 @@ def setup(monkeypatch):
         return dict(fake_qualified(),original_qty=original_qty)
     monkeypatch.setattr(economic,"inspect_current_original_exit",fake_approved_economics)
     state={"owner":initial,"ledger":c["reserved_source"],
-           "events":[],"write_calls":0}
+           "events":[],"write_calls":0,"receipt_checks":[]}
+    # Only an in-process synthetic result in offline tests; the true receipt
+    # reader stays unreleased and no credential/account can be accessed.
+    mock_readonly_token="OFFLINE_ONLY_SYNTHETIC_RECEIPT_TOKEN_123456789012345"
+    monkeypatch.setenv("FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN",
+                       mock_readonly_token)
+    def fake_independent_receipt(*,main_sha,readonly_token):
+        assert main_sha==c["current_main_sha"]
+        assert readonly_token==mock_readonly_token
+        state["receipt_checks"].append((main_sha,True))
+        return True
+    monkeypatch.setattr(
+        chain.external_receipt,"require_fresh_signed_external_risk_pass",
+        fake_independent_receipt)
     def log(x):state["events"].append(x)
     def http(*,method,url,token,transport=None,allow_missing=False):
         assert method=="GET"
@@ -273,6 +286,140 @@ def test_original_no_trade_source_admission_precedes_both_private_head_reads():
     assert s.index("economic.require_preclaim_exit_economics(")>s.index(
         "ready=risk.inspect_actual_original_seven_get(")
     assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
+
+
+def test_missing_independent_risk_receipt_token_prevents_owner_claim(
+        setup,monkeypatch):
+    state,args=setup
+    monkeypatch.delenv("FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN")
+    monkeypatch.setattr(
+        chain.external_receipt,"require_fresh_signed_external_risk_pass",
+        lambda **kwargs: pytest.fail("Missing token must veto before GET"))
+    with pytest.raises(chain.ChainStop,match="Independent signed broker-risk veto"):
+        chain.run_exact_first_acwi_attempt(**args)
+    assert state["write_calls"]==0
+    assert state["receipt_checks"]==[]
+    assert state["events"]==["setting","absent","broker_preflight"]
+
+
+@pytest.mark.parametrize("answer",[False,None,0,1,"true",{},[]])
+def test_unverified_independent_risk_response_never_consumes_owner_claim(
+        setup,monkeypatch,answer):
+    state,args=setup
+    seen=[]
+    def nonattestation(**kwargs):
+        seen.append(kwargs["main_sha"])
+        return answer
+    monkeypatch.setattr(
+        chain.external_receipt,"require_fresh_signed_external_risk_pass",
+        nonattestation)
+    with pytest.raises(chain.ChainStop,match="Independent signed broker-risk veto"):
+        chain.run_exact_first_acwi_attempt(**args)
+    assert seen==[args["context"]["current_main_sha"]]
+    assert state["write_calls"]==0
+    assert "claim" not in state["events"]
+    assert "writer" not in state["events"]
+
+
+@pytest.mark.parametrize("failure",[
+    RuntimeError("synthetic signer lost"),
+    ValueError("synthetic replay"),
+    OSError("synthetic read-only receipt source unavailable"),
+])
+def test_failed_signed_receipt_reader_stops_before_private_mutations(
+        setup,monkeypatch,failure):
+    state,args=setup
+    def fail(**kwargs):
+        raise failure
+    monkeypatch.setattr(
+        chain.external_receipt,"require_fresh_signed_external_risk_pass",fail)
+    with pytest.raises(chain.ChainStop,match="Independent signed broker-risk veto") as ex:
+        chain.run_exact_first_acwi_attempt(**args)
+    assert "synthetic" not in str(ex.value)
+    assert state["write_calls"]==0
+    assert state["events"]==["setting","absent","broker_preflight"]
+
+
+def test_independent_risk_receipt_must_precede_any_irreversible_owner_cas():
+    from pathlib import Path
+    s=Path(chain.__file__).read_text()
+    assert "import fund100_v6_s1_external_signed_risk_receipt_ingress_v1_0" in s
+    assert s.index("economic.require_preclaim_exit_economics(")<s.index(
+        "external_receipt.require_fresh_signed_external_risk_pass(")
+    assert s.index("external_receipt.require_fresh_signed_external_risk_pass(")<s.index(
+        "order=_real_current(")
+    assert s.index("external_receipt.require_fresh_signed_external_risk_pass(")<s.index(
+        "claim=ownership.claim_for_same_attempt_only(")
+    assert "FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN" in s
+    assert chain.ONE_ATTEMPT_EXECUTION_RELEASED is False
+    import fund100_v6_s1_external_signed_risk_receipt_ingress_v1_0 as ingress
+    assert ingress.RECEIPT_INGRESS_RELEASED is False
+    assert ingress.EXPECTED_ACCOUNT_BINDING_SHA256 is None
+    assert ingress.EXPECTED_RISK_POLICY_SHA256 is None
+
+
+def test_economic_no_trade_does_not_attempt_private_receipt_or_claim(
+        setup,monkeypatch):
+    state,args=setup
+    monkeypatch.setattr(
+        chain.external_receipt,"require_fresh_signed_external_risk_pass",
+        lambda **kwargs: pytest.fail("No trading economics; receipt not needed"))
+    monkeypatch.setattr(
+        chain.economic,"inspect_current_original_exit",
+        lambda **kwargs: {"status":"NO_TRADE"})
+    result=chain.run_exact_first_acwi_attempt(**args)
+    assert result["status"]=="ORIGINAL_ACWI_ECONOMIC_NO_TRADE_KEEP_HOLDINGS"
+    assert state["write_calls"]==0
+    assert state["receipt_checks"]==[]
+
+
+@pytest.mark.parametrize("final_mode",["false","none","wrong_type","outage"])
+def test_last_mile_risk_receipt_expiry_or_outage_never_submits_order(
+        setup,monkeypatch,final_mode):
+    state,args=setup
+    calls=[]
+    def first_pass_then_fail(*,main_sha,readonly_token):
+        assert main_sha==args["context"]["current_main_sha"]
+        assert readonly_token==os.environ[
+            "FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN"]
+        calls.append(main_sha)
+        if len(calls)==1:
+            return True
+        if final_mode=="outage":
+            raise RuntimeError("OFFLINE_SYNTHETIC_PROVIDER_OUTAGE")
+        if final_mode=="none":
+            return None
+        if final_mode=="wrong_type":
+            return 1
+        return False
+    monkeypatch.setattr(
+        chain.external_receipt,"require_fresh_signed_external_risk_pass",
+        first_pass_then_fail)
+    with pytest.raises(chain.ChainStop,match="NEVER RETRY") as error:
+        chain.run_exact_first_acwi_attempt(**args)
+    assert "OFFLINE_SYNTHETIC" not in str(error.value)
+    assert len(calls)==2
+    assert state["events"]==[
+        "setting","absent","broker_preflight","claim","seq2","publish"]
+    assert state["write_calls"]==3
+    assert "writer" not in state["events"]
+
+
+def test_signed_risk_read_twice_before_first_broker_post(setup):
+    state,args=setup
+    _=chain.run_exact_first_acwi_attempt(**args)
+    assert len(state["receipt_checks"])==2
+    assert all(check==(args["context"]["current_main_sha"],True)
+               for check in state["receipt_checks"])
+    from pathlib import Path
+    s=Path(chain.__file__).read_text()
+    occurrences=[m.start() for m in __import__("re").finditer(
+        "external_receipt.require_fresh_signed_external_risk_pass\\(",s)]
+    assert len(occurrences)==2
+    assert occurrences[0]<s.index("claim=ownership.claim_for_same_attempt_only(")
+    assert occurrences[1]>s.index("last_owner=_real_current(")
+    assert occurrences[1]<s.index(
+        "result=writer.submit_v6_s1_original_acwi_fractional_sell(")
 
 
 def test_exact_one_attempt_all_valid_original_signed_heads_same_run(setup):
