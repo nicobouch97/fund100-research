@@ -7,6 +7,8 @@ on:
       - 'test_fund100_v6_emergency_stop_completion_evidence_v1_0.py'
       - 'fund100_v6_stop_completion_getonly_source_locked_v1_0.py'
       - 'test_fund100_v6_stop_completion_getonly_source_locked_v1_0.py'
+      - 'fund100_alpaca_oauth_readonly_get_locked_v1_0.py'
+      - 'test_fund100_alpaca_oauth_readonly_get_locked_v1_0.py'
       - '.github/workflows/fund100-v6-emergency-stop-completion-offline.yml'
   push:
     branches: [main]
@@ -15,6 +17,8 @@ on:
       - 'test_fund100_v6_emergency_stop_completion_evidence_v1_0.py'
       - 'fund100_v6_stop_completion_getonly_source_locked_v1_0.py'
       - 'test_fund100_v6_stop_completion_getonly_source_locked_v1_0.py'
+      - 'fund100_alpaca_oauth_readonly_get_locked_v1_0.py'
+      - 'test_fund100_alpaca_oauth_readonly_get_locked_v1_0.py'
       - '.github/workflows/fund100-v6-emergency-stop-completion-offline.yml'
 
 permissions:
@@ -35,10 +39,12 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install 'pytest>=8,<9'
-          python -m pytest -q test_fund100_v6_emergency_stop_completion_evidence_v1_0.py test_fund100_v6_stop_completion_getonly_source_locked_v1_0.py
+          python -m pytest -q test_fund100_v6_emergency_stop_completion_evidence_v1_0.py test_fund100_v6_stop_completion_getonly_source_locked_v1_0.py test_fund100_alpaca_oauth_readonly_get_locked_v1_0.py
           grep -Fq 'STOP_COMPLETION_SOURCE_RELEASED = False' fund100_v6_emergency_stop_completion_evidence_v1_0.py
           grep -Fq 'SOURCE_RELEASED = False' fund100_v6_stop_completion_getonly_source_locked_v1_0.py
           grep -Fq 'NO_BROKER_WRITES = True' fund100_v6_stop_completion_getonly_source_locked_v1_0.py
           grep -Fq 'NO_GITHUB_WRITES = True' fund100_v6_stop_completion_getonly_source_locked_v1_0.py
+          grep -Fq 'SOURCE_RELEASED = False' fund100_alpaca_oauth_readonly_get_locked_v1_0.py
+          grep -Fq 'READONLY_OAUTH_GRANT_INDEPENDENTLY_VERIFIED = False' fund100_alpaca_oauth_readonly_get_locked_v1_0.py
           grep -Fq 'EXPECTED_BROKER_ACCOUNT_BINDING_SHA256 = None' fund100_v6_emergency_stop_completion_evidence_v1_0.py
           ! grep -Fq 'fund100_v6_emergency_stop_completion_evidence_v1_0.py' Dockerfile

@@ -1,8 +1,9 @@
 """Protected live GET-only evidence collector for existing emergency STOP.
 
 Uses actual GitHub run/jobs/current-main controls plus TWO fresh authenticated
-Alpaca Trading API GETs before calling the separately hard-locked completion
-verifier. This is an executable source contract but is RELEASED = False and
+read-only OAuth Alpaca Trading API GETs before calling the separately hard-locked
+completion verifier. Normal Alpaca API key/secret pairs (potentially tradable)
+are prohibited in this independent evidence source. This is an executable source contract but is RELEASED = False and
 has NO current workflow/production entrypoint. No broker POST/DELETE, no GitHub
 PUT/dispatch, no Ed25519 key, no public Railway wiring, no trading GO.
 
@@ -25,7 +26,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
-import fund100_alpaca_live_readonly_smoke as broker
+import fund100_alpaca_oauth_readonly_get_locked_v1_0 as oauth
 import fund100_v6_emergency_stop_completion_evidence_v1_0 as verifier
 import fund100_live_operator_control_v1_0 as v5
 import fund100_v6_s1_operator_control_v2_0 as v6
@@ -249,14 +250,11 @@ def confirm_stop_from_authenticated_gets(
     v6_control = _current_main_control(V6_PATH,token=token)
     controls_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    broker.require_readonly_arm()
-    key, secret = broker.load_credentials()
+    oauth.require_readonly_arm()
     try:
-        account = broker.get_json(path=BROKER_PATHS[0],params=None,
-                                  key=key,secret=secret)
-        orders = broker.get_json(path=BROKER_PATHS[1],
-                                 params=dict(BROKER_OPEN_ORDER_PARAMS),
-                                 key=key,secret=secret)
+        account = oauth.get_json(path=BROKER_PATHS[0], params=None)
+        orders = oauth.get_json(path=BROKER_PATHS[1],
+                                params=dict(BROKER_OPEN_ORDER_PARAMS))
     except Exception:
         # Do not preserve raw broker exception messages, which may contain
         # private account numbers, request ids or financial information.
