@@ -2,6 +2,7 @@
 from pathlib import Path
 import ast
 import textwrap
+import pytest
 
 import fund100_live_risk_watch_admission_getonly_v1_0 as admission
 import fund100_v6_s1_independent_risk_watch_v1_0 as real_watch
