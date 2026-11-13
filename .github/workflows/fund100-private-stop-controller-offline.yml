@@ -1,0 +1,62 @@
+name: Fund-100 Private STOP Controller (MOCK ONLY)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_private_stop_controller_locked_v1_0.py'
+      - 'test_fund100_private_stop_controller_locked_v1_0.py'
+      - 'Dockerfile.private-stop-controller'
+      - '.github/workflows/fund100-private-stop-controller-offline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_private_stop_controller_locked_v1_0.py'
+      - 'test_fund100_private_stop_controller_locked_v1_0.py'
+      - 'Dockerfile.private-stop-controller'
+      - '.github/workflows/fund100-private-stop-controller-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-only-no-broker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      FUND100_LIVE_WRITE_MODE: DISABLED
+      FUND100_STOP_CONTROLLER_MODE: NO_BROKER_MOCKS_ONLY
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run offline STOP-controller adversarial tests
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_private_stop_controller_locked_v1_0.py
+          grep -Fq 'SOURCE_RELEASED = False' fund100_private_stop_controller_locked_v1_0.py
+          grep -Fq 'STOP_DISPATCH_RELEASED = False' fund100_private_stop_controller_locked_v1_0.py
+          grep -Fq 'NO_ORDER_RELEASE = True' fund100_private_stop_controller_locked_v1_0.py
+          grep -Fq 'NO_BROKER_CREDENTIALS = True' fund100_private_stop_controller_locked_v1_0.py
+          ! grep -q 'fund100_private_stop_controller_locked_v1_0.py' Dockerfile
+      - name: Build separate STOP image and prove mounted journal bootstrap stays locked
+        run: |
+          set -euo pipefail
+          # A real container build catches missing gosu and broken ENTRYPOINT.
+          # Only a synthetic local Docker bind mount is used; no broker key,
+          # GitHub Actions-write token, Railway deploy, or order operation.
+          docker build -f Dockerfile.private-stop-controller -t fund100-stop-controller-locked:ci .
+          testdir="$(mktemp -d)"
+          chmod 0755 "$testdir"
+          set +e
+          docker run --rm -v "$testdir:/data" fund100-stop-controller-locked:ci > "$RUNNER_TEMP/fund100-stop-locked.txt" 2>&1
+          code=$?
+          set -e
+          test "$code" -ne 0
+          grep -Fq 'Private STOP controller HARD LOCKED' "$RUNNER_TEMP/fund100-stop-locked.txt"
+          # The root init is gone: non-root user must be able to persist.
+          docker run --rm -v "$testdir:/data" --entrypoint gosu fund100-stop-controller-locked:ci \
+            stopcontroller sh -ec 'test "$(id -u)" -ne 0; touch /data/offline-volume-probe'
+          sudo test -f "$testdir/offline-volume-probe"
+          sudo rm -rf "$testdir"

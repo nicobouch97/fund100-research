@@ -1,0 +1,17 @@
+# Fund-100 isolated STOP-only worker. HARD LOCKED; never a trading service.
+# Railway volume mounts are root-owned. Root is used ONLY by the startup
+# permission helper; gosu drops to the unprivileged controller user BEFORE
+# Python or either GitHub credential is ever opened.
+FROM python:3.12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends gosu && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --system stopcontroller && \
+    useradd --system --gid stopcontroller --no-create-home stopcontroller && \
+    mkdir -p /data
+WORKDIR /app
+COPY --chown=stopcontroller:stopcontroller fund100_private_stop_controller_locked_v1_0.py /app/fund100_private_stop_controller_locked_v1_0.py
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# No public listener, no brokerage modules, no OAuth and no signing keys.
+# Startup MUST fail closed if a root-owned Railway volume cannot be prepared.
+# A mounted /data is independently required in the Python source gate.
+ENTRYPOINT ["sh", "-ec", "test \"$(id -u)\" -eq 0; chown stopcontroller:stopcontroller /data; chmod 0700 /data; exec gosu stopcontroller python -u /app/fund100_private_stop_controller_locked_v1_0.py"]
