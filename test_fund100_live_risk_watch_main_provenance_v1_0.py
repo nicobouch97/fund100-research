@@ -44,7 +44,7 @@ def checked(text: str):
     assert "test \"$GITHUB_REPOSITORY\" = '" + REPO + "'" in before_secret
     assert "test \"$GITHUB_REF\" = 'refs/heads/main'" in before_secret
     assert "test \"$GITHUB_EVENT_NAME\" = 'schedule'" in before_secret
-    assert "test \"$GITHUB_EVENT_NAME\" = 'workflow_dispatch'" in before_secret
+    assert "-o \"$GITHUB_EVENT_NAME\" = 'workflow_dispatch'" in before_secret
     assert "test \"$GITHUB_WORKFLOW_REF\" = '" + WORKFLOW_REF + "'" in before_secret
     assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in before_secret
     # Credentials are exposed only after reviewed main provenance.
