@@ -125,8 +125,7 @@ class Fixture:
             result.status=self.force_status
         return result
 
-    def broker_get(self, *, path, params, key, secret):
-        assert key=="OFFLINE_ONLY_KEY" and secret=="OFFLINE_ONLY_SECRET"
+    def broker_get(self, *, path, params):
         self.broker_reads.append((path,params))
         if path=="/v2/account":
             assert params is None
@@ -162,9 +161,9 @@ def eligible_offline(monkeypatch):
     monkeypatch.setattr(source,"datetime",FixedUTC)
     mock=Fixture()
     monkeypatch.setattr(source,"build_opener",mock.opener)
-    monkeypatch.setattr(source.broker,"load_credentials",
-                        lambda: ("OFFLINE_ONLY_KEY","OFFLINE_ONLY_SECRET"))
-    monkeypatch.setattr(source.broker,"get_json",mock.broker_get)
+    monkeypatch.setattr(source.oauth,"require_readonly_arm",
+                        lambda: None)
+    monkeypatch.setattr(source.oauth,"get_json",mock.broker_get)
     return mock
 
 
@@ -181,7 +180,7 @@ def test_production_source_hard_locked_before_any_private_read(monkeypatch):
                 source.NO_STANDALONE_DISPATCH_PROOF))
     monkeypatch.setattr(source,"build_opener",
                         lambda handler: pytest.fail("No GitHub before release"))
-    monkeypatch.setattr(source.broker,"load_credentials",
+    monkeypatch.setattr(source.oauth,"require_readonly_arm",
                         lambda: pytest.fail("No broker before release"))
     with pytest.raises(source.StopSourceHold,match="HARD LOCKED"):
         complete()
@@ -215,7 +214,7 @@ def test_unfinished_or_wrong_stop_never_reads_broker(
         eligible_offline,monkeypatch,change):
     mock=eligible_offline
     mock.run.update(change)
-    monkeypatch.setattr(source.broker,"load_credentials",
+    monkeypatch.setattr(source.oauth,"require_readonly_arm",
                         lambda: pytest.fail("Unqualified STOP read broker"))
     with pytest.raises(source.StopSourceHold):
         complete()
@@ -239,7 +238,7 @@ def test_incomplete_jobs_never_reach_broker(
         mock.jobs["jobs"][1]["conclusion"]="failure"
     elif failure=="wrongrun":
         mock.jobs["jobs"][1]["run_id"]=1
-    monkeypatch.setattr(source.broker,"load_credentials",
+    monkeypatch.setattr(source.oauth,"require_readonly_arm",
                         lambda: pytest.fail("Missing STOP job cannot read Alpaca"))
     with pytest.raises(source.StopSourceHold):
         complete()
@@ -253,7 +252,7 @@ def test_active_or_malformed_v5_main_latch_blocks_broker(
         eligible_offline,monkeypatch,field,value):
     mock=eligible_offline
     mock.v5[field]=value
-    monkeypatch.setattr(source.broker,"load_credentials",
+    monkeypatch.setattr(source.oauth,"require_readonly_arm",
                         lambda: pytest.fail("Not STOPPED"))
     with pytest.raises(source.StopSourceHold):
         complete()
@@ -269,7 +268,7 @@ def test_v6_latch_requires_both_exact_stops(
         eligible_offline,monkeypatch,field,value):
     mock=eligible_offline
     mock.v6[field]=value
-    monkeypatch.setattr(source.broker,"load_credentials",
+    monkeypatch.setattr(source.oauth,"require_readonly_arm",
                         lambda: pytest.fail("V6 not stopped"))
     with pytest.raises(source.StopSourceHold):
         complete()
@@ -332,7 +331,7 @@ def test_no_untrusted_redirect_or_http_status_before_broker_credentials(
         eligible_offline,monkeypatch):
     mock=eligible_offline
     mock.force_redirect=True
-    monkeypatch.setattr(source.broker,"load_credentials",
+    monkeypatch.setattr(source.oauth,"require_readonly_arm",
                         lambda: pytest.fail("Redirect cannot access broker"))
     with pytest.raises(source.StopSourceHold,match="origin/status"):
         complete()
@@ -369,6 +368,8 @@ def test_source_never_dispatches_cancels_rearms_or_logs_secrets():
     assert "NO_DISPATCH = True" in code
     assert "NO_BROKER_WRITES = True" in code
     assert "SOURCE_RELEASED = False" in code
+    assert "import fund100_alpaca_live_readonly_smoke" not in code
+    assert "broker.load_credentials" not in code
     assert "def do_POST" not in code
     assert "sign_reviewed_eight_get_result(" not in code
     assert "transport=None" not in code
