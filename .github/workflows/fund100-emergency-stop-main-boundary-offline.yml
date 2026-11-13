@@ -1,0 +1,37 @@
+name: Fund-100 Emergency STOP Main-Only Boundary (MOCK ONLY)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/fund100-live-emergency-stop.yml'
+      - 'test_fund100_live_emergency_stop_main_provenance_v1_0.py'
+      - '.github/workflows/fund100-emergency-stop-main-boundary-offline.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fund100-live-emergency-stop.yml'
+      - 'test_fund100_live_emergency_stop_main_provenance_v1_0.py'
+      - '.github/workflows/fund100-emergency-stop-main-boundary-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  reject-unreviewed-branch-broker-secret-path:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      FUND100_LIVE_WRITE_MODE: DISABLED
+      FUND100_BROKER_KILL_SWITCH: ENGAGED
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check exact main-only STOP workflow and broker-secret boundaries
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_live_emergency_stop_main_provenance_v1_0.py
