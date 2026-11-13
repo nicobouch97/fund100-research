@@ -1,0 +1,54 @@
+name: Fund-100 V6-S1 Independent First ACWI Risk Watch (NO TRADE)
+
+# STAGE 1: genuine, credentialless STOP-only schedule probe.
+# This DOES NOT run live brokerage risk or attest a PASS. GitHub schedule is
+# best-effort, so a missing/late run must never be considered safe.
+on:
+  schedule:
+    - cron: "9,24,39,54 13-22 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-v6-s1-stopped-preflight
+  cancel-in-progress: false
+
+jobs:
+  stopped-preflight:
+    name: V6 stopped-state schedule check (NO BROKER, NO PASS)
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Read reviewed main branch only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify current V5/V6 operator STOP without broker access
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import fund100_live_operator_control_v1_0 as v5
+          import fund100_v6_s1_operator_control_v2_0 as v6
+
+          # This preflight is deliberately incapable of checking LIVE broker
+          # risk or writing operator control. If either source is unavailable,
+          # the job fails; no PASS attestation step or trade permit exists.
+          if v5.validate_control(v5.read_current_control()) is not False:
+              raise SystemExit("V5_STOP_UNVERIFIED")
+          status = v6.read_current_control()
+          if (status["trading_enabled"] is not False
+              or status["first_original_acwi_sell_enabled"] is not False):
+              raise SystemExit("V6_ACTIVE_REQUIRES_UNRELEASED_BROKER_WATCH_HOLD")
+          print("V6_SCHEDULE_HEARTBEAT: OPERATOR_STOPPED_NO_BROKER_NO_RISK_PASS")
+          PY

@@ -346,4 +346,10 @@ def test_source_only_has_no_order_post_and_cannot_resume_v5():
     assert "first_original_acwi_sell_enabled=False" in s
     assert "NO_TRADE_RELEASE = True" in s
     assert "from fund100_live_operator_control" not in s
-    assert not Path(".github/workflows/fund100-v6-s1-independent-risk-watch.yml").is_file()
+    # The installed schedule is a STOP-only heartbeat, not this broker-aware watcher.
+    preflight = Path(".github/workflows/fund100-v6-s1-independent-risk-watch.yml")
+    assert preflight.is_file()
+    workflow = preflight.read_text(encoding="utf-8")
+    assert "NO_BROKER_NO_RISK_PASS" in workflow
+    assert "verified_v6_original_acwi_risk=YES" not in workflow
+    assert "ALPACA_LIVE_SECRET" not in workflow
