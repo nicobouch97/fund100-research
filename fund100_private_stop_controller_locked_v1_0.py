@@ -263,6 +263,65 @@ def _dispatch_once(*, reason: str) -> dict:
                 "stop_completed": False, "order_authorized": False}
 
 
+def read_original_dispatch_ticket() -> dict:
+    """Read only the original *acknowledged* dispatch from the durable journal.
+
+    This provides a fixed provenance handoff for a future SEPARATELY
+    AUTHENTICATED GET-only STOP verifier. It never fetches, dispatches, resets,
+    rearms, verifies cancellation, or authorises orders. Journal records
+    are local evidence of our own dispatch response, NOT broker STOP proof.
+    A missing reservation, uncertain network outcome, stale or corrupted
+    journal always holds. Do not use arbitrary external run IDs as proof.
+    """
+    _scope()
+    try:
+        with _journal_connect() as db:
+            if db.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+                raise StopControllerHold("STOP journal integrity invalid")
+            row = db.execute(
+                """SELECT alarm_key,reason,state,created_at_utc,
+                          dispatch_run_id,last_update_utc
+                   FROM stop_attempts WHERE alarm_key=?""",
+                (ALARM_KEY,)
+            ).fetchone()
+    except sqlite3.Error:
+        raise StopControllerHold("Original STOP dispatch ticket unavailable") from None
+    if row is None:
+        raise StopControllerHold("No original STOP dispatch ticket")
+    key, reason, state, created_at, run_id, updated_at = row
+    if (key != ALARM_KEY
+        or reason not in (
+            "OPERATOR_CONTROLS_UNKNOWN",
+            "UNVERIFIED_OPERATOR_GO_OR_RISK_RECEIPT_MISSING",
+            "STOP_LATCHES_WITHOUT_BROKER_CANCEL_PROOF",
+        )
+        or state != "ACK_ONLY_UNVERIFIED_STOP"
+        or type(run_id) is not int
+        or not 0 < run_id < 10**20
+        or type(created_at) is not str
+        or type(updated_at) is not str):
+        raise StopControllerHold("Original dispatch ACK not verifiable")
+    try:
+        original = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ")
+        last = datetime.strptime(updated_at, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        raise StopControllerHold("Original dispatch timestamp invalid") from None
+    if (original.strftime("%Y-%m-%dT%H:%M:%SZ") != created_at
+        or last.strftime("%Y-%m-%dT%H:%M:%SZ") != updated_at
+        or original > last
+        or last.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc)):
+        raise StopControllerHold("Original dispatch chronology invalid")
+    return {
+        "status": "ORIGINAL_DISPATCH_ACK_NOT_STOP_PROOF",
+        "expected_dispatch_run_id": run_id,
+        "alarm_detected_at_utc": created_at,
+        "github_stop_verified": False,
+        "broker_cancel_verified": False,
+        "stop_completed": False,
+        "order_authorized": False,
+    }
+
+
 def once() -> dict:
     """Stop any GO/unknown state; never produce risk PASS or trade GO."""
     _scope()
