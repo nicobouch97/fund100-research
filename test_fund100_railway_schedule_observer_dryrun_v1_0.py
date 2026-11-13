@@ -171,8 +171,8 @@ def test_v6_real_schedule_recent_run_is_diagnostic_not_broker_pass():
 
 @pytest.mark.parametrize("at,due",[
     ("2026-11-13T13:08:00+00:00",False),
-    ("2026-11-13T13:28:59+00:00",False),
-    ("2026-11-13T13:29:00+00:00",True),
+    ("2026-11-13T13:30:59+00:00",False),
+    ("2026-11-13T13:31:00+00:00",True),
     ("2026-11-13T22:54:00+00:00",True),
     ("2026-11-13T23:15:00+00:00",False),
     ("2026-11-14T14:00:00+00:00",False),
