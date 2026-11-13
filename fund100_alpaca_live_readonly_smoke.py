@@ -5,7 +5,7 @@ import os
 import sys
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 from fund100_broker_safety import (
     get_kill_switch_state,
@@ -55,6 +55,18 @@ EXPECTED_LIVE_HOST = (
 READONLY_ARM_VALUE = (
     "YES_READ_ONLY_LIVE"
 )
+
+
+# Authenticated broker headers must NEVER follow a 30x Location to a new
+# endpoint. urllib's default redirect handler is unsuitable for credentials.
+MAX_RESPONSE_BYTES = 1024 * 1024
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise RuntimeError(
+            "SECURITY STOP: authenticated broker GET redirect forbidden."
+        )
 
 
 # ============================================================
@@ -203,18 +215,25 @@ def get_json(
 
     try:
 
-        with urlopen(
+        # Never let urllib forward ALPACA credentials on any 30x redirect.
+        # A synthetic transport or redirect must not be mistaken for an
+        # authenticated response from the exactly pinned live broker URL.
+        with build_opener(_NoRedirect()).open(
             request,
             timeout=20,
         ) as response:
-
-            return json.loads(
-                response
-                .read()
-                .decode(
-                    "utf-8"
+            if (response.status != 200
+                    or response.geturl() != url):
+                raise RuntimeError(
+                    "SECURITY STOP: authenticated broker GET origin/status changed."
                 )
+            raw = response.read(MAX_RESPONSE_BYTES + 1)
+
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise RuntimeError(
+                "SECURITY STOP: authenticated broker response too large."
             )
+        return json.loads(raw.decode("utf-8"))
 
     except HTTPError as exc:
 

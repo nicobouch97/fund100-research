@@ -8,6 +8,11 @@ import sys
 from pathlib import Path
 
 
+# Signed-source dependency pin refresh, reviewed 13 Nov 2026:
+# The same original /v2 authenticated GET helper now denies 30x redirects,
+# mismatched response URLs/non-200 and >1 MiB bodies. No added endpoints,
+# HTTP writes, credentials, execution grants or trade GO; do not waive pins.
+
 # ============================================================
 # FUND-100 LIVE BOUNDARY STATIC AUDIT v1.1
 # ============================================================
@@ -455,7 +460,7 @@ def approved_scoped_live_script(
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
                 "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_alpaca_live_readonly_smoke.py":
-                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+                "a8cf058595a960d67055a63e65f574530f7074c8",
             "fund100_v6_recurring_real_cas_transport_locked_v1_0.py":
                 "512f370ac37c459ea9d5fcaf87b11cf80c485302",
             "fund100_v6_recurring_seq1_immutable_release_recovery_locked_v1_0.py":
@@ -524,7 +529,7 @@ def approved_scoped_live_script(
                 return False
         read_only_dependencies = {
             "fund100_alpaca_live_readonly_smoke.py":
-                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+                "a8cf058595a960d67055a63e65f574530f7074c8",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
                 "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_v6_brokerless_transition_preview_v1_0.py":
@@ -559,7 +564,7 @@ def approved_scoped_live_script(
         # as the new entry-point; any mutation removes its eligibility.
         pinned_dependencies = {
             "fund100_alpaca_live_readonly_smoke.py":
-                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+                "a8cf058595a960d67055a63e65f574530f7074c8",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
                 "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_live_portfolio_risk_v1_0.py":
@@ -587,7 +592,7 @@ def approved_scoped_live_script(
             return False
         immutable_dependencies = {
             "fund100_alpaca_live_readonly_smoke.py":
-                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+                "a8cf058595a960d67055a63e65f574530f7074c8",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
                 "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_v6_s1_live_risk_history_getonly_v1_0.py":
@@ -693,7 +698,7 @@ def approved_scoped_live_script(
             return False
         immutable_dependencies = {
             "fund100_alpaca_live_readonly_smoke.py":
-                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+                "a8cf058595a960d67055a63e65f574530f7074c8",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
                 "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_v6_s1_live_risk_history_getonly_v1_0.py":
@@ -758,7 +763,7 @@ def approved_scoped_live_script(
                 return False
         dependencies = {
             "fund100_alpaca_live_readonly_smoke.py":
-                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+                "a8cf058595a960d67055a63e65f574530f7074c8",
             "fund100_v6_brokerless_transition_preview_v1_0.py":
                 "a0b4efc660f30395b6cdda104f0eddf63b8a6dd9",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
@@ -820,7 +825,7 @@ def approved_scoped_live_script(
                 return False
         immutable_dependencies = {
             "fund100_alpaca_live_readonly_smoke.py":
-                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+                "a8cf058595a960d67055a63e65f574530f7074c8",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
                 "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_v6_brokerless_transition_preview_v1_0.py":
@@ -870,7 +875,7 @@ def approved_scoped_live_script(
             return False
         dependencies = {
             "fund100_alpaca_live_readonly_smoke.py":
-                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+                "a8cf058595a960d67055a63e65f574530f7074c8",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
                 "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_v6_s1_authentic_live_fill_schema_getonly_v1_0.py":
@@ -904,7 +909,7 @@ def approved_scoped_live_script(
             return False
         dependencies = {
             "fund100_alpaca_live_readonly_smoke.py":
-                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+                "a8cf058595a960d67055a63e65f574530f7074c8",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
                 "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_v6_brokerless_transition_preview_v1_0.py":
@@ -935,7 +940,7 @@ def approved_scoped_live_script(
             return False
         dependencies = {
             "fund100_alpaca_live_readonly_smoke.py":
-                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+                "a8cf058595a960d67055a63e65f574530f7074c8",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
                 "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_v6_brokerless_transition_preview_v1_0.py":
@@ -966,7 +971,7 @@ def approved_scoped_live_script(
             return False
         dependencies = {
             "fund100_alpaca_live_readonly_smoke.py":
-                "cf871f849a140c7b1db29fd991c8e00da31e1974",
+                "a8cf058595a960d67055a63e65f574530f7074c8",
             "fund100_v6_real_live_getonly_transition_readiness_v1_0.py":
                 "cebb99bf22ea175a23cf2c0802d1822ae740534f",
             "fund100_v6_s1_frac_live_sell_writer_candidate_v1_0.py":
