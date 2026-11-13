@@ -19,7 +19,7 @@ def test_exact_watch_path_exists_and_is_scheduled_main_only():
     text = _source()
     assert str(WORKFLOW) == admission.WATCH_PATH
     assert "name: Fund-100 V6-S1 Independent First ACWI Risk Watch (NO TRADE)" in text
-    assert 'cron: "9,24,39,54 13-22 * * 1-5"' in text
+    assert 'cron: "11,26,41,56 13-22 * * 1-5"' in text
     assert "github.ref == 'refs/heads/main'" in text
     assert "persist-credentials: false" in text
     assert "contents: read" in text
