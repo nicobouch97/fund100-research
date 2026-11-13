@@ -40,7 +40,7 @@ jobs:
       - name: Build standalone image and verify durable Docker mount across restarts
         run: |
           set -euo pipefail
-          docker build --network none -f Dockerfile.private-stop-shadow \
+          docker build -f Dockerfile.private-stop-shadow \
             -t fund100-private-shadow:offline .
           volume="$(mktemp -d)"
           chmod 0755 "$volume"
