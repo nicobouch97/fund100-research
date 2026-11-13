@@ -373,6 +373,55 @@ def test_economic_no_trade_does_not_attempt_private_receipt_or_claim(
     assert state["receipt_checks"]==[]
 
 
+@pytest.mark.parametrize("final_mode",["false","none","wrong_type","outage"])
+def test_last_mile_risk_receipt_expiry_or_outage_never_submits_order(
+        setup,monkeypatch,final_mode):
+    state,args=setup
+    calls=[]
+    def first_pass_then_fail(*,main_sha,readonly_token):
+        assert main_sha==args["context"]["current_main_sha"]
+        assert readonly_token==os.environ[
+            "FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN"]
+        calls.append(main_sha)
+        if len(calls)==1:
+            return True
+        if final_mode=="outage":
+            raise RuntimeError("OFFLINE_SYNTHETIC_PROVIDER_OUTAGE")
+        if final_mode=="none":
+            return None
+        if final_mode=="wrong_type":
+            return 1
+        return False
+    monkeypatch.setattr(
+        chain.external_receipt,"require_fresh_signed_external_risk_pass",
+        first_pass_then_fail)
+    with pytest.raises(chain.ChainStop,match="NEVER RETRY") as error:
+        chain.run_exact_first_acwi_attempt(**args)
+    assert "OFFLINE_SYNTHETIC" not in str(error.value)
+    assert len(calls)==2
+    assert state["events"]==[
+        "setting","absent","broker_preflight","claim","seq2","publish"]
+    assert state["write_calls"]==3
+    assert "writer" not in state["events"]
+
+
+def test_signed_risk_read_twice_before_first_broker_post(setup):
+    state,args=setup
+    _=chain.run_exact_first_acwi_attempt(**args)
+    assert len(state["receipt_checks"])==2
+    assert all(check==(args["context"]["current_main_sha"],True)
+               for check in state["receipt_checks"])
+    from pathlib import Path
+    s=Path(chain.__file__).read_text()
+    occurrences=[m.start() for m in __import__("re").finditer(
+        "external_receipt.require_fresh_signed_external_risk_pass\\(",s)]
+    assert len(occurrences)==2
+    assert occurrences[0]<s.index("claim=ownership.claim_for_same_attempt_only(")
+    assert occurrences[1]>s.index("last_owner=_real_current(")
+    assert occurrences[1]<s.index(
+        "result=writer.submit_v6_s1_original_acwi_fractional_sell(")
+
+
 def test_exact_one_attempt_all_valid_original_signed_heads_same_run(setup):
     state,args=setup
     report=chain.run_exact_first_acwi_attempt(**args)
