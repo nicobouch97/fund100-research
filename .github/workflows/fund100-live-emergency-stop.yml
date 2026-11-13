@@ -45,6 +45,13 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # This step runs even if the earlier STOP CAS/provenance step fails.
+          # Verify provenance AGAIN before giving the V6 code its write token.
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-live-emergency-stop.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           python - <<'PY'
           import fund100_v6_s1_operator_control_v2_0 as v6
           assert v6.commit_stop_signal() in ('STOPPED','ALREADY_STOPPED')
