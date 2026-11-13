@@ -25,10 +25,10 @@ V6_WORKFLOW_PATH = ".github/workflows/fund100-v6-s1-independent-risk-watch.yml"
 V6_API = ("https://api.github.com/repos/nicobouch97/fund100-research/"
           "actions/workflows/fund100-v6-s1-independent-risk-watch.yml/runs"
           "?event=schedule&per_page=1")
-# V6 cron starts at 13:09 UTC. Allow 20 minutes after the first slot for
+# V6 cron re-registered at 13:11 UTC (initial slot) on 13 Nov 2026. Allow 20 minutes after the first slot for
 # provider queuing; after 23:15 UTC a day is out of observation scope.
 V6_FIRST_HEARTBEAT_DUE_HOUR = 13
-V6_FIRST_HEARTBEAT_DUE_MINUTE = 29
+V6_FIRST_HEARTBEAT_DUE_MINUTE = 31
 V6_LAST_HEARTBEAT_DUE_HOUR = 23
 V6_LAST_HEARTBEAT_DUE_MINUTE = 15
 MAX_RESPONSE_BYTES = 16000
