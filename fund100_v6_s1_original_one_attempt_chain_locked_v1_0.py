@@ -14,6 +14,7 @@ import re
 import fund100_v6_s1_one_time_owner_claim_cas_v1_0 as ownership
 import fund100_v6_s1_immutable_release_publish_locked_v1_0 as publisher
 import fund100_v6_s1_fresh_acwi_order_time_risk_getonly_v1_0 as risk
+import fund100_v6_s1_external_signed_risk_receipt_ingress_v1_0 as external_receipt
 import fund100_v6_s1_first_acwi_economic_preclaim_v1_0 as economic
 import fund100_v6_s1_private_git_cas_protocol_v1_0 as ledger
 import fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0 as prepost
@@ -367,6 +368,27 @@ def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
     except Exception:
         raise ChainStop(
             "Original ACWI economic source unexpected failure; no owner claim") from None
+
+    # A self-reported in-process broker risk verdict cannot substitute for
+    # independently authenticated, fresh Ed25519-signed broker-risk evidence.
+    # This second veto is mandatory BEFORE consuming any one-shot owner fence
+    # or signed private HEAD. The ingress remains source HARD-LOCKED and the
+    # published Railway diagnostic is NOT trusted as a risk receipt.
+    # Releasing this chain alone must never bypass the independent signer.
+    try:
+        receipt_token=os.environ.get("FUND100_EXTERNAL_RISK_RECEIPT_READ_TOKEN")
+        if (type(receipt_token) is not str
+            or re.fullmatch(r"[A-Za-z0-9._~-]{32,512}",receipt_token) is None
+            or external_receipt.require_fresh_signed_external_risk_pass(
+                main_sha=context["current_main_sha"],
+                readonly_token=receipt_token) is not True):
+            raise ChainStop("Independent risk receipt unavailable")
+    except Exception:
+        # Never leak the external bearer, signed payload, account binding,
+        # failure response or claimed decision via broker/order logs.
+        raise ChainStop(
+            "Independent signed broker-risk veto unavailable; no owner claim"
+        ) from None
 
     # Exact current original seq1, unclaimed owner seq0 and initial public
     # witnesses, independently authenticated BEFORE first irreversible PUT.
