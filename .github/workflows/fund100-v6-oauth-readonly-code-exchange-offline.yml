@@ -6,6 +6,8 @@ on:
       - "fund100_v6_readonly_oauth_code_exchange_v1_0.py"
       - "test_fund100_v6_readonly_oauth_code_exchange_v1_0.py"
       - "fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py"
+      - "fund100_v6_oauth_private_callback_handoff_locked_v1_0.py"
+      - "test_fund100_v6_oauth_private_callback_handoff_locked_v1_0.py"
       - "test_fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py"
       - ".github/workflows/fund100-v6-oauth-readonly-code-exchange-offline.yml"
   push:
@@ -14,6 +16,8 @@ on:
       - "fund100_v6_readonly_oauth_code_exchange_v1_0.py"
       - "test_fund100_v6_readonly_oauth_code_exchange_v1_0.py"
       - "fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py"
+      - "fund100_v6_oauth_private_callback_handoff_locked_v1_0.py"
+      - "test_fund100_v6_oauth_private_callback_handoff_locked_v1_0.py"
       - "test_fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py"
       - ".github/workflows/fund100-v6-oauth-readonly-code-exchange-offline.yml"
 
@@ -35,8 +39,11 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install 'pytest>=8,<9'
-          python -m pytest -q test_fund100_v6_readonly_oauth_code_exchange_v1_0.py test_fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py
+          python -m pytest -q test_fund100_v6_readonly_oauth_code_exchange_v1_0.py test_fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py test_fund100_v6_oauth_private_callback_handoff_locked_v1_0.py
           grep -Fq 'CODE_EXCHANGE_RELEASED = False' fund100_v6_readonly_oauth_code_exchange_v1_0.py
           grep -Fq 'APP_REGISTRATION_APPROVED = False' fund100_v6_readonly_oauth_code_exchange_v1_0.py
           grep -Fq 'NO_TOKEN_STORAGE = True' fund100_v6_oauth_atomic_sqlite_csrf_v1_0.py
+          grep -Fq 'SOURCE_RELEASED = False' fund100_v6_oauth_private_callback_handoff_locked_v1_0.py
+          grep -Fq 'APP_REGISTRATION_INDEPENDENTLY_VERIFIED = False' fund100_v6_oauth_private_callback_handoff_locked_v1_0.py
+          grep -Fq 'PRIVATE_CALLBACK_TRANSPORT_INDEPENDENTLY_VERIFIED = False' fund100_v6_oauth_private_callback_handoff_locked_v1_0.py
           test ! -e .github/workflows/fund100-v6-oauth-real-token-exchange.yml
