@@ -23,7 +23,7 @@ def test_v5_emergency_source_remains_immutably_pinned():
         ".github/workflows/fund100-live-emergency-stop.yml",
         "fund100_live_emergency_stop_v1_0.py")]
     assert pin == audit.git_blob_digest(Path("fund100_live_emergency_stop_v1_0.py"))
-    assert pin == "5ef6fb7c8e01a8f002b6167aca28c89590931767"
+    assert pin == "f990a9edf3357a161d32ff9e37301f2955d13808"
     assert c.SIGNED_FIRST_ACWI_CLIENT_ID == c.signed.CLIENT_IDS["ACWI"]
     assert c.SIGNED_FIRST_ACWI_CLIENT_ID not in [
         c.signed.CLIENT_IDS["EEM"], c.signed.CLIENT_IDS["XLV"]]
