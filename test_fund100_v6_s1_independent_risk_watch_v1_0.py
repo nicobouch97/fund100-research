@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import base64
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -429,7 +430,7 @@ def test_eight_broker_gets_over_45_seconds_never_reach_risk_evaluation(
         monkeypatch):
     _, _, calls = _prepare_private_witness_mock(monkeypatch)
     ticks = iter((0.0, 46.0))
-    monkeypatch.setattr(watch.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(watch, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
     monkeypatch.setattr(
         watch.active, "evaluate_original_sell_only",
         lambda **kwargs: pytest.fail("Stale 8-GET source evaluated"))
@@ -441,7 +442,7 @@ def test_eight_broker_gets_over_45_seconds_never_reach_risk_evaluation(
 def test_slow_risk_evaluator_cannot_reuse_old_broker_snapshot(monkeypatch):
     _, _, calls = _prepare_private_witness_mock(monkeypatch)
     ticks = iter((0.0, 0.0, 61.0))
-    monkeypatch.setattr(watch.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(watch, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
     with pytest.raises(watch.V6WatchStop, match="evaluation exceeded"):
         watch._capture_private_eight_get_witness()
     assert len(calls) == 8
