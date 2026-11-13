@@ -262,9 +262,20 @@ def confirm_stop_from_authenticated_gets(
         # private account numbers, request ids or financial information.
         raise StopSourceHold("Fresh broker STOP confirmation unavailable") from None
     broker_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # A full page cannot prove that no later OPEN Fund-100 order was
+    # omitted by pagination. Reject it rather than guessing no more exist.
     if (not 0 <= time.monotonic() - started <= MAX_PRIVATE_SOURCE_SECONDS
-        or type(account) is not dict or type(orders) is not list):
-        raise StopSourceHold("STOP read was stale or malformed")
+        or type(account) is not dict or type(orders) is not list
+        or len(orders) >= BROKER_OPEN_ORDER_PARAMS["limit"]):
+        raise StopSourceHold("STOP read stale, malformed or possibly truncated")
+    # Recheck both live main STOP latches AFTER the broker reads. The prior
+    # snapshots were required before touching credentials; if one is rearmed
+    # during broker access, it must be caught before any completion claim.
+    v5_control = _current_main_control(V5_PATH,token=token)
+    v6_control = _current_main_control(V6_PATH,token=token)
+    controls_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if not 0 <= time.monotonic() - started <= MAX_PRIVATE_SOURCE_SECONDS:
+        raise StopSourceHold("STOP control recheck exceeded freshness")
     # Verifier must be explicitly source-released independently and have an
     # exact account-identity pin. The default code ALWAYS fails closed.
     proof = verifier.verify_emergency_stop_completion(
