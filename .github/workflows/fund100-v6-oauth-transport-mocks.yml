@@ -4,12 +4,16 @@ on:
   pull_request:
     paths:
       - 'fund100_v6_readonly_oauth_eight_get_transport_v1_0.py'
+      - 'fund100_v6_private_oauth_risk_witness_locked_v1_0.py'
+      - 'test_fund100_v6_private_oauth_risk_witness_locked_v1_0.py'
       - 'test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py'
       - '.github/workflows/fund100-v6-oauth-transport-mocks.yml'
   push:
     branches: [main]
     paths:
       - 'fund100_v6_readonly_oauth_eight_get_transport_v1_0.py'
+      - 'fund100_v6_private_oauth_risk_witness_locked_v1_0.py'
+      - 'test_fund100_v6_private_oauth_risk_witness_locked_v1_0.py'
       - 'test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py'
       - '.github/workflows/fund100-v6-oauth-transport-mocks.yml'
 
@@ -31,6 +35,8 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install 'pytest>=8,<9'
-          python -m pytest -q test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py
+          python -m pytest -q test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py test_fund100_v6_private_oauth_risk_witness_locked_v1_0.py
           grep -Fq 'GET_TRANSPORT_RELEASED = False' fund100_v6_readonly_oauth_eight_get_transport_v1_0.py
+          grep -Fq 'SOURCE_RELEASED = False' fund100_v6_private_oauth_risk_witness_locked_v1_0.py
+          grep -Fq 'PROVIDER_READONLY_GRANT_CUSTODY_INDEPENDENTLY_VERIFIED = False' fund100_v6_private_oauth_risk_witness_locked_v1_0.py
           test ! -e .github/workflows/fund100-v6-oauth-broker-live.yml
