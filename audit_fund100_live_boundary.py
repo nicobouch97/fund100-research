@@ -309,7 +309,7 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
     (
         ".github/workflows/fund100-live-emergency-stop.yml",
         "fund100_live_emergency_stop_v1_0.py",
-    ): "5ef6fb7c8e01a8f002b6167aca28c89590931767",
+    ): "f990a9edf3357a161d32ff9e37301f2955d13808",
     # Independent STOP-only first original V6 ACWI broker cancellation.
     # Exact SHA approved separately; NEVER extend the V5 cancellation matcher.
     (
@@ -409,7 +409,7 @@ def approved_scoped_live_script(
             return False
         for dependency, expected_digest in {
             "fund100_live_emergency_stop_v1_0.py":
-                "5ef6fb7c8e01a8f002b6167aca28c89590931767",
+                "f990a9edf3357a161d32ff9e37301f2955d13808",
             "fund100_v6_s1_private_git_cas_protocol_v1_0.py":
                 "9b9f8917faa21b4157600ac642f80595445a7276",
             "fund100_v6_s1_operator_control_v2_0.py":
