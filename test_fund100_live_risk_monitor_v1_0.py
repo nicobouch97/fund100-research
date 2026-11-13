@@ -115,9 +115,9 @@ def test_ambiguous_account_flag_auto_stops_before_cancel(monkeypatch):
         bad,positions(),history(),policy(),"a"*64
     ))
     monkeypatch.setattr(monitor.operator,"commit_stop_signal",
-                        lambda:events.append("STOP"))
+                        lambda:(events.append("STOP"),"STOPPED")[1])
     monkeypatch.setattr(monitor.emergency,"cancel_open_fund100_orders",
-                        lambda:events.append("CANCEL"))
+                        lambda:(events.append("CANCEL"),0)[1])
     assert monitor.monitor_once()=="AUTO_STOP_CONFIRMED"
     assert events==["STOP","CANCEL"]
 
@@ -178,17 +178,18 @@ def test_auto_stop_on_risk_breach_and_cancel(monkeypatch):
     ))
     monkeypatch.setattr(
         monitor.operator, "commit_stop_signal",
-        lambda: calls.append("STOP"),
+        lambda: (calls.append("STOP"),"STOPPED")[1],
     )
     monkeypatch.setattr(
         monitor.emergency, "cancel_open_fund100_orders",
-        lambda: calls.append("CANCEL"),
+        lambda: (calls.append("CANCEL"),0)[1],
     )
     assert monitor.monitor_once() == "AUTO_STOP_CONFIRMED"
     assert calls == ["STOP", "CANCEL"]
 
 
-def test_stop_commit_failure_does_not_claim_success(monkeypatch):
+def test_stop_commit_failure_still_attempts_cancellation(monkeypatch):
+    events = []
     monkeypatch.setenv("FUND100_RISK_LEVEL", "LOW")
     monkeypatch.setattr(
         monitor.operator, "read_current_control",
@@ -197,16 +198,17 @@ def test_stop_commit_failure_does_not_claim_success(monkeypatch):
     monkeypatch.setattr(monitor, "live_read_only_snapshot", lambda: (
         account(), positions(), history(), policy(), "a" * 64
     ))
-    monkeypatch.setattr(
-        monitor.operator, "commit_stop_signal",
-        lambda: (_ for _ in ()).throw(RuntimeError("API outage")),
-    )
+    def broken_stop():
+        events.append("STOP_ATTEMPT")
+        raise RuntimeError("synthetic GitHub outage")
+    monkeypatch.setattr(monitor.operator, "commit_stop_signal", broken_stop)
     monkeypatch.setattr(
         monitor.emergency, "cancel_open_fund100_orders",
-        lambda: pytest.fail("Cancellation before stop confirmation"),
+        lambda: (events.append("CANCEL_ATTEMPT"), 0)[1],
     )
     with pytest.raises(monitor.RiskMonitorStop, match="persistent STOP"):
         monitor.monitor_once()
+    assert events == ["STOP_ATTEMPT", "CANCEL_ATTEMPT"]
 
 
 def test_cancel_error_cannot_claim_auto_stop_success(monkeypatch):
@@ -218,10 +220,102 @@ def test_cancel_error_cannot_claim_auto_stop_success(monkeypatch):
     monkeypatch.setattr(monitor, "live_read_only_snapshot", lambda: (
         account(), positions(), history(), policy(), "a" * 64
     ))
-    monkeypatch.setattr(monitor.operator, "commit_stop_signal", lambda: None)
+    monkeypatch.setattr(monitor.operator, "commit_stop_signal", lambda: "STOPPED")
     monkeypatch.setattr(
         monitor.emergency, "cancel_open_fund100_orders",
         lambda: (_ for _ in ()).throw(RuntimeError("broker unavailable")),
     )
     with pytest.raises(monitor.RiskMonitorStop, match="cancellation"):
         monitor.monitor_once()
+
+
+def test_unknown_operator_control_attempts_stop_and_cancel(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        monitor.operator, "read_current_control",
+        lambda: (_ for _ in ()).throw(RuntimeError("synthetic GitHub 503")),
+    )
+    monkeypatch.setattr(
+        monitor, "live_read_only_snapshot",
+        lambda: pytest.fail("No broker risk PASS on unknown GitHub control"),
+    )
+    monkeypatch.setattr(monitor.operator, "commit_stop_signal",
+                        lambda: (calls.append("STOP"), "STOPPED")[1])
+    monkeypatch.setattr(monitor.emergency, "cancel_open_fund100_orders",
+                        lambda: (calls.append("CANCEL"), 0)[1])
+    assert monitor.monitor_once() == "AUTO_STOP_CONFIRMED"
+    assert calls == ["STOP", "CANCEL"]
+
+
+@pytest.mark.parametrize("stop_outcome", [None, "STARTED", "MAYBE", True])
+def test_invalid_stop_result_holds_even_if_orders_cancelled(
+        monkeypatch, stop_outcome):
+    calls = []
+    monkeypatch.setattr(
+        monitor.operator, "read_current_control",
+        lambda: {"schema": operator.CONTROL_SCHEMA, "trading_enabled": True},
+    )
+    monkeypatch.setattr(
+        monitor, "live_read_only_snapshot",
+        lambda: (_ for _ in ()).throw(RuntimeError("synthetic broker outage")),
+    )
+    monkeypatch.setattr(monitor.operator, "commit_stop_signal",
+                        lambda: (calls.append("STOP"), stop_outcome)[1])
+    monkeypatch.setattr(monitor.emergency, "cancel_open_fund100_orders",
+                        lambda: (calls.append("CANCEL"), 0)[1])
+    with pytest.raises(monitor.RiskMonitorStop, match="persistent STOP"):
+        monitor.monitor_once()
+    assert calls == ["STOP", "CANCEL"]
+
+
+@pytest.mark.parametrize("cancel_return", [None, True, -1, "0"])
+def test_invalid_cancel_response_never_claims_verified(
+        monkeypatch, cancel_return):
+    calls = []
+    monkeypatch.setattr(
+        monitor.operator, "read_current_control",
+        lambda: {"schema": operator.CONTROL_SCHEMA, "trading_enabled": True},
+    )
+    monkeypatch.setattr(
+        monitor, "live_read_only_snapshot",
+        lambda: (_ for _ in ()).throw(RuntimeError("synthetic broker outage")),
+    )
+    monkeypatch.setattr(monitor.operator, "commit_stop_signal",
+                        lambda: (calls.append("STOP"), "STOPPED")[1])
+    monkeypatch.setattr(monitor.emergency, "cancel_open_fund100_orders",
+                        lambda: (calls.append("CANCEL"), cancel_return)[1])
+    with pytest.raises(monitor.RiskMonitorStop, match="cancellation"):
+        monitor.monitor_once()
+    assert calls == ["STOP", "CANCEL"]
+
+
+def test_both_stop_and_cancel_failure_report_unverified(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        monitor.operator, "read_current_control",
+        lambda: (_ for _ in ()).throw(RuntimeError("synthetic control outage")),
+    )
+    def broken_stop():
+        calls.append("STOP")
+        raise RuntimeError("token outage")
+    def broken_cancel():
+        calls.append("CANCEL")
+        raise RuntimeError("broker outage")
+    monkeypatch.setattr(monitor.operator, "commit_stop_signal", broken_stop)
+    monkeypatch.setattr(monitor.emergency, "cancel_open_fund100_orders",
+                        broken_cancel)
+    with pytest.raises(monitor.RiskMonitorStop, match="BOTH unverified"):
+        monitor.monitor_once()
+    assert calls == ["STOP", "CANCEL"]
+
+
+def test_no_order_after_failclosed_unknown_state(monkeypatch):
+    monkeypatch.setattr(
+        monitor.operator, "read_current_control",
+        lambda: {"schema": operator.CONTROL_SCHEMA, "trading_enabled": False},
+    )
+    monkeypatch.setattr(
+        monitor.emergency, "cancel_open_fund100_orders",
+        lambda: pytest.fail("Existing STOP-only probe must not write broker"),
+    )
+    assert monitor.monitor_once() == "ALREADY_STOPPED"
