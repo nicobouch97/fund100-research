@@ -12,6 +12,7 @@ import json
 import os
 import threading
 import time
+from datetime import datetime, timezone
 
 import fund100_railway_schedule_observer_dryrun_v1_0 as observer
 
@@ -140,12 +141,16 @@ informational website and proposed read-only account connection.</p>"""
 }
 
 _lock = threading.Lock()
+# Monotonic-process heartbeat: if the Railway polling thread dies, an old
+# public GitHub result must never remain apparently fresh or become a PASS.
+POLL_STALE_SECONDS = observer.POLL_SECONDS * 2 + 30
 _latest = {"observation": "NOT_YET_OBSERVED",
            "seconds_since_last_recorded_run": None,
            "v6_observation":"NOT_YET_OBSERVED",
            "v6_seconds_since_last_recorded_run":None,
            "v6_schedule_due":False,
-           "v6_schedule_heartbeat_missing_or_stale":False}
+           "v6_schedule_heartbeat_missing_or_stale":False,
+           "_observer_poll_monotonic":None}
 
 
 def publish_diagnostic(sample: object) -> None:
@@ -183,6 +188,7 @@ def publish_diagnostic(sample: object) -> None:
     with _lock:
         _latest.update(observation=status,
                        seconds_since_last_recorded_run=age,
+                       _observer_poll_monotonic=time.monotonic(),
                        **v6_updates)
 
 
@@ -250,17 +256,29 @@ class DryrunHandler(BaseHTTPRequestHandler):
         elif path == "/status":
             with _lock:
                 status = dict(_latest)
+            published = status.pop("_observer_poll_monotonic")
+            now_mono = time.monotonic()
+            stale = (type(published) not in (float,int)
+                     or not 0 <= now_mono-published <= POLL_STALE_SECONDS)
+            # Recompute V6 due from the *current* UTC clock, never from an
+            # old cached poll; stale supervision itself becomes a hard veto.
+            due_now = observer._v6_schedule_due(datetime.now(timezone.utc))
+            v6_status = ("SOURCE_UNAVAILABLE" if stale
+                         else status["v6_observation"])
+            v6_age = (None if stale else
+                      status["v6_seconds_since_last_recorded_run"])
+            v6_missing = (due_now and
+                          v6_status != "SCHEDULE_RUN_RECORDED_NOT_RISK_PASS")
             self._emit(200, {
                 "schema": SCHEMA, "mode": MODE,
                 "observation": status["observation"],
                 "seconds_since_last_recorded_run":
                     status["seconds_since_last_recorded_run"],
-                "v6_observation":status["v6_observation"],
-                "v6_seconds_since_last_recorded_run":
-                    status["v6_seconds_since_last_recorded_run"],
-                "v6_schedule_due":status["v6_schedule_due"],
-                "v6_schedule_heartbeat_missing_or_stale":
-                    status["v6_schedule_heartbeat_missing_or_stale"],
+                "v6_observation":v6_status,
+                "v6_seconds_since_last_recorded_run":v6_age,
+                "v6_schedule_due":due_now,
+                "v6_schedule_heartbeat_missing_or_stale":bool(v6_missing),
+                "observer_heartbeat_stale":bool(stale),
                 "broker_risk_pass": False, "trading_authorized": False,
             })
         elif path == "/oauth/callback":
