@@ -134,10 +134,16 @@ def test_relay_fixed_stop_endpoint_no_unsafe_ack_success_or_retry():
     assert "V6_SCHEDULE_HEARTBEAT" not in relay
     # A broker cancel, GitHub contents update, or direct trade must be
     # executed by the existing emergency workflow, never this relay.
-    for forbidden in ("api.alpaca.markets", "/v2/orders", "DELETE",
+    # Check dangerous literals/calls in parsed source; explanatory comments
+    # mentioning a broker DELETE are not executable operations.
+    for forbidden in ("api.alpaca.markets", "/v2/orders",
                       "ALPACA_LIVE", "contents: write", "commit_stop_signal",
                       "NO_BROKER_NO_RISK_PASS", "requests.post"):
         assert forbidden not in py
+    assert not any(
+        isinstance(node, ast.Constant) and node.value == "DELETE"
+        for node in ast.walk(tree)
+    )
     requests = [
         n for n in ast.walk(tree) if isinstance(n, ast.Call)
         and isinstance(n.func, ast.Name) and n.func.id == "Request"
