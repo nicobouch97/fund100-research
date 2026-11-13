@@ -54,6 +54,7 @@ jobs:
       - name: Check risk or trigger persistent STOP
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
           ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
