@@ -161,6 +161,7 @@ def test_wrong_expected_main_cannot_be_selected_by_remote_caller(
     {"iat": UNIX - 130},
     {"iat": UNIX + 1},
     {"nbf": UNIX + 1},
+    {"nbf": UNIX - 606},
     {"exp": UNIX - 1},
     {"iat": True},
     {"exp": "1763050000"},
@@ -174,6 +175,17 @@ def test_signed_stale_future_or_malformed_timestamps_are_denied(
     claims.update(changes)
     with pytest.raises(identity.BrokerWitnessIdentityStop):
         check(sign(private, claims))
+
+
+
+def test_documented_github_nbf_may_precede_iat_by_ten_minutes(
+        mock_valid_identity):
+    private, _ = mock_valid_identity
+    claims = jwt_claims()
+    claims["nbf"] = claims["iat"] - 600
+    received = check(sign(private, claims))
+    assert received["status"] == "OIDC_JOB_IDENTITY_ONLY_NOT_BROKER_PROOF"
+    assert received["broker_risk_pass_proven"] is False
 
 
 def test_modified_token_cannot_pass_issuer_signature(
