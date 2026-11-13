@@ -698,7 +698,7 @@ def test_direct_get_stops_before_network(
 
     monkeypatch.setattr(
         candidate,
-        "urlopen",
+        "build_opener",
         forbidden_urlopen,
     )
 
@@ -749,7 +749,7 @@ def test_direct_post_stops_before_network(
 
     monkeypatch.setattr(
         candidate,
-        "urlopen",
+        "build_opener",
         forbidden_urlopen,
     )
 
