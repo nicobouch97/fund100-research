@@ -241,3 +241,15 @@ def test_retry_after_restart_remains_denied(protected, monkeypatch):
     with ctl._journal_connect() as db:
         assert ctl._reserve_once(db, reason="OPERATOR_CONTROLS_UNKNOWN")
     assert ctl.once()["state"] == "STOP_ALREADY_RESERVED_NO_RETRY"
+
+
+
+def test_private_image_drops_root_before_controller_runs():
+    image = Path("Dockerfile.private-stop-controller").read_text()
+    assert "gosu stopcontroller python -u" in image
+    assert "chown stopcontroller:stopcontroller /data" in image
+    assert "chmod 0700 /data" in image
+    assert 'test \\"$(id -u)\\" -eq 0' in image
+    assert "fund100_railway_risk_watch_http_preflight_v1_0.py" not in image
+    assert "EXPOSE" not in image
+    assert "ALPACA_" not in image
