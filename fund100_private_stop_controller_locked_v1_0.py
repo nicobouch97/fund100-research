@@ -278,9 +278,14 @@ def once() -> dict:
         reason = "OPERATOR_CONTROLS_UNKNOWN"
     else:
         reason = "UNVERIFIED_OPERATOR_GO_OR_RISK_RECEIPT_MISSING"
+    # Both GitHub STOP latches being false does NOT prove there are zero
+    # outstanding Fund-100 broker orders. Until an independently verified
+    # broker cancellation receipt exists, a new controller instance must
+    # request the fixed STOP + selective-cancel workflow ONCE even when the
+    # latches are already STOP. The durable incident reservation fences
+    # repeated requests, including after a crash or ambiguous response.
     if stopped:
-        return {"state": "STOP_LATCHES_ONLY_BROKER_CANCEL_NOT_PROVEN",
-                "stop_completed": False, "order_authorized": False}
+        reason = "STOP_LATCHES_WITHOUT_BROKER_CANCEL_PROOF"
     return _dispatch_once(reason=reason)
 
 
