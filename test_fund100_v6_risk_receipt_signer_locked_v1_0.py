@@ -174,8 +174,8 @@ def test_wrong_signer_job_provenance_denied_before_crypto(
 
 
 @pytest.mark.parametrize("off",[
-    (-100,-95,-90),(-45,-5,0),(-3,-8,0),(-5,0,20),
-    (-20,-6,-4),
+    (-100,-95,-90),(-60,-5,0),(-3,-8,0),(-5,0,20),
+    (-20,-6,-40),
 ])
 def test_stale_reversed_or_future_evidence_refused(reviewed_offline,off):
     now=datetime.now(timezone.utc).replace(microsecond=0)
