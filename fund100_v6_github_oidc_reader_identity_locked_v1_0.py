@@ -54,6 +54,7 @@ MAX_JWKS_BYTES = 65536
 MAX_JWT_BYTES = 8192
 MAX_TOKEN_AGE_SECONDS = 120
 MAX_TOKEN_LIFETIME_SECONDS = 600
+MAX_NBF_EARLY_SECONDS = 600  # GitHub may set nbf BEFORE iat
 
 
 class BrokerWitnessIdentityStop(RuntimeError):
@@ -221,7 +222,7 @@ def verify_exact_scheduled_broker_reader_identity(
     iat, nbf, exp = (payload.get("iat"), payload.get("nbf"),
                      payload.get("exp"))
     if (any(type(v) is not int for v in (iat, nbf, exp))
-        or not iat <= nbf <= exp
+        or not iat - MAX_NBF_EARLY_SECONDS <= nbf <= iat <= exp
         or not 1 <= exp - iat <= MAX_TOKEN_LIFETIME_SECONDS):
         raise BrokerWitnessIdentityStop("OIDC token time claims invalid")
     now = _now()
