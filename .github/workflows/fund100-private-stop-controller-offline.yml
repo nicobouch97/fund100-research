@@ -1,0 +1,42 @@
+name: Fund-100 Private STOP Controller (MOCK ONLY)
+
+on:
+  pull_request:
+    paths:
+      - 'fund100_private_stop_controller_locked_v1_0.py'
+      - 'test_fund100_private_stop_controller_locked_v1_0.py'
+      - 'Dockerfile.private-stop-controller'
+      - '.github/workflows/fund100-private-stop-controller-offline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_private_stop_controller_locked_v1_0.py'
+      - 'test_fund100_private_stop_controller_locked_v1_0.py'
+      - 'Dockerfile.private-stop-controller'
+      - '.github/workflows/fund100-private-stop-controller-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-only-no-broker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      FUND100_LIVE_WRITE_MODE: DISABLED
+      FUND100_STOP_CONTROLLER_MODE: NO_BROKER_MOCKS_ONLY
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run offline STOP-controller adversarial tests
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_private_stop_controller_locked_v1_0.py
+          grep -Fq 'SOURCE_RELEASED = False' fund100_private_stop_controller_locked_v1_0.py
+          grep -Fq 'STOP_DISPATCH_RELEASED = False' fund100_private_stop_controller_locked_v1_0.py
+          grep -Fq 'NO_ORDER_RELEASE = True' fund100_private_stop_controller_locked_v1_0.py
+          grep -Fq 'NO_BROKER_CREDENTIALS = True' fund100_private_stop_controller_locked_v1_0.py
+          ! grep -q 'fund100_private_stop_controller_locked_v1_0.py' Dockerfile
