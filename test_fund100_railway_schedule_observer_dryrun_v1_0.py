@@ -80,18 +80,22 @@ def test_get_request_is_one_public_noauth_no_trade_request():
         calls.append((request, timeout))
         return FakeResponse(json.dumps(sample()).encode())
     result = observer.observe_once(now=NOW, transport=fake)
-    assert len(calls) == 1
-    req, timeout = calls[0]
-    assert timeout == 12
-    assert req.full_url == observer.API
-    assert req.get_method() == "GET"
-    assert req.get_header("Authorization") is None
-    assert req.get_header("Apca-api-key-id") is None
+    assert len(calls) == 2
+    for req, timeout in calls:
+        assert timeout == 12
+        assert req.full_url in (observer.API, observer.V6_API)
+        assert req.get_method() == "GET"
+        assert req.get_header("Authorization") is None
+        assert req.get_header("Apca-api-key-id") is None
+    assert {r.full_url for r,_ in calls} == {observer.API,observer.V6_API}
     assert result["observation"] == "SCHEDULE_RUN_RECORDED_NOT_RISK_PASS"
     assert result["broker_requests"] == 0
     assert result["github_writes"] == result["order_posts"] == 0
     assert result["risk_pass_attested"] is False
     assert result["trading_authorized"] is False
+    assert result["github_read_only_requests_max"] == 2
+    assert result["v6_schedule_due"] is True
+    assert result["v6_schedule_heartbeat_missing_or_stale"] is True
 
 
 def test_unavailable_github_or_json_is_diagnostic_only():
@@ -140,3 +144,98 @@ def test_container_isolated_from_repo_and_no_creds():
     assert "USER observer" in docker
     assert "HEALTHCHECK" not in docker
     assert "python" in docker
+
+
+
+def v6_sample(**overrides):
+    return sample(path=observer.V6_WORKFLOW_PATH,**overrides)
+
+
+def test_v6_real_schedule_recent_run_is_diagnostic_not_broker_pass():
+    calls=[]
+    def fake(request,timeout):
+        calls.append(request.full_url)
+        payload=(v6_sample() if request.full_url == observer.V6_API
+                 else sample())
+        return FakeResponse(json.dumps(payload).encode())
+    result=observer.observe_once(now=NOW,transport=fake)
+    assert calls==[observer.API,observer.V6_API]
+    assert result["v6_observation"]=="SCHEDULE_RUN_RECORDED_NOT_RISK_PASS"
+    assert result["v6_seconds_since_last_recorded_run"]==600
+    assert result["v6_schedule_due"] is True
+    assert result["v6_schedule_heartbeat_missing_or_stale"] is False
+    assert result["risk_pass_attested"] is False
+    assert result["trading_authorized"] is False
+    assert result["broker_requests"]==0 and result["github_writes"]==0
+
+
+@pytest.mark.parametrize("at,due",[
+    ("2026-11-13T13:08:00+00:00",False),
+    ("2026-11-13T13:28:59+00:00",False),
+    ("2026-11-13T13:29:00+00:00",True),
+    ("2026-11-13T22:54:00+00:00",True),
+    ("2026-11-13T23:15:00+00:00",False),
+    ("2026-11-14T14:00:00+00:00",False),
+])
+def test_v6_heartbeat_only_due_in_actual_weekday_observation_window(at,due):
+    now=datetime.fromisoformat(at)
+    assert observer._v6_schedule_due(now) is due
+
+
+def test_v6_no_scheduled_run_after_first_due_is_stale_veto_only():
+    friday=datetime(2026,11,13,13,40,tzinfo=timezone.utc)
+    def fake(request,timeout):
+        if request.full_url == observer.V6_API:
+            return FakeResponse(b'{"workflow_runs":[],"total_count":0}')
+        return FakeResponse(json.dumps(sample()).encode())
+    result=observer.observe_once(now=friday,transport=fake)
+    assert result["v6_observation"]=="NO_RECORDED_SCHEDULE_RUN"
+    assert result["v6_schedule_heartbeat_missing_or_stale"] is True
+    assert result["trading_authorized"] is False
+    assert result["risk_pass_attested"] is False
+
+
+def test_v6_wrong_workflow_or_dispatch_event_cannot_claim_schedule():
+    for bad in (
+        sample(path=observer.EXPECTED_WORKFLOW_PATH),
+        v6_sample(event="workflow_dispatch"),
+        v6_sample(head_branch="not-main"),
+        v6_sample(created_at="2026-11-11T17:07:00Z"),
+    ):
+        def fake(request,timeout):
+            return FakeResponse(json.dumps(
+                bad if request.full_url == observer.V6_API else sample()
+            ).encode())
+        out=observer.observe_once(now=NOW,transport=fake)
+        assert out["v6_observation"]=="SOURCE_UNAVAILABLE"
+        assert out["v6_schedule_heartbeat_missing_or_stale"] is True
+        assert out["risk_pass_attested"] is False
+
+
+def test_v6_heartbeat_never_counts_stale_main_as_recent():
+    old=v6_sample(created_at="2026-11-11T13:00:00Z")
+    def fake(request,timeout):
+        return FakeResponse(json.dumps(
+            old if request.full_url==observer.V6_API else sample()).encode())
+    out=observer.observe_once(now=NOW,transport=fake)
+    assert out["v6_observation"]=="SCHEDULE_ACTIVITY_STALE"
+    assert out["v6_schedule_heartbeat_missing_or_stale"] is True
+
+
+def test_source_disallows_nonapproved_remote_watchlist():
+    with pytest.raises(observer.ScheduleObservationError):
+        observer.classify(sample(),now=NOW,
+                          expected_path=".github/workflows/unknown.yml")
+    with pytest.raises(observer.ScheduleObservationError):
+        observer._read_public_schedule(api="https://malicious.invalid")
+
+
+def test_v6_source_does_not_change_order_permissions_or_add_token():
+    source=Path(observer.__file__).read_text()
+    assert 'GITHUB_TOKEN' not in source
+    assert 'ALPACA_LIVE_KEY' not in source
+    assert 'method="POST"' not in source
+    assert 'method="PUT"' not in source
+    assert 'method="DELETE"' not in source
+    assert observer.NO_AUTH is True and observer.NO_BROKER is True
+    assert observer.NO_WRITE is True and observer.NO_TRADE is True
