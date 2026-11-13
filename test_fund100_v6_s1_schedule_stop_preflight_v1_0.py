@@ -142,3 +142,106 @@ def test_relay_fixed_stop_endpoint_no_unsafe_ack_success_or_retry():
         and isinstance(n.func, ast.Name) and n.func.id == "Request"
     ]
     assert len(requests) == 1
+
+
+
+def _relay_py():
+    _, relay = _source().split("\n  stop-on-unverified-controls:\n", 1)
+    return textwrap.dedent(relay.split("          python - <<'PY'\n", 1)[1]
+                           .split("\n          PY\n", 1)[0])
+
+
+def _mock_relay(monkeypatch, *, ack=None, status=200, wrong_event=False):
+    """Execute the exact inline job under a mock GitHub HTTP transport."""
+    import json
+    import urllib.request
+    expected_repo = "nicobouch97/fund100-research"
+    expected_url = ("https://api.github.com/repos/" + expected_repo
+                    + "/actions/workflows/fund100-live-emergency-stop.yml/dispatches")
+    run_id = 1234567
+    valid = {
+        "workflow_run_id":run_id,
+        "run_url":"https://api.github.com/repos/"+expected_repo+
+                  "/actions/runs/"+str(run_id),
+        "html_url":"https://github.com/"+expected_repo+
+                   "/actions/runs/"+str(run_id),
+    }
+    calls = []
+    token="synthetic-test-github-token-never-real-123456789"
+    for key,value in {
+        "GITHUB_ACTIONS":"true",
+        "GITHUB_REPOSITORY":expected_repo,
+        "GITHUB_REF":"refs/heads/main",
+        "GITHUB_EVENT_NAME":"pull_request" if wrong_event else "schedule",
+        "GITHUB_WORKFLOW_REF":expected_repo+
+            "/.github/workflows/fund100-v6-s1-independent-risk-watch.yml@refs/heads/main",
+        "GITHUB_RUN_ATTEMPT":"1",
+        "GITHUB_SHA":"a"*40,
+        "GITHUB_TOKEN":token,
+    }.items():
+        monkeypatch.setenv(key,value)
+
+    class FakeResponse:
+        def __init__(self,request):
+            self.req=request
+            self.status=status
+        def __enter__(self):return self
+        def __exit__(self,*args):return False
+        def geturl(self):return self.req.full_url
+        def read(self,n):
+            body=json.dumps(valid if ack is None else ack).encode()
+            return body[:n]
+
+    class FakeOpener:
+        def open(self,request,timeout):
+            assert timeout==12
+            calls.append(request)
+            assert request.full_url==expected_url
+            assert request.get_method()=="POST"
+            assert request.data==b'{"ref":"main"}'
+            assert request.get_header("Authorization")=="Bearer "+token
+            assert request.get_header("X-github-api-version")=="2026-03-10"
+            return FakeResponse(request)
+
+    monkeypatch.setattr(urllib.request,"build_opener",
+                        lambda *args:FakeOpener())
+    return calls,token
+
+
+def test_relay_one_fixed_dispatch_with_safe_run_id_but_no_stop_claim(
+        monkeypatch,capsys):
+    calls,token=_mock_relay(monkeypatch)
+    exec(compile(_relay_py(),"<mocked-fund100-stop-relay>","exec"),
+         {"__name__":"__main__"})
+    output=capsys.readouterr().out
+    assert len(calls)==1
+    assert "STOP_DISPATCH_RUN_ID=1234567" in output
+    assert "STOP_DISPATCH_ACCEPTED_NOT_CONFIRMED" in output
+    assert token not in output
+    assert "STOP_COMPLETED" not in output
+
+
+def test_relay_rejects_wrong_source_event_without_dispatch(
+        monkeypatch,capsys):
+    calls,token=_mock_relay(monkeypatch,wrong_event=True)
+    with pytest.raises(SystemExit,match="STOP_DISPATCH_SCOPE_INVALID"):
+        exec(compile(_relay_py(),"<mocked-fund100-stop-relay>","exec"),
+             {"__name__":"__main__"})
+    assert calls==[]
+    assert token not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("bad",[
+    {"workflow_run_id":"1234567"},
+    {"workflow_run_id":1234567,
+     "run_url":"https://evil.invalid/other",
+     "html_url":"https://github.com/nicobouch97/fund100-research/actions/runs/1234567"},
+])
+def test_relay_forged_ack_never_reports_stop_success(
+        monkeypatch,capsys,bad):
+    calls,token=_mock_relay(monkeypatch,ack=bad)
+    with pytest.raises(RuntimeError,match="STOP_DISPATCH_ACK_UNTRUSTED"):
+        exec(compile(_relay_py(),"<mocked-fund100-stop-relay>","exec"),
+             {"__name__":"__main__"})
+    assert len(calls)==1
+    assert "STOP_DISPATCH_RUN_ID=" not in capsys.readouterr().out
