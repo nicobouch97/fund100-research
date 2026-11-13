@@ -527,6 +527,17 @@ def run_exact_first_acwi_attempt(*,context:dict,private_read_token:str,
                 is not True
             or final_ownerproof.get("LIVE_order_released") is not False):
             raise ChainStop("Original signed private HEAD changed after immutable release")
+        # LAST-MILE INDEPENDENT RISK: the earlier signed external receipt
+        # may have expired while the irreversible owner/seq2/immutable
+        # publication chain completed. Re-GET and cryptographically recheck
+        # the current broker-risk receipt immediately before the one
+        # permitted Alpaca order attempt. Even after owner publication,
+        # an unavailable/false result means permanent HOLD, NEVER RETRY.
+        if external_receipt.require_fresh_signed_external_risk_pass(
+                main_sha=context["current_main_sha"],
+                readonly_token=receipt_token) is not True:
+            raise ChainStop("Final independent signed risk receipt stale")
+
         result=writer.submit_v6_s1_original_acwi_fractional_sell(
             original_qty=context["original_qty"],
             signed_sources=signed,
