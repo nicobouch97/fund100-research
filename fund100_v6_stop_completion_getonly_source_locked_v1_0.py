@@ -87,7 +87,7 @@ def _github_token():
     return token
 
 
-def _get(url: str, *, token: str, transport=None) -> dict:
+def _get(url: str, *, token: str) -> dict:
     if (type(url) is not str
         or not url.startswith(API + "/")
         or type(token) is not str or len(token) < 10
@@ -108,7 +108,7 @@ def _get(url: str, *, token: str, transport=None) -> dict:
         "Cache-Control": "no-store, no-cache",
         "User-Agent": "fund100-private-stop-completion-source",
     })
-    sender = build_opener(_NoRedirect()).open if transport is None else transport
+    sender = build_opener(_NoRedirect()).open
     try:
         with sender(req, timeout=8) as response:
             if response.status != 200 or response.geturl() != url:
@@ -125,12 +125,12 @@ def _get(url: str, *, token: str, transport=None) -> dict:
         raise StopSourceHold("GitHub STOP evidence source unavailable") from None
 
 
-def _current_main_control(path: str, *, token: str, transport=None) -> dict:
+def _current_main_control(path: str, *, token: str) -> dict:
     if path not in (V5_PATH, V6_PATH):
         raise StopSourceHold("Unapproved STOP control path")
     url = (API + "/contents/" + path
            + "?ref=main&nonce=" + secrets.token_hex(8))
-    source = _get(url, token=token, transport=transport)
+    source = _get(url, token=token)
     if (source.get("type") != "file" or source.get("path") != path
         or source.get("encoding") != "base64"
         or type(source.get("content")) is not str
@@ -202,7 +202,7 @@ def _project_workflow_jobs(doc: object, *, run_id: int) -> list:
 
 def confirm_stop_from_authenticated_gets(
         *, expected_dispatch_run_id: object,
-        alarm_detected_at_utc: str, transport=None) -> dict:
+        alarm_detected_at_utc: str) -> dict:
     """GET-only verification path. NEVER dispatch, cancel, sign or trade.
 
     Caller must bind a legitimate authenticated dispatch run id and alarm in
@@ -222,14 +222,14 @@ def confirm_stop_from_authenticated_gets(
     started = time.monotonic()
     run_id = expected_dispatch_run_id
     run = _project_workflow_run(
-        _get(RUN_PREFIX + str(run_id),token=token,transport=transport))
+        _get(RUN_PREFIX + str(run_id),token=token))
     jobs = _project_workflow_jobs(
         _get(RUN_PREFIX+str(run_id)+"/jobs?per_page=100",
-             token=token,transport=transport),
+             token=token),
         run_id=run_id)
     # Independently verify current main STOP after the dispatch completed.
-    v5_control = _current_main_control(V5_PATH,token=token,transport=transport)
-    v6_control = _current_main_control(V6_PATH,token=token,transport=transport)
+    v5_control = _current_main_control(V5_PATH,token=token)
+    v6_control = _current_main_control(V6_PATH,token=token)
     controls_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     broker.require_readonly_arm()
