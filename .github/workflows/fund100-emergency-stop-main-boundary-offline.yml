@@ -5,12 +5,16 @@ on:
     paths:
       - '.github/workflows/fund100-live-emergency-stop.yml'
       - 'test_fund100_live_emergency_stop_main_provenance_v1_0.py'
+      - '.github/workflows/fund100-live-risk-watch.yml'
+      - 'test_fund100_live_risk_watch_main_provenance_v1_0.py'
       - '.github/workflows/fund100-emergency-stop-main-boundary-offline.yml'
   push:
     branches: [main]
     paths:
       - '.github/workflows/fund100-live-emergency-stop.yml'
       - 'test_fund100_live_emergency_stop_main_provenance_v1_0.py'
+      - '.github/workflows/fund100-live-risk-watch.yml'
+      - 'test_fund100_live_risk_watch_main_provenance_v1_0.py'
       - '.github/workflows/fund100-emergency-stop-main-boundary-offline.yml'
 
 permissions:
@@ -34,4 +38,4 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install 'pytest>=8,<9'
-          python -m pytest -q test_fund100_live_emergency_stop_main_provenance_v1_0.py
+          python -m pytest -q test_fund100_live_emergency_stop_main_provenance_v1_0.py test_fund100_live_risk_watch_main_provenance_v1_0.py
