@@ -134,5 +134,8 @@ jobs:
           # A valid dispatch ACK ONLY means the STOP workflow was requested.
           # Never imply that V5/V6 STOP commits, broker DELETE, or final
           # open-order reconciliation actually completed.
+          # Workflow run ID is not a secret; preserve it for the external
+          # exact-run STOP/cancellation completion verifier.
+          print("STOP_DISPATCH_RUN_ID=" + str(ack["workflow_run_id"]))
           print("STOP_DISPATCH_ACCEPTED_NOT_CONFIRMED")
           PY
