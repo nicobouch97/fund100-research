@@ -20,14 +20,32 @@ on:
       - "test_fund100_live_emergency_stop_v1_0.py"
       - "test_fund100_live_production_controller_v1_0.py"
       - ".github/workflows/fund100-live-risk-regression.yml"
+  pull_request:
+    paths:
+      - "fund100_live_risk_controls_v1_0.py"
+      - "fund100_live_portfolio_risk_v1_0.py"
+      - "fund100_live_risk_sizing_v1_0.py"
+      - "test_fund100_live_risk_sizing_v1_0.py"
+      - "fund100_live_risk_monitor_v1_0.py"
+      - "test_fund100_live_risk_monitor_v1_0.py"
+      - "test_fund100_live_portfolio_risk_v1_0.py"
+      - "test_fund100_live_risk_controls_v1_0.py"
+      - "fund100_live_production_controller_v1_0.py"
+      - "test_fund100_live_compiler_contract_v1_0.py"
+      - "fund100_live_operator_control_v1_0.py"
+      - "fund100_live_operator_control.json"
+      - "fund100_live_emergency_stop_v1_0.py"
+      - "test_fund100_live_emergency_stop_v1_0.py"
+      - "test_fund100_live_production_controller_v1_0.py"
+      - ".github/workflows/fund100-live-risk-regression.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: fund100-live-risk-regression
-  cancel-in-progress: true
+  group: fund100-live-risk-regression-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   offline-tests:
