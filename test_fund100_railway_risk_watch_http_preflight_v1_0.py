@@ -122,7 +122,8 @@ def test_status_only_reports_public_diagnostic_not_broker(http_server):
 
 
 def test_real_v6_schedule_stale_is_publicly_observable_but_never_risk_pass(
-        http_server):
+        http_server,monkeypatch):
+    monkeypatch.setattr(web.observer,"_v6_schedule_due",lambda now:True)
     web.publish_diagnostic({
         "observation":"SCHEDULE_RUN_RECORDED_NOT_RISK_PASS",
         "seconds_since_last_recorded_run":500,
@@ -143,7 +144,9 @@ def test_real_v6_schedule_stale_is_publicly_observable_but_never_risk_pass(
     assert "no-store" in headers["Cache-Control"]
 
 
-def test_inconsistent_v6_safe_flag_is_rejected_by_railway_status(http_server):
+def test_inconsistent_v6_safe_flag_is_rejected_by_railway_status(
+        http_server,monkeypatch):
+    monkeypatch.setattr(web.observer,"_v6_schedule_due",lambda now:True)
     good={
         "observation":"SOURCE_UNAVAILABLE",
         "seconds_since_last_recorded_run":None,
@@ -166,6 +169,55 @@ def test_inconsistent_v6_safe_flag_is_rejected_by_railway_status(http_server):
         assert doc["v6_observation"]=="NO_RECORDED_SCHEDULE_RUN"
         assert doc["v6_schedule_heartbeat_missing_or_stale"] is True
         assert doc["broker_risk_pass"] is False
+
+
+def test_polling_thread_freeze_never_reuses_previously_healthy_v6(
+        http_server,monkeypatch):
+    # Directly age the stored monotonic timestamp: exactly what happens
+    # when the background poll worker stops while HTTP still serves.
+    monkeypatch.setattr(web.observer,"_v6_schedule_due",lambda now:True)
+    web.publish_diagnostic({
+        "observation":"SCHEDULE_RUN_RECORDED_NOT_RISK_PASS",
+        "seconds_since_last_recorded_run":120,
+        "v6_observation":"SCHEDULE_RUN_RECORDED_NOT_RISK_PASS",
+        "v6_seconds_since_last_recorded_run":120,
+        "v6_schedule_due":True,
+        "v6_schedule_heartbeat_missing_or_stale":False,
+    })
+    with web._lock:
+        web._latest["_observer_poll_monotonic"]=(
+            web.time.monotonic()-web.POLL_STALE_SECONDS-5)
+    status,headers,body=request(http_server,"/status")
+    doc=json.loads(body)
+    assert status==200
+    assert doc["observer_heartbeat_stale"] is True
+    assert doc["v6_observation"]=="SOURCE_UNAVAILABLE"
+    assert doc["v6_seconds_since_last_recorded_run"] is None
+    assert doc["v6_schedule_heartbeat_missing_or_stale"] is True
+    assert doc["broker_risk_pass"] is False
+    assert doc["trading_authorized"] is False
+    assert "no-store" in headers["Cache-Control"]
+
+
+def test_due_time_flip_since_last_poll_cannot_show_false_health(
+        http_server,monkeypatch):
+    # A previous quiet-window poll may be fresh but absence of the first
+    # required schedule becomes a veto as soon as the wall clock is due.
+    web.publish_diagnostic({
+        "observation":"SCHEDULE_ACTIVITY_STALE",
+        "seconds_since_last_recorded_run":5400,
+        "v6_observation":"NO_RECORDED_SCHEDULE_RUN",
+        "v6_seconds_since_last_recorded_run":None,
+        "v6_schedule_due":False,
+        "v6_schedule_heartbeat_missing_or_stale":False,
+    })
+    monkeypatch.setattr(web.observer,"_v6_schedule_due",lambda now:True)
+    _,_,body=request(http_server,"/status")
+    doc=json.loads(body)
+    assert doc["observer_heartbeat_stale"] is False
+    assert doc["v6_schedule_due"] is True
+    assert doc["v6_schedule_heartbeat_missing_or_stale"] is True
+    assert doc["trading_authorized"] is False
 
 
 def test_bad_public_diagnostic_cannot_override_evidence(http_server):
