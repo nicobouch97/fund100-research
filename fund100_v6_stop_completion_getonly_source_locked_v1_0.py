@@ -227,6 +227,23 @@ def confirm_stop_from_authenticated_gets(
         _get(RUN_PREFIX+str(run_id)+"/jobs?per_page=100",
              token=token),
         run_id=run_id)
+    # A queued, failed, retried, wrong-path or incomplete STOP must never
+    # obtain private Alpaca credentials merely to discover it was not done.
+    if (run.get("id") != run_id
+        or run.get("name") != verifier.WORKFLOW_NAME
+        or run.get("path") != verifier.WORKFLOW
+        or run.get("event") != "workflow_dispatch"
+        or run.get("head_branch") != "main"
+        or type(run.get("run_attempt")) is not int
+        or run["run_attempt"] != 1
+        or run.get("status") != "completed"
+        or run.get("conclusion") != "success"
+        or len(jobs) != len(verifier.REQUIRED_JOBS)
+        or {x.get("name") for x in jobs} != set(verifier.REQUIRED_JOBS)
+        or any(x.get("status") != "completed"
+               or x.get("conclusion") != "success"
+               or x.get("run_id") != run_id for x in jobs)):
+        raise StopSourceHold("Exact successful emergency STOP jobs not proven")
     # Independently verify current main STOP after the dispatch completed.
     v5_control = _current_main_control(V5_PATH,token=token)
     v6_control = _current_main_control(V6_PATH,token=token)
