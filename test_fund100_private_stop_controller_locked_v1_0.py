@@ -317,7 +317,7 @@ def test_unknown_network_dispatch_outcome_cannot_supply_run_id(
     ("dispatch_run_id", "123456"),
     ("dispatch_run_id", -3),
     ("dispatch_run_id", 0),
-    ("dispatch_run_id", 10**20),
+    ("dispatch_run_id", "100000000000000000000"),
     ("created_at_utc", "2099-01-01T00:00:00Z"),
     ("created_at_utc", "invalid timestamp"),
     ("last_update_utc", "2099-01-01T00:00:00Z"),
