@@ -90,7 +90,7 @@ def _require_risk_pass(result: object) -> None:
     # may invoke the released signer; no other job may access its private key.
     if (type(result) is not dict
         or result.get("schema") !=
-           "FUND100_V6_S1_ACTIVE_HIGH_FIRST_ACWI_SELL_RISK_V2"
+           "FUND100_V6_S1_ACTIVE_HIGH_FIRST_ACWI_SELL_ORDER_TIME_RISK_V2"
         or result.get("status") !=
            "ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2"
         or result.get("same_process_real_broker_gets") != 8
