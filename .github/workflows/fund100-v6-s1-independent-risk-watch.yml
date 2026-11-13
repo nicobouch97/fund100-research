@@ -52,3 +52,90 @@ jobs:
               raise SystemExit("V6_ACTIVE_REQUIRES_UNRELEASED_BROKER_WATCH_HOLD")
           print("V6_SCHEDULE_HEARTBEAT: OPERATOR_STOPPED_NO_BROKER_NO_RISK_PASS")
           PY
+
+  stop-on-unverified-controls:
+    name: Request existing emergency STOP after unverified V6 controls
+    needs: stopped-preflight
+    if: ${{ always() && needs.stopped-preflight.result == 'failure' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    # ISOLATED: can request an existing emergency workflow, but cannot edit
+    # repository contents or access Alpaca. No checkout or third-party actions.
+    # Actions:write permits OTHER workflow dispatches too; this job executes
+    # only the fixed audited endpoint and contains no arbitrary caller input.
+    permissions:
+      actions: write
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GITHUB_REF: ${{ github.ref }}
+      GITHUB_EVENT_NAME: ${{ github.event_name }}
+      GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
+    steps:
+      - name: Request existing main emergency STOP (ACK is NOT STOP confirmation)
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from urllib.request import Request, build_opener, HTTPRedirectHandler
+
+          REPO = "nicobouch97/fund100-research"
+          WATCH_REF = (
+              REPO + "/.github/workflows/"
+              "fund100-v6-s1-independent-risk-watch.yml@refs/heads/main")
+          URL = (
+              "https://api.github.com/repos/" + REPO
+              + "/actions/workflows/fund100-live-emergency-stop.yml/dispatches")
+          class NoRedirect(HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  raise RuntimeError("STOP dispatch redirection forbidden")
+          if (os.environ.get("GITHUB_ACTIONS") != "true"
+              or os.environ.get("GITHUB_REPOSITORY") != REPO
+              or os.environ.get("GITHUB_REF") != "refs/heads/main"
+              or os.environ.get("GITHUB_EVENT_NAME") not in
+                  ("schedule", "workflow_dispatch")
+              or os.environ.get("GITHUB_WORKFLOW_REF") != WATCH_REF
+              or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"
+              or re.fullmatch(r"[0-9a-f]{40}",
+                              os.environ.get("GITHUB_SHA","")) is None):
+              raise SystemExit("STOP_DISPATCH_SCOPE_INVALID")
+          token = os.environ.get("GITHUB_TOKEN", "")
+          if len(token) < 20 or token != token.strip() or "\n" in token:
+              raise SystemExit("STOP_DISPATCH_TOKEN_UNAVAILABLE")
+          req = Request(
+              URL, method="POST", data=b'{"ref":"main"}',
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": "Bearer " + token,
+                  "Content-Type": "application/json",
+                  "X-GitHub-Api-Version": "2026-03-10",
+                  "User-Agent": "Fund100-v6-stop-only-relay",
+              })
+          # ONE request; never retry a potentially accepted STOP dispatch.
+          with build_opener(NoRedirect()).open(req, timeout=12) as response:
+              if response.status != 200 or response.geturl() != URL:
+                  raise RuntimeError("STOP_DISPATCH_ACK_UNVERIFIED")
+              raw = response.read(2049)
+          if len(raw) > 2048:
+              raise RuntimeError("STOP_DISPATCH_ACK_TOO_LARGE")
+          ack = json.loads(raw)
+          if (type(ack) is not dict
+              or type(ack.get("workflow_run_id")) is not int
+              or ack["workflow_run_id"] <= 0
+              or ack.get("run_url") !=
+                  "https://api.github.com/repos/"+REPO+
+                  "/actions/runs/"+str(ack["workflow_run_id"])
+              or ack.get("html_url") !=
+                  "https://github.com/"+REPO+
+                  "/actions/runs/"+str(ack["workflow_run_id"])):
+              raise RuntimeError("STOP_DISPATCH_ACK_UNTRUSTED")
+          # A valid dispatch ACK ONLY means the STOP workflow was requested.
+          # Never imply that V5/V6 STOP commits, broker DELETE, or final
+          # open-order reconciliation actually completed.
+          # Workflow run ID is not a secret; preserve it for the external
+          # exact-run STOP/cancellation completion verifier.
+          print("STOP_DISPATCH_RUN_ID=" + str(ack["workflow_run_id"]))
+          print("STOP_DISPATCH_ACCEPTED_NOT_CONFIRMED")
+          PY
