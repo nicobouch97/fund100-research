@@ -53,8 +53,12 @@ def test_inline_python_only_reads_current_v5_v6_stop():
     text = _source()
     start = "          python - <<'PY'\n"
     finish = "\n          PY\n"
-    assert text.count(start) == text.count(finish) == 1
-    source = text.split(start, 1)[1].split(finish, 1)[0]
+    # Two isolated jobs: preflight is GET-only; separate failed-only
+    # job can request the previously reviewed emergency workflow.
+    preflight, relay = text.split("\n  stop-on-unverified-controls:\n", 1)
+    assert preflight.count(start) == preflight.count(finish) == 1
+    assert relay.count(start) == relay.count(finish) == 1
+    source = preflight.split(start, 1)[1].split(finish, 1)[0]
     source = textwrap.dedent(source)
     tree = ast.parse(source)
     called = {
@@ -83,3 +87,56 @@ def test_positive_broker_pass_remains_unavailable_when_schedule_probe_runs():
     assert admission.PASS_STEP not in _source()
     assert admission.WATCH_JOB_NAME not in _source()
     assert admission.NO_TRADE_RELEASE is True
+
+
+def test_only_failed_preflight_can_dispatch_existing_emergency_stop():
+    preflight, relay = _source().split("\n  stop-on-unverified-controls:\n", 1)
+    assert "actions: write" not in preflight
+    assert "contents: write" not in preflight
+    assert "actions: write" in relay
+    assert relay.count("actions: write") == 1
+    assert "contents: read" not in relay
+    assert "contents: write" not in relay
+    assert "needs: stopped-preflight" in relay
+    assert ("needs.stopped-preflight.result == 'failure'"
+            " && github.ref == 'refs/heads/main'") in relay
+    assert "uses: actions/checkout" not in relay
+    assert "ALPACA_LIVE_KEY" not in relay
+    assert "ALPACA_LIVE_SECRET" not in relay
+    assert "python fund100_v6_s1_independent_risk_watch_v1_0.py" not in relay
+    assert "Attest independent V6 original ACWI broker risk PASS" not in relay
+    assert "verified_v6_original_acwi_risk=YES" not in relay
+
+
+def test_relay_fixed_stop_endpoint_no_unsafe_ack_success_or_retry():
+    _, relay = _source().split("\n  stop-on-unverified-controls:\n", 1)
+    start = "          python - <<'PY'\n"
+    finish = "\n          PY\n"
+    assert relay.count(start) == relay.count(finish) == 1
+    py = textwrap.dedent(relay.split(start, 1)[1].split(finish, 1)[0])
+    tree = ast.parse(py)
+    assert "fund100-live-emergency-stop.yml/dispatches" in py
+    assert 'data=b\\'{"ref":"main"}\\'' in py
+    assert 'method="POST"' in py
+    assert '"X-GitHub-Api-Version": "2026-03-10"' in py
+    assert "response.status != 200" in py
+    assert "workflow_run_id" in py
+    assert "STOP_DISPATCH_ACCEPTED_NOT_CONFIRMED" in py
+    assert "STOP_CONFIRMED" not in py
+    assert "with build_opener(NoRedirect()).open(req, timeout=12)" in py
+    assert "if response.status != 200 or response.geturl() != URL" in py
+    assert "GITHUB_WORKFLOW_REF" in py
+    assert "GITHUB_RUN_ATTEMPT" in py
+    assert "GITHUB_TOKEN" in py
+    assert "V6_SCHEDULE_HEARTBEAT" not in relay
+    # A broker cancel, GitHub contents update, or direct trade must be
+    # executed by the existing emergency workflow, never this relay.
+    for forbidden in ("api.alpaca.markets", "/v2/orders", "DELETE",
+                      "ALPACA_LIVE", "contents: write", "commit_stop_signal",
+                      "NO_BROKER_NO_RISK_PASS", "requests.post"):
+        assert forbidden not in py
+    requests = [
+        n for n in ast.walk(tree) if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name) and n.func.id == "Request"
+    ]
+    assert len(requests) == 1
