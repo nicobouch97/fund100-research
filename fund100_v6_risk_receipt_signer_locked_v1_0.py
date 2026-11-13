@@ -144,7 +144,8 @@ def sign_reviewed_eight_get_result(*, checked: object, account_id: object,
     # The signer cannot sign broker observations from the distant past,
     # including replays of formerly good risk verdicts.
     now=datetime.now(timezone.utc)
-    if abs((now-signed).total_seconds())>MAX_SIGN_DELAY_SECONDS:
+    signer_age_seconds=(now-signed).total_seconds()
+    if not 0<=signer_age_seconds<=MAX_SIGN_DELAY_SECONDS:
         raise RiskReceiptSignerStop("Signer wall-clock freshness unavailable")
     hexkey=os.environ.get(KEY_ENV,"")
     if type(hexkey) is not str or re.fullmatch(r"[0-9a-f]{64}",hexkey) is None:
