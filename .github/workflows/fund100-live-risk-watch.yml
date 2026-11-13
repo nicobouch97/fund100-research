@@ -10,8 +10,11 @@ on:
     - cron: "4,19,34,49 13-22 * * 1-5"
   workflow_dispatch:
 
+# Workflow-wide write token is not needed by non-risk/preflight steps.
+# The single risk-watch job gets Contents:write for its existing emergency
+# STOP CAS only; actual broker credentials appear in one later step.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: fund100-live-risk-watch
@@ -20,24 +23,44 @@ concurrency:
 jobs:
   risk-watch:
     name: Independent LIVE account risk watch
+    # Workflow_dispatch can target feature refs. Never run any feature ref
+    # with a protected broker environment or a Contents:write token.
+    if: ${{ github.repository == 'nicobouch97/fund100-research' && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     environment: fund100-live-broker
     timeout-minutes: 10
-    env:
-      FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
-      GITHUB_TOKEN: ${{ github.token }}
-      GITHUB_REPOSITORY: ${{ github.repository }}
-
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Check out protected main without persistent credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify reviewed main provenance before any broker secret
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_EVENT_NAME" = 'schedule' -o "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-live-risk-watch.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Check risk or trigger persistent STOP
         env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
           ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
         run: |
           set -euo pipefail
+          # Both the job and the preflight gate have checked main provenance.
+          # These credentials must ALSO be restricted by GitHub Environment
+          # "fund100-live-broker" deployment branches and tags: main only.
           python fund100_live_risk_monitor_v1_0.py

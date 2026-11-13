@@ -102,8 +102,13 @@ def test_corrupted_original_sec100_or_original_u3_never_generates_study(
     manifest=root/"manifest.json"
     target=root/"raw"/next(x.name for x in (root/"raw").iterdir())
     if fault=="sha":
-        raw=gzip.decompress(target.read_bytes()).replace(b"120000000", b"119999999")
-        target.write_bytes(gzip.compress(raw,mtime=0))
+        # Always change the original uncompressed source bytes while keeping
+        # JSON parseable. The former literal replace could silently be a no-op
+        # when a synthetic SEC fixture no longer contained that number.
+        raw=gzip.decompress(target.read_bytes())
+        altered=raw+b" "
+        assert altered!=raw
+        target.write_bytes(gzip.compress(altered,mtime=0))
     elif fault=="manifest":
         info=json.loads(manifest.read_text())
         info["source_issuer_count"]=99
