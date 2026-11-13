@@ -63,8 +63,8 @@ def test_mutated_workflow_or_cancel_source_cannot_keep_credential_scope():
         # Reversion to the formerly accepted V6 branch guard must fail the
         # stronger pinned audit, even if the cancellation script stays pinned.
         original.replace(
-            "github.repository == 'nicobouch97/fund100-research' && github.event_name",
-            "github.event_name",
+            "if: ${{ always() && github.repository == 'nicobouch97/fund100-research' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}",
+            "if: ${{ always() && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}",
         ),
     ):
         assert not audit.approved_scoped_live_script(
