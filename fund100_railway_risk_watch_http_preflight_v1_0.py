@@ -141,7 +141,11 @@ informational website and proposed read-only account connection.</p>"""
 
 _lock = threading.Lock()
 _latest = {"observation": "NOT_YET_OBSERVED",
-           "seconds_since_last_recorded_run": None}
+           "seconds_since_last_recorded_run": None,
+           "v6_observation":"NOT_YET_OBSERVED",
+           "v6_seconds_since_last_recorded_run":None,
+           "v6_schedule_due":False,
+           "v6_schedule_heartbeat_missing_or_stale":False}
 
 
 def publish_diagnostic(sample: object) -> None:
@@ -155,13 +159,35 @@ def publish_diagnostic(sample: object) -> None:
         or (age is not None and
             (type(age) is not int or age < 0 or age > 10**9))):
         return
+    # Accept the existing older diagnostic test format without V6 data,
+    # but never allow a malformed, nonboolean or invented V6 status update.
+    v6_updates = {}
+    if "v6_observation" in sample:
+        v6_status = sample.get("v6_observation")
+        v6_age = sample.get("v6_seconds_since_last_recorded_run")
+        due = sample.get("v6_schedule_due")
+        missing = sample.get("v6_schedule_heartbeat_missing_or_stale")
+        if (v6_status not in allowed
+            or (v6_age is not None and
+                (type(v6_age) is not int or not 0<=v6_age<=10**9))
+            or type(due) is not bool or type(missing) is not bool
+            or missing is not (due and v6_status !=
+               "SCHEDULE_RUN_RECORDED_NOT_RISK_PASS")):
+            return
+        v6_updates = {
+            "v6_observation":v6_status,
+            "v6_seconds_since_last_recorded_run":v6_age,
+            "v6_schedule_due":due,
+            "v6_schedule_heartbeat_missing_or_stale":missing,
+        }
     with _lock:
         _latest.update(observation=status,
-                       seconds_since_last_recorded_run=age)
+                       seconds_since_last_recorded_run=age,
+                       **v6_updates)
 
 
 def diagnostic_loop(stop_signal=None) -> None:
-    """One public anonymous GitHub GET per interval, never broker access."""
+    """Two bounded anonymous GitHub schedule GETs, never broker access."""
     if stop_signal is None:
         stop_signal = threading.Event()
     while not stop_signal.is_set():
@@ -229,6 +255,12 @@ class DryrunHandler(BaseHTTPRequestHandler):
                 "observation": status["observation"],
                 "seconds_since_last_recorded_run":
                     status["seconds_since_last_recorded_run"],
+                "v6_observation":status["v6_observation"],
+                "v6_seconds_since_last_recorded_run":
+                    status["v6_seconds_since_last_recorded_run"],
+                "v6_schedule_due":status["v6_schedule_due"],
+                "v6_schedule_heartbeat_missing_or_stale":
+                    status["v6_schedule_heartbeat_missing_or_stale"],
                 "broker_risk_pass": False, "trading_authorized": False,
             })
         elif path == "/oauth/callback":
