@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 import json
 import os
 import re
+import time
 
 import fund100_live_operator_control_v1_0 as v5
 import fund100_v6_s1_operator_control_v2_0 as v6
@@ -27,6 +28,7 @@ import fund100_v6_s1_live_private_xle_activity_getonly_v1_0 as activities
 import fund100_v6_s1_live_flow_timing_native_none_getonly_v1_0 as native
 import fund100_v6_s1_three_month_prefunding_probe_v1_0 as extended
 import fund100_alpaca_live_readonly_smoke as broker
+import fund100_v6_external_signed_risk_receipt_getonly_v1_0 as receipt_contract
 import fund100_v6_s1_first_acwi_signed_cancel_only_v1_0 as cancel
 
 SCHEMA = "FUND100_V6_S1_INDEPENDENT_SCHEDULED_ACWI_RISK_WATCH_V1"
@@ -39,6 +41,8 @@ SCHEDULED_RUNTIME_RELEASED = False
 NO_OPERATOR_GO_WRITE = True
 MAX_STOP_CAS_ATTEMPTS = 1
 EXPECTED_PASS = "WITHIN_V6_S1_ORIGINAL_ACWI_RISK_LIMITS"
+MAX_BROKER_SNAPSHOT_SECONDS = receipt_contract.MAX_BROKER_SNAPSHOT_SECONDS
+MAX_RISK_EVALUATION_SECONDS = receipt_contract.MAX_SIGN_DELAY_SECONDS
 
 
 class V6WatchStop(RuntimeError):
@@ -81,10 +85,20 @@ def _check_main_stopped_and_v6_go() -> None:
     broker.require_readonly_arm()
 
 
-def _risk_eight_get() -> str:
-    """Fixed original eight broker GETs; no writer, no order POST."""
+def _capture_private_eight_get_witness() -> dict | str:
+    """Build a transient source-bound witness from EIGHT live Trading API GETs.
+
+    This is an IN-PROCESS broker-reader result, not cryptographic proof of
+    broker origin, an externally authenticated receipt, or an order permit.
+    The protected reader may eventually deliver it to a separately isolated
+    signer over a reviewed transport. NEVER print, persist, log or send
+    the account ID, policy or complete risk evaluator result publicly.
+    A signer private key MUST NOT be placed in this broker-key process.
+    """
     _scope()
     _check_main_stopped_and_v6_go()
+    started_monotonic = time.monotonic()
+    began = datetime.now(timezone.utc)
     key, secret = broker.load_credentials()
     approved = (
         ("/v2/account", None),
@@ -104,18 +118,23 @@ def _risk_eight_get() -> str:
     for index, (path, params) in enumerate(approved):
         docs.append(broker.get_json(path=path, params=params,
                                     key=key, secret=secret))
-        # A closed exchange is normal before/after market; it must NOT
-        # continually auto-STOP an otherwise safely armed standing V6.
-        # It also must never emit a broker-risk PASS for a pending order.
+        # A closed market is a HOLD, never a four-GET risk PASS; no
+        # unnecessary remaining broker requests are performed.
         if (index == 3 and type(docs[3]) is dict
             and docs[3].get("is_open") is False):
             _check_main_stopped_and_v6_go()
             return "MARKET_CLOSED_NO_PASS"
+    completed = datetime.now(timezone.utc)
+    elapsed = time.monotonic() - started_monotonic
+    if (not 0 <= elapsed <= MAX_BROKER_SNAPSHOT_SECONDS
+        or not began <= completed
+        or (completed-began).total_seconds() > MAX_BROKER_SNAPSHOT_SECONDS):
+        raise V6WatchStop("Eight live broker GETs exceeded source freshness")
     _check_main_stopped_and_v6_go()
     bootstrap, _ = original.original(original_files.BOOT)
     policy, _ = original.original(original_files.POLICY)
     qty = intent.original_acwi_qty()
-    observed = datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+    observed = completed.strftime("%Y-%m-%dT%H:%M:%SZ")
     checked = active.evaluate_original_sell_only(
         account=docs[0], positions=docs[1], orders=docs[2],
         clock=docs[3], history=docs[4], activities=docs[5],
@@ -126,17 +145,54 @@ def _risk_eight_get() -> str:
         or checked.get("schema") != active.SCHEMA
         or checked.get("status") !=
            "ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2"
-        or checked.get("same_process_real_broker_gets") != 8
+        or type(checked.get("same_process_real_broker_gets")) is not int
+        or checked["same_process_real_broker_gets"] != 8
         or checked.get("original_acwi_exact_fractional_holdings_verified") is not True
         or checked.get("original_strict_postfunding_6_20_35_risk_pass") is not True
-        or checked.get("broker_post_attempts") != 0
-        or checked.get("orders_submitted_here") != 0
+        or type(checked.get("broker_post_attempts")) is not int
+        or checked["broker_post_attempts"] != 0
+        or type(checked.get("orders_submitted_here")) is not int
+        or checked["orders_submitted_here"] != 0
         or checked.get("buy_authorized") is not False):
         raise V6WatchStop("Independent V6 account risk did not PASS")
-    # Do not treat the pure active source's *candidate* sell-allowed flag as
-    # production permission; this is an independent GET-only watcher only.
+    # The result is only as fresh as its ORIGINAL broker snapshot; a long
+    # pure evaluation or state re-check cannot sign an old observation.
+    if (not 0 <= time.monotonic() - started_monotonic
+            <= MAX_BROKER_SNAPSHOT_SECONDS + MAX_RISK_EVALUATION_SECONDS):
+        raise V6WatchStop("Broker witness evaluation exceeded freshness")
+    account_id = docs[0].get("id") if type(docs[0]) is dict else None
+    if (type(account_id) is not str
+        or re.fullmatch(r"[A-Za-z0-9-]{8,128}",account_id) is None
+        or type(policy) is not dict or not policy):
+        raise V6WatchStop("Private witness account/policy unverified")
+    # Both controls and the main-only scheduled provenance must remain
+    # coherent right up to the in-memory witness handoff boundary.
     _check_main_stopped_and_v6_go()
     _scope()
+    # Re-read final monotonic age after the independent STOP check, not
+    # only before it; a slow GitHub state read cannot leave a stale PASS.
+    if (not 0 <= time.monotonic() - started_monotonic
+            <= MAX_BROKER_SNAPSHOT_SECONDS + MAX_RISK_EVALUATION_SECONDS):
+        raise V6WatchStop("Private broker witness stale at final handoff")
+    return {
+        "checked": checked,
+        "account_id": account_id,
+        "policy": policy,
+        "head_sha": os.environ["GITHUB_SHA"],
+        "observed_start_utc": began.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "broker_completed_utc": observed,
+    }
+
+
+def _risk_eight_get() -> str:
+    """Keep existing source-only PASS/HOLD output; no private data egress."""
+    witness = _capture_private_eight_get_witness()
+    if witness == "MARKET_CLOSED_NO_PASS":
+        return witness
+    if type(witness) is not dict:
+        raise V6WatchStop("Private broker witness unavailable")
+    # Do NOT invoke the signer here: this reader holds broker keys.
+    # No signing key, account ID or policy is exposed by the watch outcome.
     return EXPECTED_PASS
 
 
