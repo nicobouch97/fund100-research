@@ -4,16 +4,20 @@ on:
     paths:
       - ".github/workflows/fund100-live-emergency-stop.yml"
       - "fund100_v6_s1_first_acwi_signed_cancel_only_v1_0.py"
+      - "fund100_live_emergency_stop_v1_0.py"
+      - "test_fund100_live_emergency_stop_no_redirect_v1_0.py"
       - "test_fund100_v6_s1_first_acwi_signed_cancel_only_v1_0.py"
       - "test_fund100_v6_s1_unified_emergency_stop_v1_0.py"
       - "audit_fund100_live_boundary.py"
       - ".github/workflows/fund100-unified-stop-offline.yml"
   push:
     branches:
-      - "safety/unified-v5-v6-emergency-cancel-20261111"
+      - "main"
     paths:
       - ".github/workflows/fund100-live-emergency-stop.yml"
       - "fund100_v6_s1_first_acwi_signed_cancel_only_v1_0.py"
+      - "fund100_live_emergency_stop_v1_0.py"
+      - "test_fund100_live_emergency_stop_no_redirect_v1_0.py"
       - "test_fund100_v6_s1_first_acwi_signed_cancel_only_v1_0.py"
       - "test_fund100_v6_s1_unified_emergency_stop_v1_0.py"
       - "audit_fund100_live_boundary.py"
@@ -23,7 +27,7 @@ permissions:
   contents: read
 concurrency:
   group: fund100-unified-stop-credentialless-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   offline-stop:
     name: Mock exact signed V6 ACWI order STOP and V5 unchanged
@@ -46,4 +50,5 @@ jobs:
           python -m pytest -q \
             test_fund100_v6_s1_first_acwi_signed_cancel_only_v1_0.py \
             test_fund100_v6_s1_unified_emergency_stop_v1_0.py \
-            test_fund100_live_emergency_stop_v1_0.py
+            test_fund100_live_emergency_stop_v1_0.py \
+            test_fund100_live_emergency_stop_no_redirect_v1_0.py
