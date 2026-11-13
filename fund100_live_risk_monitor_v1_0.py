@@ -118,13 +118,57 @@ def live_read_only_snapshot() -> tuple[dict, object, object, dict, str]:
     return account, positions, history, policy, binding
 
 
-def monitor_once() -> str:
-    # STOPPED is the expected pre-launch state; no broker contact needed.
-    control = operator.read_current_control()
-    if not operator.validate_control(control):
-        return "ALREADY_STOPPED"
+def _attempt_emergency_stop_and_cancel() -> str:
+    """On uncertainty, attempt BOTH protective actions independently.
 
+    The broker cancellation attempt MUST still run when GitHub cannot
+    commit the operator STOP. A STOP latch alone does not prove that there
+    are no OPEN Fund-100 broker orders. None of the exceptions/payloads
+    from these privileged operations may reach public logs.
+    """
+    stop_confirmed = False
+    cancellation_observed = False
     try:
+        stop_outcome = operator.commit_stop_signal()
+        stop_confirmed = stop_outcome in ("STOPPED", "ALREADY_STOPPED")
+    except Exception:
+        # Keep going. A GitHub outage must not suppress broker cancellation.
+        pass
+    try:
+        cancelled = emergency.cancel_open_fund100_orders()
+        cancellation_observed = type(cancelled) is int and cancelled >= 0
+    except Exception:
+        # Never infer cancellation from DELETE acceptance alone.
+        pass
+    if not stop_confirmed and not cancellation_observed:
+        raise RiskMonitorStop(
+            "Persistent STOP and broker open-order absence BOTH unverified; "
+            "escalate immediately."
+        )
+    if not stop_confirmed:
+        raise RiskMonitorStop(
+            "Broker open-order absence was observed but persistent STOP "
+            "is unverified; escalate immediately."
+        )
+    if not cancellation_observed:
+        raise RiskMonitorStop(
+            "Persistent STOP was observed but broker cancellation "
+            "is unverified; escalate immediately."
+        )
+    # Only two point-in-time observations; this is NOT confirmation of no
+    # preceding fills, settlement or any future/new broker order.
+    return "AUTO_STOP_CONFIRMED"
+
+
+def monitor_once() -> str:
+    # STOPPED is the expected pre-launch state; this early return is NOT a
+    # fresh broker open-order or cancellation receipt. A separate continuous
+    # observer must verify broker state before any real autonomous release.
+    try:
+        control = operator.read_current_control()
+        if not operator.validate_control(control):
+            return "ALREADY_STOPPED"
+
         account, positions, history, policy, binding = live_read_only_snapshot()
         inspect_live_risk(
             account=account,
@@ -134,24 +178,11 @@ def monitor_once() -> str:
             level=os.environ.get("FUND100_RISK_LEVEL", ""),
             actual_account_binding=binding,
         )
-    except Exception as exc:
-        # Never leak broker payloads, balances or secrets into public logs.
-        print("RISK MONITOR: broker risk verification failed; requesting STOP.")
-        try:
-            operator.commit_stop_signal()
-        except Exception as stop_exc:
-            raise RiskMonitorStop(
-                "Risk breach identified but persistent STOP could not be confirmed."
-            ) from stop_exc
-
-        try:
-            emergency.cancel_open_fund100_orders()
-        except Exception as cancel_exc:
-            raise RiskMonitorStop(
-                "Operator STOPPED but broker cancellation not confirmed."
-            ) from cancel_exc
-
-        return "AUTO_STOP_CONFIRMED"
+    except Exception:
+        # A failed operator read is itself unsafe and must not leave broker
+        # cancellation unattempted. Never leak broker or GitHub errors.
+        print("RISK MONITOR: account/control verification failed; requesting STOP.")
+        return _attempt_emergency_stop_and_cancel()
 
     return "WITHIN_RISK_LIMITS"
 
