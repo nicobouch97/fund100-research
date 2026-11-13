@@ -244,6 +244,106 @@ def test_retry_after_restart_remains_denied(protected, monkeypatch):
 
 
 
+def test_original_dispatch_ticket_hard_locked_without_access(monkeypatch):
+    monkeypatch.setattr(ctl, "_journal_connect",
+                        lambda: pytest.fail("No journal under source lock"))
+    with pytest.raises(ctl.StopControllerHold, match="HARD LOCKED"):
+        ctl.read_original_dispatch_ticket()
+
+
+def test_missing_or_unacknowledged_ticket_cannot_prove_stop(protected):
+    with pytest.raises(ctl.StopControllerHold, match="No original"):
+        ctl.read_original_dispatch_ticket()
+    with ctl._journal_connect() as db:
+        assert ctl._reserve_once(db, reason="OPERATOR_CONTROLS_UNKNOWN")
+    with pytest.raises(ctl.StopControllerHold, match="not verifiable"):
+        ctl.read_original_dispatch_ticket()
+
+
+def test_ticket_carries_only_original_ack_run_and_never_stop_proof(
+        protected, monkeypatch):
+    calls = []
+    def dispatch(**kwargs):
+        calls.append(kwargs)
+        return _ack()
+    monkeypatch.setattr(ctl, "_request", dispatch)
+    assert ctl._dispatch_once(
+        reason="STOP_LATCHES_WITHOUT_BROKER_CANCEL_PROOF"
+    )["state"] == "DISPATCH_ACK_ONLY_NEEDS_INDEPENDENT_VERIFICATION"
+    ticket = ctl.read_original_dispatch_ticket()
+    assert ticket["status"] == "ORIGINAL_DISPATCH_ACK_NOT_STOP_PROOF"
+    assert ticket["expected_dispatch_run_id"] == 45123456789
+    assert ticket["alarm_detected_at_utc"].endswith("Z")
+    assert ticket["github_stop_verified"] is False
+    assert ticket["broker_cancel_verified"] is False
+    assert ticket["stop_completed"] is False
+    assert ticket["order_authorized"] is False
+    assert set(ticket) == {
+        "status", "expected_dispatch_run_id", "alarm_detected_at_utc",
+        "github_stop_verified", "broker_cancel_verified", "stop_completed",
+        "order_authorized",
+    }
+    # Reading an ACK never dispatches, rearms, clears the incident or retries.
+    assert ctl.read_original_dispatch_ticket() == ticket
+    assert ctl._dispatch_once(reason="OPERATOR_CONTROLS_UNKNOWN")[
+        "state"] == "STOP_ALREADY_RESERVED_NO_RETRY"
+    assert len(calls) == 1
+    with sqlite3.connect(protected / "stop.sqlite") as db:
+        state, run_id = db.execute(
+            "SELECT state,dispatch_run_id FROM stop_attempts").fetchone()
+    assert state == "ACK_ONLY_UNVERIFIED_STOP"
+    assert run_id == 45123456789
+
+
+def test_unknown_network_dispatch_outcome_cannot_supply_run_id(
+        protected, monkeypatch):
+    def timeout(**kwargs):
+        raise TimeoutError("Unknown whether GitHub accepted")
+    monkeypatch.setattr(ctl, "_request", timeout)
+    assert ctl._dispatch_once(
+        reason="OPERATOR_CONTROLS_UNKNOWN")["state"] == (
+            "UNKNOWN_DISPATCH_OUTCOME_ESCALATE")
+    with pytest.raises(ctl.StopControllerHold, match="not verifiable"):
+        ctl.read_original_dispatch_ticket()
+    assert ctl._dispatch_once(reason="OPERATOR_CONTROLS_UNKNOWN")[
+        "state"] == "STOP_ALREADY_RESERVED_NO_RETRY"
+
+
+@pytest.mark.parametrize("column,value", [
+    ("state", "UNKNOWN_DISPATCH_OUTCOME"),
+    ("state", "ATTEMPT_RESERVED"),
+    ("reason", "USER_SUPPLIED_REASON"),
+    ("dispatch_run_id", None),
+    ("dispatch_run_id", "123456"),
+    ("dispatch_run_id", -3),
+    ("dispatch_run_id", 0),
+    ("dispatch_run_id", 10**20),
+    ("created_at_utc", "2099-01-01T00:00:00Z"),
+    ("created_at_utc", "invalid timestamp"),
+    ("last_update_utc", "2099-01-01T00:00:00Z"),
+    ("last_update_utc", "2020-01-01T00:00:00Z"),
+])
+def test_corrupt_or_forged_ticket_fails_closed(
+        protected, monkeypatch, column, value):
+    monkeypatch.setattr(ctl, "_request", lambda **kwargs: _ack())
+    ctl._dispatch_once(reason="OPERATOR_CONTROLS_UNKNOWN")
+    # Known test-only column names (never caller-selectable in source code).
+    with sqlite3.connect(protected / "stop.sqlite") as db:
+        db.execute("UPDATE stop_attempts SET " + column + "=? WHERE alarm_key=?",
+                   (value, ctl.ALARM_KEY))
+    with pytest.raises(ctl.StopControllerHold):
+        ctl.read_original_dispatch_ticket()
+
+
+def test_no_durable_mount_cannot_read_acked_ticket(
+        protected, monkeypatch):
+    monkeypatch.setattr(ctl, "_request", lambda **kwargs: _ack())
+    ctl._dispatch_once(reason="OPERATOR_CONTROLS_UNKNOWN")
+    monkeypatch.setattr(ctl.os.path, "ismount", lambda path: False)
+    with pytest.raises(ctl.StopControllerHold, match="HARD LOCKED"):
+        ctl.read_original_dispatch_ticket()
+
+
 def test_private_image_drops_root_before_controller_runs():
     image = Path("Dockerfile.private-stop-controller").read_text()
     assert "gosu stopcontroller python -u" in image
