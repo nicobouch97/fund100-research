@@ -6,6 +6,7 @@ on:
       - 'fund100_v6_readonly_oauth_eight_get_transport_v1_0.py'
       - 'fund100_v6_private_oauth_risk_witness_locked_v1_0.py'
       - 'test_fund100_v6_private_oauth_risk_witness_locked_v1_0.py'
+      - 'test_fund100_v6_independent_oauth_signed_risk_chain_offline_v1_0.py'
       - 'test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py'
       - '.github/workflows/fund100-v6-oauth-transport-mocks.yml'
   push:
@@ -14,6 +15,7 @@ on:
       - 'fund100_v6_readonly_oauth_eight_get_transport_v1_0.py'
       - 'fund100_v6_private_oauth_risk_witness_locked_v1_0.py'
       - 'test_fund100_v6_private_oauth_risk_witness_locked_v1_0.py'
+      - 'test_fund100_v6_independent_oauth_signed_risk_chain_offline_v1_0.py'
       - 'test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py'
       - '.github/workflows/fund100-v6-oauth-transport-mocks.yml'
 
@@ -34,8 +36,8 @@ jobs:
       - name: Prove source-locked OAuth GET-only transport with mocked HTTP
         run: |
           set -euo pipefail
-          python -m pip install 'pytest>=8,<9'
-          python -m pytest -q test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py test_fund100_v6_private_oauth_risk_witness_locked_v1_0.py
+          python -m pip install 'pytest>=8,<9' 'cryptography>=45,<47'
+          python -m pytest -q test_fund100_v6_readonly_oauth_eight_get_transport_v1_0.py test_fund100_v6_private_oauth_risk_witness_locked_v1_0.py test_fund100_v6_independent_oauth_signed_risk_chain_offline_v1_0.py
           grep -Fq 'GET_TRANSPORT_RELEASED = False' fund100_v6_readonly_oauth_eight_get_transport_v1_0.py
           grep -Fq 'SOURCE_RELEASED = False' fund100_v6_private_oauth_risk_witness_locked_v1_0.py
           grep -Fq 'PROVIDER_READONLY_GRANT_CUSTODY_INDEPENDENTLY_VERIFIED = False' fund100_v6_private_oauth_risk_witness_locked_v1_0.py
