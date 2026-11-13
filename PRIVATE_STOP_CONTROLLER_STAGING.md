@@ -17,6 +17,8 @@ On initial protected startup the code would (if separately reviewed and unlocked
 A clean observed pair of STOP controls does not prove there are no broker open orders or fills, and never means risk PASS.
 
 ## Railway staged configuration (13 Nov 2026)
+**Railway volume ownership and durability caveat (checked against current Railway documentation):** Persistent /data volumes are root-owned; the original non-root-only Dockerfile could not persist its STOP journal. The isolated image now runs a minimal root-owned volume permission preparation, then `gosu` drops to the non-root `stopcontroller` identity **before Python starts**. This startup sequence has not been validated on an actual Railway mount and must fail closed if it cannot prepare /data. Railway also does not support multiple replicas sharing a volume and briefly interrupts volume-backed deployments; this staging cannot be described as highly available. A separate independent watchdog plus durable failover store (potentially managed Postgres) must be reviewed before unattended live safety responsibility. No release, token or deployment is justified by an offline image test.
+
 Project: \`fund100-risk-monitor-research\` / development. Staged service: \`fund100-private-stop-controller-staged\`, single replica in SFO, always-on restart policy, no cron, private network DNS, no public domain. Staged 128 MB durable /data volume; nothing has been committed/deployed. A reviewed service-to-GitHub source connection and correct Dockerfile path are still prerequisites. No secrets have been provisioned.
 
 ## Release requirements
