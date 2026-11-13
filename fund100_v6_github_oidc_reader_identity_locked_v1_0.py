@@ -207,7 +207,9 @@ def verify_exact_scheduled_broker_reader_identity(
     }
     if any(payload.get(k) != v for k, v in exact_claims.items()):
         raise BrokerWitnessIdentityStop("OIDC job/repo/ref/actor context untrusted")
-    if payload.get("run_attempt") not in ("1", 1):
+    attempt = payload.get("run_attempt")
+    if not ((type(attempt) is str and attempt == "1")
+            or (type(attempt) is int and attempt == 1)):
         raise BrokerWitnessIdentityStop("Retry/malformed OIDC job attempt")
     run_id = payload.get("run_id")
     jti = payload.get("jti")
