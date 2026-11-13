@@ -10,12 +10,25 @@ concurrency:
 jobs:
   stop-signal:
     name: Immediately set the persistent STOP latch
+    # Never grant Contents:write to unreviewed feature-branch code.
+    if: ${{ github.repository == 'nicobouch97/fund100-research' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout protected main without persistent credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify STOP workflow provenance before any Contents-write action
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-live-emergency-stop.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Commit STOPPED to GitHub main
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -32,6 +45,13 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # This step runs even if the earlier STOP CAS/provenance step fails.
+          # Verify provenance AGAIN before giving the V6 code its write token.
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-live-emergency-stop.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           python - <<'PY'
           import fund100_v6_s1_operator_control_v2_0 as v6
           assert v6.commit_stop_signal() in ('STOPPED','ALREADY_STOPPED')
@@ -42,14 +62,27 @@ jobs:
   cancel-fund100-orders:
     name: Cancel only outstanding Fund-100 Alpaca orders
     needs: stop-signal
-    if: always()
+    # Always attempt cancellation after a FAILED main-branch STOP, but never
+    # run unreviewed non-main code with protected broker credentials.
+    if: ${{ always() && github.repository == 'nicobouch97/fund100-research' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     environment: fund100-live-broker
     timeout-minutes: 10
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout protected main without persistent credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify legacy cancel provenance before any broker secret
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-live-emergency-stop.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Cancel and verify only Fund-100 orders
         env:
           ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
@@ -63,7 +96,7 @@ jobs:
     needs: stop-signal
     # This separate job still runs if either STOP CAS fails, so an already
     # open V6 order has its own independent broker cancellation attempt.
-    if: ${{ always() && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    if: ${{ always() && github.repository == 'nicobouch97/fund100-research' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     environment: fund100-live-broker
     timeout-minutes: 10
