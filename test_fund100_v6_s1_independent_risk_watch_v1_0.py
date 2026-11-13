@@ -130,6 +130,7 @@ def test_full_original_eight_get_source_reuses_actual_high_risk_validator(
                         lambda: ("FAKE_KEY", "FAKE_SECRET"))
     sources = [{"type":"source", "is_open":True, "index":i}
                for i in range(8)]
+    sources[0]["id"] = "synthetic-owner-account-0001"
     calls = []
     def fake_get(*, path, params, key, secret):
         assert key == "FAKE_KEY" and secret == "FAKE_SECRET"
@@ -353,3 +354,110 @@ def test_source_only_has_no_order_post_and_cannot_resume_v5():
     assert "NO_BROKER_NO_RISK_PASS" in workflow
     assert "verified_v6_original_acwi_risk=YES" not in workflow
     assert "ALPACA_LIVE_SECRET" not in workflow
+
+
+def _prepare_private_witness_mock(monkeypatch, *, verdict_field=None,
+                                  verdict_value=None):
+    """Synthetic account and eight fake GET payloads: never touch a socket."""
+    go(monkeypatch)
+    monkeypatch.setattr(watch, "_check_main_stopped_and_v6_go", lambda: None)
+    monkeypatch.setattr(watch.broker, "load_credentials",
+                        lambda: ("NOT_LIVE_KEY", "NOT_LIVE_SECRET"))
+    docs = [{"kind": "offline-test", "index": i, "is_open": True}
+            for i in range(8)]
+    docs[0]["id"] = "synthetic-owner-account-0001"
+    calls = []
+
+    def fake_get(**kwargs):
+        assert kwargs["key"] == "NOT_LIVE_KEY"
+        assert kwargs["secret"] == "NOT_LIVE_SECRET"
+        assert kwargs["path"].startswith("/v2/")
+        calls.append(kwargs["path"])
+        return docs[len(calls)-1]
+
+    monkeypatch.setattr(watch.broker, "get_json", fake_get)
+    policy = {"risk_level": "HIGH", "capital_ceiling_usd": "130.30"}
+    monkeypatch.setattr(watch.original, "original",
+                        lambda name: (policy if name == watch.original_files.POLICY
+                                      else {"synthetic": True}, None))
+    monkeypatch.setattr(watch.intent, "original_acwi_qty",
+                        lambda: "0.4")
+    checked = {
+        "schema": watch.active.SCHEMA,
+        "status": "ORIGINAL_ACWI_ORDER_TIME_BROKER_RISK_LIVE_AUTHORIZED_V2",
+        "same_process_real_broker_gets": 8,
+        "original_acwi_exact_fractional_holdings_verified": True,
+        "original_strict_postfunding_6_20_35_risk_pass": True,
+        "broker_post_attempts": 0,
+        "orders_submitted_here": 0,
+        "buy_authorized": False,
+    }
+    if verdict_field is not None:
+        checked[verdict_field] = verdict_value
+    monkeypatch.setattr(watch.active, "evaluate_original_sell_only",
+                        lambda **kwargs: dict(checked))
+    return docs, policy, calls
+
+
+def test_private_witness_is_only_an_in_memory_handoff_not_a_signed_receipt(
+        monkeypatch, capsys):
+    docs, policy, calls = _prepare_private_witness_mock(monkeypatch)
+    assert "FUND100_V6_RISK_SIGNER_ED25519_PRIVATE_HEX" not in __import__(
+        "os").environ
+    witness = watch._capture_private_eight_get_witness()
+    assert set(witness) == {
+        "checked", "account_id", "policy", "head_sha",
+        "observed_start_utc", "broker_completed_utc"}
+    assert witness["account_id"] == docs[0]["id"]
+    assert witness["policy"] is policy
+    assert witness["checked"]["same_process_real_broker_gets"] == 8
+    assert witness["head_sha"] == "a" * 40
+    assert witness["observed_start_utc"].endswith("Z")
+    assert len(witness["observed_start_utc"]) == 20
+    assert len(witness["broker_completed_utc"]) == 20
+    assert len(calls) == 8
+    assert capsys.readouterr().out == ""
+    # No Ed25519 secret is present in this broker-key process; a data
+    # record is NOT a signature, let alone independently verified PASS.
+    assert "ed25519_signature_hex" not in witness
+    src = Path(watch.__file__).read_text()
+    assert "sign_reviewed_eight_get_result(" not in src
+    assert "SCHEDULED_RUNTIME_RELEASED = False" in src
+
+
+def test_eight_broker_gets_over_45_seconds_never_reach_risk_evaluation(
+        monkeypatch):
+    _, _, calls = _prepare_private_witness_mock(monkeypatch)
+    ticks = iter((0.0, 46.0))
+    monkeypatch.setattr(watch.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(
+        watch.active, "evaluate_original_sell_only",
+        lambda **kwargs: pytest.fail("Stale 8-GET source evaluated"))
+    with pytest.raises(watch.V6WatchStop, match="source freshness"):
+        watch._capture_private_eight_get_witness()
+    assert len(calls) == 8
+
+
+def test_slow_risk_evaluator_cannot_reuse_old_broker_snapshot(monkeypatch):
+    _, _, calls = _prepare_private_witness_mock(monkeypatch)
+    ticks = iter((0.0, 0.0, 61.0))
+    monkeypatch.setattr(watch.time, "monotonic", lambda: next(ticks))
+    with pytest.raises(watch.V6WatchStop, match="evaluation exceeded"):
+        watch._capture_private_eight_get_witness()
+    assert len(calls) == 8
+
+
+@pytest.mark.parametrize("field,value", [
+    ("same_process_real_broker_gets", 7),
+    ("broker_post_attempts", False),
+    ("orders_submitted_here", False),
+    ("buy_authorized", True),
+    ("original_strict_postfunding_6_20_35_risk_pass", "true"),
+])
+def test_private_handoff_cannot_promote_fake_eight_get_pass(
+        monkeypatch, field, value):
+    _, _, calls = _prepare_private_witness_mock(
+        monkeypatch, verdict_field=field, verdict_value=value)
+    with pytest.raises(watch.V6WatchStop, match="did not PASS"):
+        watch._capture_private_eight_get_witness()
+    assert len(calls) == 8
