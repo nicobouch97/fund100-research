@@ -70,15 +70,30 @@ def test_default_lock_rejects_without_any_network_or_journal(monkeypatch):
         ctl.once()
 
 
-def test_no_stop_dispatch_if_both_latches_already_stopped(protected, monkeypatch):
+def test_both_stop_latches_still_require_one_cancellation_attempt(
+        protected, monkeypatch):
+    # STOP latches alone are insufficient: there can still be an OPEN order.
+    # The controller must request fixed STOP+cancel once, never claim success.
+    requests = []
     monkeypatch.setattr(ctl, "_main_control", _controls)
-    monkeypatch.setattr(ctl, "_dispatch_once",
-                        lambda **kw: pytest.fail("STOP latches already set"))
-    result = ctl.once()
-    assert result["state"] == "STOP_LATCHES_ONLY_BROKER_CANCEL_NOT_PROVEN"
-    assert result["stop_completed"] is False
-    assert result["order_authorized"] is False
-    assert not (protected / "stop.sqlite").exists()
+    def dispatch(**kwargs):
+        requests.append(kwargs)
+        return _ack()
+    monkeypatch.setattr(ctl, "_request", dispatch)
+    first = ctl.once()
+    second = ctl.once()
+    assert first["state"] == "DISPATCH_ACK_ONLY_NEEDS_INDEPENDENT_VERIFICATION"
+    assert first["stop_completed"] is False
+    assert first["order_authorized"] is False
+    assert second["state"] == "STOP_ALREADY_RESERVED_NO_RETRY"
+    assert len(requests) == 1
+    assert requests[0]["method"] == "POST"
+    assert requests[0]["url"] == ctl.DISPATCH_ENDPOINT
+    with sqlite3.connect(protected / "stop.sqlite") as db:
+        reason, state = db.execute(
+            "SELECT reason, state FROM stop_attempts").fetchone()
+    assert reason == "STOP_LATCHES_WITHOUT_BROKER_CANCEL_PROOF"
+    assert state == "ACK_ONLY_UNVERIFIED_STOP"
 
 
 def test_go_triggers_exactly_one_durable_reserved_post_and_never_claims_stop(
