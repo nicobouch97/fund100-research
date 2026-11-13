@@ -92,6 +92,7 @@ class Fixture:
         self.broker_reads=[]
         self.force_redirect=False
         self.force_status=None
+        self.rearm_v6_after_broker=False
 
     def opener(self, handler):
         assert isinstance(handler,source._NoRedirect)
@@ -111,7 +112,10 @@ class Fixture:
         elif "/contents/"+source.V5_PATH+"?ref=main&nonce=" in url:
             payload=control_blob(source.V5_PATH,self.v5)
         elif "/contents/"+source.V6_PATH+"?ref=main&nonce=" in url:
-            payload=control_blob(source.V6_PATH,self.v6)
+            live_v6 = dict(self.v6)
+            if self.rearm_v6_after_broker and self.broker_reads:
+                live_v6["trading_enabled"] = True
+            payload=control_blob(source.V6_PATH,live_v6)
         else:
             raise AssertionError("Untrusted GitHub URL")
         result=FakeResponse(payload,url)
@@ -194,7 +198,7 @@ def test_completed_verified_stop_binds_three_jobs_fresh_main_and_broker_gets(
     assert result["broker_fills_or_settlement_verified"] is False
     assert result["no_possible_future_fill_guarantee"] is False
     assert result["new_trading_orders_authorized"] is False
-    assert len(mock.github_reads)==4
+    assert len(mock.github_reads)==6
     assert mock.broker_reads==[
         ("/v2/account",None),
         ("/v2/orders",{"status":"open","limit":500}),
@@ -288,6 +292,32 @@ def test_fund100_open_order_cannot_be_claimed_cancelled(
                   "id":"33333333-3333-4333-8333-333333333333"}]
     with pytest.raises(proof.StopCompletionStop,match="remains OPEN"):
         complete()
+
+
+
+def test_full_broker_open_orders_page_is_not_a_complete_cancel_snapshot(
+        eligible_offline):
+    mock=eligible_offline
+    # When the page is exactly the requested limit, more OPEN orders could
+    # exist after it. Even if all 500 displayed are unrelated, HOLD.
+    mock.orders=[{"id":"offline-unrelated-"+str(i),
+                  "client_order_id":"external-account-order"}
+                 for i in range(source.BROKER_OPEN_ORDER_PARAMS["limit"])]
+    with pytest.raises(source.StopSourceHold,match="truncated"):
+        complete()
+    assert len(mock.broker_reads)==2
+    # No late main recheck is claimed when the broker page was incomplete.
+    assert len(mock.github_reads)==4
+
+
+def test_operator_rearmed_during_broker_reads_never_claims_stop(
+        eligible_offline):
+    mock=eligible_offline
+    mock.rearm_v6_after_broker=True
+    with pytest.raises(source.StopSourceHold,match="V6 main trading still ON"):
+        complete()
+    assert len(mock.broker_reads)==2
+    assert len(mock.github_reads)==6
 
 
 def test_workflow_success_but_missing_step_still_fails(
