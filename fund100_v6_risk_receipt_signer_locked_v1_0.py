@@ -27,6 +27,7 @@ WATCH_REF = ("nicobouch97/fund100-research/.github/workflows/"
              "fund100-v6-s1-independent-risk-watch.yml@refs/heads/main")
 SIGNER_SOURCE_RELEASED = False
 EXPECTED_ACCOUNT_BINDING_SHA256 = None
+EXPECTED_SIGNER_PUBLIC_KEY_HEX = None
 EXPECTED_RISK_POLICY_SHA256 = None
 MAX_BROKER_SNAPSHOT_SECONDS = verifier.MAX_BROKER_SNAPSHOT_SECONDS
 MAX_SIGN_DELAY_SECONDS = verifier.MAX_SIGN_DELAY_SECONDS
@@ -127,6 +128,7 @@ def sign_reviewed_eight_get_result(*, checked: object, account_id: object,
     policy_hash=sha256(_canonical(policy)).hexdigest()
     if (not _hash(EXPECTED_ACCOUNT_BINDING_SHA256)
         or not _hash(EXPECTED_RISK_POLICY_SHA256)
+        or not _hash(EXPECTED_SIGNER_PUBLIC_KEY_HEX)
         or account_hash!=EXPECTED_ACCOUNT_BINDING_SHA256
         or policy_hash!=EXPECTED_RISK_POLICY_SHA256):
         raise RiskReceiptSignerStop("Independent account/policy pins absent")
@@ -168,8 +170,14 @@ def sign_reviewed_eight_get_result(*, checked: object, account_id: object,
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import (
             Ed25519PrivateKey)
-        signature=Ed25519PrivateKey.from_private_bytes(
-            bytes.fromhex(hexkey)).sign(_canonical(receipt)).hex()
+        from cryptography.hazmat.primitives import serialization
+        signer=Ed25519PrivateKey.from_private_bytes(bytes.fromhex(hexkey))
+        actual_pub=signer.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw).hex()
+        if actual_pub != EXPECTED_SIGNER_PUBLIC_KEY_HEX:
+            raise RiskReceiptSignerStop("Unapproved signer identity")
+        signature=signer.sign(_canonical(receipt)).hex()
     except (ImportError,ValueError,TypeError):
         raise RiskReceiptSignerStop("Signer cryptography unavailable") from None
     return {"receipt":receipt,"ed25519_signature_hex":signature}
