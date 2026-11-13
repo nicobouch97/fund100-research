@@ -40,7 +40,7 @@ def test_stop_job_has_independent_v5_and_signed_v6_broker_cancellations():
     assert text.count("needs: stop-signal") == 2
     assert "python " + V5_SCRIPT in text
     assert "python " + V6_SCRIPT in text
-    assert "if: ${{ always() && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}" in text
+    assert "if: ${{ always() && github.repository == 'nicobouch97/fund100-research' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}" in text
     assert "timeout-minutes: 10" in text
     assert "test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"" in text
 
@@ -60,6 +60,12 @@ def test_mutated_workflow_or_cancel_source_cannot_keep_credential_scope():
             "v6.commit_stop_signal()", "v6.require_s1_running()"),
         original.replace(
             "workflow_dispatch:", "schedule:"),
+        # Reversion to the formerly accepted V6 branch guard must fail the
+        # stronger pinned audit, even if the cancellation script stays pinned.
+        original.replace(
+            "github.repository == 'nicobouch97/fund100-research' && github.event_name",
+            "github.event_name",
+        ),
     ):
         assert not audit.approved_scoped_live_script(
             STOP_WORKFLOW,V6_SCRIPT,wrong)
