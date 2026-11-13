@@ -6,6 +6,10 @@ on:
       - 'fund100_live_risk_watch_admission_getonly_v1_0.py'
       - 'test_fund100_live_risk_watch_admission_getonly_v1_0.py'
       - 'fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py'
+      - 'fund100_v6_s1_original_one_attempt_chain_locked_v1_0.py'
+      - 'test_fund100_v6_s1_original_one_attempt_chain_locked_v1_0.py'
+      - 'fund100_v6_s1_external_signed_risk_receipt_ingress_v1_0.py'
+      - 'test_fund100_v6_s1_external_signed_risk_receipt_ingress_v1_0.py'
       - 'test_fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py'
       - 'test_fund100_v6_s1_original_first_funded_entry_to_chain_offline_v1_0.py'
       - '.github/workflows/fund100-v6-first-acwi-risk-admission-offline.yml'
@@ -15,6 +19,10 @@ on:
       - 'fund100_live_risk_watch_admission_getonly_v1_0.py'
       - 'test_fund100_live_risk_watch_admission_getonly_v1_0.py'
       - 'fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py'
+      - 'fund100_v6_s1_original_one_attempt_chain_locked_v1_0.py'
+      - 'test_fund100_v6_s1_original_one_attempt_chain_locked_v1_0.py'
+      - 'fund100_v6_s1_external_signed_risk_receipt_ingress_v1_0.py'
+      - 'test_fund100_v6_s1_external_signed_risk_receipt_ingress_v1_0.py'
       - 'test_fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py'
       - 'test_fund100_v6_s1_original_first_funded_entry_to_chain_offline_v1_0.py'
       - '.github/workflows/fund100-v6-first-acwi-risk-admission-offline.yml'
@@ -36,8 +44,10 @@ jobs:
       - name: Fail-closed V6 original ACWI risk admission offline tests (NO BROKER)
         run: |
           set -euo pipefail
-          python -m pip install 'pytest>=8,<9'
+          python -m pip install -r requirements.txt
           python -m pytest -q \
             test_fund100_live_risk_watch_admission_getonly_v1_0.py \
             test_fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py \
-            test_fund100_v6_s1_original_first_funded_entry_to_chain_offline_v1_0.py
+            test_fund100_v6_s1_original_first_funded_entry_to_chain_offline_v1_0.py \
+            test_fund100_v6_s1_original_one_attempt_chain_locked_v1_0.py \
+            test_fund100_v6_s1_external_signed_risk_receipt_ingress_v1_0.py
