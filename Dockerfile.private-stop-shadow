@@ -1,0 +1,16 @@
+# Credential-free private Railway volume probe; NOT the STOP/trading service.
+# Drop root before Python, no inbound port, no network or broker modules.
+FROM python:3.12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends gosu && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --system stopshadow && \
+    useradd --system --gid stopshadow --no-create-home stopshadow && \
+    mkdir -p /data
+WORKDIR /app
+COPY --chown=stopshadow:stopshadow fund100_private_stop_shadow_volume_heartbeat_v1_0.py /app/fund100_private_stop_shadow_volume_heartbeat_v1_0.py
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    FUND100_STOP_SHADOW_MODE=NO_BROKER_SHADOW
+# Railway volume root ownership is prepared before dropping root.
+# The Python source independently refuses an absent mount, root UID,
+# GitHub/Alpaca/signing credentials, or alternate mode.
+ENTRYPOINT ["sh","-ec","test \"$(id -u)\" -eq 0; chown stopshadow:stopshadow /data; chmod 0700 /data; exec gosu stopshadow python -u /app/fund100_private_stop_shadow_volume_heartbeat_v1_0.py"]
