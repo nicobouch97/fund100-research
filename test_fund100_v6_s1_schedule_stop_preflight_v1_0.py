@@ -121,6 +121,8 @@ def test_relay_fixed_stop_endpoint_no_unsafe_ack_success_or_retry():
     assert '"X-GitHub-Api-Version": "2026-03-10"' in py
     assert "response.status != 200" in py
     assert "workflow_run_id" in py
+    assert "STOP_DISPATCH_RUN_ID=" in py
+    assert py.index("STOP_DISPATCH_ACK_UNTRUSTED") < py.index("STOP_DISPATCH_RUN_ID=")
     assert "STOP_DISPATCH_ACCEPTED_NOT_CONFIRMED" in py
     assert "STOP_CONFIRMED" not in py
     assert "with build_opener(NoRedirect()).open(req, timeout=12)" in py
