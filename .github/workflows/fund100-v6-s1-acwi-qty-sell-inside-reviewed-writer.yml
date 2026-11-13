@@ -41,6 +41,8 @@ on:
       - "fund100_v6_s1_operator_control.json"
       - ".github/workflows/fund100-live-emergency-stop.yml"
       - "fund100_alpaca_live_writer_candidate_v1_1.py"
+      - "test_fund100_alpaca_live_writer_candidate_v1_1.py"
+      - "test_fund100_alpaca_live_writer_no_redirect_v1_0.py"
       - "test_fund100_v6_s1_qty_sell_inside_reviewed_writer_v1_0.py"
       - "research_lab/V6_S1_APPROVED_WRITER_ACWI_FRACTIONAL_SELL_TRANSPORT_LOCKED_PROTOCOL_2026_10_21.md"
       - ".github/workflows/fund100-v6-s1-acwi-qty-sell-inside-reviewed-writer.yml"
@@ -64,6 +66,8 @@ jobs:
           python -m pip install 'pytest>=8,<9' 'pandas>=2.2,<3' 'exchange-calendars>=4.13,<5'
           python -m pytest -q \
             test_fund100_v6_s1_qty_sell_inside_reviewed_writer_v1_0.py \
+            test_fund100_alpaca_live_writer_candidate_v1_1.py \
+            test_fund100_alpaca_live_writer_no_redirect_v1_0.py \
             test_fund100_v6_s1_locked_live_acwi_sell_http_candidate_v1_0.py \
             test_fund100_v6_s1_prepost_one_shot_fake_bridge_v1_0.py \
             test_fund100_v6_s1_one_time_owner_claim_cas_v1_0.py \
