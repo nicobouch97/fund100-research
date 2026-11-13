@@ -392,7 +392,7 @@ def approved_scoped_live_script(
             "group: fund100-operator-emergency-stop",
             "cancel-v6-original-acwi-order:",
             "needs: stop-signal",
-            "if: ${{ always() && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}",
+            "if: ${{ always() && github.repository == 'nicobouch97/fund100-research' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}",
             "environment: fund100-live-broker",
             "persist-credentials: false",
             "test \"$GITHUB_WORKFLOW_REF\" = 'nicobouch97/fund100-research/.github/workflows/fund100-live-emergency-stop.yml@refs/heads/main'",
