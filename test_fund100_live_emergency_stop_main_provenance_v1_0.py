@@ -103,3 +103,18 @@ def test_cancel_commands_stay_selective_and_have_no_submit_or_liquidate():
         assert "POST /v2/orders" not in section
         assert "DELETE /v2/positions" not in section
         assert "first_original_acwi_sell_enabled=true" not in section
+
+
+def test_always_running_v6_stop_rechecks_provenance_independently():
+    stop = _job_sections()["stop-signal"]
+    # V6 CAS has if: always(), so failure of first provenance step must
+    # NEVER allow its independent write step to skip identity validation.
+    assert stop.count('test "$GITHUB_WORKFLOW_REF"') == 2
+    assert stop.count('test "$(git rev-parse HEAD)" = "$GITHUB_SHA"') == 2
+    assert "        if: always()\n" in stop
+    second = stop.index("      - name: Independently stop V6 first ACWI")
+    v6step = stop[second:]
+    assert v6step.index('test "$GITHUB_WORKFLOW_REF"') < v6step.index(
+        "import fund100_v6_s1_operator_control_v2_0 as v6")
+    assert v6step.index('test "$(git rev-parse HEAD)"') < v6step.index(
+        "v6.commit_stop_signal()")
