@@ -92,6 +92,7 @@ def test_negative_target_weight_rejected():
 def test_retired_v5_bootstrap_no_requests_even_if_kill_disengaged(monkeypatch):
     """Synthetic GO and live key names cannot revive historical bootstrap."""
     assert bootstrap.LEGACY_V5_BOOTSTRAP_RELEASED is False
+    before_get, before_post = bootstrap.GET_COUNT, bootstrap.POST_COUNT
     monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "DISENGAGED")
     monkeypatch.setenv("FUND100_LIVE_BOOTSTRAP_ARM", "YES")
     monkeypatch.setenv("ALPACA_LIVE_KEY", "OFFLINE_SYNTHETIC_NOT_REAL")
@@ -107,8 +108,8 @@ def test_retired_v5_bootstrap_no_requests_even_if_kill_disengaged(monkeypatch):
     with pytest.raises(bootstrap.LiveBootstrapStop,
                        match="Retired V5 bootstrap entrypoint disabled"):
         bootstrap.main()
-    assert bootstrap.GET_COUNT == 0
-    assert bootstrap.POST_COUNT == 0
+    assert bootstrap.GET_COUNT == before_get
+    assert bootstrap.POST_COUNT == before_post
 
 
 def test_retired_v5_bootstrap_lock_precedes_credentials_and_network():
