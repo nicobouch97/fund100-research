@@ -16,6 +16,7 @@ broker cancellation/verification before changing either release constant.
 from __future__ import annotations
 
 import base64
+from contextlib import closing
 from datetime import datetime, timezone
 from hashlib import sha1
 import json
@@ -291,7 +292,7 @@ def record_independently_signed_stop_completion(*, envelope: object) -> dict:
     """
     _scope()
     try:
-        with _journal_connect() as db:
+        with closing(_journal_connect()) as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
                 """SELECT state,dispatch_run_id,created_at_utc
@@ -363,7 +364,7 @@ def _dispatch_once(*, reason: str) -> dict:
     # The read token does not get dispatched, and the writer never gets broker
     # or Ed25519 signing authority.
     del read_token
-    with _journal_connect() as db:
+    with closing(_journal_connect()) as db:
         if not _reserve_once(db, reason=reason):
             return _reserved_outcome(db, reason=reason)
         try:
@@ -398,7 +399,7 @@ def read_original_dispatch_ticket() -> dict:
     """
     _scope()
     try:
-        with _journal_connect() as db:
+        with closing(_journal_connect()) as db:
             if db.execute("PRAGMA integrity_check").fetchone() != ("ok",):
                 raise StopControllerHold("STOP journal integrity invalid")
             row = db.execute(
