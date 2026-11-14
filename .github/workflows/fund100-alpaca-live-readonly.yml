@@ -81,14 +81,13 @@ jobs:
 
         run: |
           set -euo pipefail
-          # Controlled, GET-only runner: never print a raw broker error body.
-          python -B - <<'PY'
-          import fund100_alpaca_live_readonly_smoke as smoke
-          try:
-              smoke.main()
-          except Exception:
-              raise SystemExit("LIVE GET-only check unavailable; no broker mutation")
-          PY
+          # Invoke the exact-pinned GET-only source so static credential
+          # auditors can attribute LIVE secrets to a reviewed script.
+          # Never emit provider error bodies or Python tracebacks.
+          if ! python fund100_alpaca_live_readonly_smoke.py 2>/dev/null; then
+            echo 'LIVE direct-key GET-only check failed; no broker mutation' >&2
+            exit 1
+          fi
 
       - name: Final safety status
         run: |
