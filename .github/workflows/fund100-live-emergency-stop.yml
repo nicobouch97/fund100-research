@@ -58,6 +58,22 @@ jobs:
           assert v6.read_current_control()['trading_enabled'] is False
           print('First original V6 ACWI STOP confirmed; no trade requested.')
           PY
+      - name: Notify independent GitHub STOP observer via fixed repository event (not completion)
+        # No new permission or broker credentials: the existing STOP-only
+        # Contents:write token sends one repository_dispatch exception event.
+        # This runs EVEN if a STOP latch fails, so the observer can fail red.
+        # No retry on unknown dispatch; NO order/rearm, NO broker or signer.
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-live-emergency-stop.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git hash-object fund100_stop_repo_dispatch_bridge_v1_0.py)" = '8d46cbe1b2230dc13eccf50c395b877869702673'
+          python -B fund100_stop_repo_dispatch_bridge_v1_0.py
 
   cancel-fund100-orders:
     name: Cancel only outstanding Fund-100 Alpaca orders
