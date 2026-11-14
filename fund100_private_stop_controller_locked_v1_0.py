@@ -41,7 +41,10 @@ REPO = "nicobouch97/fund100-research"
 API = "https://api.github.com/repos/" + REPO
 WORKFLOW = "fund100-live-emergency-stop.yml"
 DISPATCH_ENDPOINT = API + "/actions/workflows/" + WORKFLOW + "/dispatches"
-DISPATCH_PAYLOAD = b'{"ref":"main"}'
+# Explicitly request an identifiable workflow run. Without this field
+# GitHub can return 204 No Content, leaving the durable STOP receipt unknown.
+# A run ID is only an ACK, never evidence of STOP/cancellation completion.
+DISPATCH_PAYLOAD = b'{"ref":"main","return_run_details":true}'
 JOURNAL_DIR = "/data"
 JOURNAL_PATH = "/data/fund100-stop-controller.sqlite3"
 ALARM_KEY = "FUND100_FIRST_UNVERIFIED_GO_OR_UNAVAILABLE_CONTROLS"
