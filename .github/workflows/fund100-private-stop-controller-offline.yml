@@ -5,6 +5,8 @@ on:
     paths:
       - 'fund100_private_stop_controller_locked_v1_0.py'
       - 'test_fund100_private_stop_controller_locked_v1_0.py'
+      - 'fund100_private_stop_signed_completion_receipt_locked_v1_0.py'
+      - 'test_fund100_private_stop_signed_completion_receipt_locked_v1_0.py'
       - 'Dockerfile.private-stop-controller'
       - '.github/workflows/fund100-private-stop-controller-offline.yml'
   push:
@@ -12,6 +14,8 @@ on:
     paths:
       - 'fund100_private_stop_controller_locked_v1_0.py'
       - 'test_fund100_private_stop_controller_locked_v1_0.py'
+      - 'fund100_private_stop_signed_completion_receipt_locked_v1_0.py'
+      - 'test_fund100_private_stop_signed_completion_receipt_locked_v1_0.py'
       - 'Dockerfile.private-stop-controller'
       - '.github/workflows/fund100-private-stop-controller-offline.yml'
 
@@ -33,8 +37,11 @@ jobs:
       - name: Run offline STOP-controller adversarial tests
         run: |
           set -euo pipefail
-          python -m pip install 'pytest>=8,<9'
-          python -m pytest -q test_fund100_private_stop_controller_locked_v1_0.py
+          python -m pip install 'pytest>=8,<9' 'cryptography>=45,<47'
+          python -m pytest -q test_fund100_private_stop_controller_locked_v1_0.py test_fund100_private_stop_signed_completion_receipt_locked_v1_0.py
+          grep -Fq 'SOURCE_RELEASED = False' fund100_private_stop_signed_completion_receipt_locked_v1_0.py
+          grep -Fq 'APPROVED_SIGNER_PUBLIC_KEY_HEX = None' fund100_private_stop_signed_completion_receipt_locked_v1_0.py
+          grep -Fq 'EXPECTED_ACCOUNT_BINDING_SHA256 = None' fund100_private_stop_signed_completion_receipt_locked_v1_0.py
           grep -Fq 'SOURCE_RELEASED = False' fund100_private_stop_controller_locked_v1_0.py
           grep -Fq 'STOP_DISPATCH_RELEASED = False' fund100_private_stop_controller_locked_v1_0.py
           grep -Fq 'NO_ORDER_RELEASE = True' fund100_private_stop_controller_locked_v1_0.py
