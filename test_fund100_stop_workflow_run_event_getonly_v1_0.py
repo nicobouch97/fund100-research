@@ -90,7 +90,8 @@ def source(monkeypatch):
     ):
         monkeypatch.delenv(secret,raising=False)
     payload={"event":event(),"run":original_run(),
-             "jobs":jobs(),"v5":V5.copy(),"v6":V6.copy()}
+             "jobs":jobs(),"v5":V5.copy(),"v6":V6.copy(),
+             "allowlist_get":obs._get}
     real_open=open
     def fake_open(file,*args,**kwargs):
         if str(file).endswith("/event.json"):
@@ -101,7 +102,7 @@ def source(monkeypatch):
     def fake_get(url,*,token):
         assert token=="SYNTHETIC_NO_WRITES_ACCESS_TOKEN_01234"
         assert url.startswith(obs.API)
-        if url==obs.API+"/actions/runs/"+str(ID):
+        if re.fullmatch(re.escape(obs.API)+r"/actions/runs/[1-9][0-9]*",url):
             return payload["run"]
         if url==obs.API+"/actions/runs/"+str(ID)+"/jobs?per_page=100":
             return payload["jobs"]
@@ -217,7 +218,7 @@ def test_reject_non_allowlisted_api_urls_and_methods(source,monkeypatch):
         obs.API+"/actions/runs/123/cancel",
     ):
         with pytest.raises(obs.StopEventHold,match="allowlisted"):
-            obs._get(bad,token="FAKE_READ")
+            source["allowlist_get"](bad,token="FAKE_READ")
 
 
 def test_exact_protected_main_blob_digest_mismatch_refused(source,monkeypatch):
