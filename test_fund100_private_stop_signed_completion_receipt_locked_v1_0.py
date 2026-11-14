@@ -102,8 +102,9 @@ def test_authenticated_stop_stored_historically_only_no_rearm(
         stopped, monkeypatch):
     private, folder = stopped
     monkeypatch.setattr(receipt, "SOURCE_RELEASED", True)
+    signed_original = _sign(private)
     out = ctl.record_independently_signed_stop_completion(
-        envelope=_sign(private))
+        envelope=signed_original)
     assert out == {
         "status": "HISTORICAL_STOP_SIGNED_AND_DURABLY_RECORDED",
         "dispatch_run_id": 765432109,
@@ -132,7 +133,7 @@ def test_authenticated_stop_stored_historically_only_no_rearm(
     # A second signed receipt cannot overwrite original immutable evidence.
     with pytest.raises(ctl.StopControllerHold, match="unavailable"):
         ctl.record_independently_signed_stop_completion(
-            envelope=_sign(private))
+            envelope=signed_original)
     assert _rows(folder) == (initial, records)
 
 
