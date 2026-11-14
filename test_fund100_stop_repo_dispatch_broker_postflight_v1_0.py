@@ -215,3 +215,63 @@ def test_source_denies_mutation_and_completion():
     assert 'method="DELETE"' not in source
     assert "requests.post" not in source
     assert "requests.delete" not in source
+
+
+def test_auditor_approves_only_pinned_original_verifier_and_broker_get(monkeypatch):
+    import audit_fund100_live_boundary as audit
+    workflow=".github/workflows/fund100-stop-explicit-original-getonly.yml"
+    witness="fund100_stop_explicit_original_getonly_v1_0.py"
+    broker="fund100_stop_repo_dispatch_broker_postflight_v1_0.py"
+    source=Path(workflow).read_text(encoding="utf-8")
+    assert audit.approved_scoped_live_script(workflow,witness,source)
+    assert audit.approved_scoped_live_script(workflow,broker,source)
+    assert not audit.approved_scoped_live_script(
+        ".github/workflows/fund100-live-emergency-stop.yml",broker,source)
+    cases=[
+        source.replace("needs: explicit-main-stop-only",
+                       "needs: offline-explicit-proof-tests"),
+        source.replace("needs.explicit-main-stop-only.result == 'success'",
+                       "needs.explicit-main-stop-only.result == 'failure'"),
+        source.replace(
+            "  explicit-main-stop-only:",
+            "  explicit-main-stop-only:\n    environment: fund100-live-broker"),
+        source.replace(
+            "  explicit-main-stop-only:",
+            "  explicit-main-stop-only:\n    ALPACA_LIVE_KEY: SECRET"),
+        source.replace(
+            "  protected-repo-stop-broker-postflight:",
+            "  protected-repo-stop-broker-postflight:\n    actions: write"),
+        source.replace(
+            "  protected-repo-stop-broker-postflight:",
+            "  protected-repo-stop-broker-postflight:\n    GITHUB_TOKEN: MALICIOUS"),
+        source.replace(
+            "FUND100_LIVE_WRITE_MODE: DISABLED",
+            "FUND100_LIVE_WRITE_MODE: ENABLED"),
+        source.replace(
+            "environment: fund100-live-broker",
+            "environment: public"),
+        source.replace(
+            "python -B fund100_stop_repo_dispatch_broker_postflight_v1_0.py",
+            "python -B unreviewed_live_writer.py"),
+        source.replace("a9f66d22948dc7c38a5e8657f19fef41a942e4df","0"*40),
+        source.replace("c3e82ebd7cd39d7c9d985b2aeb6c911513b01303","0"*40),
+        source.replace("  repository_dispatch:",
+                       "  unreleased_dispatch:"),
+    ]
+    for index,bad in enumerate(cases):
+        assert bad!=source,index
+        assert not audit.approved_scoped_live_script(workflow,broker,bad),index
+    monkeypatch.setattr(audit,"git_blob_digest",lambda path:"0"*40)
+    assert not audit.approved_scoped_live_script(workflow,broker,source)
+    assert not audit.approved_scoped_live_script(workflow,witness,source)
+
+
+def test_auditor_sources_have_exact_sha_and_pinned_dependencies():
+    import audit_fund100_live_boundary as audit
+    workflow=".github/workflows/fund100-stop-explicit-original-getonly.yml"
+    assert audit.PINNED_LIVE_CREDENTIAL_JOBS[
+        (workflow,"fund100_stop_repo_dispatch_broker_postflight_v1_0.py")
+    ]=="a9f66d22948dc7c38a5e8657f19fef41a942e4df"
+    assert audit.PINNED_LIVE_CREDENTIAL_JOBS[
+        (workflow,"fund100_stop_explicit_original_getonly_v1_0.py")
+    ]=="6267be4304157d521bb9a49040fa527642ca54c1"
