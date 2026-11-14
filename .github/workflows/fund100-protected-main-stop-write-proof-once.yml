@@ -5,6 +5,10 @@
 name: Fund-100 One-Time Protected-Main STOP Write Permission Proof (NO BROKER)
 
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/fund100-protected-main-stop-write-proof-once.yml"
+      - "test_fund100_protected_main_stop_write_proof_once_v1_0.py"
   push:
     branches: [main]
     paths:
@@ -18,6 +22,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  credentialless-stopped-probe-adversarial-tests:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test strict STOP-only source and fake GitHub refusal paths
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'pytest>=8,<9'
+          python -m pytest -q test_fund100_protected_main_stop_write_proof_once_v1_0.py
+
   verify-protected-main-stop-write:
     if: >-
       github.repository == 'nicobouch97/fund100-research' &&
