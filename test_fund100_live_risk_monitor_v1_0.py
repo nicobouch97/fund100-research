@@ -412,7 +412,7 @@ def test_risk_watch_workflow_pins_exact_reviewed_sources_before_secret_step():
     def git_blob_sha(path):
         data = Path(path).read_bytes()
         return hashlib.sha1(
-            b"blob " + str(len(data)).encode() + b"\\0" + data
+            b"blob " + str(len(data)).encode() + bytes([0]) + data
         ).hexdigest()
 
     for source in (
