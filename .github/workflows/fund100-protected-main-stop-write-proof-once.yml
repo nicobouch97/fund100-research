@@ -1,0 +1,208 @@
+# One-time protected-main Contents WRITE capability proof.
+# Does NOT change either operator STOP latch and NEVER calls Alpaca.
+# The actual emergency STOP workflow must separately prove its own STOP CAS,
+# full job completion and broker open-order reconciliation before trading GO.
+name: Fund-100 One-Time Protected-Main STOP Write Permission Proof (NO BROKER)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fund100-protected-main-stop-write-proof-once.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fund100-protected-main-stop-write-proof-once
+  cancel-in-progress: false
+
+jobs:
+  verify-protected-main-stop-write:
+    if: >-
+      github.repository == 'nicobouch97/fund100-research' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    # This isolated job has repository Contents-write ONLY. Never receive
+    # Alpaca secrets, broker environment, signing keys or order credentials.
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact main without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Probe protected main diagnostic path under existing STOP
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = 'true'
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_EVENT_NAME" = 'push'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-protected-main-stop-write-proof-once.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import re
+          from urllib.request import Request, build_opener, HTTPRedirectHandler
+          from urllib.error import HTTPError, URLError
+
+          REPO = "nicobouch97/fund100-research"
+          ROOT = "https://api.github.com/repos/" + REPO
+          V5 = "fund100_live_operator_control.json"
+          V6 = "fund100_v6_s1_operator_control.json"
+          PROOF = "research_lab/FUND100_PROTECTED_MAIN_STOP_WRITE_PROOF_2026_11_14.json"
+          MAX = 32768
+
+          class Hold(Exception):
+              pass
+          class NoRedirect(HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  raise Hold("GitHub redirected proof request")
+
+          def http(method, target, body=None, *, allow_missing=False):
+              if method == "GET":
+                  allowed = ("/branches/main", "/contents/" + V5 + "?ref=main",
+                             "/contents/" + V6 + "?ref=main",
+                             "/contents/" + PROOF + "?ref=main")
+                  if body is not None or target not in allowed:
+                      raise Hold("Unapproved GET path")
+              elif method == "PUT":
+                  if target != "/contents/" + PROOF or type(body) is not bytes:
+                      raise Hold("Unapproved diagnostic-only PUT")
+              else:
+                  raise Hold("Unapproved HTTP method")
+              req = Request(ROOT + target, method=method, data=body, headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": "Bearer " + os.environ["GITHUB_TOKEN"],
+                  "Content-Type": "application/json",
+                  "Cache-Control": "no-store",
+                  "User-Agent": "fund100-stop-only-main-write-diagnostic",
+                  "X-GitHub-Api-Version": "2026-03-10",
+              })
+              try:
+                  with build_opener(NoRedirect()).open(req, timeout=8) as response:
+                      if response.geturl() != ROOT + target or response.status != (201 if method == "PUT" else 200):
+                          raise Hold("GitHub unexpected diagnostic HTTP result")
+                      raw = response.read(MAX + 1)
+              except HTTPError as exc:
+                  if allow_missing and method == "GET" and exc.code == 404:
+                      return None
+                  raise Hold("GitHub protected-main request denied") from None
+              except (URLError, TimeoutError, OSError):
+                  raise Hold("GitHub protected-main request unavailable") from None
+              if len(raw) > MAX:
+                  raise Hold("GitHub response exceeds evidence limit")
+              try:
+                  result = json.loads(raw)
+              except (ValueError, TypeError):
+                  raise Hold("Invalid diagnostic JSON response") from None
+              if type(result) is not dict:
+                  raise Hold("Wrong diagnostic response type")
+              return result
+
+          def branch(expected=None):
+              doc = http("GET", "/branches/main")
+              sha = doc.get("commit", {}).get("sha")
+              if (doc.get("name") != "main" or doc.get("protected") is not True
+                  or type(sha) is not str
+                  or re.fullmatch(r"[0-9a-f]{40}", sha) is None
+                  or expected is not None and sha != expected):
+                  raise Hold("Protected branch HEAD not verified")
+              return sha
+
+          def control(path):
+              doc = http("GET", "/contents/" + path + "?ref=main")
+              if (doc.get("type") != "file" or doc.get("path") != path
+                  or doc.get("encoding") != "base64"
+                  or type(doc.get("content")) is not str
+                  or type(doc.get("sha")) is not str):
+                  raise Hold("Untrusted main operator source")
+              try:
+                  raw = base64.b64decode(doc["content"].replace("\n", ""), validate=True)
+                  expect = hashlib.sha1(b"blob " + str(len(raw)).encode() +
+                                       b"\0" + raw).hexdigest()
+                  state = json.loads(raw.decode("utf-8"))
+              except (ValueError, TypeError, UnicodeError):
+                  raise Hold("Operator main control invalid") from None
+              if (len(raw) > 2048 or expect != doc["sha"]
+                  or type(state) is not dict):
+                  raise Hold("Operator main blob unverifiable")
+              return state
+
+          def stopped():
+              a, b = control(V5), control(V6)
+              if (a != {"schema": "FUND100_OPERATOR_CONTROL_V1",
+                         "trading_enabled": False}
+                  or b != {
+                      "schema": "FUND100_V6_S1_OPERATOR_CONTROL_V2",
+                      "risk_level": "HIGH",
+                      "pilot_capital_ceiling_usd": "130.30",
+                      "trading_enabled": False,
+                      "first_original_acwi_sell_enabled": False}):
+                  raise Hold("STOP not safely held: refuse GitHub write")
+
+          def run_once():
+              if any(n in os.environ for n in (
+                  "ALPACA_LIVE_KEY", "ALPACA_LIVE_SECRET",
+                  "FUND100_PRIVATE_LEDGER_HMAC_KEY_HEX",
+                  "FUND100_V6_RISK_SIGNER_ED25519_PRIVATE_HEX")):
+                  raise Hold("Forbidden broker or signer secrets in proof")
+              source = os.environ["GITHUB_SHA"]
+              if re.fullmatch(r"[0-9a-f]{40}", source) is None:
+                  raise Hold("Untrusted source SHA")
+              if branch() != source:
+                  raise Hold("Newer main commit: do not mutate stale main")
+              stopped()
+              if http("GET", "/contents/" + PROOF + "?ref=main",
+                      allow_missing=True) is not None:
+                  raise Hold("Proof already exists: NEVER retry")
+              marker = json.dumps({
+                  "schema": "FUND100_PROTECTED_MAIN_STOP_ONLY_WRITE_PROOF_V1",
+                  "source_main_sha": source,
+                  "origin_workflow_run_id": os.environ["GITHUB_RUN_ID"],
+                  "trading_authorized": False,
+                  "broker_requests": 0,
+                  "operator_controls_changed": False,
+                  "diagnostic_only": True,
+              }, sort_keys=True, separators=(",", ":")).encode() + b"\n"
+              data = json.dumps({
+                  "branch": "main",
+                  "message": "STOP-only protected main Contents write capability proof; NO TRADE",
+                  "content": base64.b64encode(marker).decode("ascii")
+              }, sort_keys=True).encode()
+              # EXACTLY ONE write attempt; failure/ambiguous ACK means HOLD.
+              result = http("PUT", "/contents/" + PROOF, data)
+              commit = result.get("commit")
+              newfile = result.get("content")
+              digest = hashlib.sha1(b"blob " + str(len(marker)).encode()
+                                    + b"\0" + marker).hexdigest()
+              if (type(commit) is not dict or type(newfile) is not dict
+                  or type(commit.get("sha")) is not str
+                  or re.fullmatch(r"[0-9a-f]{40}", commit["sha"]) is None
+                  or newfile.get("sha") != digest or newfile.get("path") != PROOF):
+                  raise Hold("STOP proof write ACK unverified")
+              branch(commit["sha"])
+              stopped()
+              actual = http("GET", "/contents/" + PROOF + "?ref=main")
+              if (actual.get("sha") != digest or actual.get("path") != PROOF):
+                  raise Hold("STOP proof not visible on current protected main")
+              print("PROTECTED_MAIN_CONTENTS_WRITE_PROVED_STOPPED_ONLY")
+              print("NO_BROKER_REQUESTS; NO_TRADE_AUTHORIZATION")
+              return True
+
+          try:
+              run_once()
+          except (Hold, KeyError) as exc:
+              print("PROTECTED_MAIN_STOP_WRITE_UNPROVEN; TRADE_MUST_REMAIN_OFF")
+              raise SystemExit(1) from None
+          PY
