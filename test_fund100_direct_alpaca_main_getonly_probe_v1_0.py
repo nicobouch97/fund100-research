@@ -32,6 +32,13 @@ def test_live_workflow_main_only_no_write_permissions_or_secret_spread():
     assert "GITHUB_WORKFLOW_REF" in workflow
     assert "git hash-object fund100_alpaca_live_readonly_smoke.py" in workflow
     assert "a8cf058595a960d67055a63e65f574530f7074c8" in workflow
+    assert "871908c2027f1f5c8917f3138f95f1b1fea73816" in workflow
+    assert "git hash-object fund100_broker_safety.py" in workflow
+    assert "fund100_live_operator_control.json" in workflow
+    assert "fund100_v6_s1_operator_control.json" in workflow
+    assert 'a.get("trading_enabled") is not False' in workflow
+    assert 'b.get("trading_enabled") is not False' in workflow
+    assert 'b.get("first_original_acwi_sell_enabled") is not False' in workflow
     assert "FUND100_LIVE_WRITE_MODE: DISABLED" in workflow
     assert "FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}" in workflow
     assert "FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE" in workflow
