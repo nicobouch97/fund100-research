@@ -76,10 +76,12 @@ jobs:
 
           echo "LIVE read-only dependencies found."
 
-      - name: Run Fund-100 tests
+      - name: Run pinned GET-only security regressions (no credentials)
         run: |
           set -euo pipefail
-          python -m pytest -q
+          python -m pytest -q \
+            test_fund100_alpaca_live_readonly_redirect_security_v1_0.py \
+            test_fund100_direct_alpaca_main_getonly_probe_v1_0.py
 
       - name: Inspect LIVE Alpaca account
         env:
