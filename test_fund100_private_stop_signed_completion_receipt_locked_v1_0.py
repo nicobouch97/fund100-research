@@ -184,10 +184,11 @@ def test_forged_signature_and_tampering_denied(stopped, monkeypatch):
 def test_only_original_acknowledged_run_can_be_closed(stopped, monkeypatch):
     private, folder = stopped
     monkeypatch.setattr(receipt, "SOURCE_RELEASED", True)
+    valid = _sign(private)
     with sqlite3.connect(folder / "stop.sqlite") as db:
         db.execute("UPDATE stop_attempts SET state='UNKNOWN_DISPATCH_OUTCOME'")
     with pytest.raises(ctl.StopControllerHold):
-        ctl.record_independently_signed_stop_completion(envelope=_sign(private))
+        ctl.record_independently_signed_stop_completion(envelope=valid)
     assert _rows(folder)[1] == []
 
 
