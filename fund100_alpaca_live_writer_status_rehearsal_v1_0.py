@@ -66,7 +66,7 @@ import fund100_alpaca_live_writer_candidate_v1_1 as candidate
 #
 # CRITICAL:
 #
-# candidate.urlopen is replaced with an in-memory fake BEFORE
+# candidate.build_opener is replaced with a no-redirect in-memory fake BEFORE
 # release guards are bypassed.
 #
 # Candidate source constants remain FALSE before and after.
@@ -464,6 +464,9 @@ class FakeResponse:
     def __init__(
         self,
         body: dict,
+        *,
+        url: str,
+        status: int,
     ):
 
         self.body = (
@@ -473,6 +476,8 @@ class FakeResponse:
                 "utf-8"
             )
         )
+        self.url = url
+        self.status = status
 
     def __enter__(
         self,
@@ -491,9 +496,12 @@ class FakeResponse:
 
     def read(
         self,
+        size=-1,
     ):
+        return self.body if size < 0 else self.body[:size]
 
-        return self.body
+    def geturl(self):
+        return self.url
 
 
 # ============================================================
@@ -689,7 +697,7 @@ class OfflineStatusBroker:
                 )
 
             return FakeResponse(
-                existing
+                existing, url=request.full_url, status=200
             )
 
         # ----------------------------------------------------
@@ -795,7 +803,7 @@ class OfflineStatusBroker:
                 )
 
             return FakeResponse(
-                order
+                order, url=request.full_url, status=201
             )
 
         raise AssertionError(
@@ -833,8 +841,8 @@ def offline_candidate_transport(
             "candidate public-execution constant changed."
         )
 
-    original_urlopen = (
-        candidate.urlopen
+    original_build_opener = (
+        candidate.build_opener
     )
 
     original_transport_guard = (
@@ -851,9 +859,18 @@ def offline_candidate_transport(
     # Install fake transport BEFORE bypassing guards.
     # --------------------------------------------------------
 
-    candidate.urlopen = (
-        broker.urlopen
-    )
+    def fake_build_opener(*handlers):
+        if (len(handlers) != 1
+            or type(handlers[0]) is not candidate._NoRedirect):
+            raise AssertionError(
+                "Offline broker requires exact no-redirect handler"
+            )
+        class FakeOpener:
+            def open(self, request, timeout=20):
+                return broker.urlopen(request, timeout=timeout)
+        return FakeOpener()
+
+    candidate.build_opener = fake_build_opener
 
     candidate.require_transport_released = (
         lambda: None
@@ -877,8 +894,8 @@ def offline_candidate_transport(
             original_transport_guard
         )
 
-        candidate.urlopen = (
-            original_urlopen
+        candidate.build_opener = (
+            original_build_opener
         )
 
     if (
