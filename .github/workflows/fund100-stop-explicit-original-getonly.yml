@@ -1,0 +1,80 @@
+# Recovery channel for GitHub-suppressed workflow_run cascades.
+# This is an EXPLICIT, brokerless GitHub GET-only original STOP verifier;
+# never completion proof, an emergency STOP dispatch, or trade permission.
+name: Fund-100 Explicit Original STOP GET-Only Recheck (NO BROKER)
+
+on:
+  workflow_dispatch:
+    inputs:
+      original_stop_run_id:
+        description: Authenticated original STOP run ID to re-read from GitHub
+        type: string
+        required: true
+  pull_request:
+    paths:
+      - "fund100_stop_explicit_original_getonly_v1_0.py"
+      - "test_fund100_stop_explicit_original_getonly_v1_0.py"
+      - ".github/workflows/fund100-stop-explicit-original-getonly.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: fund100-explicit-original-getonly-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  explicit-main-stop-only:
+    name: Authenticated original STOP and current-main latches (NO BROKER)
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'nicobouch97/fund100-research' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Require exact current protected-main source
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-stop-explicit-original-getonly.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/main | cut -f1)"
+      - name: Read original exact STOP run, 3 jobs and twice current-main controls
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -B fund100_stop_explicit_original_getonly_v1_0.py
+          echo 'No broker GET, no STOP-completion signature, no trading permit.'
+
+  offline-explicit-proof-tests:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline no-broker no-signing provenance regressions
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'pytest>=8,<9'
+          python -m pytest -q test_fund100_stop_explicit_original_getonly_v1_0.py
+          ! grep -Eq '^[[:space:]]+actions:[[:space:]]+write' .github/workflows/fund100-stop-explicit-original-getonly.yml
+          ! grep -Eq '^[[:space:]]+contents:[[:space:]]+write' .github/workflows/fund100-stop-explicit-original-getonly.yml
