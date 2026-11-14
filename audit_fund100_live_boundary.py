@@ -320,6 +320,15 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-live-risk-watch.yml",
         "fund100_live_risk_monitor_v1_0.py",
     ): "17d4fb094c93a30bc70469e0c250d50542174be4",
+    # This SAME workflow also invokes its credentialless original STOP
+    # verifier in two SEPARATE jobs without Alpaca keys. The whole-workflow
+    # keyword scan sees the broker job's secret names; explicitly pin and
+    # independently check the credentialless jobs rather than treating those
+    # scripts as broker-capable.
+    (
+        ".github/workflows/fund100-stop-exact-run-event-getonly.yml",
+        "fund100_stop_workflow_run_event_getonly_v1_0.py",
+    ): "a6844575d1ef92cb2c693e6666b5a6072937b3bf",
     # Event-driven post-STOP read-only broker reconciliation after the
     # credentialless exact-three-job observer. Its direct Alpaca credential
     # remains trading-capable at issuer level: the pinned source only makes
@@ -1029,6 +1038,31 @@ def approved_scoped_live_script(
             not portfolio_path.is_file()
             or git_blob_digest(portfolio_path) != PINNED_PRODUCTION_PORTFOLIO_MODULE
         ):
+            return False
+
+    if script == "fund100_stop_workflow_run_event_getonly_v1_0.py":
+        if workflow != ".github/workflows/fund100-stop-exact-run-event-getonly.yml":
+            return False
+        if source.count("python -B fund100_stop_workflow_run_event_getonly_v1_0.py") != 2:
+            return False
+        try:
+            initial_job=source.split("  event-stop-observer:",1)[1].split(
+                "  credentialless-static-tests:",1)[0]
+            after_broker_job=source.split(
+                "  post-broker-main-stop-recheck:",1)[1]
+        except IndexError:
+            return False
+        for job in (initial_job,after_broker_job):
+            if any(value in job for value in (
+                "ALPACA_LIVE_KEY:", "ALPACA_LIVE_SECRET:",
+                "environment: fund100-live-broker",
+                "FUND100_GH_STOP_DISPATCH_TOKEN:",
+                "actions: write",
+            )):
+                return False
+            if "persist-credentials: false" not in job:
+                return False
+        if "needs: [event-stop-observer, protected-live-broker-poststop]" not in after_broker_job:
             return False
 
     if script == "fund100_stop_event_protected_broker_getonly_v1_0.py":
