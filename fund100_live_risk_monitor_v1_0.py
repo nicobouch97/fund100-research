@@ -10,11 +10,12 @@ during a cancellation race. No account data is saved to GitHub.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
 
-import fund100_live_bootstrap_v1_0 as broker
+import fund100_alpaca_live_readonly_smoke as readonly
 import fund100_live_emergency_stop_v1_0 as emergency
 import fund100_live_operator_control_v1_0 as operator
 import fund100_live_portfolio_risk_v1_0 as risks
@@ -23,7 +24,8 @@ import fund100_live_portfolio_risk_v1_0 as risks
 POLICY_PATH = Path(
     "live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json"
 )
-HISTORY_PATH = "/v2/account/portfolio/history?period=1M&timeframe=1D"
+HISTORY_PATH = "/v2/account/portfolio/history"
+HISTORY_PARAMS = {"period": "1M", "timeframe": "1D"}
 
 
 class RiskMonitorStop(RuntimeError):
@@ -108,13 +110,33 @@ def inspect_live_risk(
     )
 
 
+def _account_binding_from_read_only(account: object) -> str:
+    """Preserve the original exact account binding without a trade writer import."""
+    if not isinstance(account, dict):
+        raise RiskMonitorStop("Malformed read-only broker account.")
+    account_id = account.get("id")
+    if not isinstance(account_id, str) or not account_id.strip():
+        raise RiskMonitorStop("Read-only broker account binding unavailable.")
+    return hashlib.sha256(
+        ("FUND100-LIVE-ACCOUNT|" + account_id.strip()).encode("utf-8")
+    ).hexdigest()
+
+
 def live_read_only_snapshot() -> tuple[dict, object, object, dict, str]:
-    """Account, positions and history use only existing broker GET methods."""
+    """Only the already-pinned no-redirect GET transport observes LIVE risk.
+
+    This must not import the live bootstrap module: that module also exposes
+    a real order POST route. Trading-capable keys remain a deployment risk,
+    despite the exact GET-only code path used here.
+    """
     policy = _policy()
-    account = broker.get_account()
-    positions = broker.get_positions()
-    history = broker.live_request(method="GET", path=HISTORY_PATH)
-    binding = broker.account_binding(account)
+    key, secret = readonly.load_credentials()
+    account = readonly.get_json(path="/v2/account", key=key, secret=secret)
+    positions = readonly.get_json(path="/v2/positions", key=key, secret=secret)
+    history = readonly.get_json(
+        path=HISTORY_PATH, key=key, secret=secret, params=HISTORY_PARAMS
+    )
+    binding = _account_binding_from_read_only(account)
     return account, positions, history, policy, binding
 
 
