@@ -45,6 +45,10 @@ jobs:
           test "$GITHUB_EVENT_NAME" = 'schedule' -o "$GITHUB_EVENT_NAME" = 'workflow_dispatch'
           test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-live-risk-watch.yml@refs/heads/main'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          # Source-pinned reviewed GET-only reader and risk observer, BEFORE
+          # any trading-capable Alpaca key/secret or write token is injected.
+          test "$(git hash-object fund100_alpaca_live_readonly_smoke.py)" = 'a8cf058595a960d67055a63e65f574530f7074c8'
+          test "$(git hash-object fund100_live_risk_monitor_v1_0.py)" = '17d4fb094c93a30bc70469e0c250d50542174be4'
 
       - name: Set up Python
         uses: actions/setup-python@v5

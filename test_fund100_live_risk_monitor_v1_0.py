@@ -319,3 +319,113 @@ def test_no_order_after_failclosed_unknown_state(monkeypatch):
         lambda: pytest.fail("Existing STOP-only probe must not write broker"),
     )
     assert monitor.monitor_once() == "ALREADY_STOPPED"
+
+
+def test_risk_snapshot_never_imports_trade_bootstrap():
+    """Risk observer must not depend on the bootstrap module's POST transport."""
+    import inspect
+    source = inspect.getsource(monitor)
+    assert "import fund100_live_bootstrap_v1_0" not in source
+    assert "broker.live_request" not in source
+    assert "readonly.get_json(" in source
+    assert "readonly.load_credentials()" in source
+
+
+def test_protected_snapshot_exact_three_get_routes_and_account_binding(monkeypatch):
+    """All HTTP is synthetic; a direct GET-only client is injected."""
+    import hashlib
+
+    account_value = account()
+    account_value["id"] = "OFFLINE_ACCOUNT_ID"
+    observations = {
+        "/v2/account": account_value,
+        "/v2/positions": positions(),
+        "/v2/account/portfolio/history": history(),
+    }
+    calls = []
+
+    def fake_get_json(*, path, key, secret, params=None):
+        calls.append((path, params, key, secret))
+        assert key == "SYNTHETIC_KEY"
+        assert secret == "SYNTHETIC_SECRET"
+        assert path in observations
+        return observations[path]
+
+    monkeypatch.setattr(monitor, "_policy", policy)
+    monkeypatch.setattr(
+        monitor.readonly, "load_credentials",
+        lambda: ("SYNTHETIC_KEY", "SYNTHETIC_SECRET")
+    )
+    monkeypatch.setattr(monitor.readonly, "get_json", fake_get_json)
+
+    result = monitor.live_read_only_snapshot()
+    assert result[:4] == (
+        observations["/v2/account"],
+        observations["/v2/positions"],
+        observations["/v2/account/portfolio/history"],
+        policy(),
+    )
+    assert result[4] == hashlib.sha256(
+        b"FUND100-LIVE-ACCOUNT|OFFLINE_ACCOUNT_ID"
+    ).hexdigest()
+    assert [(path, params) for path, params, _, _ in calls] == [
+        ("/v2/account", None),
+        ("/v2/positions", None),
+        ("/v2/account/portfolio/history",
+         {"period": "1M", "timeframe": "1D"}),
+    ]
+
+
+@pytest.mark.parametrize("invalid", [
+    None, [], {}, {"id": None}, {"id": ""}, {"id": " "},
+    {"id": 42}, {"id": ["synthetic"]},
+])
+def test_read_only_snapshot_rejects_unbound_account(invalid):
+    with pytest.raises(monitor.RiskMonitorStop, match="account"):
+        monitor._account_binding_from_read_only(invalid)
+
+
+def test_protected_risk_http_uses_no_redirect_client():
+    """Existing pinned live reader has a genuine credential-safe redirect stop."""
+    from urllib.request import Request
+
+    offline_key = "OFFLINE_KEY"
+    offline_secret = "OFFLINE_SECRET"
+    r = Request(
+        "https://api.alpaca.markets/v2/account",
+        method="GET",
+        headers={
+            "APCA-API-KEY-ID": offline_key,
+            "APCA-API-SECRET-KEY": offline_secret,
+        },
+    )
+    with pytest.raises(RuntimeError, match="redirect forbidden"):
+        monitor.readonly._NoRedirect().redirect_request(
+            r, None, 302, "Found", {}, "https://attacker.invalid/steal"
+        )
+
+
+def test_risk_watch_workflow_pins_exact_reviewed_sources_before_secret_step():
+    """Source pins are checked before the GitHub job supplies broker secrets."""
+    import hashlib
+    from pathlib import Path
+
+    workflow = Path(".github/workflows/fund100-live-risk-watch.yml").read_text()
+    def git_blob_sha(path):
+        data = Path(path).read_bytes()
+        return hashlib.sha1(
+            b"blob " + str(len(data)).encode() + bytes([0]) + data
+        ).hexdigest()
+
+    for source in (
+        "fund100_alpaca_live_readonly_smoke.py",
+        "fund100_live_risk_monitor_v1_0.py",
+    ):
+        pin = (f'test "$(git hash-object {source})" = '
+               f"'{git_blob_sha(source)}'")
+        assert pin in workflow
+        assert workflow.index(pin) < workflow.index(
+            "- name: Check risk or trigger persistent STOP"
+        )
+    assert "persist-credentials: false" in workflow
+    assert "environment: fund100-live-broker" in workflow

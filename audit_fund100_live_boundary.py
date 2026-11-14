@@ -319,7 +319,7 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
     (
         ".github/workflows/fund100-live-risk-watch.yml",
         "fund100_live_risk_monitor_v1_0.py",
-    ): "2ab0b81f203fc76fe439ca49abdbf27ef98b3268",
+    ): "17d4fb094c93a30bc70469e0c250d50542174be4",
 }
 
 PINNED_PRODUCTION_RISK_MODULE = (
