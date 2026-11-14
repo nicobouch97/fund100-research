@@ -401,3 +401,29 @@ def test_protected_risk_http_uses_no_redirect_client():
         monitor.readonly._NoRedirect().redirect_request(
             r, None, 302, "Found", {}, "https://attacker.invalid/steal"
         )
+
+
+def test_risk_watch_workflow_pins_exact_reviewed_sources_before_secret_step():
+    """Source pins are checked before the GitHub job supplies broker secrets."""
+    import hashlib
+    from pathlib import Path
+
+    workflow = Path(".github/workflows/fund100-live-risk-watch.yml").read_text()
+    def git_blob_sha(path):
+        data = Path(path).read_bytes()
+        return hashlib.sha1(
+            b"blob " + str(len(data)).encode() + b"\\0" + data
+        ).hexdigest()
+
+    for source in (
+        "fund100_alpaca_live_readonly_smoke.py",
+        "fund100_live_risk_monitor_v1_0.py",
+    ):
+        pin = (f'test "$(git hash-object {source})" = '
+               f"'{git_blob_sha(source)}'")
+        assert pin in workflow
+        assert workflow.index(pin) < workflow.index(
+            "- name: Check risk or trigger persistent STOP"
+        )
+    assert "persist-credentials: false" in workflow
+    assert "environment: fund100-live-broker" in workflow
