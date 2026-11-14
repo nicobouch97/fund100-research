@@ -26,6 +26,10 @@ def test_live_workflow_main_only_no_write_permissions_or_secret_spread():
     assert "environment: fund100-live-broker" in workflow
     assert "permissions:\n  contents: read" in workflow
     assert "persist-credentials: false" in workflow
+    assert "test_fund100_alpaca_live_readonly_redirect_security_v1_0.py" in workflow
+    assert "test_fund100_direct_alpaca_main_getonly_probe_v1_0.py" in workflow
+    assert "python -m pytest -q" in workflow
+    assert "Run Fund-100 tests" not in workflow
     assert "github.repository == 'nicobouch97/fund100-research'" in workflow
     assert "github.ref == 'refs/heads/main'" in workflow
     assert "git rev-parse HEAD" in workflow
