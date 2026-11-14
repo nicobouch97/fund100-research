@@ -28,6 +28,8 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+import fund100_private_stop_signed_completion_receipt_locked_v1_0 as receipt
+
 SOURCE_RELEASED = False
 STOP_DISPATCH_RELEASED = False
 NO_BROKER_CREDENTIALS = True
@@ -178,6 +180,10 @@ def _journal_connect() -> sqlite3.Connection:
             alarm_key TEXT PRIMARY KEY, reason TEXT NOT NULL,
             state TEXT NOT NULL, created_at_utc TEXT NOT NULL,
             dispatch_run_id INTEGER, last_update_utc TEXT NOT NULL)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS verified_stop_receipts (
+            alarm_key TEXT PRIMARY KEY, dispatch_run_id INTEGER NOT NULL,
+            receipt_sha256 TEXT NOT NULL, signed_at_utc TEXT NOT NULL,
+            recorded_at_utc TEXT NOT NULL)""")
         return db
     except sqlite3.Error:
         raise StopControllerHold("Durable STOP journal unavailable") from None
@@ -217,7 +223,7 @@ def _reserve_once(db: sqlite3.Connection, *, reason: str) -> bool:
         raise StopControllerHold("STOP reservation failed; no POST") from None
 
 
-def _reserved_outcome(db: sqlite3.Connection) -> dict:
+def _reserved_outcome(db: sqlite3.Connection, *, reason: str) -> dict:
     """An incident's one-shot reservation is never evidence of STOP.
 
     Unknown dispatch state escalates immediately, and even a correctly
@@ -239,7 +245,7 @@ def _reserved_outcome(db: sqlite3.Connection) -> dict:
     state, created_at = rows[0]
     if state not in (
         "ATTEMPT_RESERVED", "ACK_ONLY_UNVERIFIED_STOP",
-        "UNKNOWN_DISPATCH_OUTCOME",
+        "UNKNOWN_DISPATCH_OUTCOME", "STOP_VERIFIED_HISTORICAL",
     ) or type(created_at) is not str:
         raise StopControllerHold("STOP incident state invalid")
     try:
@@ -252,6 +258,20 @@ def _reserved_outcome(db: sqlite3.Connection) -> dict:
     if (first.strftime("%Y-%m-%dT%H:%M:%SZ") != created_at
         or age < 0):
         raise StopControllerHold("STOP incident clock untrusted")
+    if state == "STOP_VERIFIED_HISTORICAL":
+        # A signed prior incident is evidence from a PAST snapshot only.
+        # Never implicitly permit another GO or auto-reset the incident.
+        rows = db.execute(
+            "SELECT receipt_sha256 FROM verified_stop_receipts WHERE alarm_key=?",
+            (ALARM_KEY,)
+        ).fetchall()
+        if len(rows) != 1 or type(rows[0][0]) is not str or not re.fullmatch(r"[0-9a-f]{64}", rows[0][0]):
+            raise StopControllerHold("Historical STOP receipt missing")
+        if reason != "STOP_LATCHES_WITHOUT_BROKER_CANCEL_PROOF":
+            raise StopControllerHold(
+                "New GO/unknown after historical STOP needs fresh alarm fence")
+        return {"state": "HISTORICAL_STOP_ONLY_FRESH_BROKER_RISK_REQUIRED",
+                "stop_completed": False, "order_authorized": False}
     if state == "UNKNOWN_DISPATCH_OUTCOME":
         outcome = "UNKNOWN_DISPATCH_OUTCOME_ESCALATE"
     elif age >= MAX_UNVERIFIED_STOP_SECONDS:
@@ -260,6 +280,59 @@ def _reserved_outcome(db: sqlite3.Connection) -> dict:
         outcome = "STOP_ALREADY_RESERVED_NO_RETRY"
     return {"state": outcome, "stop_completed": False,
             "order_authorized": False}
+
+
+def record_independently_signed_stop_completion(*, envelope: object) -> dict:
+    """Only transition an ACKed original incident on a pinned signature.
+
+    This is NOT a caller-asserted STOP, a LIVE broker risk PASS, an alarm
+    reset, a STOP rearm, or an order permit. No GitHub/Alpaca I/O is made.
+    The independently isolated source for such receipts is NOT yet released.
+    """
+    _scope()
+    try:
+        with _journal_connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                """SELECT state,dispatch_run_id,created_at_utc
+                   FROM stop_attempts WHERE alarm_key=?""",
+                (ALARM_KEY,),
+            ).fetchone()
+            if (row is None or row[0] != "ACK_ONLY_UNVERIFIED_STOP"
+                or type(row[1]) is not int
+                or not 0 < row[1] < 10**20):
+                raise StopControllerHold("No original confirmed dispatch ACK")
+            historical = receipt.verify_signed_completion(
+                envelope=envelope, alarm_key=ALARM_KEY,
+                expected_dispatch_run_id=row[1],
+                alarm_detected_at_utc=row[2],
+            )
+            if (historical.get("status") !=
+                    "VERIFIED_HISTORICAL_STOP_NO_CURRENT_RISK_PASS"
+                or historical.get("new_orders_authorized") is not False
+                or historical.get("new_alarm_rearm_authorized") is not False):
+                raise StopControllerHold("Signed STOP result not qualified")
+            db.execute("""INSERT INTO verified_stop_receipts
+                (alarm_key,dispatch_run_id,receipt_sha256,signed_at_utc,
+                 recorded_at_utc) VALUES (?,?,?,?,?)""",
+                (ALARM_KEY, row[1], historical["receipt_sha256"],
+                 historical["verified_at_utc"], _utc_now()))
+            db.execute("""UPDATE stop_attempts
+                SET state='STOP_VERIFIED_HISTORICAL',last_update_utc=?
+                WHERE alarm_key=? AND state='ACK_ONLY_UNVERIFIED_STOP'
+                      AND dispatch_run_id=?""",
+                (_utc_now(), ALARM_KEY, row[1]))
+            if db.execute("SELECT changes()").fetchone()[0] != 1:
+                raise StopControllerHold("STOP completion lost incident CAS")
+            db.execute("COMMIT")
+    except (sqlite3.Error, receipt.ReceiptNotVerified, StopControllerHold,
+            ValueError, TypeError):
+        raise StopControllerHold(
+            "Signed original STOP completion unavailable; HOLD") from None
+    return {"status": "HISTORICAL_STOP_SIGNED_AND_DURABLY_RECORDED",
+            "dispatch_run_id": historical["dispatch_run_id"],
+            "current_broker_risk_pass": False,
+            "new_alarm_rearmed": False, "order_authorized": False}
 
 
 def _mark(db: sqlite3.Connection, state: str, run_id: int | None = None):
@@ -292,7 +365,7 @@ def _dispatch_once(*, reason: str) -> dict:
     del read_token
     with _journal_connect() as db:
         if not _reserve_once(db, reason=reason):
-            return _reserved_outcome(db)
+            return _reserved_outcome(db, reason=reason)
         try:
             result = _request(url=DISPATCH_ENDPOINT, token=stop_token,
                               method="POST", payload=DISPATCH_PAYLOAD)
