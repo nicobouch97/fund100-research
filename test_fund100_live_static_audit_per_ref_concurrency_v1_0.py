@@ -18,12 +18,14 @@ V6_LOCKED=ROOT/".github/workflows/fund100-v6-s1-original-acwi-one-attempt-locked
 
 def _group(path):
     text=path.read_text(encoding="utf-8")
-    hit=re.search(r"(?m)^concurrency:\s*\n\s+group: ([^\n]+)\n\s+cancel-in-progress: false\s*$",text)
+    hit=re.search(r"(?m)^concurrency:\s*\n\s+group: ([^\n]+)\n\s+cancel-in-progress: ([^\n]+)\s*$",text)
     assert hit is not None, f"Missing fail-closed workflow concurrency in {path}"
-    return hit.group(1).strip(),text
+    return hit.group(1).strip(),hit.group(2).strip(),text
 
 def test_static_audit_does_not_replace_pending_checks_of_other_pull_requests():
-    group,text=_group(AUDIT)
+    group,cancel,text=_group(AUDIT)
+    # PR audits may supersede outdated own-ref runs, but NEVER main audits.
+    assert cancel == "${{ github.event_name == 'pull_request' }}"
     assert group=="fund100-live-static-safety-audit-${{ github.ref }}"
     assert group!="fund100-live-static-safety-audit"
     assert text.count("concurrency:")==1
@@ -36,6 +38,7 @@ def test_static_audit_does_not_replace_pending_checks_of_other_pull_requests():
 
 def test_all_broker_writers_still_share_one_global_real_account_mutex():
     for path in V5_WRITERS+(V6_LOCKED,):
-        group,text=_group(path)
+        group,cancel,text=_group(path)
+        assert cancel == "false"  # All real brokerage writers remain non-cancellable
         assert group=="fund100-alpaca-live-account-writer"
         assert "${{ github.ref }}" not in group
