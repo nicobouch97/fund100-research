@@ -192,6 +192,7 @@ def test_live_only_on_main_push_and_no_broker_keys_visible():
     assert "  pull_request:" in text
     assert "  push:\n    branches: [main]" in text
     assert "github.run_attempt == 1" in text
+    assert "startsWith(github.event.head_commit.message, 'P0: post-704 one-time protected STOP acceptance')" in text
     assert "persist-credentials: false" in text
     assert "      actions: write" in text
     assert "      contents: read" in text
