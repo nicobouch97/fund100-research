@@ -1,0 +1,98 @@
+name: Fund-100 Exact STOP Run Independent Event Observer (NO BROKER)
+
+# Event-driven independent read of original STOP run / jobs / current latches.
+# NOT broker STOP completion, no broker GET, signer, order, or dispatch.
+on:
+  workflow_run:
+    workflows:
+      - Fund-100 STOP TRADING (operator emergency)
+    types: [completed]
+    branches: [main]
+  pull_request:
+    paths:
+      - 'fund100_stop_workflow_run_event_getonly_v1_0.py'
+      - 'test_fund100_stop_workflow_run_event_getonly_v1_0.py'
+      - '.github/workflows/fund100-stop-exact-run-event-getonly.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fund100_stop_workflow_run_event_getonly_v1_0.py'
+      - 'test_fund100_stop_workflow_run_event_getonly_v1_0.py'
+      - '.github/workflows/fund100-stop-exact-run-event-getonly.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: fund100-stop-event-getonly-${{ github.event.workflow_run.id || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  event-stop-observer:
+    name: Observe original STOP jobs and present latches, NO BROKER
+    if: >-
+      ${{{
+        github.event_name == 'workflow_run' &&
+        github.repository == 'nicobouch97/fund100-research' &&
+        github.ref == 'refs/heads/main' &&
+        github.event.workflow_run.event == 'workflow_dispatch' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == 'nicobouch97/fund100-research' &&
+        github.event.workflow_run.run_attempt == 1 &&
+        github.event.workflow_run.conclusion == 'success'
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout protected main without persistent GitHub credentials
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Verify reviewed event observer scope
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_EVENT_NAME" = 'workflow_run'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-stop-exact-run-event-getonly.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/main | cut -f1)"
+          echo 'Verified protected main, no broker or STOP-dispatch credentials.'
+      - name: Check authenticated original STOP run and current main STOP (NO BROKER)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -B fund100_stop_workflow_run_event_getonly_v1_0.py
+
+  credentialless-static-tests:
+    name: Offline source and adversarial workflow-run tests
+    if: >-
+      ${{{
+        (github.event_name == 'pull_request' || github.event_name == 'push') &&
+        github.repository == 'nicobouch97/fund100-research'
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify no live secret, broker, dispatch or signer scope
+        run: |
+          set -euo pipefail
+          python -m pip install 'pytest>=8,<9'
+          python -m pytest -q test_fund100_stop_workflow_run_event_getonly_v1_0.py
+          grep -Fq 'NO_BROKER_ACCESS = True' fund100_stop_workflow_run_event_getonly_v1_0.py
+          grep -Fq 'NO_GITHUB_WRITE = True' fund100_stop_workflow_run_event_getonly_v1_0.py
+          grep -Fq 'NO_STOP_COMPLETION_CLAIM = True' fund100_stop_workflow_run_event_getonly_v1_0.py
+          ! grep -Fq 'actions: write' .github/workflows/fund100-stop-exact-run-event-getonly.yml
