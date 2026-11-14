@@ -435,10 +435,12 @@ def approved_scoped_live_script(
             offline=source.split("  offline-explicit-proof-tests:",1)[1].split(
                 "  protected-repo-stop-broker-postflight:",1)[0]
             protected=source.split(
-                "  protected-repo-stop-broker-postflight:",1)[1]
+                "  protected-repo-stop-broker-postflight:",1)[1].split(
+                "  post-broker-repo-stop-recheck:",1)[0]
+            after=source.split("  post-broker-repo-stop-recheck:",1)[1]
         except IndexError:
             return False
-        for j in (verifier,offline):
+        for j in (verifier,offline,after):
             if any(k in j for k in (
                 "ALPACA_LIVE_KEY:", "ALPACA_LIVE_SECRET:",
                 "environment: fund100-live-broker",
@@ -454,6 +456,9 @@ def approved_scoped_live_script(
             "types: [fund100-original-stop-outcome-readonly-v1]",
             "  explicit-main-stop-only:",
             "  protected-repo-stop-broker-postflight:",
+            "  post-broker-repo-stop-recheck:",
+            "needs: [explicit-main-stop-only, protected-repo-stop-broker-postflight]",
+            "needs.protected-repo-stop-broker-postflight.result == 'success'",
             "needs: explicit-main-stop-only",
             "needs.explicit-main-stop-only.result == 'success'",
             "github.event_name == 'repository_dispatch'",
@@ -472,8 +477,9 @@ def approved_scoped_live_script(
             return False
         if (source.count("  explicit-main-stop-only:") != 1
             or source.count("  protected-repo-stop-broker-postflight:") != 1
+            or source.count("  post-broker-repo-stop-recheck:") != 1
             or source.count(
-                "python -B fund100_stop_explicit_original_getonly_v1_0.py")!=1
+                "python -B fund100_stop_explicit_original_getonly_v1_0.py")!=2
             or source.count(
                 "python -B fund100_stop_repo_dispatch_broker_postflight_v1_0.py")!=1
             or "GITHUB_TOKEN: ${{ github.token }}" not in verifier
@@ -481,7 +487,12 @@ def approved_scoped_live_script(
             or "permissions:\n      contents: read\n      actions: read" not in verifier
             or "      contents: read" not in protected
             or "persist-credentials: false" not in protected
-            or "test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"" not in protected):
+            or "test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"" not in protected
+            or "GITHUB_TOKEN: ${{ github.token }}" not in after
+            or "persist-credentials: false" not in after
+            or "permissions:\n      contents: read\n      actions: read" not in after
+            or "git hash-object fund100_stop_explicit_original_getonly_v1_0.py" not in after
+            or "6267be4304157d521bb9a49040fa527642ca54c1" not in after):
             return False
         if any(k in protected for k in (
             "GITHUB_TOKEN:", "GH_TOKEN:", "actions: write",
