@@ -32,7 +32,7 @@ jobs:
   event-stop-observer:
     name: Observe original STOP jobs and present latches, NO BROKER
     if: >-
-      ${{{
+      ${{
         github.event_name == 'workflow_run' &&
         github.repository == 'nicobouch97/fund100-research' &&
         github.ref == 'refs/heads/main' &&
@@ -72,7 +72,7 @@ jobs:
   credentialless-static-tests:
     name: Offline source and adversarial workflow-run tests
     if: >-
-      ${{{
+      ${{
         (github.event_name == 'pull_request' || github.event_name == 'push') &&
         github.repository == 'nicobouch97/fund100-research'
       }}
