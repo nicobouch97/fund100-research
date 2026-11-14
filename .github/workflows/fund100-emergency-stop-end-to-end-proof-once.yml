@@ -1,11 +1,9 @@
-# One-time STOP-only end-to-end evidence. The dispatch job has NO_BROKER
-# tokens or position/order mutation authority. It asks the EXISTING protected
-# emergency STOP workflow to persist stopped controls and selectively cancel
-# Fund-100-tagged open orders with post-cancel GET reconciliation.
-# Dispatch ACK is NOT STOP completion proof; independently check all three jobs.
-# Single pre-reviewed follow-up STOP after #704: this narrow merge-subject
-# gate prevents ordinary workflow edits/main pushes from dispatching STOP.
-# Not a durable replay fence; retire the push route after acceptance evidence.
+# Retired one-time STOP-only integration trigger. The original source-locked
+# dispatcher remains archived for credentialless negative/offline tests.
+# This workflow has NO push trigger, Actions:write, broker credentials,
+# workflow_dispatch, or operational STOP dispatch job.
+# Production emergency STOP remains solely in the protected main operator
+# emergency workflow. No orders may be started or rearmed here.
 name: Fund-100 One-Shot Actual Emergency STOP Evidence (SAFE STOP ONLY)
 
 on:
@@ -14,10 +12,6 @@ on:
       - ".github/workflows/fund100-emergency-stop-end-to-end-proof-once.yml"
       - "fund100_emergency_stop_e2e_dispatch_once_v1_0.py"
       - "test_fund100_emergency_stop_e2e_dispatch_once_v1_0.py"
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/fund100-emergency-stop-end-to-end-proof-once.yml"
 
 permissions:
   contents: read
@@ -46,38 +40,3 @@ jobs:
           python -m pip install --disable-pip-version-check 'pytest>=8,<9'
           python -m pytest -q test_fund100_emergency_stop_e2e_dispatch_once_v1_0.py
 
-  dispatch-stop-only-once:
-    if: >-
-      github.repository == 'nicobouch97/fund100-research' &&
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main' &&
-      github.run_attempt == 1 &&
-      startsWith(github.event.head_commit.message, 'P0: post-704 one-time protected STOP acceptance')
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Check exact protected main and source locks (NO BROKER)
-        run: |
-          set -euo pipefail
-          test "$GITHUB_ACTIONS" = 'true'
-          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
-          test "$GITHUB_EVENT_NAME" = 'push'
-          test "$GITHUB_REF" = 'refs/heads/main'
-          test "$GITHUB_RUN_ATTEMPT" = '1'
-          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-emergency-stop-end-to-end-proof-once.yml@refs/heads/main'
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          grep -Eq '^LEGACY_V5_BOOTSTRAP_RELEASED *= *False$' fund100_live_bootstrap_v1_0.py
-          grep -Eq '^LEGACY_V5_ORDER_SUBMISSION_RELEASED *= *False$' fund100_live_production_controller_v1_0.py
-          grep -Eq '^ORIGINAL_ACWI_ENTRYPOINT_RELEASED *= *False$' fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py
-      - name: Dispatch fixed STOP workflow exactly once, print original run id
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          python -B fund100_emergency_stop_e2e_dispatch_once_v1_0.py
