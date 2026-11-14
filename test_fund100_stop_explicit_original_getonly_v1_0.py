@@ -270,6 +270,7 @@ def test_workflow_is_main_only_read_only_and_has_no_secret_access():
     flow=Path(".github/workflows/fund100-stop-explicit-original-getonly.yml").read_text()
     assert "workflow_dispatch:" in flow
     assert "repository_dispatch:" in flow
+    assert 'test "$GITHUB_EVENT_NAME" = workflow_dispatch || test "$GITHUB_EVENT_NAME" = repository_dispatch' in flow
     assert x.REPOSITORY_EVENT_TYPE in flow
     assert "test_fund100_stop_repo_dispatch_bridge_v1_0.py" in flow
     assert "original_stop_run_id:" in flow
