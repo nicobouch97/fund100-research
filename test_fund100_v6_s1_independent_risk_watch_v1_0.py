@@ -462,3 +462,14 @@ def test_private_handoff_cannot_promote_fake_eight_get_pass(
     with pytest.raises(watch.V6WatchStop, match="did not PASS"):
         watch._capture_private_eight_get_witness()
     assert len(calls) == 8
+
+
+def test_installed_stopped_preflight_dispatch_requests_run_id_explicitly():
+    """Offline contract: a 204 response cannot prove which STOP run started."""
+    source = Path(".github/workflows/fund100-v6-s1-independent-risk-watch.yml").read_text()
+    assert "data=b'{\"ref\":\"main\",\"return_run_details\":true}'" in source
+    assert "response.status != 200" in source
+    assert "workflow_run_id" in source and "STOP_DISPATCH_ACCEPTED_NOT_CONFIRMED" in source
+    assert "No broker" not in source or "NO_BROKER" in source
+    assert "ALPACA_LIVE_SECRET" not in source
+    assert "group: fund100-v6-s1-stopped-preflight" in source
