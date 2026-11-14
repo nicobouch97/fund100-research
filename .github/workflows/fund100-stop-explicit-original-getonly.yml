@@ -17,6 +17,9 @@ on:
       - "fund100_stop_explicit_original_getonly_v1_0.py"
       - "test_fund100_stop_explicit_original_getonly_v1_0.py"
       - "fund100_stop_repo_dispatch_bridge_v1_0.py"
+      - "fund100_stop_repo_dispatch_broker_postflight_v1_0.py"
+      - "test_fund100_stop_repo_dispatch_broker_postflight_v1_0.py"
+      - "audit_fund100_live_boundary.py"
       - "test_fund100_stop_repo_dispatch_bridge_v1_0.py"
       - ".github/workflows/fund100-live-emergency-stop.yml"
       - ".github/workflows/fund100-stop-explicit-original-getonly.yml"
@@ -81,6 +84,101 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check 'pytest>=8,<9'
-          python -m pytest -q test_fund100_stop_explicit_original_getonly_v1_0.py test_fund100_stop_repo_dispatch_bridge_v1_0.py
+          python -m pytest -q test_fund100_stop_explicit_original_getonly_v1_0.py test_fund100_stop_repo_dispatch_bridge_v1_0.py test_fund100_stop_repo_dispatch_broker_postflight_v1_0.py
           ! grep -Eq '^[[:space:]]+actions:[[:space:]]+write' .github/workflows/fund100-stop-explicit-original-getonly.yml
           ! grep -Eq '^[[:space:]]+contents:[[:space:]]+write' .github/workflows/fund100-stop-explicit-original-getonly.yml
+
+
+  protected-repo-stop-broker-postflight:
+    name: Protected Alpaca 2 GETs after independent original STOP (NO WRITES)
+    needs: explicit-main-stop-only
+    if: >-
+      ${{ github.repository == 'nicobouch97/fund100-research' &&
+          github.event_name == 'repository_dispatch' &&
+          github.event.action == 'fund100-original-stop-outcome-readonly-v1' &&
+          needs.explicit-main-stop-only.result == 'success' &&
+          github.ref == 'refs/heads/main' &&
+          github.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    environment: fund100-live-broker
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout current protected main without stored token
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Verify exact GET-only source, dependencies and protected main
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_EVENT_NAME" = 'repository_dispatch'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_RUN_ATTEMPT" = '1'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-stop-explicit-original-getonly.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/main | cut -f1)"
+          test "$(git hash-object fund100_stop_repo_dispatch_broker_postflight_v1_0.py)" = 'a9f66d22948dc7c38a5e8657f19fef41a942e4df'
+          test "$(git hash-object fund100_stop_event_protected_broker_getonly_v1_0.py)" = 'c3e82ebd7cd39d7c9d985b2aeb6c911513b01303'
+          test "$(git hash-object fund100_alpaca_live_readonly_smoke.py)" = 'a8cf058595a960d67055a63e65f574530f7074c8'
+          test "$(git hash-object live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json)" = 'ff20cb4950243c64f4d34b68e6e3170ff6cc9421'
+          echo 'PINNED STOP BROKER POSTFLIGHT GET ONLY; no order or STOP authority.'
+      - name: Two live GETs for account and open orders, no broker mutations
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+          FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+          FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+          FUND100_LIVE_WRITE_MODE: DISABLED
+        run: |
+          set -euo pipefail
+          # Issuer-level keys are trading-capable despite this GET-only source.
+          # Never co-locate GITHUB_TOKEN, signer, STOP dispatch token or writer.
+          if ! python -B fund100_stop_repo_dispatch_broker_postflight_v1_0.py 2>/dev/null; then
+            echo 'Protected broker snapshot FAILED; HOLD. No order mutation.' >&2
+            exit 1
+          fi
+
+
+  post-broker-repo-stop-recheck:
+    name: Recheck original 3 STOP jobs and both current latches AFTER broker GET (NO BROKER)
+    needs: [explicit-main-stop-only, protected-repo-stop-broker-postflight]
+    if: >-
+      ${{ github.repository == 'nicobouch97/fund100-research' &&
+          github.event_name == 'repository_dispatch' &&
+          github.event.action == 'fund100-original-stop-outcome-readonly-v1' &&
+          needs.explicit-main-stop-only.result == 'success' &&
+          needs.protected-repo-stop-broker-postflight.result == 'success' &&
+          github.ref == 'refs/heads/main' &&
+          github.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout protected main without persistent token
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Verify protected reviewed STOP post-broker source
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_EVENT_NAME" = 'repository_dispatch'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-stop-explicit-original-getonly.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/main | cut -f1)"
+          test "$(git hash-object fund100_stop_explicit_original_getonly_v1_0.py)" = '6267be4304157d521bb9a49040fa527642ca54c1'
+      - name: Current-main STOP and original exact jobs verified AGAIN (GET ONLY)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -B fund100_stop_explicit_original_getonly_v1_0.py
+          echo 'Post-broker original and current main STOP recheck; NO signer or GO.'

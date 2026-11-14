@@ -329,6 +329,18 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-live-risk-watch.yml",
         "fund100_live_risk_monitor_v1_0.py",
     ): "17d4fb094c93a30bc70469e0c250d50542174be4",
+    # Source-pinned repository_dispatch STOP observer with a physically
+    # separate environment-protected Alpaca GET-only job. The direct Alpaca
+    # API keys are TRADING-CAPABLE; this is only narrow job eligibility
+    # after successful original run/jobs/current-main STOP observation.
+    (
+        ".github/workflows/fund100-stop-explicit-original-getonly.yml",
+        "fund100_stop_explicit_original_getonly_v1_0.py",
+    ): "6267be4304157d521bb9a49040fa527642ca54c1",
+    (
+        ".github/workflows/fund100-stop-explicit-original-getonly.yml",
+        "fund100_stop_repo_dispatch_broker_postflight_v1_0.py",
+    ): "a9f66d22948dc7c38a5e8657f19fef41a942e4df",
     # This SAME workflow also invokes its credentialless original STOP
     # verifier in two SEPARATE jobs without Alpaca keys. The whole-workflow
     # keyword scan sees the broker job's secret names; explicitly pin and
@@ -408,6 +420,116 @@ def approved_scoped_live_script(
     path = ROOT / script
     if not path.is_file() or git_blob_digest(path) != expected:
         return False
+
+    if script in (
+        "fund100_stop_explicit_original_getonly_v1_0.py",
+        "fund100_stop_repo_dispatch_broker_postflight_v1_0.py",
+    ):
+        # Do NOT lift the direct account keys into GitHub verifier; isolated
+        # broker job alone has already-pinned strict two-GET transport.
+        if workflow != ".github/workflows/fund100-stop-explicit-original-getonly.yml":
+            return False
+        try:
+            verifier=source.split("  explicit-main-stop-only:",1)[1].split(
+                "  offline-explicit-proof-tests:",1)[0]
+            offline=source.split("  offline-explicit-proof-tests:",1)[1].split(
+                "  protected-repo-stop-broker-postflight:",1)[0]
+            protected=source.split(
+                "  protected-repo-stop-broker-postflight:",1)[1].split(
+                "  post-broker-repo-stop-recheck:",1)[0]
+            after=source.split("  post-broker-repo-stop-recheck:",1)[1]
+        except IndexError:
+            return False
+        for j in (verifier,offline,after):
+            if any(k in j for k in (
+                "ALPACA_LIVE_KEY:", "ALPACA_LIVE_SECRET:",
+                "environment: fund100-live-broker",
+                "FUND100_STOP_SIGNER_ED25519_PRIVATE_HEX:",
+                "FUND100_V6_RISK_SIGNER_ED25519_PRIVATE_HEX:",
+                "actions: write","contents: write",
+            )):
+                return False
+        mandatory=(
+            "name: Fund-100 Explicit Original STOP GET-Only Recheck (NO BROKER)",
+            "  workflow_dispatch:",
+            "  repository_dispatch:",
+            "types: [fund100-original-stop-outcome-readonly-v1]",
+            "  explicit-main-stop-only:",
+            "  protected-repo-stop-broker-postflight:",
+            "  post-broker-repo-stop-recheck:",
+            "needs: [explicit-main-stop-only, protected-repo-stop-broker-postflight]",
+            "needs.protected-repo-stop-broker-postflight.result == 'success'",
+            "needs: explicit-main-stop-only",
+            "needs.explicit-main-stop-only.result == 'success'",
+            "github.event_name == 'repository_dispatch'",
+            "github.event.action == 'fund100-original-stop-outcome-readonly-v1'",
+            "environment: fund100-live-broker",
+            "FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE",
+            "FUND100_LIVE_WRITE_MODE: DISABLED",
+            "FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}",
+            "FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}",
+            "ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}",
+            "ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}",
+            "python -B fund100_stop_explicit_original_getonly_v1_0.py",
+            "python -B fund100_stop_repo_dispatch_broker_postflight_v1_0.py",
+        )
+        if any(k not in source for k in mandatory):
+            return False
+        if (source.count("  explicit-main-stop-only:") != 1
+            or source.count("  protected-repo-stop-broker-postflight:") != 1
+            or source.count("  post-broker-repo-stop-recheck:") != 1
+            or source.count(
+                "python -B fund100_stop_explicit_original_getonly_v1_0.py")!=2
+            or source.count(
+                "python -B fund100_stop_repo_dispatch_broker_postflight_v1_0.py")!=1
+            or "GITHUB_TOKEN: ${{ github.token }}" not in verifier
+            or "persist-credentials: false" not in verifier
+            or "permissions:\n      contents: read\n      actions: read" not in verifier
+            or "      contents: read" not in protected
+            or "persist-credentials: false" not in protected
+            or "test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"" not in protected
+            or "GITHUB_TOKEN: ${{ github.token }}" not in after
+            or "persist-credentials: false" not in after
+            or "permissions:\n      contents: read\n      actions: read" not in after
+            or "git hash-object fund100_stop_explicit_original_getonly_v1_0.py" not in after
+            or "6267be4304157d521bb9a49040fa527642ca54c1" not in after):
+            return False
+        if any(k in protected for k in (
+            "GITHUB_TOKEN:", "GH_TOKEN:", "actions: write",
+            "contents: write", "FUND100_GH_STOP_DISPATCH_TOKEN:",
+            "FUND100_STOP_SIGNER_ED25519_PRIVATE_HEX:",
+            "FUND100_V6_RISK_SIGNER_ED25519_PRIVATE_HEX:",
+            "FUND100_LIVE_WRITE_MODE: ENABLED", "method=\"POST\"",
+            "method=\"DELETE\"", "curl ",
+        )):
+            return False
+        # Pin the entire account GET transport and STOP policy, as well
+        # as the original immutable strict broker-client-id predicate.
+        for dep,sha in {
+            "fund100_alpaca_live_readonly_smoke.py":
+                "a8cf058595a960d67055a63e65f574530f7074c8",
+            "fund100_stop_event_protected_broker_getonly_v1_0.py":
+                "c3e82ebd7cd39d7c9d985b2aeb6c911513b01303",
+            "live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json":
+                "ff20cb4950243c64f4d34b68e6e3170ff6cc9421",
+        }.items():
+            dp=ROOT/dep
+            if not dp.is_file() or git_blob_digest(dp)!=sha:
+                return False
+        for source_file,sha in {
+            "fund100_stop_repo_dispatch_broker_postflight_v1_0.py":
+                "a9f66d22948dc7c38a5e8657f19fef41a942e4df",
+            "fund100_stop_event_protected_broker_getonly_v1_0.py":
+                "c3e82ebd7cd39d7c9d985b2aeb6c911513b01303",
+            "fund100_alpaca_live_readonly_smoke.py":
+                "a8cf058595a960d67055a63e65f574530f7074c8",
+            "live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json":
+                "ff20cb4950243c64f4d34b68e6e3170ff6cc9421",
+        }.items():
+            # Source pin must also appear in the protected shell preflight.
+            if ("git hash-object "+source_file not in protected
+                or sha not in protected):
+                return False
 
     if script == "fund100_stop_repo_dispatch_bridge_v1_0.py":
         # This is a GitHub repository_dispatch-only notifier in the
