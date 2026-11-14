@@ -200,7 +200,9 @@ def test_live_only_on_main_push_and_no_broker_keys_visible():
     assert "secrets.ALPACA" not in text
     assert "python -B fund100_emergency_stop_e2e_dispatch_once_v1_0.py" in text
     assert "NO_BROKER" in text
-    assert "GITHUB_TOKEN" in text
+    assert "GITHUB_TOKEN: ${{ github.token }}" in text
+    assert "if: ${{ github.event_name" in text
+    assert r"\${{" not in text
     assert "fund100-live-emergency-stop.yml" not in text  # target fixed in module
     assert "workflow_dispatch:" not in text
     py = Path(stop.__file__).read_text()
