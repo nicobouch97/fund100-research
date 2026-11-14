@@ -110,6 +110,12 @@ FAILED_ORDER_STATUSES = {
     "rejected",
 }
 
+# The historical V5 once-only bootstrap is superseded by the V6
+# source/policy-bound first-original execution chain. Unlike a UI switch,
+# this lock cannot be rearmed using repository variables, workflow input,
+# or direct Alpaca credentials. Review/source-pin change required.
+LEGACY_V5_BOOTSTRAP_RELEASED = False
+
 POST_COUNT = 0
 GET_COUNT = 0
 
@@ -599,6 +605,11 @@ def live_request(
     body: dict | None = None,
     allow_404: bool = False,
 ):
+
+    # No legacy broker request, including GET: original urllib transport
+    # can follow authenticated redirects. The V6 GET-only reader is separate.
+    if LEGACY_V5_BOOTSTRAP_RELEASED is not True:
+        raise LiveBootstrapStop("Retired V5 bootstrap broker access disabled")
 
     global GET_COUNT
     global POST_COUNT
@@ -2075,6 +2086,11 @@ def final_reconciliation(
 
 
 def main():
+
+    # One-shot V5 bootstrap was historical. Never replay it, even when
+    # workflow authorization text, kill-switch or keys are provided.
+    if LEGACY_V5_BOOTSTRAP_RELEASED is not True:
+        raise LiveBootstrapStop("Retired V5 bootstrap entrypoint disabled")
 
     global GET_COUNT
     global POST_COUNT
