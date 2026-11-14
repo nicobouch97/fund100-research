@@ -213,3 +213,19 @@ def test_retired_once_bridge_acceptance_has_no_operational_dispatch_route():
     assert "NO_STOP_COMPLETION_CLAIM = True" in py
     assert "NO_DISPATCH_RETRY = True" in py
     assert 'method="DELETE"' not in py
+
+
+def test_ordinary_operator_emergency_stop_is_preserved_after_retirement():
+    """Retiring acceptance does not retire the user's real STOP control."""
+    emergency = Path(".github/workflows/fund100-live-emergency-stop.yml").read_text()
+    assert "name: Fund-100 STOP TRADING (operator emergency)" in emergency
+    assert "  workflow_dispatch:" in emergency
+    for exact_job in (
+        "  stop-signal:", "  cancel-fund100-orders:",
+        "  cancel-v6-original-acwi-order:",
+    ):
+        assert exact_job in emergency
+    assert "environment: fund100-live-broker" in emergency
+    assert "Notify independent GitHub STOP observer via fixed repository event" in emergency
+    assert "  push:" not in WF.read_text()
+    assert "actions: write" not in WF.read_text()
