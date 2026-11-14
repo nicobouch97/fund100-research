@@ -187,29 +187,28 @@ def test_204_or_denied_dispatch_never_claims_stop(valid, monkeypatch):
         stop._http("POST", stop.STOP, stop.FIXED_BODY)
 
 
-def test_live_only_on_main_push_and_no_broker_keys_visible():
+def test_retired_main_push_stop_dispatch_is_unreachable():
+    """Historical dispatcher remains offline only; no live push can invoke it."""
     text = WF.read_text()
     assert "  pull_request:" in text
-    assert "  push:\n    branches: [main]" in text
-    assert "github.run_attempt == 1" in text
-    assert "startsWith(github.event.head_commit.message, 'P0: post-704 one-time protected STOP acceptance')" in text
+    assert "  push:\\n    branches: [main]" not in text
+    assert "  dispatch-stop-only-once:" not in text
+    assert "actions: write" not in text.replace("# This workflow has NO push trigger, Actions:write, broker credentials,","")
     assert "persist-credentials: false" in text
-    assert "      actions: write" in text
     assert "      contents: read" in text
     assert "      contents: write" not in text
     assert "environment: fund100-live-broker" not in text
     assert "secrets.ALPACA" not in text
-    assert "python -B fund100_emergency_stop_e2e_dispatch_once_v1_0.py" in text
-    assert "NO_BROKER" in text
-    assert "GITHUB_TOKEN: ${{ github.token }}" in text
-    assert "if: ${{ github.event_name" in text
-    assert r"\${{" not in text
-    assert "fund100-live-emergency-stop.yml" not in text  # target fixed in module
-    assert "workflow_dispatch:" not in text
+    assert "python -B fund100_emergency_stop_e2e_dispatch_once_v1_0.py" not in text
+    assert "GITHUB_TOKEN: ${{ github.token }}" not in text
+    assert "if: ${{ github.event_name == 'pull_request' }}" in text
+    assert r"\\${{" not in text
+    assert "fund100-live-emergency-stop.yml" not in text
+    assert "workflow_dispatch:" not in text.replace("# workflow_dispatch, or operational STOP dispatch job.", "")
     py = Path(stop.__file__).read_text()
     assert "api.alpaca.markets" not in py
     assert "NO_ORDER_SUBMISSION = True" in py
     assert "NO_GITHUB_CONTENTS_WRITE = True" in py
     assert "NO_STOP_COMPLETION_CLAIM = True" in py
     assert "NO_DISPATCH_RETRY = True" in py
-    assert "method=\"DELETE\"" not in py
+    assert 'method="DELETE"' not in py
