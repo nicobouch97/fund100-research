@@ -143,11 +143,15 @@ def verify_signed_completion(
         from cryptography.hazmat.primitives.asymmetric.ed25519 import (
             Ed25519PublicKey)
         from cryptography.exceptions import InvalidSignature
+    except ImportError:
+        raise ReceiptNotVerified(
+            "STOP verifier cryptography unavailable") from None
+    try:
         verifier = Ed25519PublicKey.from_public_bytes(
             bytes.fromhex(APPROVED_SIGNER_PUBLIC_KEY_HEX))
         verifier.verify(bytes.fromhex(envelope["ed25519_signature_hex"]),
                         canonical)
-    except (ImportError, ValueError, InvalidSignature):
+    except (ValueError, TypeError, InvalidSignature):
         raise ReceiptNotVerified(
             "STOP signer public identity/signature unverified") from None
     return {
