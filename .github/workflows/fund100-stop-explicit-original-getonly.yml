@@ -51,7 +51,7 @@ jobs:
       - name: Require exact current protected-main source
         run: |
           set -euo pipefail
-          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch || test "$GITHUB_EVENT_NAME" = repository_dispatch
           test "$GITHUB_REF" = refs/heads/main
           test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-stop-explicit-original-getonly.yml@refs/heads/main'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
