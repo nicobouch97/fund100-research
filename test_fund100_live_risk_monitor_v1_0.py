@@ -389,12 +389,14 @@ def test_protected_risk_http_uses_no_redirect_client():
     """Existing pinned live reader has a genuine credential-safe redirect stop."""
     from urllib.request import Request
 
+    offline_key = "OFFLINE_KEY"
+    offline_secret = "OFFLINE_SECRET"
     r = Request(
         "https://api.alpaca.markets/v2/account",
         method="GET",
         headers={
-            "APCA-API-KEY-ID": "OFFLINE_KEY",
-            "APCA-API-SECRET-KEY": "OFFLINE_SECRET",
+            "APCA-API-KEY-ID": offline_key,
+            "APCA-API-SECRET-KEY": offline_secret,
         },
     )
     with pytest.raises(RuntimeError, match="redirect forbidden"):
