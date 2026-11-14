@@ -175,7 +175,9 @@ def test_workflow_separates_github_observer_and_protected_broker():
     assert "  protected-repo-stop-broker-postflight:" in workflow
     observer=workflow.split("  explicit-main-stop-only:",1)[1].split(
         "  offline-explicit-proof-tests:",1)[0]
-    broker=workflow.split("  protected-repo-stop-broker-postflight:",1)[1]
+    broker=workflow.split("  protected-repo-stop-broker-postflight:",1)[1].split(
+        "  post-broker-repo-stop-recheck:",1)[0]
+    after=workflow.split("  post-broker-repo-stop-recheck:",1)[1]
     assert "ALPACA_LIVE_KEY:" not in observer
     assert "environment: fund100-live-broker" not in observer
     assert "GITHUB_TOKEN: ${{ github.token }}" in observer
@@ -187,6 +189,14 @@ def test_workflow_separates_github_observer_and_protected_broker():
     assert "ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}" in broker
     assert "FUND100_LIVE_WRITE_MODE: DISABLED" in broker
     assert "GITHUB_TOKEN:" not in broker
+    assert "GITHUB_TOKEN: ${{ github.token }}" in after
+    assert "ALPACA_LIVE_KEY:" not in after
+    assert "ALPACA_LIVE_SECRET:" not in after
+    assert "environment: fund100-live-broker" not in after
+    assert "actions: write" not in after
+    assert "needs: [explicit-main-stop-only, protected-repo-stop-broker-postflight]" in after
+    assert "needs.protected-repo-stop-broker-postflight.result == 'success'" in after
+    assert "python -B fund100_stop_explicit_original_getonly_v1_0.py" in after
     assert "actions: write" not in broker
     assert "persist-credentials: false" in broker
     assert "python -B fund100_stop_repo_dispatch_broker_postflight_v1_0.py" in broker
