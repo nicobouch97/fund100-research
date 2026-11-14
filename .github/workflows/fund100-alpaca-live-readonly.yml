@@ -2,6 +2,10 @@ name: Fund-100 Alpaca LIVE Read Only
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fund100-alpaca-live-readonly.yml'
 
 permissions:
   contents: read
@@ -13,6 +17,7 @@ concurrency:
 jobs:
   live-readonly:
     name: Inspect Alpaca LIVE Account Read Only
+    if: ${{ github.repository == 'nicobouch97/fund100-research' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
 
     environment: fund100-live-broker
     runs-on: ubuntu-latest
@@ -20,8 +25,22 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
+      - name: Check out reviewed main without persistent credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify main workflow, exact checkout and reviewed GET-only source
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          case "$GITHUB_EVENT_NAME" in push|workflow_dispatch) ;; *) exit 1 ;; esac
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-alpaca-live-readonly.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git hash-object fund100_alpaca_live_readonly_smoke.py)" = 'a8cf058595a960d67055a63e65f574530f7074c8'
+          test -f fund100_broker_safety.py
+          echo 'Trusted main GET-only broker smoke source verified; no secret used.'
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -58,10 +77,18 @@ jobs:
           FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
 
           FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+          FUND100_LIVE_WRITE_MODE: DISABLED
 
         run: |
           set -euo pipefail
-          python fund100_alpaca_live_readonly_smoke.py
+          # Controlled, GET-only runner: never print a raw broker error body.
+          python -B - <<'PY'
+          import fund100_alpaca_live_readonly_smoke as smoke
+          try:
+              smoke.main()
+          except Exception:
+              raise SystemExit("LIVE GET-only check unavailable; no broker mutation")
+          PY
 
       - name: Final safety status
         run: |
