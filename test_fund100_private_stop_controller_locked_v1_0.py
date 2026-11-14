@@ -117,7 +117,8 @@ def test_go_triggers_exactly_one_durable_reserved_post_and_never_claims_stop(
     assert len(calls) == 1
     assert calls[0]["method"] == "POST"
     assert calls[0]["url"] == ctl.DISPATCH_ENDPOINT
-    assert calls[0]["payload"] == b'{"ref":"main"}'
+    assert calls[0]["payload"] == ctl.DISPATCH_PAYLOAD
+    assert json.loads(calls[0]["payload"]) == {"ref": "main", "return_run_details": True}
     with sqlite3.connect(protected / "stop.sqlite") as db:
         row = db.execute("SELECT state, dispatch_run_id, reason "
                          "FROM stop_attempts").fetchone()
