@@ -320,6 +320,25 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-live-risk-watch.yml",
         "fund100_live_risk_monitor_v1_0.py",
     ): "17d4fb094c93a30bc70469e0c250d50542174be4",
+    # This SAME workflow also invokes its credentialless original STOP
+    # verifier in two SEPARATE jobs without Alpaca keys. The whole-workflow
+    # keyword scan sees the broker job's secret names; explicitly pin and
+    # independently check the credentialless jobs rather than treating those
+    # scripts as broker-capable.
+    (
+        ".github/workflows/fund100-stop-exact-run-event-getonly.yml",
+        "fund100_stop_workflow_run_event_getonly_v1_0.py",
+    ): "a6844575d1ef92cb2c693e6666b5a6072937b3bf",
+    # Event-driven post-STOP read-only broker reconciliation after the
+    # credentialless exact-three-job observer. Its direct Alpaca credential
+    # remains trading-capable at issuer level: the pinned source only makes
+    # GET account and open orders. It cannot sign a risk/STOP receipt, write
+    # GitHub, request STOP, or authorize new orders.
+    (
+        ".github/workflows/fund100-stop-exact-run-event-getonly.yml",
+        "fund100_stop_event_protected_broker_getonly_v1_0.py",
+    ): "c3e82ebd7cd39d7c9d985b2aeb6c911513b01303",
+
 }
 
 PINNED_PRODUCTION_RISK_MODULE = (
@@ -1019,6 +1038,77 @@ def approved_scoped_live_script(
             not portfolio_path.is_file()
             or git_blob_digest(portfolio_path) != PINNED_PRODUCTION_PORTFOLIO_MODULE
         ):
+            return False
+
+    if script == "fund100_stop_workflow_run_event_getonly_v1_0.py":
+        if workflow != ".github/workflows/fund100-stop-exact-run-event-getonly.yml":
+            return False
+        if source.count("python -B fund100_stop_workflow_run_event_getonly_v1_0.py") != 2:
+            return False
+        try:
+            initial_job=source.split("  event-stop-observer:",1)[1].split(
+                "  credentialless-static-tests:",1)[0]
+            after_broker_job=source.split(
+                "  post-broker-main-stop-recheck:",1)[1]
+        except IndexError:
+            return False
+        for job in (initial_job,after_broker_job):
+            if any(value in job for value in (
+                "ALPACA_LIVE_KEY:", "ALPACA_LIVE_SECRET:",
+                "environment: fund100-live-broker",
+                "FUND100_GH_STOP_DISPATCH_TOKEN:",
+                "actions: write",
+            )):
+                return False
+            if "persist-credentials: false" not in job:
+                return False
+        if "needs: [event-stop-observer, protected-live-broker-poststop]" not in after_broker_job:
+            return False
+
+    if script == "fund100_stop_event_protected_broker_getonly_v1_0.py":
+        # Alpaca's direct keys remain TRADING-CAPABLE. Never let a generic
+        # unguarded workflow or drifted dependency acquire these credentials.
+        if workflow != ".github/workflows/fund100-stop-exact-run-event-getonly.yml":
+            return False
+        expected_source = (
+            "name: Fund-100 Exact STOP Run Independent Event Observer (NO BROKER)",
+            "workflow_run:",
+            "types: [completed]",
+            "  event-stop-observer:",
+            "  protected-live-broker-poststop:",
+            "needs: event-stop-observer",
+            "needs.event-stop-observer.result == 'success'",
+            "environment: fund100-live-broker",
+            "persist-credentials: false",
+            "FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE",
+            "FUND100_LIVE_WRITE_MODE: DISABLED",
+            "FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}",
+            "FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}",
+            "ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}",
+            "ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}",
+            "python -B fund100_stop_event_protected_broker_getonly_v1_0.py",
+            "  post-broker-main-stop-recheck:",
+            "needs: [event-stop-observer, protected-live-broker-poststop]",
+        )
+        if any(x not in source for x in expected_source):
+            return False
+        if source.count("python -B fund100_stop_event_protected_broker_getonly_v1_0.py") != 1:
+            return False
+        for dependency, expected_sha in {
+            "fund100_alpaca_live_readonly_smoke.py":
+                "a8cf058595a960d67055a63e65f574530f7074c8",
+            "fund100_stop_workflow_run_event_getonly_v1_0.py":
+                "a6844575d1ef92cb2c693e6666b5a6072937b3bf",
+            "live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json":
+                "ff20cb4950243c64f4d34b68e6e3170ff6cc9421",
+        }.items():
+            dep_path = ROOT / dependency
+            if not dep_path.is_file() or git_blob_digest(dep_path) != expected_sha:
+                return False
+        broker_job = source.split("  protected-live-broker-poststop:", 1)[1].split(
+            "  post-broker-main-stop-recheck:", 1)[0]
+        if ("GITHUB_TOKEN:" in broker_job or "actions: write" in broker_job
+            or "FUND100_GH_STOP_DISPATCH_TOKEN:" in broker_job):
             return False
 
     return True

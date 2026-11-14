@@ -14,12 +14,16 @@ on:
     paths:
       - 'fund100_stop_workflow_run_event_getonly_v1_0.py'
       - 'test_fund100_stop_workflow_run_event_getonly_v1_0.py'
+      - 'fund100_stop_event_protected_broker_getonly_v1_0.py'
+      - 'test_fund100_stop_event_protected_broker_getonly_v1_0.py'
       - '.github/workflows/fund100-stop-exact-run-event-getonly.yml'
   push:
     branches: [main]
     paths:
       - 'fund100_stop_workflow_run_event_getonly_v1_0.py'
       - 'test_fund100_stop_workflow_run_event_getonly_v1_0.py'
+      - 'fund100_stop_event_protected_broker_getonly_v1_0.py'
+      - 'test_fund100_stop_event_protected_broker_getonly_v1_0.py'
       - '.github/workflows/fund100-stop-exact-run-event-getonly.yml'
 
 permissions:
@@ -88,8 +92,74 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install 'pytest>=8,<9'
-          python -m pytest -q test_fund100_stop_workflow_run_event_getonly_v1_0.py
+          python -m pytest -q test_fund100_stop_workflow_run_event_getonly_v1_0.py test_fund100_stop_event_protected_broker_getonly_v1_0.py
           grep -Fq 'NO_BROKER_ACCESS = True' fund100_stop_workflow_run_event_getonly_v1_0.py
           grep -Fq 'NO_GITHUB_WRITE = True' fund100_stop_workflow_run_event_getonly_v1_0.py
           grep -Fq 'NO_STOP_COMPLETION_CLAIM = True' fund100_stop_workflow_run_event_getonly_v1_0.py
           ! grep -Eq '^[[:space:]]+actions:[[:space:]]+write' .github/workflows/fund100-stop-exact-run-event-getonly.yml
+
+  protected-live-broker-poststop:
+    name: Authenticated LIVE Alpaca OPEN orders after STOP (GET ONLY, NO SIGN)
+    needs: event-stop-observer
+    if: ${{ github.event_name == 'workflow_run' && needs.event-stop-observer.result == 'success' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: fund100-live-broker
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout protected main without keeping GitHub token
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Verify exact protected, GET-only source and pilot policy blobs
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = 'workflow_run'
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-stop-exact-run-event-getonly.yml@refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/main | cut -f1)"
+          test "$(git hash-object fund100_stop_event_protected_broker_getonly_v1_0.py)" = 'c3e82ebd7cd39d7c9d985b2aeb6c911513b01303'
+          test "$(git hash-object fund100_alpaca_live_readonly_smoke.py)" = 'a8cf058595a960d67055a63e65f574530f7074c8'
+          test "$(git hash-object live_activation_outputs/v5_002/live_micro_pilot_policy_v1_0.json)" = 'ff20cb4950243c64f4d34b68e6e3170ff6cc9421'
+          echo 'Exact no-POST/no-DELETE broker observer and original account policy pinned.'
+      - name: Two fresh live Alpaca GETs and conservative Fund-100 OPEN-order exclusion
+        env:
+          ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}
+          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}
+          FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}
+          FUND100_RISK_LEVEL: ${{ vars.FUND100_RISK_LEVEL }}
+          FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE
+          FUND100_LIVE_WRITE_MODE: DISABLED
+        run: |
+          set -euo pipefail
+          # Credentials are trading-capable, despite GET-only source code.
+          # No GITHUB_TOKEN, signer key, STOP dispatch token or order writes.
+          if ! python -B fund100_stop_event_protected_broker_getonly_v1_0.py 2>/dev/null; then
+            echo 'Protected post-STOP GET evidence failed; HOLD. No order mutation.' >&2
+            exit 1
+          fi
+
+  post-broker-main-stop-recheck:
+    name: Recheck exact original STOP and present controls AFTER broker GET (NO BROKER)
+    needs: [event-stop-observer, protected-live-broker-poststop]
+    if: ${{ github.event_name == 'workflow_run' && needs.protected-live-broker-poststop.result == 'success' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout protected main; no broker access
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Current original STOP and V5/V6 main GET-only recheck (NO BROKER)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -B fund100_stop_workflow_run_event_getonly_v1_0.py
+          echo 'NO signed STOP completion, NO broker fills or trade permit claimed.'
