@@ -101,6 +101,10 @@ EVENT_DIR = Path(
     "live_production_events"
 )
 
+# This legacy controller must not be a second autonomous Alpaca order writer.
+# The newer V6 first-order route requires independent signed-risk evidence.
+LEGACY_V5_ORDER_SUBMISSION_RELEASED = False
+
 MIN_ORDER_USD = Decimal("1.00")
 
 DIRECTION_TOLERANCE_USD = Decimal("0.50")
@@ -2415,6 +2419,14 @@ def submit_order_batch(orders):
     ambiguous receipt must stop the phase for client-ID reconciliation;
     it must never trigger an automatic second POST.
     """
+    # Retired V5 order writer: V6 is the reviewed first-order path.
+    # Keep source locked even if GitHub operator GO and broker kill DISENGAGED
+    # are mistakenly configured. Releasing V5 requires a separate audited
+    # code/source-pin change; neither an environment variable nor a live
+    # strategy signal can change this false constant.
+    if LEGACY_V5_ORDER_SUBMISSION_RELEASED is not True:
+        raise ProductionStop("Legacy V5 order submission permanently disabled")
+
     receipts = []
 
     for order in orders:

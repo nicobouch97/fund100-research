@@ -29,6 +29,10 @@ def test_bad_operator_control_fails_closed(invalid):
 
 
 def test_live_control_prevents_running_job_from_submitting(monkeypatch):
+    # A synthetic release override tests the original downstream STOP guard;
+    # the real V5 writer is source-locked FALSE and the transport is mocked.
+    assert controller.LEGACY_V5_ORDER_SUBMISSION_RELEASED is False
+    monkeypatch.setattr(controller, "LEGACY_V5_ORDER_SUBMISSION_RELEASED", True)
     monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "DISENGAGED")
     monkeypatch.setattr(
         controller.live,

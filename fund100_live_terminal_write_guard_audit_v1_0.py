@@ -20,8 +20,8 @@ from typing import Mapping
 BOOTSTRAP = "fund100_live_bootstrap_v1_0.py"
 PRODUCTION = "fund100_live_production_controller_v1_0.py"
 REVIEWED_WRITER_BLOBS = {
-    BOOTSTRAP: "3d866d415ba228b6c538adac6d0a70e6b93de34d",
-    PRODUCTION: "5094316338f9eb16437d902acf75a1efb698a37a",
+    BOOTSTRAP: "dfbec6f06ce458cf1532c2f0bc66b9e95902d84f",
+    PRODUCTION: "b4bc5c1dca1a86aedc7278e32af3952c05ac021f",
 }
 
 # These exact AST tests have predictable meaning, regardless of formatting.

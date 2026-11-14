@@ -934,10 +934,12 @@ permissions:
 # Credentialless audits must not cancel a *different PR's* queued validation.
 # GitHub allows only one running and one pending run per concurrency group;
 # a repository-global group silently replaces older pending PR audits.
-# Keep per-ref serialisation, but let separate PRs and main validate alone.
+# Keep exact-ref isolation. Cancel superseded PR audit runs so the
+# newest PR head receives the full audit promptly; never cancel main audits.
+# This changes scheduling only, not tests, permissions or safety gates.
 concurrency:
   group: fund100-live-static-safety-audit-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   FUND100_BROKER_KILL_SWITCH: ENGAGED

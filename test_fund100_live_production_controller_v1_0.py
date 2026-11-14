@@ -494,7 +494,29 @@ def _synthetic_broker_ack(intent):
     }
 
 
+
+
+def test_legacy_v5_direct_order_path_is_locked_before_any_broker_io(monkeypatch):
+    """Main never has two released trade writers, even under fake GO/killswitch."""
+    import inspect
+
+    assert production.LEGACY_V5_ORDER_SUBMISSION_RELEASED is False
+    source = inspect.getsource(production.submit_order_batch)
+    assert source.index("if LEGACY_V5_ORDER_SUBMISSION_RELEASED is not True:") < source.index("receipts = []")
+    assert source.index("raise ProductionStop(\"Legacy V5 order submission permanently disabled\")") < source.index("live.get_order_by_client_id(cid)")
+    monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "DISENGAGED")
+    monkeypatch.setattr(production.live, "get_order_by_client_id",
+                        lambda *args, **kwargs: pytest.fail("No live lookup permitted"))
+    monkeypatch.setattr(production.live, "live_request",
+                        lambda *args, **kwargs: pytest.fail("No live requests permitted"))
+    monkeypatch.setattr(production.operator_control, "require_operator_running",
+                        lambda *args, **kwargs: pytest.fail("Must reject before GO query"))
+    with pytest.raises(production.ProductionStop, match="Legacy V5 order submission permanently disabled"):
+        production.submit_order_batch([_synthetic_writer_intent()])
+
 def test_production_writer_returns_validated_receipt_not_a_fill(monkeypatch):
+    # Synthetic, credentialless writer-contract test only; production remains locked.
+    monkeypatch.setattr(production, "LEGACY_V5_ORDER_SUBMISSION_RELEASED", True)
     intent = _synthetic_writer_intent()
     posts = []
     monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "DISENGAGED")
@@ -518,6 +540,8 @@ def test_production_writer_returns_validated_receipt_not_a_fill(monkeypatch):
 
 
 def test_production_writer_rejects_mismatched_existing_order_without_post(monkeypatch):
+    # Synthetic, credentialless writer-contract test only; production remains locked.
+    monkeypatch.setattr(production, "LEGACY_V5_ORDER_SUBMISSION_RELEASED", True)
     intent = _synthetic_writer_intent()
     existing = {**_synthetic_broker_ack(intent), "symbol": "SPY", "status": "filled"}
     monkeypatch.setattr(
@@ -533,6 +557,8 @@ def test_production_writer_rejects_mismatched_existing_order_without_post(monkey
 
 
 def test_production_writer_rejects_ambiguous_post_without_retry(monkeypatch):
+    # Synthetic, credentialless writer-contract test only; production remains locked.
+    monkeypatch.setattr(production, "LEGACY_V5_ORDER_SUBMISSION_RELEASED", True)
     intent = _synthetic_writer_intent()
     posts = []
     monkeypatch.setenv("FUND100_BROKER_KILL_SWITCH", "DISENGAGED")
