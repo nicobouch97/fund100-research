@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 import fund100_alpaca_live_writer_candidate_v1_0 as prior
 
@@ -239,6 +239,16 @@ class LiveWriterCandidateLocked(
     RuntimeError
 ):
     pass
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        raise LiveWriterCandidateLocked(
+            "Alpaca LIVE authenticated broker redirect forbidden"
+        )
+
+
+MAX_BROKER_ORDER_RESPONSE_BYTES = 1024 * 1024
 
 
 class ExistingOrderMismatch(
@@ -610,18 +620,20 @@ def _get_order_by_client_id(
 
     try:
 
-        with urlopen(
+        with build_opener(_NoRedirect()).open(
             request,
             timeout=20,
         ) as response:
-
-            return json.loads(
-                response
-                .read()
-                .decode(
-                    "utf-8"
+            if (response.status != 200 or response.geturl() != url):
+                raise LiveWriterCandidateLocked(
+                    "Alpaca LIVE order lookup status/origin unverified"
                 )
-            )
+            raw = response.read(MAX_BROKER_ORDER_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_BROKER_ORDER_RESPONSE_BYTES:
+                raise LiveWriterCandidateLocked(
+                    "Alpaca LIVE order lookup oversized"
+                )
+            return json.loads(raw.decode("utf-8"))
 
     except HTTPError as exc:
 
@@ -717,18 +729,21 @@ def _post_live_market_order(
 
     try:
 
-        with urlopen(
+        with build_opener(_NoRedirect()).open(
             request,
             timeout=20,
         ) as response:
-
-            body = json.loads(
-                response
-                .read()
-                .decode(
-                    "utf-8"
+            if (response.status not in (200, 201)
+                or response.geturl() != url):
+                raise LiveWriterCandidateLocked(
+                    "Alpaca LIVE order POST status/origin unverified"
                 )
-            )
+            raw = response.read(MAX_BROKER_ORDER_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_BROKER_ORDER_RESPONSE_BYTES:
+                raise LiveWriterCandidateLocked(
+                    "Alpaca LIVE order POST oversized"
+                )
+            body = json.loads(raw.decode("utf-8"))
 
     except HTTPError as exc:
 
@@ -1160,11 +1175,15 @@ def submit_v6_s1_original_acwi_fractional_sell(*,
         },
     )
     # ONE and only one POST request; uncertain results MUST NOT be retried.
-    sender=urlopen if transport is None else transport
+    sender=(build_opener(_NoRedirect()).open
+            if transport is None else transport)
     try:
         with sender(request,timeout=12) as response:
             if getattr(response,"status",None) not in (200,201):
                 raise LiveWriterCandidateLocked("Broker POST not confirmed, no retry")
+            if transport is None and response.geturl() != url:
+                raise LiveWriterCandidateLocked(
+                    "Broker POST returned changed origin, no retry")
             body=response.read(v6.RESPONSE_MAX_BYTES+1)
         if len(body)>v6.RESPONSE_MAX_BYTES:
             raise LiveWriterCandidateLocked("Broker response oversized, no retry")
