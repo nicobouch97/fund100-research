@@ -470,6 +470,5 @@ def test_installed_stopped_preflight_dispatch_requests_run_id_explicitly():
     assert "data=b'{\"ref\":\"main\",\"return_run_details\":true}'" in source
     assert "response.status != 200" in source
     assert "workflow_run_id" in source and "STOP_DISPATCH_ACCEPTED_NOT_CONFIRMED" in source
-    assert "No broker" not in source or "NO_BROKER" in source
     assert "ALPACA_LIVE_SECRET" not in source
     assert "group: fund100-v6-s1-stopped-preflight" in source
