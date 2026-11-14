@@ -155,7 +155,8 @@ def _run(monkeypatch, capsys, *, protected=True, v5=None, v6=None,
 
 def test_single_main_only_stop_permission_probe_and_no_broker_access():
     text = WORKFLOW.read_text()
-    assert "on:\n  pull_request:" in text\n    assert "  push:\n    branches: [main]" in text
+    assert "on:\n  pull_request:" in text
+    assert "  push:\n    branches: [main]" in text
     assert "workflow_dispatch:" not in text
     assert "  schedule:" not in text
     assert "permissions:\n  contents: read" in text
