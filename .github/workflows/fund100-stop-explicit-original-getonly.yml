@@ -10,10 +10,15 @@ on:
         description: Authenticated original STOP run ID to re-read from GitHub
         type: string
         required: true
+  repository_dispatch:
+    types: [fund100-original-stop-outcome-readonly-v1]
   pull_request:
     paths:
       - "fund100_stop_explicit_original_getonly_v1_0.py"
       - "test_fund100_stop_explicit_original_getonly_v1_0.py"
+      - "fund100_stop_repo_dispatch_bridge_v1_0.py"
+      - "test_fund100_stop_repo_dispatch_bridge_v1_0.py"
+      - ".github/workflows/fund100-live-emergency-stop.yml"
       - ".github/workflows/fund100-stop-explicit-original-getonly.yml"
 
 permissions:
@@ -28,7 +33,8 @@ jobs:
   explicit-main-stop-only:
     name: Authenticated original STOP and current-main latches (NO BROKER)
     if: >-
-      github.event_name == 'workflow_dispatch' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event_name == 'repository_dispatch') &&
       github.repository == 'nicobouch97/fund100-research' &&
       github.ref == 'refs/heads/main' &&
       github.run_attempt == 1
@@ -45,7 +51,7 @@ jobs:
       - name: Require exact current protected-main source
         run: |
           set -euo pipefail
-          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch || test "$GITHUB_EVENT_NAME" = repository_dispatch
           test "$GITHUB_REF" = refs/heads/main
           test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-stop-explicit-original-getonly.yml@refs/heads/main'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
@@ -75,6 +81,6 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check 'pytest>=8,<9'
-          python -m pytest -q test_fund100_stop_explicit_original_getonly_v1_0.py
+          python -m pytest -q test_fund100_stop_explicit_original_getonly_v1_0.py test_fund100_stop_repo_dispatch_bridge_v1_0.py
           ! grep -Eq '^[[:space:]]+actions:[[:space:]]+write' .github/workflows/fund100-stop-explicit-original-getonly.yml
           ! grep -Eq '^[[:space:]]+contents:[[:space:]]+write' .github/workflows/fund100-stop-explicit-original-getonly.yml

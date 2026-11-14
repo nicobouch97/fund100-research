@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import json
 import os
 import re
+import time
 
 import fund100_stop_workflow_run_event_getonly_v1_0 as gh
 import fund100_v6_emergency_stop_completion_evidence_v1_0 as contract
@@ -29,6 +30,9 @@ NO_TRADE = True
 NO_STOP_COMPLETION_CLAIM = True
 MAX_INPUT_BYTES = 20000
 MAX_AGE_SECONDS = 180
+REPOSITORY_EVENT_TYPE = "fund100-original-stop-outcome-readonly-v1"
+MAX_WAIT_SECONDS = 180
+POLL_SECONDS = 3
 
 
 class ExplicitStopHold(RuntimeError):
@@ -41,7 +45,7 @@ def _scope() -> None:
                  NO_SIGNER, NO_TRADE, NO_STOP_COMPLETION_CLAIM))
         or e.get("GITHUB_ACTIONS") != "true"
         or e.get("GITHUB_REPOSITORY") != REPO
-        or e.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
+        or e.get("GITHUB_EVENT_NAME") not in ("workflow_dispatch","repository_dispatch")
         or e.get("GITHUB_REF") != "refs/heads/main"
         or e.get("GITHUB_WORKFLOW_REF") != WORKFLOW_REF
         or e.get("GITHUB_RUN_ATTEMPT") != "1"
@@ -69,9 +73,20 @@ def _run_id() -> int:
         data=json.loads(raw)
     except (OSError, UnicodeError, TypeError, ValueError):
         raise ExplicitStopHold("Malformed STOP input") from None
-    if type(data) is not dict or type(data.get("inputs")) is not dict:
-        raise ExplicitStopHold("No exact STOP-run input")
-    inputs=data["inputs"]
+    if type(data) is not dict:
+        raise ExplicitStopHold("Malformed STOP event")
+    if os.environ.get("GITHUB_EVENT_NAME")=="repository_dispatch":
+        repository=data.get("repository")
+        if (data.get("action")!=REPOSITORY_EVENT_TYPE
+            or type(repository) is not dict
+            or repository.get("full_name")!=REPO
+            or type(data.get("client_payload")) is not dict):
+            raise ExplicitStopHold("Untrusted original STOP repository event")
+        inputs=data["client_payload"]
+    else:
+        if type(data.get("inputs")) is not dict:
+            raise ExplicitStopHold("No exact STOP-run input")
+        inputs=data["inputs"]
     if set(inputs)!={"original_stop_run_id"}:
         raise ExplicitStopHold("Unexpected STOP dispatch inputs")
     value=inputs.get("original_stop_run_id")
@@ -79,6 +94,35 @@ def _run_id() -> int:
         or re.fullmatch(r"[1-9][0-9]{0,18}",value) is None):
         raise ExplicitStopHold("Malformed STOP run locator")
     return int(value)
+
+
+def _wait_until_original_finishes(original_id: int, token: str) -> None:
+    """Read-only bounded wait: the original STOP cannot finish until the
+    originating bridge job returns, so a dispatched observer will initially
+    see that run in_progress. Never treat pending or red as success.
+    """
+    if type(original_id) is not int or not 0<original_id<10**20:
+        raise ExplicitStopHold("Untrusted original STOP run ID")
+    deadline=time.monotonic()+MAX_WAIT_SECONDS
+    for _ in range(MAX_WAIT_SECONDS//POLL_SECONDS+1):
+        doc=gh._get(gh.API+"/actions/runs/"+str(original_id),token=token)
+        if (type(doc.get("id")) is not int or doc["id"]!=original_id
+            or doc.get("path")!=gh.STOP_PATH
+            or doc.get("name")!=contract.WORKFLOW_NAME
+            or doc.get("event")!="workflow_dispatch"
+            or doc.get("head_branch")!="main"
+            or type(doc.get("run_attempt")) is not int
+            or doc["run_attempt"]!=1
+            or re.fullmatch(r"[0-9a-f]{40}",doc.get("head_sha","")) is None):
+            raise ExplicitStopHold("Wrong original STOP run during handoff")
+        if doc.get("status")=="completed":
+            return
+        if doc.get("status") not in ("queued","in_progress","waiting","requested","pending"):
+            raise ExplicitStopHold("Unknown original STOP run status")
+        if time.monotonic()+POLL_SECONDS>deadline:
+            raise ExplicitStopHold("Original STOP outcome not completed in time")
+        time.sleep(POLL_SECONDS)
+    raise ExplicitStopHold("Original STOP observation timeout")
 
 
 def _verify(original_id: int, token: str) -> dict:
@@ -157,6 +201,8 @@ def observe_once() -> dict:
     original_id=_run_id()
     token=gh._token()
     try:
+        if os.environ.get("GITHUB_EVENT_NAME")=="repository_dispatch":
+            _wait_until_original_finishes(original_id,token)
         return _verify(original_id,token)
     except (gh.StopEventHold, contract.StopCompletionStop):
         raise ExplicitStopHold("Authenticated original STOP GET failed") from None

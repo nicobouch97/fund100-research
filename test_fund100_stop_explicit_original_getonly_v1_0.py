@@ -187,10 +187,92 @@ def test_get_transport_error_has_no_broker_or_completion_claim(authentic,monkeyp
         x.observe_once()
 
 
+def _switch_to_repository_dispatch(authentic,monkeypatch):
+    event,doc,jobs,calls=authentic
+    monkeypatch.setenv("GITHUB_EVENT_NAME","repository_dispatch")
+    event.clear()
+    event.update({
+        "action":x.REPOSITORY_EVENT_TYPE,
+        "repository":{"full_name":x.REPO},
+        "client_payload":{"original_stop_run_id":str(RUN_ID)},
+    })
+    return event,doc,jobs,calls
+
+
+def test_repo_dispatch_event_checks_original_status_before_success(
+        authentic,monkeypatch):
+    event,doc,jobs,calls=_switch_to_repository_dispatch(authentic,monkeypatch)
+    orig=x.gh._get
+    state={"polls":0}
+    def get(url,*,token):
+        if url==URL+"/actions/runs/"+str(RUN_ID):
+            state["polls"]+=1
+            if state["polls"]==1:
+                return {**doc,"status":"in_progress"}
+        return orig(url,token=token)
+    monkeypatch.setattr(x.gh,"_get",get)
+    monkeypatch.setattr(x.time,"sleep",lambda seconds: None)
+    out=x.observe_once()
+    assert state["polls"]==3
+    assert out["required_jobs_verified"]==3
+    assert out["broker_observed"] is False
+    assert out["signed_stop_receipt"] is False
+    assert out["stop_completed"] is False
+    assert out["order_authorized"] is False
+
+
+@pytest.mark.parametrize("bad",[
+    {"action":"wrong","repository":{"full_name":x.REPO},
+     "client_payload":{"original_stop_run_id":str(RUN_ID)}},
+    {"action":x.REPOSITORY_EVENT_TYPE,"repository":{"full_name":"other/repo"},
+     "client_payload":{"original_stop_run_id":str(RUN_ID)}},
+    {"action":x.REPOSITORY_EVENT_TYPE,"repository":{"full_name":x.REPO},
+     "client_payload":{"original_stop_run_id":str(RUN_ID),"rearm":True}},
+    {"action":x.REPOSITORY_EVENT_TYPE,"repository":{"full_name":x.REPO},
+     "client_payload":{"original_stop_run_id":"0"}},
+])
+def test_untrusted_repo_event_fails_before_github_get(authentic,monkeypatch,bad):
+    event,doc,jobs,calls=_switch_to_repository_dispatch(authentic,monkeypatch)
+    event.clear()
+    event.update(bad)
+    with pytest.raises(x.ExplicitStopHold):
+        x.observe_once()
+    assert not calls
+
+
+def test_repo_dispatch_pending_expiry_fails_closed(authentic,monkeypatch):
+    event,doc,jobs,calls=_switch_to_repository_dispatch(authentic,monkeypatch)
+    orig=x.gh._get
+    def get(url,*,token):
+        if url==URL+"/actions/runs/"+str(RUN_ID):
+            return {**doc,"status":"in_progress"}
+        return orig(url,token=token)
+    monkeypatch.setattr(x.gh,"_get",get)
+    ticks=iter([0.0,179.0])
+    monkeypatch.setattr(x.time,"monotonic",lambda:next(ticks))
+    monkeypatch.setattr(x.time,"sleep",
+                        lambda *_:pytest.fail("Should not sleep past bound"))
+    with pytest.raises(x.ExplicitStopHold,match="not completed in time"):
+        x.observe_once()
+    assert not any(c[0]=="control" for c in calls)
+
+
+def test_repo_dispatch_original_failure_is_not_verified(authentic,monkeypatch):
+    event,doc,jobs,calls=_switch_to_repository_dispatch(authentic,monkeypatch)
+    doc["conclusion"]="failure"
+    with pytest.raises(x.ExplicitStopHold):
+        x.observe_once()
+    assert not any(c[0]=="control" for c in calls)
+
+
 def test_workflow_is_main_only_read_only_and_has_no_secret_access():
     from pathlib import Path
     flow=Path(".github/workflows/fund100-stop-explicit-original-getonly.yml").read_text()
     assert "workflow_dispatch:" in flow
+    assert "repository_dispatch:" in flow
+    assert 'test "$GITHUB_EVENT_NAME" = workflow_dispatch || test "$GITHUB_EVENT_NAME" = repository_dispatch' in flow
+    assert x.REPOSITORY_EVENT_TYPE in flow
+    assert "test_fund100_stop_repo_dispatch_bridge_v1_0.py" in flow
     assert "original_stop_run_id:" in flow
     assert "  push:" not in flow
     assert "environment: fund100-live-broker" not in flow

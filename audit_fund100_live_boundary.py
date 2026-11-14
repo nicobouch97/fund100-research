@@ -302,6 +302,15 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
         ".github/workflows/fund100-v5-live-production.yml",
         "fund100_live_production_controller_v1_0.py",
     ): "b4bc5c1dca1a86aedc7278e32af3952c05ac021f",
+    # Exact original STOP's brokerless repository_dispatch notifier.
+    # The original workflow *also* contains protected Alpaca cancel jobs:
+    # audit the precise no-broker STOP job rather than assuming secrets from
+    # unrelated jobs can enter the notifier. This is NOT broker credential
+    # eligibility or a new live order permission.
+    (
+        ".github/workflows/fund100-live-emergency-stop.yml",
+        "fund100_stop_repo_dispatch_bridge_v1_0.py",
+    ): "8d46cbe1b2230dc13eccf50c395b877869702673",
     (
         ".github/workflows/fund100-live-emergency-stop.yml",
         "fund100_live_operator_control_v1_0.py",
@@ -399,6 +408,61 @@ def approved_scoped_live_script(
     path = ROOT / script
     if not path.is_file() or git_blob_digest(path) != expected:
         return False
+
+    if script == "fund100_stop_repo_dispatch_bridge_v1_0.py":
+        # This is a GitHub repository_dispatch-only notifier in the
+        # *credentialless* STOP latch job, NOT either broker-cancellation job.
+        # Treat it as reviewed only with source pin AND hard job isolation.
+        if workflow != ".github/workflows/fund100-live-emergency-stop.yml":
+            return False
+        if source.count("python -B fund100_stop_repo_dispatch_bridge_v1_0.py") != 1:
+            return False
+        try:
+            stop = source.split("  stop-signal:", 1)[1].split(
+                "  cancel-fund100-orders:", 1)[0]
+            cancel = source.split("  cancel-fund100-orders:", 1)[1].split(
+                "  cancel-v6-original-acwi-order:", 1)[0]
+            original_v6 = source.split(
+                "  cancel-v6-original-acwi-order:", 1)[1]
+            notify = stop.split(
+                "      - name: Notify independent GitHub STOP observer "
+                "via fixed repository event", 1)[1]
+        except IndexError:
+            return False
+        if any(x in stop for x in (
+            "ALPACA_LIVE_KEY:", "ALPACA_LIVE_SECRET:",
+            "ALPACA_PAPER_KEY:", "ALPACA_PAPER_SECRET:",
+            "environment: fund100-live-broker",
+            "FUND100_STOP_SIGNER_ED25519_PRIVATE_HEX:",
+            "FUND100_V6_RISK_SIGNER_ED25519_PRIVATE_HEX:",
+            "actions: write", "FUND100_LIVE_WRITE_MODE: ENABLED",
+        )):
+            return False
+        if (stop.count("      contents: write") != 1
+            or source.count("  stop-signal:") != 1
+            or source.count("  cancel-fund100-orders:") != 1
+            or source.count("  cancel-v6-original-acwi-order:") != 1
+            or stop.count("        if: always()") != 2
+            or "persist-credentials: false" not in stop
+            or "GITHUB_TOKEN: ${{ github.token }}" not in notify
+            or "GITHUB_TOKEN: ${{ github.token }}" not in stop
+            or "test \"$GITHUB_EVENT_NAME\" = 'workflow_dispatch'" not in notify
+            or "test \"$GITHUB_REF\" = 'refs/heads/main'" not in notify
+            or "test \"$GITHUB_WORKFLOW_REF\" = 'nicobouch97/fund100-research/.github/workflows/fund100-live-emergency-stop.yml@refs/heads/main'" not in notify
+            or 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' not in notify
+            or 'test "$(git hash-object fund100_stop_repo_dispatch_bridge_v1_0.py)" = \'8d46cbe1b2230dc13eccf50c395b877869702673\'' not in notify
+            or "python -B fund100_stop_repo_dispatch_bridge_v1_0.py" not in notify
+            or notify.index("git hash-object") >
+               notify.index("python -B fund100_stop_repo_dispatch_bridge_v1_0.py")
+            or "environment: fund100-live-broker" not in cancel
+            or "environment: fund100-live-broker" not in original_v6
+            or "python fund100_live_emergency_stop_v1_0.py" not in cancel
+            or "python fund100_v6_s1_first_acwi_signed_cancel_only_v1_0.py" not in original_v6
+            or "ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}" not in cancel
+            or "ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}" not in original_v6
+            or "      contents: read" not in cancel
+            or "      contents: read" not in original_v6):
+            return False
 
     if script == "fund100_v6_s1_first_acwi_signed_cancel_only_v1_0.py":
         # Exact original signed ACWI cancellation only; do not turn a broad
