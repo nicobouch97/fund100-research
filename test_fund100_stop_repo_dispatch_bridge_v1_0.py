@@ -137,3 +137,61 @@ def test_repo_dispatch_is_sole_mutating_endpoint():
     assert 'NO_SUCCESS_CLAIM = True' in source
     assert 'NO_RETRY = True' in source
     assert "api.alpaca.markets" not in source
+
+
+def test_static_auditor_only_accepts_pinned_credentialless_stop_notification(
+        monkeypatch):
+    """The broker-key job's presence is not proof this STOP job has keys."""
+    from pathlib import Path
+    import audit_fund100_live_boundary as audit
+
+    workflow=".github/workflows/fund100-live-emergency-stop.yml"
+    script="fund100_stop_repo_dispatch_bridge_v1_0.py"
+    source=Path(workflow).read_text(encoding="utf-8")
+    assert audit.approved_scoped_live_script(workflow,script,source)
+    assert not audit.approved_scoped_live_script(
+        ".github/workflows/fund100-live-risk-watch.yml",script,source)
+
+    tampered=[
+        source.replace(
+            "  stop-signal:\n",
+            "  stop-signal:\n    environment: fund100-live-broker\n"),
+        source.replace(
+            "  stop-signal:\n",
+            "  stop-signal:\n    ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}\n"),
+        source.replace(
+            "  stop-signal:\n",
+            "  stop-signal:\n    FUND100_STOP_SIGNER_ED25519_PRIVATE_HEX: SENSITIVE\n"),
+        source.replace(
+            "  stop-signal:\n",
+            "  stop-signal:\n    actions: write\n"),
+        source.replace(
+            "      - name: Notify independent GitHub STOP observer via fixed repository event",
+            "      - name: Arbitrary command"),
+        source.replace(
+            "8d46cbe1b2230dc13eccf50c395b877869702673",
+            "0"*40),
+        source.replace(
+            "          python -B fund100_stop_repo_dispatch_bridge_v1_0.py",
+            "          python -B fund100_new_unreviewed_broker_writer.py"),
+        source.replace(
+            "      - name: Notify independent GitHub STOP observer via fixed repository event",
+            "      - name: Notify independent GitHub STOP observer via fixed repository event\n"
+            "        env:\n          ALPACA_LIVE_SECRET: ${{ secrets.ALPACA_LIVE_SECRET }}"),
+        source.replace(
+            "        if: always()\n        env:\n          GITHUB_TOKEN:",
+            "        if: success()\n        env:\n          GITHUB_TOKEN:"),
+    ]
+    for i,bad in enumerate(tampered):
+        assert bad != source, i
+        assert not audit.approved_scoped_live_script(workflow,script,bad),i
+    monkeypatch.setattr(audit,"git_blob_digest",lambda p:"0"*40)
+    assert not audit.approved_scoped_live_script(workflow,script,source)
+
+
+def test_auditor_includes_exact_new_source_pin():
+    import audit_fund100_live_boundary as audit
+    workflow=".github/workflows/fund100-live-emergency-stop.yml"
+    script="fund100_stop_repo_dispatch_bridge_v1_0.py"
+    assert audit.PINNED_LIVE_CREDENTIAL_JOBS[(workflow,script)] == (
+        "8d46cbe1b2230dc13eccf50c395b877869702673")
