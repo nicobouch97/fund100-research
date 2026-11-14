@@ -44,6 +44,15 @@ def _ack(run_id=RUN_ID):
                         "/actions/runs/" + str(run_id)}
 
 
+
+def _file_doc(path, value):
+    """GitHub Contents REST returns a checked SHA1 blob and base64 bytes."""
+    raw = (json.dumps(value, sort_keys=True) + "\n").encode("utf-8")
+    digest = sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
+    return {"type": "file", "path": path, "encoding": "base64",
+            "sha": digest, "content": base64.b64encode(raw).decode("ascii")}
+
+
 def _mock(monkeypatch, *, v5=None, v6=None, proof=None, main=None, ack=None):
     calls = []
     def fake(method, path, body=None):
@@ -52,11 +61,11 @@ def _mock(monkeypatch, *, v5=None, v6=None, proof=None, main=None, ack=None):
             return {"name": "main", "protected": True, "commit": {
                 "sha": SHA}} if main is None else main
         if method == "GET" and path == "/contents/" + stop.V5:
-            return dict(stop.EXPECTED[stop.V5]) if v5 is None else v5
+            return _file_doc(stop.V5, dict(stop.EXPECTED[stop.V5]) if v5 is None else v5)
         if method == "GET" and path == "/contents/" + stop.V6:
-            return dict(stop.EXPECTED[stop.V6]) if v6 is None else v6
+            return _file_doc(stop.V6, dict(stop.EXPECTED[stop.V6]) if v6 is None else v6)
         if method == "GET" and path == "/contents/" + stop.EVIDENCE:
-            return dict(stop.PROOF) if proof is None else proof
+            return _file_doc(stop.EVIDENCE, dict(stop.PROOF) if proof is None else proof)
         if method == "POST":
             assert path == stop.STOP
             assert body == b'{"ref":"main"}'
