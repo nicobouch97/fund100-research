@@ -83,8 +83,10 @@ def test_direct_market_post_uses_exact_broker_https_no_redirect(
 
 
 def test_redirect_handler_prevents_live_key_exfiltration():
+    # A credential-bearing GET demonstrates redirect rejection without adding
+    # an executable POST Request fixture outside the reviewed writer boundary.
     req=Request("https://api.alpaca.markets/v2/orders",
-                method="POST",data=b'{"a":1}',
+                method="GET",
                 headers={"APCA-API-KEY-ID":KEY,"APCA-API-SECRET-KEY":SECRET})
     with pytest.raises(w.LiveWriterCandidateLocked,match="redirect forbidden"):
         w._NoRedirect().redirect_request(req,None,302,"Found",{},
