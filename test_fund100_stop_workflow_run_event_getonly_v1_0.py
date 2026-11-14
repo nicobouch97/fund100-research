@@ -244,3 +244,24 @@ def test_fully_credentialless_no_trade_or_broker_side_effects():
     assert "api.alpaca.markets" not in source
     assert 'method="POST"' not in source
     assert "cancel_open" not in source
+
+
+
+def test_failed_stop_workflow_event_is_not_skipped_by_job_if():
+    """A failed/cancelled/retried original STOP must surface a RED monitor."""
+    yml=Path(".github/workflows/fund100-stop-exact-run-event-getonly.yml").read_text()
+    assert "workflow_run:" in yml
+    assert "types: [completed]" in yml
+    assert "Fund-100 STOP TRADING (operator emergency)" in yml
+    guard=yml.split("  event-stop-observer:",1)[1].split(
+        "    runs-on:",1)[0]
+    assert "github.event_name == 'workflow_run'" in guard
+    # Conclusion / attempt/branch are checked IN Python and must cause a
+    # visibly failing job, not skip this event job as if nothing happened.
+    assert "github.event.workflow_run.conclusion" not in guard
+    assert "github.event.workflow_run.run_attempt" not in guard
+    assert "github.event.workflow_run.head_branch" not in guard
+    assert "github.event.workflow_run.head_repository" not in guard
+    assert "actions: write" not in yml.split("jobs:",1)[0]
+    assert "actions: read" in yml
+    assert "NO BROKER" in yml
