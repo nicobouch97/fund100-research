@@ -187,39 +187,60 @@ def test_204_or_denied_dispatch_never_claims_stop(valid, monkeypatch):
         stop._http("POST", stop.STOP, stop.FIXED_BODY)
 
 
-def test_only_intentional_main_push_can_trigger_one_original_stop():
-    """A genuinely reviewed one-shot; neither PR nor other push can dispatch."""
+def test_retired_broker_get_acceptance_is_protected_and_inert():
+    """One-time STOP acceptance has NO live trigger after the proof."""
     text = WF.read_text()
     assert "  pull_request:" in text
-    assert "  push:\n    branches: [main]" in text
-    assert "github.run_attempt == 1" in text
-    assert "P0: one-time verified STOP broker GET acceptance" in text
-    assert "  dispatch-protected-original-stop-once:" in text
-    assert "persist-credentials: false" in text
-    assert "      actions: write" in text
-    assert "      contents: read" in text
-    assert "      contents: write" not in text
+    assert "  push:" not in text
+    assert "  workflow_dispatch:" not in text
+    assert "  repository_dispatch:" not in text
+    assert "  dispatch-protected-original-stop-once:" not in text
+    assert "actions: write" not in text
+    assert "contents: write" not in text
     assert "environment: fund100-live-broker" not in text
     assert "secrets.ALPACA" not in text
-    assert "python -B fund100_stop_broker_get_acceptance_once_v1_0.py" in text
-    assert "GITHUB_TOKEN: ${{ github.token }}" in text
+    assert "GITHUB_TOKEN:" not in text
+    assert "python -B fund100_stop_broker_get_acceptance_once_v1_0.py" not in text
+    assert "persist-credentials: false" in text
+    assert "      contents: read" in text
     assert "if: ${{ github.event_name == 'pull_request' }}" in text
-    assert "Notify independent GitHub STOP observer via fixed repository event" in text
-    assert "git ls-remote origin refs/heads/main" in text
-    assert "  workflow_dispatch:" not in text
-    for name in (
-        "  protected-repo-stop-broker-postflight:",
-        "  post-broker-repo-stop-recheck:",
-        "needs: [explicit-main-stop-only, protected-repo-stop-broker-postflight]",
-        "a9f66d22948dc7c38a5e8657f19fef41a942e4df",
-        "6267be4304157d521bb9a49040fa527642ca54c1",
-        "8d46cbe1b2230dc13eccf50c395b877869702673",
-    ):
-        assert name in text
-    py = Path(stop.__file__).read_text()
-    assert "api.alpaca.markets" not in py
+    assert "test_fund100_stop_broker_get_acceptance_once_v1_0.py" in text
+    py=Path(stop.__file__).read_text()
     assert "NO_ORDER_SUBMISSION = True" in py
     assert "NO_GITHUB_CONTENTS_WRITE = True" in py
     assert "NO_STOP_COMPLETION_CLAIM = True" in py
     assert "NO_DISPATCH_RETRY = True" in py
     assert 'method="DELETE"' not in py
+
+
+def test_retirement_preserves_original_emergency_STOP_and_broker_observer():
+    original=Path(".github/workflows/fund100-live-emergency-stop.yml").read_text()
+    after=Path(".github/workflows/fund100-stop-explicit-original-getonly.yml").read_text()
+    assert "  workflow_dispatch:" in original
+    for name in (
+        "  stop-signal:","  cancel-fund100-orders:",
+        "  cancel-v6-original-acwi-order:",
+    ):
+        assert name in original
+    assert "Notify independent GitHub STOP observer via fixed repository event" in original
+    assert "  repository_dispatch:" in after
+    assert "  explicit-main-stop-only:" in after
+    assert "  protected-repo-stop-broker-postflight:" in after
+    assert "  post-broker-repo-stop-recheck:" in after
+    assert "environment: fund100-live-broker" in after
+    assert "needs: [explicit-main-stop-only, protected-repo-stop-broker-postflight]" in after
+
+
+def test_retirement_main_controls_remain_stopped_no_order_release():
+    """The retirement cannot silently unlock V5, V6 or first original ACWI."""
+    v5 = json.loads(Path("fund100_live_operator_control.json").read_text())
+    v6 = json.loads(Path("fund100_v6_s1_operator_control.json").read_text())
+    assert v5["trading_enabled"] is False
+    assert v6["trading_enabled"] is False
+    assert v6["first_original_acwi_sell_enabled"] is False
+    assert v6["risk_level"] == "HIGH"
+    assert v6["pilot_capital_ceiling_usd"] == "130.30"
+    workflow = WF.read_text()
+    assert "  push:" not in workflow
+    assert "      actions: write" not in workflow
+    assert "fund100_live_emergency_stop_v1_0.py" not in workflow

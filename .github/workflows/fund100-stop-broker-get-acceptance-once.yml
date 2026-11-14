@@ -1,8 +1,6 @@
-# Exactly one reviewed original STOP + protected 2-GET broker postflight acceptance.
-# No Alpaca, no broker mutation, no trading, no GO. This sender uses
-# GitHub's fixed original STOP workflow and an isolated Actions:write job.
-# Original STOP may selectively cancel matching live Fund-100 orders.
-# Must be retired after the accepted one-time integration proof.
+# Historical one-time STOP + protected broker GET acceptance. RETIRED.
+# No main push, no elevated Actions write, no dispatch job, no broker keys,
+# signer, order path or success claims. Offline tests only.
 name: Fund-100 One-Time STOP Protected Broker 2-GET Acceptance (NO TRADES)
 
 on:
@@ -11,10 +9,6 @@ on:
       - ".github/workflows/fund100-stop-broker-get-acceptance-once.yml"
       - "fund100_stop_broker_get_acceptance_once_v1_0.py"
       - "test_fund100_stop_broker_get_acceptance_once_v1_0.py"
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/fund100-stop-broker-get-acceptance-once.yml"
 
 permissions:
   contents: read
@@ -43,49 +37,3 @@ jobs:
           python -m pip install --disable-pip-version-check 'pytest>=8,<9'
           python -m pytest -q test_fund100_stop_broker_get_acceptance_once_v1_0.py
 
-  dispatch-protected-original-stop-once:
-    if: >-
-      github.repository == 'nicobouch97/fund100-research' &&
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main' &&
-      github.run_attempt == 1 &&
-      startsWith(github.event.head_commit.message,
-        'P0: one-time verified STOP broker GET acceptance')
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Verify current protected main and pinned broker-GET STOP chain
-        run: |
-          set -euo pipefail
-          test "$GITHUB_ACTIONS" = true
-          test "$GITHUB_REPOSITORY" = 'nicobouch97/fund100-research'
-          test "$GITHUB_EVENT_NAME" = 'push'
-          test "$GITHUB_REF" = 'refs/heads/main'
-          test "$GITHUB_RUN_ATTEMPT" = '1'
-          test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-stop-broker-get-acceptance-once.yml@refs/heads/main'
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD)" = "$(git ls-remote origin refs/heads/main | cut -f1)"
-          grep -Eq '^LEGACY_V5_BOOTSTRAP_RELEASED *= *False$' fund100_live_bootstrap_v1_0.py
-          grep -Eq '^LEGACY_V5_ORDER_SUBMISSION_RELEASED *= *False$' fund100_live_production_controller_v1_0.py
-          grep -Eq '^ORIGINAL_ACWI_ENTRYPOINT_RELEASED *= *False$' fund100_v6_s1_original_first_acwi_entry_locked_v1_0.py
-          grep -Fq "Notify independent GitHub STOP observer via fixed repository event" .github/workflows/fund100-live-emergency-stop.yml
-          grep -Fq "fund100_stop_repo_dispatch_bridge_v1_0.py" .github/workflows/fund100-live-emergency-stop.yml
-          test "$(git hash-object fund100_stop_repo_dispatch_bridge_v1_0.py)" = '8d46cbe1b2230dc13eccf50c395b877869702673'
-          grep -Fq '  protected-repo-stop-broker-postflight:' .github/workflows/fund100-stop-explicit-original-getonly.yml
-          grep -Fq '  post-broker-repo-stop-recheck:' .github/workflows/fund100-stop-explicit-original-getonly.yml
-          grep -Fq 'needs: [explicit-main-stop-only, protected-repo-stop-broker-postflight]' .github/workflows/fund100-stop-explicit-original-getonly.yml
-          test "$(git hash-object fund100_stop_repo_dispatch_broker_postflight_v1_0.py)" = 'a9f66d22948dc7c38a5e8657f19fef41a942e4df'
-          test "$(git hash-object fund100_stop_explicit_original_getonly_v1_0.py)" = '6267be4304157d521bb9a49040fa527642ca54c1'
-          echo 'Original STOP and two pinned broker GETs accepted for one-time integration test; no order submission here.'
-      - name: Dispatch reviewed emergency STOP exactly once; ACK is not completion
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          python -B fund100_stop_broker_get_acceptance_once_v1_0.py
