@@ -221,7 +221,7 @@ def verify_status_rehearsal_source():
         "def fake_build_opener(*handlers):" not in source
         or "type(handlers[0]) is not candidate._NoRedirect" not in source
         or "return broker.urlopen(request, timeout=timeout)" not in source
-        or "candidate.build_opener = (\\n            original_build_opener" not in source
+        or "candidate.build_opener = (\n            original_build_opener" not in source
     ):
         raise RuntimeError(
             "LIVE STATIC AUDIT STOP: no reviewed no-redirect"
