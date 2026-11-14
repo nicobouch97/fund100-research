@@ -105,7 +105,10 @@ jobs:
           if len(token) < 20 or token != token.strip() or "\n" in token:
               raise SystemExit("STOP_DISPATCH_TOKEN_UNAVAILABLE")
           req = Request(
-              URL, method="POST", data=b'{"ref":"main"}',
+              URL, method="POST",
+              # Explicit run-details opt-in; default 204 has no run ID.
+              # We need the original dispatch ID for later STOP verification.
+              data=b'{"ref":"main","return_run_details":true}',
               headers={
                   "Accept": "application/vnd.github+json",
                   "Authorization": "Bearer " + token,
