@@ -280,6 +280,9 @@ def test_independent_static_auditor_approves_only_reviewed_exact_broker_job(
     script="fund100_stop_event_protected_broker_getonly_v1_0.py"
     original=Path(workflow).read_text(encoding="utf-8")
     assert audit.approved_scoped_live_script(workflow,script,original)
+    assert audit.approved_scoped_live_script(
+        workflow, "fund100_stop_workflow_run_event_getonly_v1_0.py",
+        original)
     for bad in (
         original.replace("needs: event-stop-observer",
                          "needs: credentialless-static-tests"),
@@ -297,3 +300,21 @@ def test_independent_static_auditor_approves_only_reviewed_exact_broker_job(
     # transport/policy drift must revoke live broker credential eligibility.
     monkeypatch.setattr(audit,"git_blob_digest",lambda path: "0"*40)
     assert not audit.approved_scoped_live_script(workflow,script,original)
+
+
+
+def test_live_audit_prohibits_broker_credentials_in_credentialless_jobs():
+    import audit_fund100_live_boundary as audit
+    workflow=".github/workflows/fund100-stop-exact-run-event-getonly.yml"
+    observer="fund100_stop_workflow_run_event_getonly_v1_0.py"
+    original=Path(workflow).read_text(encoding="utf-8")
+    assert audit.approved_scoped_live_script(workflow,observer,original)
+    dangerous=original.replace(
+        "  post-broker-main-stop-recheck:\n",
+        "  post-broker-main-stop-recheck:\n"
+        "    environment: fund100-live-broker\n")
+    assert not audit.approved_scoped_live_script(workflow,observer,dangerous)
+    dangerous=original.replace(
+        "  event-stop-observer:\n",
+        "  event-stop-observer:\n    actions: write\n")
+    assert not audit.approved_scoped_live_script(workflow,observer,dangerous)
