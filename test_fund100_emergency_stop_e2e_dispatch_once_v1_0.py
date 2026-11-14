@@ -191,7 +191,7 @@ def test_retired_main_push_stop_dispatch_is_unreachable():
     """Historical dispatcher remains offline only; no live push can invoke it."""
     text = WF.read_text()
     assert "  pull_request:" in text
-    assert "  push:\\n    branches: [main]" not in text
+    assert "  push:" not in text
     assert "  dispatch-stop-only-once:" not in text
     assert "actions: write" not in text.replace("# This workflow has NO push trigger, Actions:write, broker credentials,","")
     assert "persist-credentials: false" in text
