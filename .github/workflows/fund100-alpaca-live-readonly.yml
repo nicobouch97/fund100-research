@@ -39,7 +39,19 @@ jobs:
           test "$GITHUB_WORKFLOW_REF" = 'nicobouch97/fund100-research/.github/workflows/fund100-alpaca-live-readonly.yml@refs/heads/main'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git hash-object fund100_alpaca_live_readonly_smoke.py)" = 'a8cf058595a960d67055a63e65f574530f7074c8'
-          test -f fund100_broker_safety.py
+          test "$(git hash-object fund100_broker_safety.py)" = '871908c2027f1f5c8917f3138f95f1b1fea73816'
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          a = json.loads(Path("fund100_live_operator_control.json").read_text())
+          b = json.loads(Path("fund100_v6_s1_operator_control.json").read_text())
+          if (a.get("schema") != "FUND100_OPERATOR_CONTROL_V1"
+              or a.get("trading_enabled") is not False
+              or b.get("schema") != "FUND100_V6_S1_OPERATOR_CONTROL_V2"
+              or b.get("trading_enabled") is not False
+              or b.get("first_original_acwi_sell_enabled") is not False):
+              raise SystemExit("Fund-100 operator STOP not verified")
+          PY
           echo 'Trusted main GET-only broker smoke source verified; no secret used.'
 
       - name: Set up Python
