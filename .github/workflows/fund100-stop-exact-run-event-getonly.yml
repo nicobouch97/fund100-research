@@ -95,5 +95,4 @@ jobs:
           grep -Fq 'NO_BROKER_ACCESS = True' fund100_stop_workflow_run_event_getonly_v1_0.py
           grep -Fq 'NO_GITHUB_WRITE = True' fund100_stop_workflow_run_event_getonly_v1_0.py
           grep -Fq 'NO_STOP_COMPLETION_CLAIM = True' fund100_stop_workflow_run_event_getonly_v1_0.py
-          ! grep -Eq '^[[:space:]]+actions: write
- .github/workflows/fund100-stop-exact-run-event-getonly.yml
+          ! grep -Eq '^[[:space:]]+actions:[[:space:]]+write' .github/workflows/fund100-stop-exact-run-event-getonly.yml
