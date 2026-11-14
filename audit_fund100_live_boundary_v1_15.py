@@ -20,7 +20,7 @@ import fund100_alpaca_live_writer_candidate_v1_1 as candidate
 # - contain no direct real network client
 # - contain no broker credential hooks
 # - contain no environment activation
-# - patch candidate.urlopen before guard bypass
+# - patch candidate.build_opener with exact _NoRedirect handler before guard bypass
 # - run only through its dedicated credential-free workflow
 #
 # ============================================================
@@ -185,7 +185,7 @@ def verify_status_rehearsal_source():
 
     transport_patch = (
         source.find(
-            "candidate.urlopen = ("
+            "candidate.build_opener = fake_build_opener"
         )
     )
 
@@ -215,6 +215,17 @@ def verify_status_rehearsal_source():
         raise RuntimeError(
             "LIVE STATIC AUDIT STOP: "
             "offline transport patch sequence missing."
+        )
+
+    if (
+        "def fake_build_opener(*handlers):" not in source
+        or "type(handlers[0]) is not candidate._NoRedirect" not in source
+        or "return broker.urlopen(request, timeout=timeout)" not in source
+        or "candidate.build_opener = (\\n            original_build_opener" not in source
+    ):
+        raise RuntimeError(
+            "LIVE STATIC AUDIT STOP: no reviewed no-redirect"
+            " synthetic broker opener or restore"
         )
 
     if not (
