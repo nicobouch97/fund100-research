@@ -106,6 +106,10 @@ def test_guard_conditional_false_cannot_pass_contract():
 
 
 def test_engaged_switch_blocks_terminal_post_before_fake_network(monkeypatch):
+    # Synthetic-only release exposes the underlying legacy HTTP sink guard;
+    # production's immutable default remains hard-locked.
+    assert bootstrap.LEGACY_V5_BOOTSTRAP_RELEASED is False
+    monkeypatch.setattr(bootstrap, "LEGACY_V5_BOOTSTRAP_RELEASED", True)
     called = []
     def forbidden_urlopen(*args, **kwargs):
         called.append((args, kwargs))
@@ -123,6 +127,10 @@ def test_engaged_switch_blocks_terminal_post_before_fake_network(monkeypatch):
     assert called == []
 
 def test_unknown_post_path_blocks_before_fake_network(monkeypatch):
+    # Synthetic-only release exposes the underlying legacy HTTP sink guard;
+    # production's immutable default remains hard-locked.
+    assert bootstrap.LEGACY_V5_BOOTSTRAP_RELEASED is False
+    monkeypatch.setattr(bootstrap, "LEGACY_V5_BOOTSTRAP_RELEASED", True)
     called = []
     def forbidden_urlopen(*args, **kwargs):
         called.append((args, kwargs))
@@ -144,6 +152,8 @@ def test_allowed_post_reaches_fake_network_only_when_explicitly_disengaged(
     monkeypatch,
 ):
     """Test-only process variable and fake transport; NEVER a real order."""
+    assert bootstrap.LEGACY_V5_BOOTSTRAP_RELEASED is False
+    monkeypatch.setattr(bootstrap, "LEGACY_V5_BOOTSTRAP_RELEASED", True)
     observed = []
 
     class StubResponse:
