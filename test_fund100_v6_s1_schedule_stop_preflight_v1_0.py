@@ -117,7 +117,7 @@ def test_relay_fixed_stop_endpoint_no_unsafe_ack_success_or_retry():
     py = textwrap.dedent(relay.split(start, 1)[1].split(finish, 1)[0])
     tree = ast.parse(py)
     assert "fund100-live-emergency-stop.yml/dispatches" in py
-    assert """data=b'{"ref":"main"}'""" in py
+    assert """data=b'{"ref":"main","return_run_details":true}'""" in py
     assert 'method="POST"' in py
     assert '"X-GitHub-Api-Version": "2026-03-10"' in py
     assert "response.status != 200" in py
@@ -205,7 +205,7 @@ def _mock_relay(monkeypatch, *, ack=None, status=200, wrong_event=False):
             calls.append(request)
             assert request.full_url==expected_url
             assert request.get_method()=="POST"
-            assert request.data==b'{"ref":"main"}'
+            assert request.data==b'{"ref":"main","return_run_details":true}'
             assert request.get_header("Authorization")=="Bearer "+token
             assert request.get_header("X-github-api-version")=="2026-03-10"
             return FakeResponse(request)
