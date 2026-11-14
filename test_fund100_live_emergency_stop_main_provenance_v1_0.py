@@ -109,12 +109,24 @@ def test_always_running_v6_stop_rechecks_provenance_independently():
     stop = _job_sections()["stop-signal"]
     # V6 CAS has if: always(), so failure of first provenance step must
     # NEVER allow its independent write step to skip identity validation.
-    assert stop.count('test "$GITHUB_WORKFLOW_REF"') == 2
-    assert stop.count('test "$(git rev-parse HEAD)" = "$GITHUB_SHA"') == 2
-    assert "        if: always()\n" in stop
+    # Three independently source-checked steps: initial STOP, V6 STOP CAS,
+    # and the restricted brokerless notification that must not rearm or trade.
+    assert stop.count('test "$GITHUB_WORKFLOW_REF"') == 3
+    assert stop.count('test "$(git rev-parse HEAD)" = "$GITHUB_SHA"') == 3
+    assert stop.count("        if: always()\n") == 2
     second = stop.index("      - name: Independently stop V6 first ACWI")
     v6step = stop[second:]
     assert v6step.index('test "$GITHUB_WORKFLOW_REF"') < v6step.index(
         "import fund100_v6_s1_operator_control_v2_0 as v6")
     assert v6step.index('test "$(git rev-parse HEAD)"') < v6step.index(
         "v6.commit_stop_signal()")
+    bridge_step = stop[stop.index("      - name: Notify independent GitHub STOP observer"):]
+    assert 'test "$GITHUB_WORKFLOW_REF"' in bridge_step
+    assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in bridge_step
+    assert "git hash-object fund100_stop_repo_dispatch_bridge_v1_0.py" in bridge_step
+    assert bridge_step.index("git hash-object") < bridge_step.index(
+        "python -B fund100_stop_repo_dispatch_bridge_v1_0.py")
+    assert "GITHUB_TOKEN: ${{ github.token }}" in bridge_step
+    assert "ALPACA_LIVE_KEY" not in bridge_step
+    assert "ALPACA_LIVE_SECRET" not in bridge_step
+    assert "actions: write" not in stop
