@@ -183,3 +183,32 @@ def test_offline_source_never_place_trade_or_other_account_delete():
     assert "EXACT_ORDER_DELETE.fullmatch(path)" in source
     assert "resp.geturl() != url" in source
     assert "max-age=0" not in source
+
+
+def test_full_500_order_page_fails_closed_before_any_delete(monkeypatch):
+    """A full broker page may omit further orders; never claim STOP completion."""
+    calls = []
+    def broker(method, path):
+        calls.append(method)
+        if method != "GET":
+            pytest.fail("truncated listing must not initiate DELETE")
+        return [{"id": str(uuid4()), "client_order_id": "other-account-order"}
+                for _ in range(500)]
+    monkeypatch.setattr(stop, "_alpaca_request", broker)
+    with pytest.raises(stop.EmergencyStopError, match="truncated"):
+        stop.cancel_open_fund100_orders()
+    assert calls == ["GET"]
+
+
+@pytest.mark.parametrize("bad_orders", [None, {}, "[]", [None], [42], [False]])
+def test_malformed_open_orders_fails_closed_before_delete(monkeypatch, bad_orders):
+    calls = []
+    def broker(method, path):
+        calls.append(method)
+        if method != "GET":
+            pytest.fail("malformed listing must not initiate DELETE")
+        return bad_orders
+    monkeypatch.setattr(stop, "_alpaca_request", broker)
+    with pytest.raises(stop.EmergencyStopError, match="Invalid|Malformed"):
+        stop.cancel_open_fund100_orders()
+    assert calls == ["GET"]
