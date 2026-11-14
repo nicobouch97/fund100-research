@@ -35,8 +35,8 @@ def test_live_workflow_main_only_no_write_permissions_or_secret_spread():
     assert "FUND100_LIVE_WRITE_MODE: DISABLED" in workflow
     assert "FUND100_BROKER_KILL_SWITCH: ${{ vars.FUND100_BROKER_KILL_SWITCH }}" in workflow
     assert "FUND100_ENABLE_LIVE_READONLY: YES_READ_ONLY_LIVE" in workflow
-    assert "python -B - <<'PY'" in workflow
-    assert "smoke.main()" in workflow
+    assert "python fund100_alpaca_live_readonly_smoke.py 2>/dev/null" in workflow
+    assert "if ! python fund100_alpaca_live_readonly_smoke.py" in workflow
     assert "secrets.ALPACA_LIVE_KEY" in workflow
     assert "secrets.ALPACA_LIVE_SECRET" in workflow
     assert "contents: write" not in workflow
@@ -54,4 +54,4 @@ def test_live_workflow_secret_step_after_source_scope_preflight():
     assert guard<secret
     assert src.count("secrets.ALPACA_LIVE_KEY")==1
     assert src.count("secrets.ALPACA_LIVE_SECRET")==1
-    assert src.count("smoke.main()")==1
+    assert src.count("python fund100_alpaca_live_readonly_smoke.py")==1
