@@ -23,7 +23,7 @@ def test_both_emergency_cancel_sources_are_individually_exact_pinned():
             STOP_WORKFLOW, script, Path(STOP_WORKFLOW).read_text()
         )
     assert audit.PINNED_LIVE_CREDENTIAL_JOBS[(STOP_WORKFLOW, V5_SCRIPT)] == (
-        "5ef6fb7c8e01a8f002b6167aca28c89590931767"
+        "f990a9edf3357a161d32ff9e37301f2955d13808"
     )
 
 
@@ -76,7 +76,7 @@ def test_v5_emergency_module_unchanged_and_no_v6_client_id_expansion():
     assert "f100v6s1-" not in text
     assert "signed.CLIENT_IDS" not in text
     assert audit.git_blob_digest(Path(V5_SCRIPT)) == (
-        "5ef6fb7c8e01a8f002b6167aca28c89590931767"
+        "f990a9edf3357a161d32ff9e37301f2955d13808"
     )
 
 

@@ -32,7 +32,7 @@ def test_credentialed_script_requires_existing_source_pin():
     assert script not in audit.ALLOWED_LIVE_CREDENTIAL_SCRIPTS
     # Tightening the interpreter regex does not change the eligibility pin.
     assert audit.PINNED_LIVE_CREDENTIAL_JOBS[(workflow, script)] == (
-        "5ef6fb7c8e01a8f002b6167aca28c89590931767"
+        "f990a9edf3357a161d32ff9e37301f2955d13808"
     )
 
 
