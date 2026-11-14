@@ -32,10 +32,10 @@ ENDPOINT = (
     "actions/workflows/fund100-live-emergency-stop.yml/dispatches"
 )
 REF = "main"
-BODY_UTF8 = '{"ref":"main"}'
-# GitHub workflow_dispatch API 2026-03-10 returns a specific run id by
-# default (since the February 2026 run-details improvement). This proves
-# which run was requested, NOT that STOP/cancel succeeded.
+BODY_UTF8 = '{"ref":"main","return_run_details":true}'
+# Explicit response opt-in: 200 + workflow_run_id/run_url/html_url.
+# An implicit/omitted flag may return 204 No Content; an ACK is NEVER
+# verification that STOP or broker-order cancellation succeeded.
 GITHUB_API_VERSION_IF_SENT = "2026-03-10"
 EXPECTED_HTTP_STATUS_IF_SENT = 200
 EXPECTED_RESPONSE_FIELDS = ("workflow_run_id", "run_url", "html_url")
