@@ -3,6 +3,9 @@
 # emergency STOP workflow to persist stopped controls and selectively cancel
 # Fund-100-tagged open orders with post-cancel GET reconciliation.
 # Dispatch ACK is NOT STOP completion proof; independently check all three jobs.
+# Single pre-reviewed follow-up STOP after #704: this narrow merge-subject
+# gate prevents ordinary workflow edits/main pushes from dispatching STOP.
+# Not a durable replay fence; retire the push route after acceptance evidence.
 name: Fund-100 One-Shot Actual Emergency STOP Evidence (SAFE STOP ONLY)
 
 on:
@@ -48,7 +51,8 @@ jobs:
       github.repository == 'nicobouch97/fund100-research' &&
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
-      github.run_attempt == 1
+      github.run_attempt == 1 &&
+      startsWith(github.event.head_commit.message, 'P0: post-704 one-time protected STOP acceptance')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
