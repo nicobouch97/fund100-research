@@ -187,28 +187,25 @@ def test_204_or_denied_dispatch_never_claims_stop(valid, monkeypatch):
         stop._http("POST", stop.STOP, stop.FIXED_BODY)
 
 
-def test_only_intentional_main_push_can_trigger_original_stop():
+def test_retired_once_bridge_acceptance_has_no_operational_dispatch_route():
+    """Keep original historical dispatcher for offline adversarial tests only."""
     text = WF.read_text()
     assert "  pull_request:" in text
-    assert "  push:\n    branches: [main]" in text
-    assert "github.run_attempt == 1" in text
-    assert "P0: one-time verified STOP bridge integration acceptance" in text
-    assert "  dispatch-protected-original-stop-once:" in text
-    assert "persist-credentials: false" in text
-    assert "      actions: write" in text
-    assert "      contents: read" in text
-    assert "      contents: write" not in text
+    assert "  push:" not in text
+    assert "  workflow_dispatch:" not in text
+    assert "  repository_dispatch:" not in text
+    assert "  dispatch-protected-original-stop-once:" not in text
+    assert "actions: write" not in text
+    assert "contents: write" not in text
     assert "environment: fund100-live-broker" not in text
     assert "secrets.ALPACA" not in text
-    assert "python -B fund100_stop_bridge_integration_dispatch_once_v1_0.py" in text
-    assert "GITHUB_TOKEN: ${{ github.token }}" in text
+    assert "GITHUB_TOKEN:" not in text
+    assert "python -B fund100_stop_bridge_integration_dispatch_once_v1_0.py" not in text
+    assert "persist-credentials: false" in text
+    assert "      contents: read" in text
     assert "if: ${{ github.event_name == 'pull_request' }}" in text
+    assert "test_fund100_stop_bridge_integration_dispatch_once_v1_0.py" in text
     assert r"\${{" not in text
-    assert 'grep -Fq "fund100_stop_repo_dispatch_bridge_v1_0.py"' in text
-    assert "Notify independent GitHub STOP observer via fixed repository event" in text
-    assert "git ls-remote origin refs/heads/main" in text
-    assert "fund100-live-emergency-stop.yml" in text
-    assert "  workflow_dispatch:" not in text
     py = Path(stop.__file__).read_text()
     assert "api.alpaca.markets" not in py
     assert "NO_ORDER_SUBMISSION = True" in py
