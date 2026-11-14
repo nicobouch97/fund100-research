@@ -201,6 +201,11 @@ def test_strict_exact_github_paths_and_method(protected, monkeypatch):
         dict(url=ctl.DISPATCH_ENDPOINT, token=token, method="GET"),
         dict(url=ctl.DISPATCH_ENDPOINT, token=token, method="POST",
              payload=b'{"ref":"feature"}'),
+        # A 204-default request without run details must not pass.
+        dict(url=ctl.DISPATCH_ENDPOINT, token=token, method="POST",
+             payload=b'{"ref":"main"}'),
+        dict(url=ctl.DISPATCH_ENDPOINT, token=token, method="POST",
+             payload=b'{"ref":"main","return_run_details":false}'),
         dict(url=ctl.API + "/actions/workflows/trade.yml/dispatches",
              token=token, method="POST", payload=ctl.DISPATCH_PAYLOAD),
         dict(url=ctl.API + "/contents/unrelated.json?ref=main&nonce=" +
@@ -353,3 +358,71 @@ def test_private_image_drops_root_before_controller_runs():
     assert "fund100_railway_risk_watch_http_preflight_v1_0.py" not in image
     assert "EXPOSE" not in image
     assert "ALPACA_" not in image
+
+
+def test_exact_stop_dispatch_requests_identifiable_run_and_never_claims_stop(
+        protected, monkeypatch):
+    """No network: transport stub inspects the actual GitHub REST Request."""
+    assert json.loads(ctl.DISPATCH_PAYLOAD) == {
+        "ref": "main", "return_run_details": True}
+    attempted = []
+
+    class FakeResponse:
+        status = 200
+        def __init__(self):
+            self.raw = json.dumps(_ack()).encode()
+        def __enter__(self):
+            return self
+        def __exit__(self, *unused):
+            return False
+        def geturl(self):
+            return ctl.DISPATCH_ENDPOINT
+        def read(self, length):
+            return self.raw[:length]
+
+    class FakeOpener:
+        def open(self, req, timeout):
+            attempted.append(req)
+            assert req.get_method() == "POST"
+            assert req.full_url == ctl.DISPATCH_ENDPOINT
+            assert req.data == ctl.DISPATCH_PAYLOAD
+            assert req.get_header("X-github-api-version") == "2026-03-10"
+            assert req.get_header("Content-type") == "application/json"
+            assert timeout == 8
+            return FakeResponse()
+
+    monkeypatch.setattr(ctl, "build_opener",
+                        lambda *handlers: FakeOpener())
+    result = ctl._request(
+        url=ctl.DISPATCH_ENDPOINT, token="OFFLINE_SYNTHETIC_TOKEN_12345678",
+        method="POST", payload=ctl.DISPATCH_PAYLOAD)
+    assert result == _ack()
+    assert len(attempted) == 1
+    assert "stop_completed" not in result
+
+
+def test_github_empty_204_never_becomes_stop_ack(protected, monkeypatch):
+    """A dispatch may be accepted but have no run ID: fail closed, no retry."""
+    calls = []
+    class EmptyResponse:
+        status = 204
+        def __enter__(self):
+            return self
+        def __exit__(self, *unused):
+            return False
+        def geturl(self):
+            return ctl.DISPATCH_ENDPOINT
+        def read(self, length):
+            return b""
+    class FakeOpener:
+        def open(self, req, timeout):
+            calls.append(req)
+            assert req.data == ctl.DISPATCH_PAYLOAD
+            return EmptyResponse()
+    monkeypatch.setattr(ctl, "build_opener", lambda *a: FakeOpener())
+    with pytest.raises(ctl.StopControllerHold, match="status/origin"):
+        ctl._request(
+            url=ctl.DISPATCH_ENDPOINT,
+            token="OFFLINE_SYNTHETIC_TOKEN_12345678",
+            method="POST", payload=ctl.DISPATCH_PAYLOAD)
+    assert len(calls) == 1
