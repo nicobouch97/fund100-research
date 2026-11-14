@@ -265,7 +265,7 @@ def test_repo_dispatch_original_failure_is_not_verified(authentic,monkeypatch):
     assert not any(c[0]=="control" for c in calls)
 
 
-def test_workflow_is_main_only_read_only_and_has_no_secret_access():
+def test_workflow_original_verifier_is_credentialless_broker_is_separate():
     from pathlib import Path
     flow=Path(".github/workflows/fund100-stop-explicit-original-getonly.yml").read_text()
     assert "workflow_dispatch:" in flow
@@ -275,12 +275,22 @@ def test_workflow_is_main_only_read_only_and_has_no_secret_access():
     assert "test_fund100_stop_repo_dispatch_bridge_v1_0.py" in flow
     assert "original_stop_run_id:" in flow
     assert "  push:" not in flow
-    assert "environment: fund100-live-broker" not in flow
     assert "actions: write" not in flow
     assert "contents: write" not in flow
-    assert "ALPACA_LIVE_KEY:" not in flow
-    assert "secrets." not in flow
     assert "actions: read" in flow
     assert "contents: read" in flow
     assert "persist-credentials: false" in flow
     assert "python -B fund100_stop_explicit_original_getonly_v1_0.py" in flow
+    original=flow.split("  explicit-main-stop-only:",1)[1].split(
+        "  offline-explicit-proof-tests:",1)[0]
+    broker=flow.split("  protected-repo-stop-broker-postflight:",1)[1]
+    assert "ALPACA_LIVE_KEY:" not in original
+    assert "ALPACA_LIVE_SECRET:" not in original
+    assert "secrets." not in original
+    assert "environment: fund100-live-broker" not in original
+    assert "GITHUB_TOKEN: ${{ github.token }}" in original
+    assert "environment: fund100-live-broker" in broker
+    assert "needs.explicit-main-stop-only.result == 'success'" in broker
+    assert "GITHUB_TOKEN:" not in broker
+    assert "ALPACA_LIVE_KEY: ${{ secrets.ALPACA_LIVE_KEY }}" in broker
+    assert "FUND100_LIVE_WRITE_MODE: DISABLED" in broker
