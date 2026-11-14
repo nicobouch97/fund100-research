@@ -131,20 +131,26 @@ def _run(monkeypatch, capsys, *, protected=True, v5=None, v6=None,
                 assert proof["broker_requests"] == 0
                 assert proof["operator_controls_changed"] is False
                 assert proof["diagnostic_only"] is True
-                marker[0] = _file(PROOF, proof)
+                digest = sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
+                marker[0] = {"type": "file", "path": PROOF, "sha": digest,
+                             "encoding": "base64",
+                             "content": base64.b64encode(raw).decode()}
                 current[0] = AFTER
                 return FakeResponse(url, 201, {
                     "commit": {"sha": AFTER}, "content": {
-                        "sha": sha1(b"blob " + str(len(raw)).encode() +
-                                    b"\0" + raw).hexdigest(), "path": PROOF}})
+                        "sha": digest, "path": PROOF}})
             pytest.fail("Unapproved HTTP endpoint: " + method + " " + url)
 
     monkeypatch.setattr(urllib.request, "build_opener", lambda *a: FakeOpener())
-    with pytest.raises(SystemExit) as ended:
-        # The inline script is executed in process to intercept every socket.
+    # The inline script is executed in process to intercept every socket.
+    # Success returns normally; a fail-closed refusal exits nonzero.
+    try:
         exec(compile(source, "<mocked-stop-main-proof>", "exec"),
              {"__name__": "__main__"})
-    return ended.value.code, calls, capsys.readouterr().out
+        code = 0
+    except SystemExit as exc:
+        code = exc.code
+    return code, calls, capsys.readouterr().out
 
 
 def test_single_main_only_stop_permission_probe_and_no_broker_access():
