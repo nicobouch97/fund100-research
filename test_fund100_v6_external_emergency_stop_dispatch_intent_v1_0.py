@@ -33,7 +33,7 @@ def test_offline_synthetic_failure_only_produces_exact_emergency_stop_plan(
         "endpoint": (
             "https://api.github.com/repos/nicobouch97/fund100-research/"
             "actions/workflows/fund100-live-emergency-stop.yml/dispatches"),
-        "json_body": '{"ref":"main"}',
+        "json_body": '{"ref":"main","return_run_details":true}',
         "expected_acceptance_status": 200,
         "github_api_version_if_released": "2026-03-10",
         "expected_response_fields": ("workflow_run_id","run_url","html_url"),
@@ -50,7 +50,11 @@ def test_offline_synthetic_failure_only_produces_exact_emergency_stop_plan(
         "github_contents_write_included": False,
         "inputs": None,
     }
-    assert json.loads(plan["json_body"]) == {"ref": "main"}
+    assert json.loads(plan["json_body"]) == {
+        "ref": "main", "return_run_details": True}
+    # A 200 response containing the original run ID requires this explicit
+    # opt-in; a default empty 204 is never evidence of emergency STOP.
+    assert stop.EXPECTED_HTTP_STATUS_IF_SENT == 200
     assert plan["workflow_run_id_required_for_future_verification"] is True
 
 
