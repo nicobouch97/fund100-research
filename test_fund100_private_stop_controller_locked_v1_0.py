@@ -134,7 +134,7 @@ def test_network_timeout_records_unknown_and_never_reposts(protected, monkeypatc
         raise TimeoutError("simulate timeout after possible dispatch")
     monkeypatch.setattr(ctl, "_request", fail)
     assert ctl.once()["state"] == "UNKNOWN_DISPATCH_OUTCOME_ESCALATE"
-    assert ctl.once()["state"] == "STOP_ALREADY_RESERVED_NO_RETRY"
+    assert ctl.once()["state"] == "UNKNOWN_DISPATCH_OUTCOME_ESCALATE"
     assert len(calls) == 1
     with sqlite3.connect(protected / "stop.sqlite") as db:
         row = db.execute(
@@ -306,7 +306,7 @@ def test_unknown_network_dispatch_outcome_cannot_supply_run_id(
     with pytest.raises(ctl.StopControllerHold, match="not verifiable"):
         ctl.read_original_dispatch_ticket()
     assert ctl._dispatch_once(reason="OPERATOR_CONTROLS_UNKNOWN")[
-        "state"] == "STOP_ALREADY_RESERVED_NO_RETRY"
+        "state"] == "UNKNOWN_DISPATCH_OUTCOME_ESCALATE"
 
 
 @pytest.mark.parametrize("column,value", [
@@ -353,3 +353,115 @@ def test_private_image_drops_root_before_controller_runs():
     assert "fund100_railway_risk_watch_http_preflight_v1_0.py" not in image
     assert "EXPOSE" not in image
     assert "ALPACA_" not in image
+
+
+
+def test_existing_ack_never_implies_health_after_completion_deadline(
+        protected, monkeypatch):
+    """A Railway worker must not claim it is healthy indefinitely on ACK."""
+    calls = []
+    monkeypatch.setattr(ctl, "_main_control", _controls)
+
+    def responder(**kwargs):
+        calls.append(kwargs)
+        return _ack()
+
+    monkeypatch.setattr(ctl, "_request", responder)
+    assert ctl.once()["state"] == "DISPATCH_ACK_ONLY_NEEDS_INDEPENDENT_VERIFICATION"
+    assert ctl.once()["state"] == "STOP_ALREADY_RESERVED_NO_RETRY"
+    monkeypatch.setattr(ctl, "MAX_UNVERIFIED_STOP_SECONDS", 0)
+    outcome = ctl.once()
+    assert outcome == {
+        "state": "STOP_UNVERIFIED_DEADLINE_ESCALATE",
+        "stop_completed": False,
+        "order_authorized": False,
+    }
+    # The deadline changes output to a critical failure, NOT permission to
+    # retry a potentially accepted STOP dispatch or rearm a stopped system.
+    assert ctl.once()["state"] == "STOP_UNVERIFIED_DEADLINE_ESCALATE"
+    assert len(calls) == 1
+
+
+def test_ambiguous_dispatch_after_restart_escalates_immediately(
+        protected, monkeypatch):
+    calls = []
+    monkeypatch.setattr(ctl, "_main_control", _controls)
+
+    def lost_ack(**kwargs):
+        calls.append(kwargs)
+        raise TimeoutError("Maybe accepted")
+
+    monkeypatch.setattr(ctl, "_request", lost_ack)
+    assert ctl.once()["state"] == "UNKNOWN_DISPATCH_OUTCOME_ESCALATE"
+    # Simulate process exit/restart (same durable sqlite, no local state).
+    assert ctl.once()["state"] == "UNKNOWN_DISPATCH_OUTCOME_ESCALATE"
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("corrupted", [
+    "NOT_AN_INCIDENT",
+    "2099-12-31T23:59:59Z",
+    "bad-utc",
+])
+def test_corrupt_incident_fails_closed_instead_of_healthy_poll(
+        protected, monkeypatch, corrupted):
+    monkeypatch.setattr(ctl, "_main_control", _controls)
+    monkeypatch.setattr(ctl, "_request",
+                        lambda **kwargs: pytest.fail("No repeat dispatch"))
+    with ctl._journal_connect() as db:
+        assert ctl._reserve_once(db, reason="OPERATOR_CONTROLS_UNKNOWN")
+        if corrupted == "NOT_AN_INCIDENT":
+            db.execute("UPDATE stop_attempts SET state=?",
+                       (corrupted,))
+        else:
+            db.execute("UPDATE stop_attempts SET created_at_utc=?",
+                       (corrupted,))
+    with pytest.raises(ctl.StopControllerHold):
+        ctl.once()
+
+
+@pytest.mark.parametrize("state", [
+    "UNKNOWN_DISPATCH_OUTCOME_ESCALATE",
+    "STOP_UNVERIFIED_DEADLINE_ESCALATE",
+])
+def test_main_exits_nonzero_on_unverified_alarm(
+        protected, monkeypatch, capsys, state):
+    monkeypatch.setattr(ctl, "once",
+                        lambda: {"state": state, "order_authorized": False,
+                                 "stop_completed": False})
+    monkeypatch.setattr(ctl.time, "sleep",
+                        lambda *a: pytest.fail("Unhealthy STOP worker slept"))
+    with pytest.raises(SystemExit) as terminated:
+        ctl.main()
+    assert terminated.value.code == 2
+    captured = capsys.readouterr().out
+    assert state in captured
+    assert '"stop_completed": false' in captured
+
+
+def test_main_exits_nonzero_if_github_or_journal_unavailable(
+        protected, monkeypatch, capsys):
+    def unable():
+        raise ctl.StopControllerHold("synthetic credentials unavailable")
+    monkeypatch.setattr(ctl, "once", unable)
+    monkeypatch.setattr(ctl.time, "sleep",
+                        lambda *a: pytest.fail("Unhealthy STOP worker slept"))
+    with pytest.raises(SystemExit) as terminated:
+        ctl.main()
+    assert terminated.value.code == 2
+    assert "CONTROLLER_HOLD_ESCALATE" in capsys.readouterr().out
+
+
+def test_unverified_timeout_must_never_self_clear_journal_or_rearm(
+        protected, monkeypatch):
+    monkeypatch.setattr(ctl, "MAX_UNVERIFIED_STOP_SECONDS", 0)
+    monkeypatch.setattr(ctl, "_main_control", _controls)
+    monkeypatch.setattr(ctl, "_request",
+                        lambda **kwargs: pytest.fail("No network or retry"))
+    with ctl._journal_connect() as db:
+        assert ctl._reserve_once(
+            db, reason="STOP_LATCHES_WITHOUT_BROKER_CANCEL_PROOF")
+    assert ctl.once()["state"] == "STOP_UNVERIFIED_DEADLINE_ESCALATE"
+    with sqlite3.connect(protected / "stop.sqlite") as db:
+        rows = db.execute("SELECT state, dispatch_run_id FROM stop_attempts").fetchall()
+    assert rows == [("ATTEMPT_RESERVED", None)]

@@ -46,6 +46,12 @@ JOURNAL_DIR = "/data"
 JOURNAL_PATH = "/data/fund100-stop-controller.sqlite3"
 ALARM_KEY = "FUND100_FIRST_UNVERIFIED_GO_OR_UNAVAILABLE_CONTROLS"
 POLL_SECONDS = 20
+# An acknowledged GitHub dispatch is not broker STOP proof. If a separate
+# authenticated completion verifier has not recorded success by this deadline,
+# this worker MUST fail its host health instead of appearing indefinitely alive.
+# Until a verified completion/rearm protocol exists, the controller intentionally
+# cannot be released for autonomous 24x7 operation.
+MAX_UNVERIFIED_STOP_SECONDS = 240
 MAX_RESPONSE_BYTES = 16000
 V5_PATH = "fund100_live_operator_control.json"
 V6_PATH = "fund100_v6_s1_operator_control.json"
@@ -211,6 +217,51 @@ def _reserve_once(db: sqlite3.Connection, *, reason: str) -> bool:
         raise StopControllerHold("STOP reservation failed; no POST") from None
 
 
+def _reserved_outcome(db: sqlite3.Connection) -> dict:
+    """An incident's one-shot reservation is never evidence of STOP.
+
+    Unknown dispatch state escalates immediately, and even a correctly
+    acknowledged run escalates after its deadline. Never retry a potentially
+    accepted STOP request, silently self-clear a journal, or report broker
+    cancellation/health when no independently verified completion exists.
+    """
+    try:
+        if db.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+            raise StopControllerHold("STOP journal corruption: escalate")
+        rows = db.execute(
+            "SELECT state,created_at_utc FROM stop_attempts WHERE alarm_key=?",
+            (ALARM_KEY,)
+        ).fetchall()
+    except sqlite3.Error:
+        raise StopControllerHold("STOP incident state unreadable") from None
+    if len(rows) != 1:
+        raise StopControllerHold("STOP incident reservation not unique")
+    state, created_at = rows[0]
+    if state not in (
+        "ATTEMPT_RESERVED", "ACK_ONLY_UNVERIFIED_STOP",
+        "UNKNOWN_DISPATCH_OUTCOME",
+    ) or type(created_at) is not str:
+        raise StopControllerHold("STOP incident state invalid")
+    try:
+        first = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc)
+    except ValueError:
+        raise StopControllerHold("STOP incident timestamp invalid") from None
+    now = datetime.now(timezone.utc)
+    age = (now - first).total_seconds()
+    if (first.strftime("%Y-%m-%dT%H:%M:%SZ") != created_at
+        or age < 0):
+        raise StopControllerHold("STOP incident clock untrusted")
+    if state == "UNKNOWN_DISPATCH_OUTCOME":
+        outcome = "UNKNOWN_DISPATCH_OUTCOME_ESCALATE"
+    elif age >= MAX_UNVERIFIED_STOP_SECONDS:
+        outcome = "STOP_UNVERIFIED_DEADLINE_ESCALATE"
+    else:
+        outcome = "STOP_ALREADY_RESERVED_NO_RETRY"
+    return {"state": outcome, "stop_completed": False,
+            "order_authorized": False}
+
+
 def _mark(db: sqlite3.Connection, state: str, run_id: int | None = None):
     if state not in ("ACK_ONLY_UNVERIFIED_STOP", "UNKNOWN_DISPATCH_OUTCOME"):
         raise StopControllerHold("Invalid STOP journal transition")
@@ -241,8 +292,7 @@ def _dispatch_once(*, reason: str) -> dict:
     del read_token
     with _journal_connect() as db:
         if not _reserve_once(db, reason=reason):
-            return {"state": "STOP_ALREADY_RESERVED_NO_RETRY",
-                    "stop_completed": False, "order_authorized": False}
+            return _reserved_outcome(db)
         try:
             result = _request(url=DISPATCH_ENDPOINT, token=stop_token,
                               method="POST", payload=DISPATCH_PAYLOAD)
@@ -355,9 +405,17 @@ def main():
         try:
             result = once()
             print(json.dumps(result, sort_keys=True), flush=True)
+            if result.get("state") in (
+                "UNKNOWN_DISPATCH_OUTCOME_ESCALATE",
+                "STOP_UNVERIFIED_DEADLINE_ESCALATE",
+            ):
+                # Crash means Railway health is visibly NOT a broker STOP PASS.
+                # A restart MUST NOT retry the original unknown dispatch.
+                raise SystemExit(2)
         except StopControllerHold:
             print('{"state":"CONTROLLER_HOLD_ESCALATE","stop_completed":false,'
                   '"order_authorized":false}', flush=True)
+            raise SystemExit(2) from None
         time.sleep(POLL_SECONDS)
 
 
