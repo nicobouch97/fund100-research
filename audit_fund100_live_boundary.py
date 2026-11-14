@@ -288,7 +288,7 @@ PINNED_LIVE_CREDENTIAL_JOBS = {
     (
         ".github/workflows/fund100-live-bootstrap.yml",
         "fund100_live_bootstrap_v1_0.py",
-    ): "3d866d415ba228b6c538adac6d0a70e6b93de34d",
+    ): "dfbec6f06ce458cf1532c2f0bc66b9e95902d84f",
     (
         ".github/workflows/fund100-live-micro-pilot-prepare.yml",
         "fund100_live_pilot_prepare_v1_0.py",
